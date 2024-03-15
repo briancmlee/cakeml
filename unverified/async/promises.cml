@@ -1,0 +1,247 @@
+
+fun print_ln s = TextIO.print (s ^ "\n");
+
+structure Promise = 
+  struct
+    datatype 'a state = Pending (('a -> unit) list) | Resolved ('a);
+    type 'a t = 'a state ref;
+    type 'a u = 'a -> unit;
+
+    fun return value = Ref (Resolved value);
+
+    fun upon t f = case !t of
+      Resolved value => f value
+    | Pending callbacks => t := Pending (f :: callbacks);
+
+    fun poll t = case !t of
+      Resolved v => Some v
+    | Pending _ => None;
+
+    local
+      exception Resolve string
+
+      fun resolve t value = case !t of
+        Resolved _ => raise Resolve "Promise.resolve: already resolved"
+      | Pending callbacks => (
+          t := Resolved value; 
+          List.app (fn f => f value) callbacks
+        );
+
+      fun chain t t' = upon t (resolve t');
+    in
+      fun wait () =
+        let 
+          val t = Ref (Pending [])
+          val u = resolve t
+        in
+          (t, u)
+        end;
+
+      fun bind t f = case !t of
+        Resolved v => f v
+      | Pending callbacks => (
+          let
+            val t' = Ref (Pending [])
+            fun callback v = chain (f v) t'
+          in
+            t := Pending (callback :: callbacks);
+            t'
+          end
+        );
+
+      fun map t f = bind t (fn v => return (f v));
+
+      fun both t1 t2 =
+        let
+          val (t, u) = wait ()
+          val _ = upon t1 (fn v1 => upon t2 (fn v2 => u (v1, v2)))
+        in
+          t
+        end;
+    end;
+  end;
+
+structure Handler = 
+  struct
+    type t = (unit -> bool) * (unit -> unit);
+  end;
+
+structure Scheduler = 
+  struct
+    local
+      val handlers = Ref ([] : Handler.t list);
+
+      fun loop () = 
+        let
+          val (handlers_ready, handlers_not_ready) = List.partition (fn (is_ready, _) => is_ready ()) (!handlers)
+        in
+          handlers := handlers_not_ready;
+          List.app (fn (_, f) => f ()) handlers_ready
+        end;
+    in
+      fun add_handler handler = handlers := handler :: !handlers;
+
+      fun run p = 
+        let
+          fun run_loop () = case Promise.poll p of
+            Some value => value
+          | None => (
+              loop ();
+              run_loop ()
+            )
+        in
+          run_loop ()
+        end;
+
+      fun run_main main =
+        let 
+          fun run_loop () = case (!handlers) of
+            [] => ()
+          | _ => (
+              loop ();
+              run_loop ()
+            )
+        in
+          main ();
+          run_loop ()
+        end;
+    end;
+  end;
+
+
+fun w82n w8_array from_index = 
+  let 
+    val w64 = Word64.concatAll
+      (Word8Array.sub w8_array (from_index + 7))
+      (Word8Array.sub w8_array (from_index + 6))
+      (Word8Array.sub w8_array (from_index + 5))
+      (Word8Array.sub w8_array (from_index + 4))
+      (Word8Array.sub w8_array (from_index + 3))
+      (Word8Array.sub w8_array (from_index + 2))
+      (Word8Array.sub w8_array (from_index + 1))
+      (Word8Array.sub w8_array from_index)
+  in
+    Word64.toInt w64
+  end;
+
+structure TimeMilliseconds = 
+  struct
+    exception GetTimeFailed;
+
+    fun now () =
+      let val iobuff = Word8Array.array 9 (Word8.fromInt 0)
+          val _ = #(get_now_milliseconds) "" iobuff
+      in
+        if Word8Array.sub iobuff 0 = Word8.fromInt 1
+        then raise GetTimeFailed
+        else w82n iobuff 1
+      end;
+
+    fun fromSeconds seconds = seconds * 1000;
+
+    fun after milliseconds f =
+      let
+        val end_time = now () + milliseconds
+        fun is_ready () = now () >= end_time
+      in
+        Scheduler.add_handler (is_ready, f)
+      end;
+  end;
+
+structure FakeFileSystem = 
+  struct
+    type file_descriptor = int;
+    type filename = string;
+    type file_object = string * int;
+    
+    val files = Ref ([] : (filename * file_object) list);
+    val open_fds = Ref ([] : (file_descriptor * (filename * (string Promise.t))) list);
+    val next_fd = Ref 0;
+
+    fun add_fake_file filename content milliseconds_until_ready = 
+      files := Alist.update (!files) (filename, (content, milliseconds_until_ready));
+
+    exception FileNotFound filename;
+        
+    fun open_in filename =
+      case Alist.lookup (!files) filename of
+        None => raise (FileNotFound filename)
+      | Some (text_content, milliseconds_until_ready) => 
+        let 
+          val file_descriptor = !next_fd
+          val (t, u) = Promise.wait () 
+        in
+          open_fds := Alist.update (!open_fds) (file_descriptor, (filename, t));
+          next_fd := !next_fd + 1;
+          TimeMilliseconds.after milliseconds_until_ready (fn () => u text_content);
+          file_descriptor
+        end;
+
+    fun close file_descriptor = 
+      open_fds := Alist.delete (!open_fds) file_descriptor;
+
+    fun poll file_descriptor = 
+      case (Alist.lookup (!open_fds) file_descriptor) of
+        None => False
+      | Some (filename, promise) =>
+        case Promise.poll promise of
+          None => False
+        | Some _ => True
+
+    exception FileDescriptorNotOpen file_descriptor;
+
+    fun read_all file_descriptor =
+      case Alist.lookup (!open_fds) file_descriptor of
+        None => raise (FileDescriptorNotOpen file_descriptor)
+      | Some (_, promise) => promise;
+
+    fun text_content filename =
+      let val file_descriptor = open_in filename
+          val promise = read_all file_descriptor
+          val _ = close file_descriptor
+      in
+        promise
+      end;
+
+    (* fun text_content filename =
+      let 
+        val file_descriptor = open_in filename
+      in
+
+
+      
+      case Alist.lookup (!open_fds) filename of
+        None => raise (FileNotFound filename)
+      | Some (content, _) => 
+        let 
+          val file_descriptor = open_in filename
+          val is_ready = fn () => poll file_descriptor
+          val (promise, resolver) = Promise.wait ()
+        in
+          Scheduler.add_handler (is_ready, fn () => resolver content);
+          Promise.upon promise (fn _ => close file_descriptor);
+          promise
+        end; *)
+  end;
+
+fun main () =
+  let
+    val _ = FakeFileSystem.add_fake_file "file0" "empty" 0
+    val _ = FakeFileSystem.add_fake_file "file1" "content of file1" (TimeMilliseconds.fromSeconds 1)
+    val _ = FakeFileSystem.add_fake_file "file2" "content2" (TimeMilliseconds.fromSeconds 2)
+    val _ = FakeFileSystem.add_fake_file "file3" "c3" (TimeMilliseconds.fromSeconds 1)
+    val file0 = FakeFileSystem.text_content "file0"
+    val file2 = FakeFileSystem.text_content "file2"
+    val file1 = Promise.bind file2 (fn _ => FakeFileSystem.text_content "file1")
+    val file3 = FakeFileSystem.text_content "file3"
+    val both_file0_file1 = Promise.both file1 file2
+    val print_file0 = Promise.map file0 (fn content => print_ln "file0 read")
+    val print_file1 = Promise.map file1 (fn content => print_ln "file1 read")
+    val print_file2 = Promise.map file2 (fn content => print_ln "file2 read")
+    val print_file3 = Promise.map file3 (fn content => print_ln "file3 read")
+    val print_when_joined = Promise.map both_file0_file1 (fn (v1, v2) => print_ln "file1 and file2 read")
+  in
+    ()
+  end;
+    
+Scheduler.run_main main;

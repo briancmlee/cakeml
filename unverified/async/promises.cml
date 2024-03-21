@@ -1,6 +1,25 @@
 
 fun print_ln s = TextIO.print (s ^ "\n");
 
+structure Set =
+  struct
+    datatype 'a set = Set (('a, unit) map);
+
+    fun empty compare = Set (Map.empty compare);
+
+    fun insert (Set map) el = Set (Map.insert map el ());
+
+    fun delete (Set map) el = Set (Map.delete map el);
+
+    fun mem (Set map) el = case (Map.lookup map el) of
+      None => False
+    | Some _ => True;
+
+    fun toList (Set map) = List.map (fn (k, _) => k) (Map.toAscList map);
+
+    fun fromList compare list = Set (Map.fromList compare (List.map (fn k => (k, ())) list));
+  end;
+
 structure Promise = 
   struct
     datatype 'a state = Pending (('a -> unit) list) | Resolved ('a);
@@ -61,25 +80,287 @@ structure Promise =
     end;
   end;
 
-structure Handler = 
+structure ByteHelper =
   struct
-    type t = (unit -> bool) * (unit -> unit);
+    fun w82n w8Array offset = 
+      let 
+        val w64 = Word64.concatAll
+          (Word8Array.sub w8Array (offset + 7))
+          (Word8Array.sub w8Array (offset + 6))
+          (Word8Array.sub w8Array (offset + 5))
+          (Word8Array.sub w8Array (offset + 4))
+          (Word8Array.sub w8Array (offset + 3))
+          (Word8Array.sub w8Array (offset + 2))
+          (Word8Array.sub w8Array (offset + 1))
+          (Word8Array.sub w8Array offset)
+      in
+        Word64.toInt w64
+      end;
+
+    fun n2w8 n word8Array offset =
+      let
+        fun getByte w64 i = Word8.fromInt (Word64.toInt (Word64.>> w64 (i * 8)))
+        val w64 = Word64.fromInt n
+        val _ = Word8Array.update word8Array offset (getByte w64 7)
+        val _ = Word8Array.update word8Array (offset + 1) (getByte w64 6)
+        val _ = Word8Array.update word8Array (offset + 2) (getByte w64 5)
+        val _ = Word8Array.update word8Array (offset + 3) (getByte w64 4)
+        val _ = Word8Array.update word8Array (offset + 4) (getByte w64 3)
+        val _ = Word8Array.update word8Array (offset + 5) (getByte w64 2)
+        val _ = Word8Array.update word8Array (offset + 6) (getByte w64 1)
+        val _ = Word8Array.update word8Array (offset + 7) (getByte w64 0)
+      in
+        ()
+      end;
+
+    fun toString bytes = Word8Array.substring bytes 0 (Word8Array.length bytes);
+
+    fun editBit bytes i value = 
+      let 
+        val byteIndex = i div 8
+        val bitIndex = i mod 8
+        val byte = Word8Array.sub bytes byteIndex
+        val newByte = if value then 
+          Word8.orb byte (Word8.<< (Word8.fromInt 1) bitIndex) 
+        else 
+          Word8.andb byte (Word8.notb (Word8.<< (Word8.fromInt 1) bitIndex))
+      in
+        Word8Array.update bytes byteIndex newByte
+      end;
+    
+    fun readBit bytes i = 
+      let 
+        val byteIndex = i div 8
+        val bitIndex = i mod 8
+        val byte = Word8Array.sub bytes byteIndex
+      in
+        (Word8.andb byte (Word8.<< (Word8.fromInt 1) bitIndex)) <> (Word8.fromInt 0)
+      end;
+  end;
+
+structure FdSet = 
+  struct 
+    datatype t = FdSet (int Set.set);
+
+    val maxSize =
+      let 
+        val iobuff = Word8Array.array 8 (Word8.fromInt 0)
+        val _ = #(get_fd_set_size) "" iobuff
+      in
+        ByteHelper.w82n iobuff 0
+      end;
+
+    val byteSize = maxSize div 8;
+
+    val empty = FdSet (Set.empty Int.compare);
+
+    fun insert (FdSet set) fd = FdSet (Set.insert set fd);
+
+    fun mem (FdSet set) fd = Set.mem set fd;
+
+    fun delete (FdSet set) fd = FdSet (Set.delete set fd);
+
+    fun fromList list = FdSet (Set.fromList Int.compare list);
+
+    fun toList (FdSet set) = Set.toList set;
+
+    fun toBytes (FdSet set) = 
+      let
+        val bytes = Word8Array.array byteSize (Word8.fromInt 0)
+        val _ = List.app (fn fd => ByteHelper.editBit bytes fd True) (Set.toList set)
+      in
+        bytes
+      end;
+
+    fun fromBytes bytes =
+      let
+        val allFds = List.genlist (fn i => i) maxSize
+        fun isSet fd = ByteHelper.readBit bytes fd
+      in
+        List.foldl (fn fd => fn set => if isSet fd then insert set fd else set) empty allFds
+      end;
+  end;
+
+structure Time = 
+  struct
+    type milliseconds = int;
+
+    exception GetTimeFailed;
+
+    fun nowMilliseconds () =
+      let val outputBuff = Word8Array.array 9 (Word8.fromInt 0)
+          val _ = #(get_now_milliseconds) "" outputBuff
+      in
+        if Word8Array.sub outputBuff 0 = Word8.fromInt 1
+        then raise GetTimeFailed
+        else ByteHelper.w82n outputBuff 1
+      end;
+  end;
+
+structure Unix =
+  struct
+    exception FFIError string;
+
+    fun select readFds writeFds exceptFds timeout =
+      let
+        val readBytes = FdSet.toBytes readFds
+        val writeBytes = FdSet.toBytes writeFds
+        val exceptBytes = FdSet.toBytes exceptFds
+        val inputBuff = Word8Array.array (3 * FdSet.byteSize + 8) (Word8.fromInt 0)
+        val _ = ByteHelper.n2w8 timeout inputBuff 0;
+        val _ = Word8Array.copy readBytes 0 FdSet.byteSize inputBuff (8 + 0 * FdSet.byteSize);
+        val _ = Word8Array.copy writeBytes 0 FdSet.byteSize inputBuff (8 + 1 * FdSet.byteSize);
+        val _ = Word8Array.copy exceptBytes 0 FdSet.byteSize inputBuff (8 + 2 * FdSet.byteSize);
+        val outputBuff = Word8Array.array (FdSet.byteSize * 3 + 1) (Word8.fromInt 0)
+        val _ = #(select) (ByteHelper.toString inputBuff) outputBuff
+      in
+        if Word8Array.sub outputBuff 0 = Word8.fromInt 1
+        then raise FFIError "select failed"
+        else 
+          let 
+            val _ = Word8Array.copy outputBuff (1 + 0 * FdSet.byteSize) FdSet.byteSize readBytes 0
+            val _ = Word8Array.copy outputBuff (1 + 1 * FdSet.byteSize) FdSet.byteSize writeBytes 0
+            val _ = Word8Array.copy outputBuff (1 + 2 * FdSet.byteSize) FdSet.byteSize exceptBytes 0
+          in
+            (FdSet.fromBytes readBytes, FdSet.fromBytes writeBytes, FdSet.fromBytes exceptBytes)
+          end
+      end;
+
+    fun openListenFd port =
+      let val outputBuff = Word8Array.array 9 (Word8.fromInt 0)
+          val _ = #(open_listenfd) (Int.toString port) outputBuff
+      in
+        if Word8Array.sub outputBuff 0 = Word8.fromInt 1
+        then raise (FFIError "open_listenfd failed")
+        else ByteHelper.w82n outputBuff 1
+      end;
+
+    fun accept listenFd =
+      let val inputBuff = Word8Array.array 8 (Word8.fromInt 0)
+          val _ = ByteHelper.n2w8 listenFd inputBuff 0
+          val outputBuff = Word8Array.array 9 (Word8.fromInt 0)
+          val _ = #(accept) (ByteHelper.toString inputBuff) outputBuff
+      in
+        if Word8Array.sub outputBuff 0 = Word8.fromInt 1
+        then raise (FFIError "accept failed")
+        else ByteHelper.w82n outputBuff 1
+      end;
+
+    fun close fd = 
+      let val inputBuff = Word8Array.array 8 (Word8.fromInt 0)
+          val _ = ByteHelper.n2w8 fd inputBuff 0
+          val outputBuff = Word8Array.array 1 (Word8.fromInt 0)
+          val _ = #(close) (ByteHelper.toString inputBuff) outputBuff
+      in
+        if Word8Array.sub outputBuff 0 = Word8.fromInt 1
+        then raise (FFIError "close failed")
+        else ()
+      end;
+
+    exception EndOfFile
+    exception InvalidFD
+
+    val iobuff = Word8Array.array 2052 (Word8.fromInt 0)
+
+    fun read fd n =
+      let val a = Marshalling.n2w2 n iobuff 0 
+          val inputBuff = Word8Array.array 8 (Word8.fromInt 0)
+          val _ = ByteHelper.n2w8 fd inputBuff 0
+      in
+        #(read) (ByteHelper.toString inputBuff) iobuff;
+        if Word8.toInt (Word8Array.sub iobuff 0) <> 1
+        then Marshalling.w22n iobuff 1
+        else raise InvalidFD
+      end
+
+    fun read_byte fd =
+      if read fd 1 = 0 then raise EndOfFile
+      else Word8Array.sub iobuff 4
+
+    local
+      fun extend_array arr =
+        let
+          val len = Word8Array.length arr
+          val arr' = Word8Array.array (2*len) (Word8.fromInt 0)
+        in 
+          Word8Array.copy arr 0 len arr' 0; arr'
+        end;
+    in   
+      fun inputLine fd =
+        let
+          val nl = Word8.fromInt (Char.ord #"\n")
+          fun inputLine_aux arr i =
+            if i < Word8Array.length arr then
+              let
+                val c = read_byte (fd)
+                val u = Word8Array.update arr i c
+              in
+                if c = nl then Some (Word8Array.substring arr 0 (i+1))
+                else inputLine_aux arr (i+1)
+              end
+              handle EndOfFile =>
+                if i = 0 then None
+                else (Word8Array.update arr i nl;
+                      Some (Word8Array.substring arr 0 (i+1)))
+            else inputLine_aux (extend_array arr) i
+        in 
+          inputLine_aux (Word8Array.array 127 (Word8.fromInt 0)) 0 
+        end;
+      end;
   end;
 
 structure Scheduler = 
   struct
     local
-      val handlers = Ref ([] : Handler.t list);
+      val readables = Ref (Map.empty Int.compare : (int, (unit -> unit) list) map);
+      val writeables = Ref (Map.empty Int.compare : (int, (unit -> unit) list) map);
+      (* Optimise timer list to use Priority Queue *)
+      val timers = Ref ([] : (Time.milliseconds * (unit -> unit)) list);
+
+      fun length () = (Map.size (!readables)) + (Map.size (!writeables)) + (List.length (!timers));
+
+      exception FdAlreadyRemoved;
 
       fun loop () = 
         let
-          val (handlers_ready, handlers_not_ready) = List.partition (fn (is_ready, _) => is_ready ()) (!handlers)
+          fun toFdSet fd_map = FdSet.fromList (List.map fst (Map.toAscList fd_map))
+          val readFdSet = toFdSet (!readables)
+          val writeFdSet = toFdSet (!writeables)
+          val exceptFdSet = FdSet.empty
+          val (readyRead, readyWrite, _) = Unix.select readFdSet writeFdSet exceptFdSet 0
+          val (timersReady, remainingTimers) = List.partition (fn (time, _) => time <= Time.nowMilliseconds ()) (!timers)
+          val _ = timers := remainingTimers
+          fun invokeActions fd_map fd = case (Map.lookup (!fd_map) fd) of
+            None => raise FdAlreadyRemoved
+          | Some actions => (
+              fd_map := Map.delete (!fd_map) fd;
+              List.app (fn f => f ()) actions
+            )
         in
-          handlers := handlers_not_ready;
-          List.app (fn (_, f) => f ()) handlers_ready
+          List.app (invokeActions readables) (FdSet.toList readyRead);
+          List.app (invokeActions writeables) (FdSet.toList readyWrite);
+          List.app (fn (_, f) => f ()) timersReady
         end;
     in
-      fun add_handler handler = handlers := handler :: !handlers;
+      fun on_readable fd f =
+        let
+          val actions = case (Map.lookup (!readables) fd) of
+            None => []
+          | Some actions => actions
+        in
+          readables := Map.insert (!readables) fd (f :: actions)
+        end;
+
+      fun on_timer milliseconds repeat f = 
+        let val now = Time.nowMilliseconds () 
+            fun g () = (
+              f ();
+              if repeat then on_timer milliseconds repeat f
+              else ()
+            )
+        in
+          timers := (now + milliseconds, g) :: (!timers)
+        end;
 
       fun run p = 
         let
@@ -95,12 +376,13 @@ structure Scheduler =
 
       fun run_main main =
         let 
-          fun run_loop () = case (!handlers) of
-            [] => ()
-          | _ => (
+          fun run_loop () = 
+            if length () <> 0
+            then (
               loop ();
               run_loop ()
             )
+            else (print_ln "ending loop")
         in
           main ();
           run_loop ()
@@ -108,140 +390,69 @@ structure Scheduler =
     end;
   end;
 
-
-fun w82n w8_array from_index = 
-  let 
-    val w64 = Word64.concatAll
-      (Word8Array.sub w8_array (from_index + 7))
-      (Word8Array.sub w8_array (from_index + 6))
-      (Word8Array.sub w8_array (from_index + 5))
-      (Word8Array.sub w8_array (from_index + 4))
-      (Word8Array.sub w8_array (from_index + 3))
-      (Word8Array.sub w8_array (from_index + 2))
-      (Word8Array.sub w8_array (from_index + 1))
-      (Word8Array.sub w8_array from_index)
-  in
-    Word64.toInt w64
-  end;
-
-structure TimeMilliseconds = 
+structure AsyncIO =
   struct
-    exception GetTimeFailed;
-
-    fun now () =
-      let val iobuff = Word8Array.array 9 (Word8.fromInt 0)
-          val _ = #(get_now_milliseconds) "" iobuff
-      in
-        if Word8Array.sub iobuff 0 = Word8.fromInt 1
-        then raise GetTimeFailed
-        else w82n iobuff 1
-      end;
-
-    fun fromSeconds seconds = seconds * 1000;
-
-    fun after milliseconds f =
+    fun readStdinLine () =
       let
-        val end_time = now () + milliseconds
-        fun is_ready () = now () >= end_time
+        val (t, u) = Promise.wait ()
+        val _ = Scheduler.on_readable 0 (fn () => u (TextIO.inputLine TextIO.stdIn))
       in
-        Scheduler.add_handler (is_ready, f)
-      end;
-  end;
-
-structure FakeFileSystem = 
-  struct
-    type file_descriptor = int;
-    type filename = string;
-    type file_object = string * int;
-    
-    val files = Ref ([] : (filename * file_object) list);
-    val open_fds = Ref ([] : (file_descriptor * (filename * (string Promise.t))) list);
-    val next_fd = Ref 0;
-
-    fun add_fake_file filename content milliseconds_until_ready = 
-      files := Alist.update (!files) (filename, (content, milliseconds_until_ready));
-
-    exception FileNotFound filename;
-        
-    fun open_in filename =
-      case Alist.lookup (!files) filename of
-        None => raise (FileNotFound filename)
-      | Some (text_content, milliseconds_until_ready) => 
-        let 
-          val file_descriptor = !next_fd
-          val (t, u) = Promise.wait () 
-        in
-          open_fds := Alist.update (!open_fds) (file_descriptor, (filename, t));
-          next_fd := !next_fd + 1;
-          TimeMilliseconds.after milliseconds_until_ready (fn () => u text_content);
-          file_descriptor
-        end;
-
-    fun close file_descriptor = 
-      open_fds := Alist.delete (!open_fds) file_descriptor;
-
-    fun poll file_descriptor = 
-      case (Alist.lookup (!open_fds) file_descriptor) of
-        None => False
-      | Some (filename, promise) =>
-        case Promise.poll promise of
-          None => False
-        | Some _ => True
-
-    exception FileDescriptorNotOpen file_descriptor;
-
-    fun read_all file_descriptor =
-      case Alist.lookup (!open_fds) file_descriptor of
-        None => raise (FileDescriptorNotOpen file_descriptor)
-      | Some (_, promise) => promise;
-
-    fun text_content filename =
-      let val file_descriptor = open_in filename
-          val promise = read_all file_descriptor
-          val _ = close file_descriptor
-      in
-        promise
+        t
       end;
 
-    (* fun text_content filename =
-      let 
-        val file_descriptor = open_in filename
+    fun accept listenFd =
+      let
+        val (t, u) = Promise.wait ()
+        val _ = Scheduler.on_readable listenFd (fn () => (
+          u (Unix.accept listenFd)
+        ))
       in
-
-
+        t
+      end
       
-      case Alist.lookup (!open_fds) filename of
-        None => raise (FileNotFound filename)
-      | Some (content, _) => 
-        let 
-          val file_descriptor = open_in filename
-          val is_ready = fn () => poll file_descriptor
-          val (promise, resolver) = Promise.wait ()
-        in
-          Scheduler.add_handler (is_ready, fn () => resolver content);
-          Promise.upon promise (fn _ => close file_descriptor);
-          promise
-        end; *)
+    fun inputLine fd =
+      let
+        val (t, u) = Promise.wait ()
+        val _ = Scheduler.on_readable fd (fn () => u (Unix.inputLine fd))
+      in
+        t
+      end;
   end;
 
-fun main () =
-  let
-    val _ = FakeFileSystem.add_fake_file "file0" "empty" 0
-    val _ = FakeFileSystem.add_fake_file "file1" "content of file1" (TimeMilliseconds.fromSeconds 1)
-    val _ = FakeFileSystem.add_fake_file "file2" "content2" (TimeMilliseconds.fromSeconds 2)
-    val _ = FakeFileSystem.add_fake_file "file3" "c3" (TimeMilliseconds.fromSeconds 1)
-    val file0 = FakeFileSystem.text_content "file0"
-    val file2 = FakeFileSystem.text_content "file2"
-    val file1 = Promise.bind file2 (fn _ => FakeFileSystem.text_content "file1")
-    val file3 = FakeFileSystem.text_content "file3"
-    val both_file0_file1 = Promise.both file1 file2
-    val print_file0 = Promise.map file0 (fn content => print_ln "file0 read")
-    val print_file1 = Promise.map file1 (fn content => print_ln "file1 read")
-    val print_file2 = Promise.map file2 (fn content => print_ln "file2 read")
-    val print_file3 = Promise.map file3 (fn content => print_ln "file3 read")
-    val print_when_joined = Promise.map both_file0_file1 (fn (v1, v2) => print_ln "file1 and file2 read")
+structure AsyncServer =
+  struct
+    fun serve port withClient =
+      let val listenFd = Unix.openListenFd port
+          fun handleClient () = Promise.bind (AsyncIO.accept listenFd) (fn clientFd => (
+            withClient clientFd;
+            handleClient ()
+          ))
+      in
+        handleClient ()
+      end;   
+
+    fun echo clientFd =
+      let val line = AsyncIO.inputLine clientFd
+          val _ = Promise.map line (fn s => (
+            print_ln (Option.getOpt s "EOF");
+            echo clientFd
+          ))
+      in
+        ()
+      end;
+  end;
+
+fun echo () =
+  let val line = AsyncIO.readStdinLine ()
+      val _ = Promise.map line (fn s => (
+        print_ln (Option.getOpt s "EOF");
+        echo ()
+      ))
   in
     ()
   end;
-    
-Scheduler.run_main main;
+
+(* Scheduler.run_main FakeFileSystem.main_test; *)
+Scheduler.run_main (fn () => (
+  AsyncServer.serve 8080 AsyncServer.echo
+));

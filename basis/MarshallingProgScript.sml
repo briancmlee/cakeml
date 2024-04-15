@@ -18,11 +18,41 @@ val _ = process_topdecs`fun n2w2 n bytes off =
       val a = Word8Array.update bytes (off+1) (Word8.fromInt n)
   in () end` |> append_prog;
 
-
 val _ = process_topdecs`fun w22n bytes off =
   let val b1 = Word8Array.sub bytes off
       val b0 = Word8Array.sub bytes (off+1)
   in Word8.toInt b1 * 256 + Word8.toInt b0 end` |> append_prog;
+
+val _ = process_topdecs`fun n2w8 n bytes off =
+  let val a = Word8Array.update bytes off     (Word8.fromInt (n div (256**7)))
+      val a = Word8array.update bytes (off+1) (Word8.fromInt (n div (256**6)))
+      val a = Word8array.update bytes (off+2) (Word8.fromInt (n div (256**5)))
+      val a = Word8array.update bytes (off+3) (Word8.fromInt (n div (256**4)))
+      val a = Word8array.update bytes (off+4) (Word8.fromInt (n div (256**3)))
+      val a = Word8array.update bytes (off+5) (Word8.fromInt (n div (256**2)))
+      val a = Word8array.update bytes (off+6) (Word8.fromInt (n div (256**1)))
+      val a = Word8array.update bytes (off+7) (Word8.fromInt (n))
+  in () end` |> append_prog;
+
+val _ = process_topdecs`fun w82n bytes off =
+  let val b7 = Word8Array.sub bytes off
+      val b6 = Word8Array.sub bytes (off+1)
+      val b5 = Word8Array.sub bytes (off+2)
+      val b4 = Word8Array.sub bytes (off+3)
+      val b3 = Word8Array.sub bytes (off+4)
+      val b2 = Word8Array.sub bytes (off+5)
+      val b1 = Word8Array.sub bytes (off+6)
+      val b0 = Word8Array.sub bytes (off+7)
+  in
+    Word8.toInt b7 * 256**7 +
+    Word8.toInt b6 * 256**6 +
+    Word8.toInt b5 * 256**5 +
+    Word8.toInt b4 * 256**4 +
+    Word8.toInt b3 * 256**3 +
+    Word8.toInt b2 * 256**2 +
+    Word8.toInt b1 * 256**1 +
+    Word8.toInt b0
+  end` |> append_prog;
 
 val _ = ml_prog_update (close_module NONE);
 

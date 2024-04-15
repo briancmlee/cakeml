@@ -9,6 +9,7 @@ std_preludeTheory
 
 clFFITheory
 fsFFITheory fsFFIPropsTheory
+timeFFITheory
 
 mlstringTheory
 
@@ -17,6 +18,7 @@ Word8ArrayProofTheory
 ArrayProofTheory
 CommandLineProofTheory
 TextIOProgTheory TextIOProofTheory
+TimeProgTheory
 
 basisProgTheory basisFunctionsLib basis_ffiLib
 

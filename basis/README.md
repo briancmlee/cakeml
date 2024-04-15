@@ -86,6 +86,9 @@ Module for text-based I/O with the underlying file system.
 [TextIOProofScript.sml](TextIOProofScript.sml):
 Proofs about the code in the TextIO module.
 
+[TimeProgScript.sml](TimeProgScript.sml):
+Module for text-based I/O with the underlying file system.
+
 [UnsafeProgScript.sml](UnsafeProgScript.sml):
 This module defines functions for accessing CakeML's unsafe
 array primitives, i.e. primitives that crash if the index is
@@ -154,3 +157,6 @@ HOL definitions of the pure functions used in the CakeML basis.
 
 [runtimeFFIScript.sml](runtimeFFIScript.sml):
 Logical model of the Runtime module's exit function calls.
+
+[timeFFIScript.sml](timeFFIScript.sml):
+Logical model of UNIX wall time

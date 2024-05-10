@@ -87,7 +87,10 @@ Module for text-based I/O with the underlying file system.
 Proofs about the code in the TextIO module.
 
 [TimeProgScript.sml](TimeProgScript.sml):
-Module for text-based I/O with the underlying file system.
+Module for getting UNIX epoch time.
+
+[TimeProofScript.sml](TimeProofScript.sml):
+Proof about the command-line module of the CakeML standard basis library.
 
 [UnsafeProgScript.sml](UnsafeProgScript.sml):
 This module defines functions for accessing CakeML's unsafe

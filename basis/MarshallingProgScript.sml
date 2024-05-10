@@ -24,14 +24,14 @@ val _ = process_topdecs`fun w22n bytes off =
   in Word8.toInt b1 * 256 + Word8.toInt b0 end` |> append_prog;
 
 val _ = process_topdecs`fun n2w8 n bytes off =
-  let val a = Word8Array.update bytes off     (Word8.fromInt (n div (256**7)))
-      val a = Word8array.update bytes (off+1) (Word8.fromInt (n div (256**6)))
-      val a = Word8array.update bytes (off+2) (Word8.fromInt (n div (256**5)))
-      val a = Word8array.update bytes (off+3) (Word8.fromInt (n div (256**4)))
-      val a = Word8array.update bytes (off+4) (Word8.fromInt (n div (256**3)))
-      val a = Word8array.update bytes (off+5) (Word8.fromInt (n div (256**2)))
-      val a = Word8array.update bytes (off+6) (Word8.fromInt (n div (256**1)))
-      val a = Word8array.update bytes (off+7) (Word8.fromInt (n))
+  let val a = Word8Array.update bytes off     (Word8.fromInt (n div 72057594037927936))
+      val a = Word8Array.update bytes (off+1) (Word8.fromInt (n div 281474976710656))
+      val a = Word8Array.update bytes (off+2) (Word8.fromInt (n div 1099511627776))
+      val a = Word8Array.update bytes (off+3) (Word8.fromInt (n div 4294967296))
+      val a = Word8Array.update bytes (off+4) (Word8.fromInt (n div 16777216))
+      val a = Word8Array.update bytes (off+5) (Word8.fromInt (n div 65536))
+      val a = Word8Array.update bytes (off+6) (Word8.fromInt (n div 256))
+      val a = Word8Array.update bytes (off+7) (Word8.fromInt (n))
   in () end` |> append_prog;
 
 val _ = process_topdecs`fun w82n bytes off =
@@ -44,13 +44,13 @@ val _ = process_topdecs`fun w82n bytes off =
       val b1 = Word8Array.sub bytes (off+6)
       val b0 = Word8Array.sub bytes (off+7)
   in
-    Word8.toInt b7 * 256**7 +
-    Word8.toInt b6 * 256**6 +
-    Word8.toInt b5 * 256**5 +
-    Word8.toInt b4 * 256**4 +
-    Word8.toInt b3 * 256**3 +
-    Word8.toInt b2 * 256**2 +
-    Word8.toInt b1 * 256**1 +
+    Word8.toInt b7 * 72057594037927936 +
+    Word8.toInt b6 * 281474976710656 +
+    Word8.toInt b5 * 1099511627776 +
+    Word8.toInt b4 * 4294967296 +
+    Word8.toInt b3 * 16777216 +
+    Word8.toInt b2 * 65536 +
+    Word8.toInt b1 * 256 +
     Word8.toInt b0
   end` |> append_prog;
 
@@ -133,6 +133,20 @@ Proof
   fs[insert_atI_CONS,insert_atI_def,LUPDATE_commutes]
 QED
 
+Theorem n2w8_spec:
+  !n off b nv offv bl. NUM n nv /\ NUM off offv /\ off + 8 <= LENGTH b ==>
+    app (p:'ffi ffi_proj) ^(fetch_v "Marshalling.n2w8" (get_ml_prog_state())) [nv; bl; offv]
+      (W8ARRAY bl b)
+      (POSTv u. &UNIT_TYPE () u * W8ARRAY bl (insert_atI (n2w8 n) off b))
+Proof
+  xcf "Marshalling.n2w8" (get_ml_prog_state()) >>
+  NTAC 30 (xlet_auto >- xsimpl) >>
+  xcon >> xsimpl >>
+  fs[n2w8_def] >>
+  Cases_on‘b’ >- fs[] >> Cases_on‘t’ >>
+  fs[insert_atI_CONS,insert_atI_def,LUPDATE_commutes]
+QED
+
 Theorem w22n_spec:
   !off b offv bl. NUM off offv /\ off + 2 <= LENGTH b ==>
     app (p:'ffi ffi_proj) ^(fetch_v "Marshalling.w22n" (get_ml_prog_state())) [bl; offv]
@@ -142,6 +156,17 @@ Proof
   xcf "Marshalling.w22n" (get_ml_prog_state()) >>
   NTAC 6 (xlet_auto >- xsimpl) >>
   xapp >> xsimpl  >> fs[w22n_def,NUM_def,INT_def,integerTheory.INT_ADD]
+QED
+
+Theorem w82n_spec:
+  !off b offv bl. NUM off offv /\ off + 8 <= LENGTH b ==>
+    app (p:'ffi ffi_proj) ^(fetch_v "Marshalling.w82n" (get_ml_prog_state())) [bl; offv]
+        (W8ARRAY bl b)
+        (POSTv nv. &NUM (w82n [EL off b; EL (off+1) b; EL (off+2) b; EL (off+3) b; EL (off+4) b; EL (off+5) b; EL (off+6) b; EL (off+7) b]) nv * W8ARRAY bl b)
+Proof
+  xcf "Marshalling.w82n" (get_ml_prog_state()) >>
+  NTAC 36 (xlet_auto >- xsimpl) >>
+  xapp >> xsimpl  >> fs[w82n_def,NUM_def,INT_def,integerTheory.INT_ADD]
 QED
 
 val _ = export_theory()

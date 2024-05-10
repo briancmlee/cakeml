@@ -18,8 +18,7 @@ Word8ArrayProofTheory
 ArrayProofTheory
 CommandLineProofTheory
 TextIOProgTheory TextIOProofTheory
-TimeProgTheory
+TimeProgTheory TimeProofTheory
 
 basisProgTheory basisFunctionsLib basis_ffiLib
-
 end

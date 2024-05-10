@@ -22,13 +22,26 @@ val getNowMilliseconds_def = Define`
     od
 `;
 
-val ffi_get_now_milliseconds = Define`
+Definition ffi_get_now_milliseconds_def:
   ffi_get_now_milliseconds (conf: word8 list) bytes ts =
     do
       assert(9 <= LENGTH bytes);
       (now, ts') <- getNowMilliseconds ts;
       return (FFIreturn (0w :: n2w8 now ++ (DROP 9 bytes)) ts')
-    od`;
+    od ++
+    do
+      assert(0 < LENGTH bytes);
+      return (FFIreturn (LUPDATE 1w 0 bytes) ts)
+    od
+End
+
+Theorem ffi_get_now_milliseconds_length:
+  ffi_get_now_milliseconds conf bytes args = SOME (FFIreturn bytes' args') ⇒
+    LENGTH bytes' = LENGTH bytes
+Proof
+  rw[ffi_get_now_milliseconds_def] \\ fs[option_eq_some]
+  \\ TRY(pairarg_tac) \\ rw[] \\ fs[] \\ rw[] \\ fs[n2w8_def]
+QED
 
 (* Packaging up the model as an ffi_part *)
 val encode_def = zDefine`

@@ -20,7 +20,7 @@ structure Set =
     fun fromList compare list = Set (Map.fromList compare (List.map (fn k => (k, ())) list));
   end;
 
-structure Promise = 
+structure Promise =
   struct
     datatype 'a state = Pending (('a -> unit) list) | Resolved ('a);
     type 'a t = 'a state ref;
@@ -42,14 +42,14 @@ structure Promise =
       fun resolve t value = case !t of
         Resolved _ => raise Resolve "Promise.resolve: already resolved"
       | Pending callbacks => (
-          t := Resolved value; 
+          t := Resolved value;
           List.app (fn f => f value) callbacks
         );
 
       fun chain t t' = upon t (resolve t');
     in
       fun wait () =
-        let 
+        let
           val t = Ref (Pending [])
           val u = resolve t
         in
@@ -82,8 +82,8 @@ structure Promise =
 
 structure ByteHelper =
   struct
-    fun w82n w8Array offset = 
-      let 
+    fun w82n w8Array offset =
+      let
         val w64 = Word64.concatAll
           (Word8Array.sub w8Array (offset + 7))
           (Word8Array.sub w8Array (offset + 6))
@@ -115,21 +115,21 @@ structure ByteHelper =
 
     fun toString bytes = Word8Array.substring bytes 0 (Word8Array.length bytes);
 
-    fun editBit bytes i value = 
-      let 
+    fun editBit bytes i value =
+      let
         val byteIndex = i div 8
         val bitIndex = i mod 8
         val byte = Word8Array.sub bytes byteIndex
-        val newByte = if value then 
-          Word8.orb byte (Word8.<< (Word8.fromInt 1) bitIndex) 
-        else 
+        val newByte = if value then
+          Word8.orb byte (Word8.<< (Word8.fromInt 1) bitIndex)
+        else
           Word8.andb byte (Word8.notb (Word8.<< (Word8.fromInt 1) bitIndex))
       in
         Word8Array.update bytes byteIndex newByte
       end;
-    
-    fun readBit bytes i = 
-      let 
+
+    fun readBit bytes i =
+      let
         val byteIndex = i div 8
         val bitIndex = i mod 8
         val byte = Word8Array.sub bytes byteIndex
@@ -138,12 +138,12 @@ structure ByteHelper =
       end;
   end;
 
-structure FdSet = 
-  struct 
+structure FdSet =
+  struct
     datatype t = FdSet (int Set.set);
 
     val maxSize =
-      let 
+      let
         val iobuff = Word8Array.array 8 (Word8.fromInt 0)
         val _ = #(get_fd_set_size) "" iobuff
       in
@@ -164,7 +164,7 @@ structure FdSet =
 
     fun toList (FdSet set) = Set.toList set;
 
-    fun toBytes (FdSet set) = 
+    fun toBytes (FdSet set) =
       let
         val bytes = Word8Array.array byteSize (Word8.fromInt 0)
         val _ = List.app (fn fd => ByteHelper.editBit bytes fd True) (Set.toList set)
@@ -181,7 +181,7 @@ structure FdSet =
       end;
   end;
 
-structure Time = 
+structure Time =
   struct
     type milliseconds = int;
 
@@ -216,8 +216,8 @@ structure Unix =
       in
         if Word8Array.sub outputBuff 0 = Word8.fromInt 1
         then raise FFIError "select failed"
-        else 
-          let 
+        else
+          let
             val _ = Word8Array.copy outputBuff (1 + 0 * FdSet.byteSize) FdSet.byteSize readBytes 0
             val _ = Word8Array.copy outputBuff (1 + 1 * FdSet.byteSize) FdSet.byteSize writeBytes 0
             val _ = Word8Array.copy outputBuff (1 + 2 * FdSet.byteSize) FdSet.byteSize exceptBytes 0
@@ -246,7 +246,7 @@ structure Unix =
         else ByteHelper.w82n outputBuff 1
       end;
 
-    fun close fd = 
+    fun close fd =
       let val inputBuff = Word8Array.array 8 (Word8.fromInt 0)
           val _ = ByteHelper.n2w8 fd inputBuff 0
           val outputBuff = Word8Array.array 1 (Word8.fromInt 0)
@@ -263,7 +263,7 @@ structure Unix =
     val iobuff = Word8Array.array 2052 (Word8.fromInt 0)
 
     fun read fd n =
-      let val a = Marshalling.n2w2 n iobuff 0 
+      let val a = Marshalling.n2w2 n iobuff 0
           val inputBuff = Word8Array.array 8 (Word8.fromInt 0)
           val _ = ByteHelper.n2w8 fd inputBuff 0
       in
@@ -282,10 +282,10 @@ structure Unix =
         let
           val len = Word8Array.length arr
           val arr' = Word8Array.array (2*len) (Word8.fromInt 0)
-        in 
+        in
           Word8Array.copy arr 0 len arr' 0; arr'
         end;
-    in   
+    in
       fun inputLine fd =
         let
           val nl = Word8.fromInt (Char.ord #"\n")
@@ -303,13 +303,13 @@ structure Unix =
                 else (Word8Array.update arr i nl;
                       Some (Word8Array.substring arr 0 (i+1)))
             else inputLine_aux (extend_array arr) i
-        in 
-          inputLine_aux (Word8Array.array 127 (Word8.fromInt 0)) 0 
+        in
+          inputLine_aux (Word8Array.array 127 (Word8.fromInt 0)) 0
         end;
       end;
   end;
 
-structure Scheduler = 
+structure Scheduler =
   struct
     local
       val readables = Ref (Map.empty Int.compare : (int, (unit -> unit) list) map);
@@ -321,7 +321,7 @@ structure Scheduler =
 
       exception FdAlreadyRemoved;
 
-      fun loop () = 
+      fun loop () =
         let
           fun toFdSet fd_map = FdSet.fromList (List.map fst (Map.toAscList fd_map))
           val readFdSet = toFdSet (!readables)
@@ -351,8 +351,8 @@ structure Scheduler =
           readables := Map.insert (!readables) fd (f :: actions)
         end;
 
-      fun on_timer milliseconds repeat f = 
-        let val now = Time.nowMilliseconds () 
+      fun on_timer milliseconds repeat f =
+        let val now = Time.nowMilliseconds ()
             fun g () = (
               f ();
               if repeat then on_timer milliseconds repeat f
@@ -362,7 +362,7 @@ structure Scheduler =
           timers := (now + milliseconds, g) :: (!timers)
         end;
 
-      fun run p = 
+      fun run p =
         let
           fun run_loop () = case Promise.poll p of
             Some value => value
@@ -375,8 +375,8 @@ structure Scheduler =
         end;
 
       fun run_main main =
-        let 
-          fun run_loop () = 
+        let
+          fun run_loop () =
             if length () <> 0
             then (
               loop ();
@@ -409,7 +409,7 @@ structure AsyncIO =
       in
         t
       end
-      
+
     fun inputLine fd =
       let
         val (t, u) = Promise.wait ()
@@ -429,7 +429,7 @@ structure AsyncServer =
           ))
       in
         handleClient ()
-      end;   
+      end;
 
     fun echo clientFd =
       let val line = AsyncIO.inputLine clientFd

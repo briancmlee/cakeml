@@ -8,8 +8,12 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <assert.h>
-#ifdef EVAL
 #include <sys/time.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <errno.h>
+#include <netdb.h>
+#ifdef EVAL
 #include <sys/stat.h>
 #include <sys/mman.h>
 #include <signal.h>
@@ -104,26 +108,109 @@ int byte2_to_int(unsigned char *b){
     return ((b[0] << 8) | b[1]);
 }
 
+void int64_to_byte8(long long i, unsigned char *b){
+  /* i is encoded on 8 bytes */
+  /* assumes CHAR_BIT = 8. use static assertion checks? */
+  b[0] = (i >> 56) & 0xFF;
+  b[1] = (i >> 48) & 0xFF;
+  b[2] = (i >> 40) & 0xFF;
+  b[3] = (i >> 32) & 0xFF;
+  b[4] = (i >> 24) & 0xFF;
+  b[5] = (i >> 16) & 0xFF;
+  b[6] = (i >> 8) & 0xFF;
+  b[7] = i & 0xFF;
+}
+
 void int_to_byte8(int i, unsigned char *b){
-    /* i is encoded on 8 bytes */
-    /* i is cast to long long to ensure having 64 bits */
-    /* assumes CHAR_BIT = 8. use static assertion checks? */
-    b[0] = ((long long) i >> 56) & 0xFF;
-    b[1] = ((long long) i >> 48) & 0xFF;
-    b[2] = ((long long) i >> 40) & 0xFF;
-    b[3] = ((long long) i >> 32) & 0xFF;
-    b[4] = ((long long) i >> 24) & 0xFF;
-    b[5] = ((long long) i >> 16) & 0xFF;
-    b[6] = ((long long) i >> 8) & 0xFF;
-    b[7] =  (long long) i & 0xFF;
+  int64_to_byte8((long long) i, b);
+}
+
+long long byte8_to_int64(unsigned char *b){
+    return (((long long) b[0] << 56) | ((long long) b[1] << 48) |
+             ((long long) b[2] << 40) | ((long long) b[3] << 32) |
+             ((long long) b[4] << 24) | ((long long) b[5] << 16) |
+             ((long long) b[6] << 8) | (long long) b[7]);
 }
 
 int byte8_to_int(unsigned char *b){
-    return (((long long) b[0] << 56) | ((long long) b[1] << 48) |
-             ((long long) b[2] << 40) | ((long long) b[3] << 32) |
-             (b[4] << 24) | (b[5] << 16) | (b[6] << 8) | b[7]);
+    return (int) byte8_to_int64(b);
 }
 
+int get_bit(unsigned char *c, long clen, int index) {
+  assert(index < clen * 8);
+  int byte_index = index / 8;
+  int bit_index = index % 8;
+  return (c[byte_index] >> bit_index) & 1;
+}
+
+void set_bit(unsigned char *c, long clen, int index, int value) {
+  assert(index < clen * 8);
+  int byte_index = index / 8;
+  int bit_index = index % 8;
+  if (value) {
+    c[byte_index] |= 1 << bit_index;
+  } else {
+    c[byte_index] &= ~(1 << bit_index);
+  }
+}
+
+/* Time FFI */
+
+typedef unsigned char ffi_timeval[8];
+
+void timeval_to_byte8(struct timeval *tv, ffi_timeval *b){
+  int64_t milliseconds = (int64_t)tv->tv_sec * 1000 + (int64_t)tv->tv_usec / 1000;
+  int64_to_byte8(milliseconds, (unsigned char *) b);
+}
+
+struct timeval byte8_to_timeval(ffi_timeval *b){
+  struct timeval tv;
+  int64_t milliseconds = byte8_to_int64((unsigned char *) b);
+  tv.tv_sec = milliseconds / 1000;
+  tv.tv_usec = (milliseconds % 1000) * 1000;
+  return tv;
+}
+
+void ffiget_now_milliseconds (unsigned char *c, long clen, unsigned char *a, long alen) {
+  assert(alen >= 9);
+  struct timeval tv;
+  if (gettimeofday(&tv, NULL) == 0) {
+    a[0] = 0;
+    timeval_to_byte8(&tv, (ffi_timeval*) &a[1]);
+  } else {
+    a[0] = 1;
+  }
+}
+
+/* fd_setFFI */
+
+typedef unsigned char ffi_fd_set[FD_SETSIZE / 8];
+
+void ffiget_fd_set_size (unsigned char *c, long clen, unsigned char *a, long alen) {
+  assert(clen == 0);
+  assert(alen == 8);
+  int_to_byte8(FD_SETSIZE, a);
+}
+
+fd_set bytes_to_fd_set(ffi_fd_set* c) {
+  fd_set fds;
+  FD_ZERO(&fds);
+  for (int i = 0; i < FD_SETSIZE; i++) {
+    if (get_bit((unsigned char *) c, sizeof(ffi_fd_set), i)) {
+      FD_SET(i, &fds);
+    }
+  }
+
+  return fds;
+}
+
+void fd_set_to_bytes(fd_set *fds, ffi_fd_set *a) {
+  for (int i = 0; i < FD_SETSIZE; i++) {
+    int byte_index = i / 8;
+    int bit_index = i % 8;
+    set_bit((unsigned char *) a, sizeof(ffi_fd_set), i, FD_ISSET(i, fds));
+  }
+}
 
 /* fsFFI (file system and I/O) */
 
@@ -190,6 +277,123 @@ void fficlose (unsigned char *c, long clen, unsigned char *a, long alen) {
   int fd = byte8_to_int(c);
   if (close(fd) == 0) a[0] = 0;
   else a[0] = 1;
+}
+
+void ffiselect (unsigned char *c, long clen, unsigned char *a, long alen) {
+  assert(clen == 3 * sizeof(ffi_fd_set) + sizeof(ffi_timeval));
+  assert(alen == 3 * sizeof(ffi_fd_set) + 1);
+
+  struct timeval tv = byte8_to_timeval((ffi_timeval*) c);
+
+  ffi_fd_set *fd_sets = (ffi_fd_set*) &c[sizeof(ffi_timeval)];
+  fd_set rfds = bytes_to_fd_set(&fd_sets[0]);
+  fd_set wfds = bytes_to_fd_set(&fd_sets[1]);
+  fd_set efds = bytes_to_fd_set(&fd_sets[2]);
+
+  if (select(FD_SETSIZE, &rfds, &wfds, &efds, &tv) == -1) {
+    a[0] = 1;
+  } else {
+    a[0] = 0;
+    fd_set_to_bytes(&rfds, (ffi_fd_set*) &a[1]);
+    fd_set_to_bytes(&wfds, (ffi_fd_set*) &a[1 + sizeof(ffi_fd_set)]);
+    fd_set_to_bytes(&efds, (ffi_fd_set*) &a[1 + 2 * sizeof(ffi_fd_set)]);
+  }
+}
+
+void ffiset_fd_non_blocking (unsigned char *c, long clen, unsigned char *a, long alen) {
+  assert(clen == 8);
+  assert(alen == 1);
+
+  int fd = byte8_to_int(c);
+  int flags = fcntl(fd, F_GETFL, 0);
+  if (flags == -1) {
+    a[0] = 1;
+    return;
+  }
+  flags |= O_NONBLOCK;
+  if (fcntl(fd, F_SETFL, flags) == -1) {
+    a[0] = 1;
+    return;
+  }
+  a[0] = 0;
+}
+
+/*
+ * open_listenfd - Open and return a listening socket on port. This
+ *     function is reentrant and protocol-independent.
+ *
+ *     On error, returns -1 and sets errno.
+ */
+// copied from CSAPP, may edit later
+int open_listenfd(char *port) {
+  struct addrinfo hints, *listp, *p;
+  int listenfd, optval=1;
+
+  /* Get a list of potential server addresses */
+  memset(&hints, 0, sizeof(struct addrinfo));
+  hints.ai_socktype = SOCK_STREAM;             /* Accept connections */
+  hints.ai_flags = AI_PASSIVE | AI_ADDRCONFIG; /* ... on any IP address */
+  hints.ai_flags |= AI_NUMERICSERV;            /* ... using port number */
+  getaddrinfo(NULL, port, &hints, &listp);
+
+  /* Walk the list for one that we can bind to */
+  for (p = listp; p; p = p->ai_next) {
+    /* Create a socket descriptor */
+    if ((listenfd = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) < 0)
+      continue;  /* Socket failed, try the next */
+
+    /* Eliminates "Address already in use" error from bind */
+    setsockopt(listenfd, SOL_SOCKET, SO_REUSEADDR,    //line:netp:csapp:setsockopt
+                (const void *)&optval , sizeof(int));
+
+    /* Bind the descriptor to the address */
+    if (bind(listenfd, p->ai_addr, p->ai_addrlen) == 0)
+      break; /* Success */
+    close(listenfd); /* Bind failed, try the next */
+  }
+
+  /* Clean up */
+  freeaddrinfo(listp);
+  if (!p) /* No address worked */
+    return -1;
+
+  /* Make it a listening socket ready to accept connection requests */
+  if (listen(listenfd, 1024) < 0) {
+    close(listenfd);
+    return -1;
+  }
+  return listenfd;
+}
+
+void ffiopen_listenfd (unsigned char *c, long clen, unsigned char *a, long alen) {
+  assert(clen >= 1);
+  assert(alen == 9);
+  int listenfd = open_listenfd((char *) c);
+
+  if (listenfd < 0) {
+    a[0] = 1;
+  } else {
+    a[0] = 0;
+    int_to_byte8(listenfd, &a[1]);
+  }
+}
+
+void ffiaccept (unsigned char *c, long clen, unsigned char *a, long alen) {
+  assert(clen == 8);
+  assert(alen == 9);
+
+  int listenfd = byte8_to_int64(c);
+  struct sockaddr_storage clientaddr;
+  socklen_t clientlen = sizeof(struct sockaddr_storage);
+  int connfd = accept(listenfd, (struct sockaddr *) &clientaddr, &clientlen);
+  if (connfd < 0) {
+    a[0] = 1;
+    // Print error code to stdout
+    printf("Error: %s\n", strerror(errno));
+  } else {
+    a[0] = 0;
+    int_to_byte8(connfd, &a[1]);
+  }
 }
 
 /* GC FFI */

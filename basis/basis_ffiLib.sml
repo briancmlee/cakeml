@@ -7,7 +7,7 @@ struct
 
 open preamble
 open ml_progLib basis_ffiTheory set_sepTheory cfHeapsBaseTheory
-     CommandLineProofTheory TextIOProofTheory
+     CommandLineProofTheory TextIOProofTheory TimeProofTheory
 
 fun ERR f s = mk_HOL_ERR"basis_ffiLib" f s;
 
@@ -15,7 +15,7 @@ val basis_ffi_const = prim_mk_const{Thy="basis_ffi",Name="basis_ffi"};
 val basis_ffi_tm =
   list_mk_comb(basis_ffi_const,
     map mk_var
-      (zip ["cl","fs"]
+      (zip ["cl","fs","ts"]
         (#1(strip_fun(type_of basis_ffi_const)))))
 
 (*This tactic proves that for a given state, parts_ok holds for the ffi and the basis_proj2*)
@@ -35,7 +35,7 @@ val prove_parts_ok_st =
     \\ TRY PURE_FULL_CASE_TAC
     \\ fs[]
     \\ EVERY (map imp_res_tac (CONJUNCTS basis_ffi_length_thms))
-    \\ fs[fs_ffi_no_ffi_div,cl_ffi_no_ffi_div]
+    \\ fs[fs_ffi_no_ffi_div,cl_ffi_no_ffi_div,ts_ffi_no_ffi_div]
     \\ srw_tac[DNF_ss][] \\ simp[basis_ffi_oracle_def];
 
 (* TODO

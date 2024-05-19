@@ -9,7 +9,7 @@ std_preludeTheory
 
 clFFITheory
 fsFFITheory fsFFIPropsTheory
-timeFFITheory
+tsFFITheory
 
 mlstringTheory
 

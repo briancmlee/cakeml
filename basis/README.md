@@ -161,5 +161,5 @@ HOL definitions of the pure functions used in the CakeML basis.
 [runtimeFFIScript.sml](runtimeFFIScript.sml):
 Logical model of the Runtime module's exit function calls.
 
-[timeFFIScript.sml](timeFFIScript.sml):
+[tsFFIScript.sml](tsFFIScript.sml):
 Logical model of UNIX wall time

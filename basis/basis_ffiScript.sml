@@ -4,7 +4,7 @@
 open preamble ml_translatorTheory ml_translatorLib ml_progLib
               cfLib basisFunctionsLib set_sepTheory
               fsFFITheory fsFFIPropsTheory
-              timeFFITheory
+              tsFFITheory
               CommandLineProofTheory TextIOProofTheory TimeProofTheory
               runtimeFFITheory RuntimeProofTheory
 

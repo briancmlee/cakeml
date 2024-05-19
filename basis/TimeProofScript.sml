@@ -2,7 +2,7 @@
   Proof about the command-line module of the CakeML standard basis library.
 *)
 open preamble ml_translatorTheory ml_progLib ml_translatorLib cfLib
-     TimeProgTheory timeFFITheory Word8ArrayProofTheory cfMonadLib
+     TimeProgTheory tsFFITheory Word8ArrayProofTheory cfMonadLib
      Word8ProgTheory Word8ArrayProofTheory MarshallingProgTheory MarshallingTheory
      integerTheory int_arithTheory;
 
@@ -38,22 +38,24 @@ val eq_v_thm = fetch "mlbasicsProg" "eq_v_thm"
 val eq_word8_v_thm = MATCH_MP (DISCH_ALL eq_v_thm) (EqualityType_NUM_BOOL |> cj 4) |> INST_TYPE [“:'a” |-> “:8”]
 
 Theorem nowMilliseconds_spec:
-  ∀t d ds uv.
+  ∀t ds uv.
+     t' = Num (int_max (&t + ds 0) 0) ⇒
      UNIT_TYPE () uv ⇒
-     (d+t) DIV 1000 ≤ 256**8 - 1⇒
+     t' DIV 1000 ≤ 256**8 - 1 ⇒
      app (p:'ffi ffi_proj) Time_nowMilliseconds_v [uv]
-         (TIME <| latest_time := t; microseconds_elapsed := d:::ds |>)
-         (POSTv v. &NUM ((t+d) DIV 1000) v * TIME <| latest_time := t+d; microseconds_elapsed := ds |>)
+         (TIME <| latest_time := t; microseconds_elapsed := ds |>)
+         (POSTv v. &NUM (t' DIV 1000) v *
+          TIME <| latest_time := t'; microseconds_elapsed := (\n. ds (n+1)) |>)
 Proof
   xcf_with_def "Time.nowMilliseconds" Time_nowMilliseconds_v_def \\
   xmatch \\
-  gvs[UNIT_TYPE_def] \\
+  gs[UNIT_TYPE_def] \\
   reverse conj_tac >- (EVAL_TAC \\ simp[]) \\
   xlet_auto >- xsimpl \\
   xlet_auto >- xsimpl \\
   rename [‘W8ARRAY bv (REPLICATE 9 0w)’] \\
-  xlet ‘POSTv uv. &UNIT_TYPE () uv * W8ARRAY bv (0w :: n2w8 ((t+d) DIV 1000)) *
-        TIME <| latest_time := t+d; microseconds_elapsed := ds|>’
+  xlet ‘POSTv uv. &UNIT_TYPE () uv * W8ARRAY bv (0w :: n2w8 (t' DIV 1000)) *
+        TIME <| latest_time := t'; microseconds_elapsed := (\n. ds (n+1))|>’
   >- (qpat_abbrev_tac `Q = $POSTv _` >>
       simp [ts_ffi_part_def, TIME_def, IOx_def, IO_def] >>
       xpull >> qunabbrev_tac `Q` >>
@@ -67,11 +69,11 @@ Proof
       qexists ‘new_events’ \\ xsimpl) \\
   xlet_auto >- xsimpl \\
   xlet_auto >- (xsimpl \\ map_every qexists_tac [‘t’, ‘d’] \\ fs[]) \\
-  xlet ‘POSTv boolv. W8ARRAY bv (0w::n2w8 ((d + t) DIV 1000)) * TIME  <|latest_time := d + t; microseconds_elapsed := ds|> * &BOOL T boolv’
+  xlet ‘POSTv boolv. W8ARRAY bv (0w::n2w8 (t' DIV 1000)) * TIME  <|latest_time := t'; microseconds_elapsed := (\n. ds (n+1)) |> * &BOOL T boolv’
   >- (xapp_spec eq_word8_v_thm \\ xsimpl \\ fs[BOOL_def] \\ metis_tac []) \\
   xif \\ qexists ‘T’ \\ fs[] \\
   xapp \\ xsimpl \\ fs[LENGTH_n2w8] \\
-  qpat_abbrev_tac ‘new_latest_time = (d + t) DIV 1000’ \\
+  qpat_abbrev_tac ‘new_latest_time = (Num (int_max _ _)) DIV 1000’ \\
   fs[n2w8_def] \\ qspec_then ‘new_latest_time’ mp_tac n2w8_def \\
   simp[] \\ DISCH_THEN (SUBST1_TAC o SYM) \\ simp[w82n_n2w8]
 QED

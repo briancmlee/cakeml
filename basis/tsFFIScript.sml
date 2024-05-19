@@ -3,7 +3,7 @@
 *)
 open preamble cfHeapsBaseTheory MarshallingTheory cfFFITypeTheory
 
-val _ = new_theory"timeFFI"
+val _ = new_theory"tsFFI"
 
 val _ = option_monadsyntax.temp_add_option_monadsyntax();
 

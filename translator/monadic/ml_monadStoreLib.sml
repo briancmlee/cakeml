@@ -89,22 +89,28 @@ in get_refs end
 
 
 fun mk_REF_REL TYPE r x =
-  ISPECL [TYPE, r, x] REF_REL_def |> concl |> dest_eq |> fst
+  (ISPECL [TYPE, r, x] REF_REL_def |> concl |> dest_eq |> fst)
+  handle HOL_ERR _ => (print "LINE 93"; failwith "sadsada")
 
 fun mk_RARRAY_REL TYPE r x =
-  ISPECL [TYPE, r, x] RARRAY_REL_def |> concl |> dest_eq |> fst
+  (ISPECL [TYPE, r, x] RARRAY_REL_def |> concl |> dest_eq |> fst)
+  handle HOL_ERR _ => (print "LINE 97"; failwith "sadsada")
 
 fun mk_ARRAY_REL TYPE r x =
-  ISPECL [TYPE, r, x] ARRAY_REL_def |> concl |> dest_eq |> fst
+  (ISPECL [TYPE, r, x] ARRAY_REL_def |> concl |> dest_eq |> fst)
+  handle HOL_ERR _ => (print "LINE 101"; failwith "sadsada")
 
 fun mk_REFS_PRED H refs p s =
-  ISPECL [H, p, refs, s] REFS_PRED_def |> concl |> dest_eq |> fst
+  (ISPECL [H, p, refs, s] REFS_PRED_def |> concl |> dest_eq |> fst)
+  handle HOL_ERR _ => (print "LINE 105"; failwith "sadsada")
 
 fun mk_VALID_REFS_PRED H =
-  ISPECL [H] VALID_REFS_PRED_def |> concl |> dest_eq |> fst
+  (ISPECL [H] VALID_REFS_PRED_def |> concl |> dest_eq |> fst)
+  handle HOL_ERR _ => (print "LINE 109"; failwith "sadsada")
 
 fun mk_lookup_eq name env type_tm = let
-    val lookup_tm = ISPECL [name, env] lookup_cons_def |> concl |> dest_eq |> fst
+    val lookup_tm = (ISPECL [name, env] lookup_cons_def |> concl |> dest_eq |> fst)
+                    handle HOL_ERR _ => (print "LINE 113"; failwith "sadsada")
     val some_tm = mk_comb (inst [alpha |-> lookup_ret_ty] SOME_const, mk_pair(one_const, type_tm))
 in mk_eq(lookup_tm, some_tm) end
 
@@ -223,7 +229,8 @@ fun derive_eval_thm_ALLOCATE_ARRAY name n init_value_def = let
     val lookup_assum = list_mk_comb(nsLookup_env_short_term, [env, stringSyntax.fromMLstring init_value_name]) |> ((RATOR_CONV BETA_CONV) THENC BETA_CONV) |> concl |> rhs
     val lookup_assum = EVAL lookup_assum
 
-    val th = ISPECL [env, s, numSyntax.term_of_int n] ALLOCATE_ARRAY_evaluate |> SPEC_ALL
+    val th = (ISPECL [env, s, numSyntax.term_of_int n] ALLOCATE_ARRAY_evaluate |> SPEC_ALL)
+               handle HOL_ERR _ => (print "LINE 233"; failwith "sadsada")
     val th = MATCH_MP th lookup_assum
 
     (* Abbreviate the constants and simplify the theorem *)
@@ -394,7 +401,16 @@ fun create_store_X_hprop refs_manip_list
         val ty = dest_abs get_f |> snd |> type_of
         val ref_inv = (get_type_inv ty
                        handle HOL_ERR _ => (register_type ty; get_type_inv ty))
-        val get_term = mk_comb (get_f, state_var) |> BETA_CONV |> concl |> dest_eq |> snd
+        val get_term = (mk_comb (get_f, state_var) |> BETA_CONV |> concl |> dest_eq |> snd)
+                        handle HOL_ERR _ => (
+                        print "get_f:\n";
+                        print_term get_f;
+                        print_type (type_of get_f);
+                        print "state_var:\n";
+                        print_term state_var;
+                        print_type (type_of state_var);
+                        print "\n";
+                        failwith "EXPECTED ERROR")
 
         val hprop = mk_REF_REL ref_inv ref_loc get_term
       in
@@ -874,16 +890,65 @@ fun prove_store_access_specs refs_manip_list
           in th end
 
         (* read *)
-        val read_spec = ISPECL[name_v, loc, TYPE, EXN_TYPE, H_part, get_var] EvalM_read_heap
+        val read_spec = (ISPECL[name_v, loc, TYPE, EXN_TYPE, H_part, get_var] EvalM_read_heap)
+                        handle HOL_ERR _ => (
+                          print_term name_v;
+                          print_term loc;
+                          print_term TYPE;
+                          print_term EXN_TYPE;
+                          print_term H_part;
+                          print_term get_var;
+                          print_thm EvalM_read_heap;
+                          failwith "hello"
+                        )
         val read_spec = rewrite_thm read_spec
 
         val thm_name = "get_" ^name ^"_thm"
         val _ = save_thm(thm_name, read_spec)
         val _ = print ("Saved theorem __ \"" ^thm_name ^"\"\n")
+        val _ = print "READ SAVED"
 
         (* write *)
-        val write_spec = ISPECL[name_v, loc, TYPE, PINV, EXN_TYPE, H_part2, get_var, set_var] EvalM_write_heap
+        val write_spec = (ISPECL[name_v, loc, TYPE, PINV, EXN_TYPE, H_part2, get_var, set_var] EvalM_write_heap)
+                          handle HOL_ERR _ => (
+                            print "LINE 913";
+                            print_thm EvalM_write_heap;
+                            print "\n";
+                            print "name_v\n";
+                            print_term name_v;
+                            print_type (type_of name_v);
+                            print "\n";
+                            print "loc\n";
+                            print_term loc;
+                            print_type (type_of loc);
+                            print "\n";
+                            print "TYPE\n";
+                            print_term TYPE;
+                            print_type (type_of TYPE);
+                            print "\n";
+                            print "PINV\n";
+                            print_term PINV;
+                            print_type (type_of PINV);
+                            print "\n";
+                            print "EXN_TYPE\n";
+                            print_term EXN_TYPE;
+                            print_type (type_of EXN_TYPE);
+                            print "\n";
+                            print "H_part2\n";
+                            print_term H_part2;
+                            print_type (type_of H_part2);
+                            print "\n";
+                            print "get_var\n";
+                            print_term get_var;
+                            print_type (type_of get_var);
+                            print "\n";
+                            print "set_var\n";
+                            print_term set_var;
+                            print_type (type_of set_var);
+                            failwith "exception occurred")
+        val _ = print "write_spec ISPECL"
         val write_spec = rewrite_thm write_spec
+        val _ = print "rewrite_thm"
         val update_conditions = concl write_spec |> strip_forall |> snd |> strip_imp |> fst
         val rw_thms = case store_pinv_def_opt of
                               SOME store_pinv_def => [store_pinv_def]
@@ -935,7 +1000,8 @@ fun prove_store_access_specs refs_manip_list
         in th end
 
         (* length *)
-        val length_thm = ISPECL[name_v, loc, TYPE, EXN_TYPE, H_part, get_arr] EvalM_R_Marray_length
+        val length_thm = (ISPECL[name_v, loc, TYPE, EXN_TYPE, H_part, get_arr] EvalM_R_Marray_length)
+                          handle HOL_ERR _ => (print "LINE 970"; failwith "sadsada")
         val length_thm = rewrite_thm length_thm
 
         val thm_name = name ^"_length_thm"
@@ -955,13 +1021,15 @@ fun prove_store_access_specs refs_manip_list
 
         val sub_thm =
           if usesSubscript then let
-            val th = ISPECL[name_v,loc,TYPE,EXN_TYPE,H_part,get_arr,sub_exn]
-                            EvalM_R_Marray_sub_subscript |> SPEC_ALL
+            val th = (ISPECL[name_v,loc,TYPE,EXN_TYPE,H_part,get_arr,sub_exn]
+                            EvalM_R_Marray_sub_subscript |> SPEC_ALL)
+                             handle HOL_ERR _ => (print "LINE 992"; failwith "sadsada")
             val th = MP th subscript_eval |> UNDISCH |> UNDISCH |> rewrite_thm
           in th end
           else let
-            val th = ISPECL[name_v,loc,TYPE,EXN_TYPE,H_part,get_arr,sub_exn,sub_rexp]
-                            EvalM_R_Marray_sub_handle |> SPEC_ALL
+            val th = (ISPECL[name_v,loc,TYPE,EXN_TYPE,H_part,get_arr,sub_exn,sub_rexp]
+                            EvalM_R_Marray_sub_handle |> SPEC_ALL)
+                             handle HOL_ERR _ => (print "LINE 998"; failwith "sadsada")
             val th = rewrite_thm th |> UNDISCH |> UNDISCH |> UNDISCH
             val th = MP th Eval_sub_rexp
           in th end
@@ -989,16 +1057,18 @@ fun prove_store_access_specs refs_manip_list
         val update_thm =
           if usesSubscript then let
             val th =
-              ISPECL[name_v,loc,TYPE,EXN_TYPE,H_part,get_arr,set_arr', update_exn]
-                      EvalM_R_Marray_update_subscript
+              (ISPECL[name_v,loc,TYPE,EXN_TYPE,H_part,get_arr,set_arr', update_exn]
+                      EvalM_R_Marray_update_subscript)
+               handle HOL_ERR _ => (print "LINE 1028"; failwith "sadsada")
             val th = SPEC_ALL th |> UNDISCH |> UNDISCH
             val th = MP th subscript_eval |> remove_assumption
                         |> remove_assumption |> UNDISCH_ALL
           in rewrite_thm th end
           else let
             val th =
-              ISPECL[name_v,loc,TYPE,EXN_TYPE,H_part,get_arr,set_arr,
-                     update_exn,update_rexp] EvalM_R_Marray_update_handle
+              (ISPECL[name_v,loc,TYPE,EXN_TYPE,H_part,get_arr,set_arr,
+                     update_exn,update_rexp] EvalM_R_Marray_update_handle)
+                      handle HOL_ERR _ => (print "LINE 1037"; failwith "sadsada")
             val th = SPEC_ALL th |> UNDISCH |> UNDISCH
             val th = remove_assumption th |> remove_assumption
             val th = UNDISCH th
@@ -1017,8 +1087,9 @@ fun prove_store_access_specs refs_manip_list
                               EvalM_R_Marray_alloc |> SPEC_ALL
 
         *)
-        val alloc_thm = ISPECL[name_v,loc,TYPE,EXN_TYPE,H_part,get_arr,set_arr']
-                              EvalM_R_Marray_alloc |> SPEC_ALL
+        val alloc_thm = (ISPECL[name_v,loc,TYPE,EXN_TYPE,H_part,get_arr,set_arr']
+                              EvalM_R_Marray_alloc |> SPEC_ALL)
+                               handle HOL_ERR _ => (print "LINE 1058"; failwith "sadsada")
         val alloc_thm = rewrite_thm alloc_thm |> UNDISCH
         val alloc_thm = remove_assumption alloc_thm |> remove_assumption
 
@@ -1072,7 +1143,8 @@ fun prove_store_access_specs refs_manip_list
         in th end
 
         (* length *)
-        val length_thm = ISPECL[name_v, loc, TYPE, EXN_TYPE, H_part, get_arr] EvalM_F_Marray_length
+        val length_thm = (ISPECL[name_v, loc, TYPE, EXN_TYPE, H_part, get_arr] EvalM_F_Marray_length)
+                        handle HOL_ERR _ => (print "LINE 1113"; failwith "sadsada")
         val length_thm = rewrite_thm length_thm
 
         val thm_name = name ^"_length_thm"
@@ -1092,13 +1164,15 @@ fun prove_store_access_specs refs_manip_list
 
         val sub_thm =
           if usesSubscript then let
-            val th = ISPECL[name_v,loc,TYPE,EXN_TYPE,H_part,get_arr,sub_exn]
-                            EvalM_F_Marray_sub_subscript |> SPEC_ALL
+            val th = (ISPECL[name_v,loc,TYPE,EXN_TYPE,H_part,get_arr,sub_exn]
+                            EvalM_F_Marray_sub_subscript |> SPEC_ALL)
+                              handle HOL_ERR _ => (print "LINE 1135"; failwith "sadsada")
             val th = MP th subscript_eval |> UNDISCH |> UNDISCH |> rewrite_thm
           in th end
           else let
-            val th = ISPECL[name_v,loc,TYPE,EXN_TYPE,H_part,get_arr,sub_exn,sub_rexp]
-                            EvalM_F_Marray_sub_handle |> SPEC_ALL
+            val th = (ISPECL[name_v,loc,TYPE,EXN_TYPE,H_part,get_arr,sub_exn,sub_rexp]
+                            EvalM_F_Marray_sub_handle |> SPEC_ALL)
+                              handle HOL_ERR _ => (print "LINE 1141"; failwith "sadsada")
             val th = rewrite_thm th |> UNDISCH |> UNDISCH |> UNDISCH
             val th = MP th Eval_sub_rexp
           in th end
@@ -1121,16 +1195,18 @@ fun prove_store_access_specs refs_manip_list
         val update_thm =
           if usesSubscript then let
             val th =
-              ISPECL[name_v,loc,TYPE,EXN_TYPE,H_part,get_arr,set_arr,update_exn]
-                      EvalM_F_Marray_update_subscript
+              (ISPECL[name_v,loc,TYPE,EXN_TYPE,H_part,get_arr,set_arr,update_exn]
+                      EvalM_F_Marray_update_subscript)
+                handle HOL_ERR _ => (print "LINE 1166"; failwith "sadsada")
             val th = SPEC_ALL th |> UNDISCH |> UNDISCH
             val th = MP th subscript_eval |> remove_assumption
                         |> remove_assumption |> UNDISCH_ALL
           in rewrite_thm th end
           else let
             val th =
-              ISPECL[name_v,loc,TYPE,EXN_TYPE,H_part,get_arr,set_arr,
-                     update_exn,update_rexp] EvalM_F_Marray_update_handle
+              (ISPECL[name_v,loc,TYPE,EXN_TYPE,H_part,get_arr,set_arr,
+                     update_exn,update_rexp] EvalM_F_Marray_update_handle)
+                handle HOL_ERR _ => (print "LINE 1175"; failwith "sadsada")
             val th = SPEC_ALL th |> UNDISCH |> UNDISCH
             val th = remove_assumption th |> remove_assumption
             val th = UNDISCH th
@@ -1191,14 +1267,14 @@ fun translate_dynamic_init_fixed_store refs_manip_list
                             rarrays_manip_list
                             farrays_manip_list
 
-    val refs_manip_list = find_refs_access_functions refs_manip_list
+    val refs_manip_list = (find_refs_access_functions refs_manip_list) handle HOL_ERR _ => (print "LINE 1203"; failwith "hello")
     val rarrays_manip_list = find_rarrays_access_functions rarrays_manip_list
     val farrays_manip_list = find_farrays_access_functions farrays_manip_list
     val extra_hprop = NONE
     (*
       val refs_manip_list = []
     *)
-    val store_X_hprop_def = create_store_X_hprop refs_manip_list
+    val store_X_hprop_def = (create_store_X_hprop refs_manip_list
                                                  refs_locs
                                                  rarrays_manip_list
                                                  rarrays_refs_locs
@@ -1207,7 +1283,8 @@ fun translate_dynamic_init_fixed_store refs_manip_list
                                                  state_type
                                                  store_hprop_name
                                                  store_pinv_def_opt
-                                                 extra_hprop
+                                                 extra_hprop)
+                                                 handle HOL_ERR _ => (print "LINE 1220"; failwith "hello")
     (*
       val store_X_hprop_def = store_hprop_def
     *)
@@ -1223,7 +1300,7 @@ fun translate_dynamic_init_fixed_store refs_manip_list
     val (refs_access_thms, rarrays_access_thms, farrays_access_thms) = it
     *)
     val (refs_access_thms, rarrays_access_thms, farrays_access_thms) =
-      prove_store_access_specs refs_manip_list
+      (prove_store_access_specs refs_manip_list
                                rarrays_manip_list
                                farrays_manip_list
                                refs_locs_defs
@@ -1233,7 +1310,7 @@ fun translate_dynamic_init_fixed_store refs_manip_list
                                state_type
                                exn_ri_def
                                store_pinv_def_opt
-                               extra_hprop
+                               extra_hprop) handle HOL_ERR _ => (print "LINE 1246"; failwith "hello")
 in
     {store_pred_def = store_X_hprop_def,
      refs_specs = refs_access_thms,

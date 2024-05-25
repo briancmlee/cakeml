@@ -1,0 +1,66 @@
+
+structure Result =
+  struct
+    datatype 'a t = Ok 'a | Error exn;
+
+    fun return v = Ok v;
+
+    fun of_exn exn = Error exn;
+
+    fun bind result f = case result of
+      Error exn => Error exn
+    | Ok v => (f v) handle exn => Error exn;
+
+    fun map result f = case result of
+      Error exn => Error exn
+    | Ok v => (Ok (f v)) handle exn => Error exn;
+
+    fun try_with f = (Ok (f ())) handle exn => Error exn;
+
+    fun ok_exn result = case result of
+      Error exn => raise exn
+    | Ok v => v;
+
+    fun iter result f = case result of
+      Error _ => ()
+    | Ok v => f v;
+
+    fun iter_exn result f = case result of
+      Error exn => f exn
+    | Ok _ => ();
+  end;
+
+structure Promise =
+  struct
+    datatype 'a state = Pending (('a -> unit) list) | Resolved ('a Result.t);
+    datatype 'a t = Promise ('a state ref);
+    datatype 'a u = Resolver ('a Result.t -> unit);
+
+    fun return value = Promise (Ref (Resolved (Result.return value)));
+    fun poll (Promise (Ref state)) = case state of
+      Resolved result => Some result
+    | Pending _ => None;
+
+    fun wait () =
+      let val cell = Ref (Pending [])
+          val t = Promise cell
+          val u = Resolver (fn result => cell := Resolved result)
+      in
+        (t, u)
+      end;
+
+    fun wakeup_result (Resolver u) result = u result;
+
+    fun wakeup u value = wakeup_result u (Result.return value);
+
+    fun wakeup_exn u exn = wakeup_result u (Result.of_exn exn);
+
+    fun on_success (Promise t) f = case !t of
+      Resolved result => Result.iter result f
+    | Pending callbacks => t := Pending (f :: callbacks);
+
+    fun on_failure (Promise t) f = case !t of
+      Resolved result => Result.iter_exn result f
+    | Pending callbacks =>
+        t := Pending (fn _ => f exn :: callbacks);
+  end;

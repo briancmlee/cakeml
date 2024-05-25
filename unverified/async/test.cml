@@ -1,0 +1,14 @@
+
+
+
+
+structure Promise =
+  struct
+    fun catch f h =
+      let val p1 = Result.try_with f
+      in
+        case p1 of
+          Result.Ok v => v
+        | Result.Error exn => try_with (fun () -> h exn)
+      end;
+  end;

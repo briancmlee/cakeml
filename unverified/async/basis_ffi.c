@@ -171,7 +171,7 @@ struct timeval byte8_to_timeval(ffi_timeval *b){
   return tv;
 }
 
-void ffiget_now_milliseconds (unsigned char *c, long clen, unsigned char *a, long alen) {
+void ffinow (unsigned char *c, long clen, unsigned char *a, long alen) {
   assert(alen >= 9);
   struct timeval tv;
   if (gettimeofday(&tv, NULL) == 0) {
@@ -318,7 +318,7 @@ void ffiset_fd_non_blocking (unsigned char *c, long clen, unsigned char *a, long
   a[0] = 0;
 }
 
-/*  
+/*
  * open_listenfd - Open and return a listening socket on port. This
  *     function is reentrant and protocol-independent.
  *
@@ -339,7 +339,7 @@ int open_listenfd(char *port) {
   /* Walk the list for one that we can bind to */
   for (p = listp; p; p = p->ai_next) {
     /* Create a socket descriptor */
-    if ((listenfd = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) < 0) 
+    if ((listenfd = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) < 0)
       continue;  /* Socket failed, try the next */
 
     /* Eliminates "Address already in use" error from bind */

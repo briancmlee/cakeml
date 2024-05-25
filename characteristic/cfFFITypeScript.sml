@@ -17,6 +17,7 @@ This file defines a type that behaves like the following one:
       | Stream (num llist)
       | Fun (ffi_inner -> ffi)
       | Inner ffi_inner
+      | Option (ffi option)
 
   ffi_inner = iStr string
             | iNum num
@@ -67,6 +68,15 @@ val List_def = zDefine `
                     case n of
                     | iCons (iNum k) m => ffi_app (EL k xs) m
                     | _ => iNum 0)`
+
+Definition Option_def[nocompute]:
+  ((Option (x: ffi option)):ffi) =
+  FFI_TYPE (\n. if n = iNum 0 then iNum 7
+                else if n = iNum 1 then (if (IS_SOME x) then (iNum 1) else (iNum 0))
+                else case n of
+                | iCons (iNum 1) m => ffi_app (THE x) m
+                | _ => iNum 0)
+End
 
 val Stream_def = zDefine `
   ((Stream i):ffi) =
@@ -121,6 +131,17 @@ Proof
   \\ fs [ffi_app_def]
 QED
 
+Theorem Option_11[simp]:
+  ∀x y. Option x = Option y ⇔ x = y
+Proof
+  fs [Option_def,FUN_EQ_THM] \\ rw[]
+  >- (eq_tac \\ rw[] \\ fs[IS_SOME_EXISTS,THE_DEF] \\
+      Cases_on ‘x'’ \\ Cases_on ‘x''’ \\ fs [FUN_EQ_THM] \\ rw [] \\
+      first_x_assum (qspec_then ‘iCons (iNum 1) x'’ mp_tac) \\
+      rw[ffi_app_def]) \\
+  NTAC 3 (gs[IS_SOME_DEF,IS_SOME_EXISTS] \\ qexists ‘iNum 1’ \\ rw[])
+QED
+
 Theorem Stream_11[simp]:
    !n1 n2. Stream n1 = Stream n2 <=> n1 = n2
 Proof
@@ -148,8 +169,8 @@ QED
 (* distinctness *)
 
 val ffi_distinct = prove(
-  ``ALL_DISTINCT [Num n; Str s; Cons x y; List l; Stream ll; Fun f; Inner i]``,
-  rw [] \\ fs [Num_def,Str_def,Cons_def,List_def,Stream_def,
+  ``ALL_DISTINCT [Num n; Str s; Cons x y; List l; Option v; Stream ll; Fun f; Inner i]``,
+  rw [] \\ fs [Num_def,Str_def,Cons_def,List_def,Option_def,Stream_def,
                Fun_def,Inner_def,FUN_EQ_THM]
   \\ qexists_tac `iNum 0` \\ fs [])
   |> SIMP_RULE std_ss [ALL_DISTINCT,MEM,GSYM CONJ_ASSOC] |> GEN_ALL
@@ -163,12 +184,13 @@ val destNum_def = new_specification("destNum_def",["destNum"],prove(``
     (!s. destNum (Str s) = NONE) /\
     (!x y. destNum (Cons x y) = NONE) /\
     (!l. destNum (List l) = NONE) /\
+    (!v. destNum (Option v) = NONE) /\
     (!ll. destNum (Stream ll) = NONE) /\
     (!f. destNum (Fun f) = NONE) /\
     (!i. destNum (Inner i) = NONE)``,
   qexists_tac `(\f. if ffi_app f (iNum 0) = iNum 0
                     then SOME (@n. Num n = f) else NONE)`
-  \\ rw [] \\ fs [Num_def,Str_def,Cons_def,List_def,Inner_def,
+  \\ rw [] \\ fs [Num_def,Str_def,Cons_def,List_def,Option_def,Inner_def,
                   Stream_def,Fun_def,ffi_app_def]));
 val _ = export_rewrites ["destNum_def"];
 
@@ -178,12 +200,13 @@ val destStr_def = new_specification("destStr_def",["destStr"],prove(``
     (!s. destStr (Str s) = SOME s) /\
     (!x y. destStr (Cons x y) = NONE) /\
     (!l. destStr (List l) = NONE) /\
+    (!v. destStr (Option v) = NONE) /\
     (!ll. destStr (Stream ll) = NONE) /\
     (!f. destStr (Fun f) = NONE) /\
     (!i. destStr (Inner i) = NONE)``,
   qexists_tac `(\f. if ffi_app f (iNum 0) = iNum 1
                     then SOME (@n. Str n = f) else NONE)`
-  \\ rw [] \\ fs [Num_def,Str_def,Cons_def,List_def,Inner_def,
+  \\ rw [] \\ fs [Num_def,Str_def,Cons_def,List_def,Option_def,Inner_def,
                   Stream_def,Fun_def,ffi_app_def]));
 val _ = export_rewrites ["destStr_def"];
 
@@ -199,12 +222,13 @@ val destCons_def = new_specification("destCons_def",["destCons"],prove(``
     (!s. destCons (Str s) = NONE) /\
     (!x y. destCons (Cons x y) = SOME (x,y)) /\
     (!l. destCons (List l) = NONE) /\
+    (!v. destCons (Option v) = NONE) /\
     (!ll. destCons (Stream ll) = NONE) /\
     (!f. destCons (Fun f) = NONE) /\
     (!i. destCons (Inner i) = NONE)``,
   qexists_tac `(\f. if ffi_app f (iNum 0) = iNum 2
                     then SOME (@n. Cons (FST n) (SND n) = f) else NONE)`
-  \\ rw [] \\ fs [Num_def,Str_def,Cons_def,List_def,Inner_def,
+  \\ rw [] \\ fs [Num_def,Str_def,Cons_def,List_def,Option_def,Inner_def,
                   Stream_def,Fun_def,ffi_app_def]
   \\ `!n. FST n = x ∧ SND n = y <=> n = (x,y)` by fs [FORALL_PROD]
   \\ asm_rewrite_tac [] \\ fs []));
@@ -216,14 +240,32 @@ val destList_def = new_specification("destList_def",["destList"],prove(``
     (!s. destList (Str s) = NONE) /\
     (!x y. destList (Cons x y) = NONE) /\
     (!l. destList (List l) = SOME l) /\
+    (!v. destList (Option v) = NONE) /\
     (!ll. destList (Stream ll) = NONE) /\
     (!f. destList (Fun f) = NONE) /\
     (!i. destList (Inner i) = NONE)``,
   qexists_tac `(\f. if ffi_app f (iNum 0) = iNum 3
                     then SOME (@n. List n = f) else NONE)`
-  \\ rw [] \\ fs [Num_def,Str_def,Cons_def,List_def,Inner_def,
+  \\ rw [] \\ fs [Num_def,Str_def,Cons_def,List_def,Option_def,Inner_def,
                   Stream_def,Fun_def,ffi_app_def]));
 val _ = export_rewrites ["destList_def"];
+
+val destOption_def = new_specification("destOption_def",["destOption"],prove(``
+  ?destOption.
+    (!n. destOption (Num n) = NONE) /\
+    (!s. destOption (Str s) = NONE) /\
+    (!x y. destOption (Cons x y) = NONE) /\
+    (!l. destOption (List l) = NONE) /\
+    (!v. destOption (Option v) = SOME v) /\
+    (!ll. destOption (Stream ll) = NONE) /\
+    (!f. destOption (Fun f) = NONE) /\
+    (!i. destOption (Inner i) = NONE)``,
+  qexists_tac `(\f. if ffi_app f (iNum 0) = iNum 7
+                    then SOME (@n. Option n = f) else NONE)`
+  \\ rw [] \\ fs [Num_def,Str_def,Cons_def,List_def,Option_def,Inner_def,
+                  Stream_def,Fun_def,ffi_app_def]));
+val _ = export_rewrites ["destOption_def"];
+
 
 val destStream_def = new_specification("destStream_def",["destStream"],prove(``
   ?destStream.
@@ -231,12 +273,13 @@ val destStream_def = new_specification("destStream_def",["destStream"],prove(``
     (!s. destStream (Str s) = NONE) /\
     (!x y. destStream (Cons x y) = NONE) /\
     (!l. destStream (List l) = NONE) /\
+    (!v. destStream (Option v) = NONE) /\
     (!ll. destStream (Stream ll) = SOME ll) /\
     (!f. destStream (Fun f) = NONE) /\
     (!i. destStream (Inner i) = NONE)``,
   qexists_tac `(\f. if ffi_app f (iNum 0) = iNum 4
                     then SOME (@n. Stream n = f) else NONE)`
-  \\ rw [] \\ fs [Num_def,Str_def,Cons_def,List_def,Inner_def,
+  \\ rw [] \\ fs [Num_def,Str_def,Cons_def,List_def,Option_def,Inner_def,
                   Stream_def,Fun_def,ffi_app_def]));
 val _ = export_rewrites ["destStream_def"];
 
@@ -246,12 +289,13 @@ val destFun_def = new_specification("destFun_def",["destFun"],prove(``
     (!s. destFun (Str s) = NONE) /\
     (!x y. destFun (Cons x y) = NONE) /\
     (!l. destFun (List l) = NONE) /\
+    (!v. destFun (Option v) = NONE) /\
     (!ll. destFun (Stream ll) = NONE) /\
     (!f. destFun (Fun f) = SOME f) /\
     (!i. destFun (Inner i) = NONE)``,
   qexists_tac `(\f. if ffi_app f (iNum 0) = iNum 5
                     then SOME (@n. Fun n = f) else NONE)`
-  \\ rw [] \\ fs [Num_def,Str_def,Cons_def,List_def,Inner_def,
+  \\ rw [] \\ fs [Num_def,Str_def,Cons_def,List_def,Option_def,Inner_def,
                   Stream_def,Fun_def,ffi_app_def]));
 val _ = export_rewrites ["destFun_def"];
 
@@ -261,12 +305,13 @@ val destInner_def = new_specification("destInner_def",["destInner"],prove(``
     (!s. destInner (Str s) = NONE) /\
     (!x y. destInner (Cons x y) = NONE) /\
     (!l. destInner (List l) = NONE) /\
+    (!v. destInner (Option v) = NONE) /\
     (!ll. destInner (Stream ll) = NONE) /\
     (!f. destInner (Fun f) = NONE) /\
     (!i. destInner (Inner i) = SOME i)``,
   qexists_tac `(\f. if ffi_app f (iNum 0) = iNum 6
                     then SOME (@n. Inner n = f) else NONE)`
-  \\ rw [] \\ fs [Num_def,Str_def,Cons_def,List_def,Inner_def,
+  \\ rw [] \\ fs [Num_def,Str_def,Cons_def,List_def,Option_def,Inner_def,
                   Stream_def,Fun_def,ffi_app_def]));
 val _ = export_rewrites ["destInner_def"];
 
@@ -277,7 +322,7 @@ val _ = export_rewrites ["dest_iStr_def"];
 (* clean up *)
 
 val _ = map delete_binding ["ffi_app_def","Num_def","Str_def",
-          "Cons_def","List_def","Stream_def","Fun_def","Inner_def"];
+          "Cons_def","List_def","Option_def","Stream_def","Fun_def","Inner_def"];
 
 val _ = delete_const "ffi_app";
 

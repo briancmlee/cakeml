@@ -54,8 +54,8 @@ val basis_ffi_oracle_def = Define `
                     | SOME(FFIreturn bytes ()) => Oracle_return (cls,fs,ts) bytes
                     | SOME(FFIdiverge) => Oracle_final FFI_diverged
                     | NONE => Oracle_final FFI_failed else
-                    if name = ExtCall "get_now_milliseconds" then
-                      case ffi_get_now_milliseconds conf bytes ts of
+                    if name = ExtCall "now" then
+                      case ffi_now conf bytes ts of
                       | SOME(FFIreturn bytes ts) => Oracle_return (cls,fs,ts) bytes
                       | _ => Oracle_final FFI_failed else
                       Oracle_final FFI_failed`
@@ -620,7 +620,7 @@ val basis_ffi_length_thms = save_thm("basis_ffi_length_thms",
     [ffi_write_length,ffi_read_length,ffi_open_in_length,ffi_open_out_length,
      ffi_close_length, clFFITheory.ffi_get_arg_count_length,
      clFFITheory.ffi_get_arg_length_length,  clFFITheory.ffi_get_arg_length,
-     ffi_exit_length, ffi_get_now_milliseconds_length]);
+     ffi_exit_length, ffi_now_length]);
 
 val basis_ffi_part_defs = save_thm("basis_ffi_part_defs",
   LIST_CONJ
@@ -678,9 +678,9 @@ Proof
 QED
 
 Theorem ts_ffi_no_ffi_div:
-  ffi_get_now_milliseconds conf bytes ts = SOME FFIdiverge ⇒ F
+  ffi_now conf bytes ts = SOME FFIdiverge ⇒ F
 Proof
-  rw[ffi_get_now_milliseconds_def,OPTION_GUARD_COND,OPTION_CHOICE_EQUALS_OPTION,ELIM_UNCURRY]
+  rw[ffi_now_def,OPTION_GUARD_COND,OPTION_CHOICE_EQUALS_OPTION,ELIM_UNCURRY]
 QED
 
 Theorem oracle_parts_div:

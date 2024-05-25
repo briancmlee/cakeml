@@ -159,19 +159,19 @@ void set_bit(unsigned char *c, long clen, int index, int value) {
 typedef unsigned char ffi_timeval[8];
 
 void timeval_to_byte8(struct timeval *tv, ffi_timeval *b){
-  int64_t milliseconds = (int64_t)tv->tv_sec * 1000 + (int64_t)tv->tv_usec / 1000;
-  int64_to_byte8(milliseconds, (unsigned char *) b);
+  int64_t microseconds = (int64_t)tv->tv_sec * 1000000 + (int64_t)tv->tv_usec;
+  int64_to_byte8(microseconds, (unsigned char *) b);
 }
 
 struct timeval byte8_to_timeval(ffi_timeval *b){
   struct timeval tv;
-  int64_t milliseconds = byte8_to_int64((unsigned char *) b);
-  tv.tv_sec = milliseconds / 1000;
-  tv.tv_usec = (milliseconds % 1000) * 1000;
+  int64_t microseconds = byte8_to_int64((unsigned char *) b);
+  tv.tv_sec = microseconds / 1000000;
+  tv.tv_usec = microseconds % 1000000;
   return tv;
 }
 
-void ffiget_now_milliseconds (unsigned char *c, long clen, unsigned char *a, long alen) {
+void ffinow (unsigned char *c, long clen, unsigned char *a, long alen) {
   assert(alen >= 9);
   struct timeval tv;
   if (gettimeofday(&tv, NULL) == 0) {

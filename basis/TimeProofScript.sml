@@ -37,45 +37,66 @@ QED
 val eq_v_thm = fetch "mlbasicsProg" "eq_v_thm"
 val eq_word8_v_thm = MATCH_MP (DISCH_ALL eq_v_thm) (EqualityType_NUM_BOOL |> cj 4) |> INST_TYPE [“:'a” |-> “:8”]
 
-Theorem nowMilliseconds_spec:
-  ∀t ds uv.
-     t' = Num (int_max (&t + ds 0) 0) ⇒
-     UNIT_TYPE () uv ⇒
-     t' DIV 1000 ≤ 256**8 - 1 ⇒
-     app (p:'ffi ffi_proj) Time_nowMilliseconds_v [uv]
-         (TIME <| latest_time := t; microseconds_elapsed := ds |>)
-         (POSTv v. &NUM (t' DIV 1000) v *
-          TIME <| latest_time := t'; microseconds_elapsed := (\n. ds (n+1)) |>)
-Proof
-  xcf_with_def "Time.nowMilliseconds" Time_nowMilliseconds_v_def \\
-  xmatch \\
-  gs[UNIT_TYPE_def] \\
-  reverse conj_tac >- (EVAL_TAC \\ simp[]) \\
-  xlet_auto >- xsimpl \\
-  xlet_auto >- xsimpl \\
-  rename [‘W8ARRAY bv (REPLICATE 9 0w)’] \\
-  xlet ‘POSTv uv. &UNIT_TYPE () uv * W8ARRAY bv (0w :: n2w8 (t' DIV 1000)) *
-        TIME <| latest_time := t'; microseconds_elapsed := (\n. ds (n+1))|>’
-  >- (qpat_abbrev_tac `Q = $POSTv _` >>
-      simp [ts_ffi_part_def, TIME_def, IOx_def, IO_def] >>
-      xpull >> qunabbrev_tac `Q` >>
-      xffi \\ xsimpl \\
-      simp[TIME_def,IOx_def,ts_ffi_part_def,mk_ffi_next_def,IO_def] \\
-      qmatch_goalsub_abbrev_tac `FFI_part st f ns` \\
-      CONV_TAC(RESORT_EXISTS_CONV List.rev) \\
-      map_every qexists_tac[‘events’, ‘ns’, ‘f’, ‘st’] \\
-      simp[Abbr‘f’,Abbr‘st’,Abbr‘ns’,mk_ffi_next_def,ffi_get_now_milliseconds_def,getNowMilliseconds_def] \\ xsimpl \\
-      qpat_abbrev_tac ‘new_events = events ++ _’ \\
-      qexists ‘new_events’ \\ xsimpl) \\
-  xlet_auto >- xsimpl \\
-  xlet_auto >- (xsimpl \\ map_every qexists_tac [‘t’, ‘d’] \\ fs[]) \\
-  xlet ‘POSTv boolv. W8ARRAY bv (0w::n2w8 (t' DIV 1000)) * TIME  <|latest_time := t'; microseconds_elapsed := (\n. ds (n+1)) |> * &BOOL T boolv’
-  >- (xapp_spec eq_word8_v_thm \\ xsimpl \\ fs[BOOL_def] \\ metis_tac []) \\
-  xif \\ qexists ‘T’ \\ fs[] \\
-  xapp \\ xsimpl \\ fs[LENGTH_n2w8] \\
-  qpat_abbrev_tac ‘new_latest_time = (Num (int_max _ _)) DIV 1000’ \\
-  fs[n2w8_def] \\ qspec_then ‘new_latest_time’ mp_tac n2w8_def \\
-  simp[] \\ DISCH_THEN (SUBST1_TAC o SYM) \\ simp[w82n_n2w8]
-QED
+(* Theorem getNow_spec: *)
+(*   ∀t ds uv. *)
+(*      t' = Num (int_max (&t + THE(ds 0)) 0) ⇒ *)
+(*      UNIT_TYPE () uv ⇒ *)
+(*      t' ≤ 256**8 - 1 ⇒ *)
+(*      app (p:'ffi ffi_proj) Time_getNow_v [uv] *)
+(*          (TIME <| latest_time := t; microseconds_elapsed := ds |>) *)
+(*          (POSTv v. &NUM t' v * *)
+(*           TIME <| latest_time := t'; microseconds_elapsed := ds o SUC |>) *)
+(* Proof *)
+(*   xcf_with_def "Time.getNow" Time_getNow_v_def \\ *)
+(*   xmatch \\ *)
+(*   gs[UNIT_TYPE_def] \\ *)
+(*   reverse conj_tac >- (EVAL_TAC \\ simp[]) \\ *)
+(*   xlet_auto >- xsimpl \\ *)
+(*   xlet_auto >- xsimpl \\ *)
+(*   rename [‘W8ARRAY bv (REPLICATE 9 0w)’] \\ *)
+(*   xlet ‘POSTv uv. &UNIT_TYPE () uv * W8ARRAY bv (0w :: n2w8 t') * *)
+(*         TIME <| latest_time := t'; microseconds_elapsed := (\n. ds (n+1))|>’ *)
+(*   >- (qpat_abbrev_tac `Q = $POSTv _` >> *)
+(*       simp [ts_ffi_part_def, TIME_def, IOx_def, IO_def] >> *)
+(*       xpull >> qunabbrev_tac `Q` >> *)
+(*       xffi \\ xsimpl \\ *)
+(*       simp[TIME_def,IOx_def,ts_ffi_part_def,mk_ffi_next_def,IO_def] \\ *)
+(*       qmatch_goalsub_abbrev_tac `FFI_part st f ns` \\ *)
+(*       CONV_TAC(RESORT_EXISTS_CONV List.rev) \\ *)
+(*       map_every qexists_tac[‘events’, ‘ns’, ‘f’, ‘st’] \\ *)
+(*       simp[Abbr‘f’,Abbr‘st’,Abbr‘ns’,mk_ffi_next_def,ffi_now_def,getNow_def] \\ xsimpl \\ *)
+(*       qpat_abbrev_tac ‘new_events = events ++ _’ \\ *)
+(*       qexists ‘new_events’ \\ xsimpl) \\ *)
+(*   xlet_auto >- xsimpl \\ *)
+(*   xlet_auto >- (xsimpl \\ map_every qexists_tac [‘t’, ‘d’] \\ fs[]) \\ *)
+(*   xlet ‘POSTv boolv. W8ARRAY bv (0w::n2w8 t') * TIME  <|latest_time := t'; microseconds_elapsed := (\n. ds (n+1)) |> * &BOOL T boolv’ *)
+(*   >- (xapp_spec eq_word8_v_thm \\ xsimpl \\ fs[BOOL_def] \\ metis_tac []) \\ *)
+(*   xif \\ qexists ‘T’ \\ fs[] \\ *)
+(*   xapp \\ xsimpl \\ fs[LENGTH_n2w8] \\ *)
+(*   qpat_abbrev_tac ‘new_latest_time = Num (int_max _ _)’ \\ *)
+(*   fs[n2w8_def] \\ qspec_then ‘new_latest_time’ mp_tac n2w8_def \\ *)
+(*   simp[] \\ DISCH_THEN (SUBST1_TAC o SYM) \\ simp[w82n_n2w8] *)
+(* QED *)
+
+(* Theorem now_spec: *)
+(*   ∀t ds uv. *)
+(*   t' = Num (int_max (&t + ds 0) 0) ⇒ *)
+(*   UNIT_TYPE () uv ⇒ *)
+(*   t' ≤ 256**8 - 1 ⇒ *)
+(*   app (p:'ffi ffi_proj) Time_now_v [uv] *)
+(*       (TIME <| latest_time := t; microseconds_elapsed := ds |>) *)
+(*       (POSTv v. &TIME_TYPE (Time &t') v * *)
+(*        TIME <| latest_time := t'; microseconds_elapsed := ds o SUC |>) *)
+(* Proof *)
+(*   xcf_with_def "Time.now" Time_now_v_def \\ *)
+(*   xmatch \\ *)
+(*   gs[UNIT_TYPE_def] \\ *)
+(*   reverse conj_tac >- (EVAL_TAC \\ simp[]) \\ *)
+(*   xlet_auto >- (xcon \\ xsimpl) \\ *)
+(*   xlet_auto >- xsimpl \\ *)
+(*   xapp \\ xsimpl \\ fs[fromMicroseconds_def] \\ rw[] \\ *)
+(*   qabbrev_tac ‘t' = Num (int_max (&t + ds 0) 0)’ \\ *)
+(*   qexists ‘&t'’ \\ rw[] \\ gs[NUM_def] *)
+(* QED *)
 
 val _ = export_theory();

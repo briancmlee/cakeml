@@ -1,0 +1,464 @@
+[
+  {
+    "name": "Msub_Success",
+    "statement": "∀ l n e x . (Msub e n l = M_success x) ⇔ n < LENGTH l ∧ (x = EL n l)",
+    "file": "/Users/brian/Programming/cakeml/translator/monadic/examples/poly_refScript.sml",
+    "line": 82,
+    "type": "Theorem"
+  },
+  {
+    "name": "Mupdate_Success",
+    "statement": "∀ l n x e res . (Mupdate e x n l = M_success res)\n  ⇔ (n < LENGTH l ∧ (res = LUPDATE x n l))",
+    "file": "/Users/brian/Programming/cakeml/translator/monadic/examples/poly_refScript.sml",
+    "line": 93,
+    "type": "Theorem"
+  },
+  {
+    "name": "strict_weak_order_alt",
+    "statement": "∀ r . strict_weak_order r ⇔\n    (∀ x y. r x y ⇒ ¬ r y x) ∧\n    transitive (λ x y. ¬ r y x)",
+    "file": "/Users/brian/Programming/cakeml/translator/monadic/examples/poly_refScript.sml",
+    "line": 131,
+    "type": "Theorem"
+  },
+  {
+    "name": "strict_weak_order_irreflexive",
+    "statement": "∀ r . strict_weak_order r ⇒ irreflexive r",
+    "file": "/Users/brian/Programming/cakeml/translator/monadic/examples/poly_refScript.sml",
+    "line": 140,
+    "type": "Theorem"
+  },
+  {
+    "name": "TAKE_LUPDATE_LAST",
+    "statement": "∀ n l new . n < LENGTH l ⇒\n    (TAKE (n + 1) (LUPDATE new n l) = TAKE n l ++ [new])",
+    "file": "/Users/brian/Programming/cakeml/translator/monadic/examples/poly_refScript.sml",
+    "line": 148,
+    "type": "Theorem"
+  },
+  {
+    "name": "PERM_SWAP_FIRST_LAST",
+    "statement": "∀ middle a b . PERM ([a] ++ middle ++ [b]) ([b] ++ middle ++ [a])",
+    "file": "/Users/brian/Programming/cakeml/translator/monadic/examples/poly_refScript.sml",
+    "line": 156,
+    "type": "Theorem"
+  },
+  {
+    "name": "drop_take",
+    "statement": "∀ l n m . n ≤ m ∧ m ≤ LENGTH l ⇒\n        (DROP n (TAKE m l) = TAKE (m - n) (DROP n l))",
+    "file": "/Users/brian/Programming/cakeml/translator/monadic/examples/poly_refScript.sml",
+    "line": 170,
+    "type": "Theorem"
+  },
+  {
+    "name": "PERM_LUPDATE_SWAP",
+    "statement": "∀ l1 l2 n1 n2 .\n    n1 < LENGTH l1 ∧ n2 < LENGTH l1 ∧ n1 ≤ n2 ⇒\n    (PERM l1 l2 ⇔ PERM (LUPDATE (EL n1 l1) n2 (LUPDATE (EL n2 l1) n1 l1)) l2)",
+    "file": "/Users/brian/Programming/cakeml/translator/monadic/examples/poly_refScript.sml",
+    "line": 178,
+    "type": "Theorem"
+  },
+  {
+    "name": "LAST_TAKE",
+    "statement": "∀ l n . n < LENGTH l ∧ n ≠ 0 ⇒\n    (LAST (TAKE n l) = EL (n - 1) l)",
+    "file": "/Users/brian/Programming/cakeml/translator/monadic/examples/poly_refScript.sml",
+    "line": 252,
+    "type": "Theorem"
+  },
+  {
+    "name": "PERM_narrow_lemma",
+    "statement": "∀ n m l l' .\n    n ≤ m ∧ m ≤ LENGTH l ∧\n    (∀ k . k < n ⇒ (EL k l = EL k l')) ∧\n    (∀ k . k ≥ m ∧ k < LENGTH l ⇒ (EL k l = EL k l')) ∧\n    PERM l l'\n  ⇒ PERM (DROP n (TAKE m l)) (DROP n (TAKE m l'))",
+    "file": "/Users/brian/Programming/cakeml/translator/monadic/examples/poly_refScript.sml",
+    "line": 264,
+    "type": "Theorem"
+  },
+  {
+    "name": "PERM_narrow_EL",
+    "statement": "∀ n m l l' .\n    n ≤ m ∧ m ≤ LENGTH l ∧\n    (∀ k . k < n ⇒ (EL k l = EL k l')) ∧\n    (∀ k . k ≥ m ∧ k < LENGTH l ⇒ (EL k l = EL k l')) ∧\n    PERM l l'\n  ⇒ (∀ k . k ≥ n ∧ k < m ⇒ ∃ k' . k' ≥ n ∧ k' < m ∧ (EL k l = EL k' l'))",
+    "file": "/Users/brian/Programming/cakeml/translator/monadic/examples/poly_refScript.sml",
+    "line": 284,
+    "type": "Theorem"
+  },
+  {
+    "name": "scan_lower_index",
+    "statement": "∀ cmp pivot lb s new_lb s' .\n    (scan_lower cmp pivot lb s = (M_success new_lb, s'))\n  ⇒ lb < LENGTH s.arr ∧ lb ≤ new_lb ∧ new_lb < LENGTH s.arr",
+    "file": "/Users/brian/Programming/cakeml/translator/monadic/examples/poly_refScript.sml",
+    "line": 348,
+    "type": "Theorem"
+  },
+  {
+    "name": "scan_lower_state",
+    "statement": "∀ cmp pivot lb s new_lb s' .\n    (scan_lower cmp pivot lb s = (M_success new_lb, s'))\n  ⇒ (s = s') ∧ ¬ cmp (EL new_lb s.arr) pivot ∧\n    (∀ index . lb ≤ index ∧ index < new_lb ⇒ cmp (EL index s.arr) pivot)",
+    "file": "/Users/brian/Programming/cakeml/translator/monadic/examples/poly_refScript.sml",
+    "line": 364,
+    "type": "Theorem"
+  },
+  {
+    "name": "scan_upper_index",
+    "statement": "∀ cmp pivot ub s new_ub s' .\n    (scan_upper cmp pivot ub s = (M_success new_ub, s'))\n  ⇒ (new_ub < ub ∨ ((new_ub = 0) ∧ (ub = 0))) ∧ new_ub ≤ LENGTH s.arr",
+    "file": "/Users/brian/Programming/cakeml/translator/monadic/examples/poly_refScript.sml",
+    "line": 386,
+    "type": "Theorem"
+  },
+  {
+    "name": "scan_upper_state",
+    "statement": "∀ cmp pivot ub s new_ub s'.\n    (scan_upper cmp pivot ub s = (M_success new_ub, s'))\n  ⇒ (s = s') ∧ (new_ub ≠ 0 ⇒ ¬ cmp pivot (EL new_ub s.arr)) ∧\n    (∀ index . new_ub < index ∧ index < ub ⇒ cmp pivot (EL index s.arr))",
+    "file": "/Users/brian/Programming/cakeml/translator/monadic/examples/poly_refScript.sml",
+    "line": 413,
+    "type": "Theorem"
+  },
+  {
+    "name": "partition_helper_index",
+    "statement": "∀ cmp pivot lb ub s result s'.\n    strict_weak_order cmp ∧\n    ub ≤ LENGTH s.arr ∧ lb < ub ∧\n    (∃ index . index ≥ lb ∧ index < ub ∧ ¬ cmp pivot (EL index s.arr)) ∧\n    (partition_helper cmp pivot lb ub s = (M_success result, s'))\n  ⇒ result ≥ lb ∧ result < ub ∧\n    ¬ (cmp pivot (EL result s'.arr))",
+    "file": "/Users/brian/Programming/cakeml/translator/monadic/examples/poly_refScript.sml",
+    "line": 504,
+    "type": "Theorem"
+  },
+  {
+    "name": "partition_helper_result",
+    "statement": "∀ cmp pivot lb ub s result s' .\n    strict_weak_order cmp ∧\n    ub ≤ LENGTH s.arr ∧\n    (partition_helper cmp pivot lb ub s = (M_success result, s'))\n  ⇒ (∀ k . k > result ∧ k < ub ⇒ ¬ cmp (EL k s'.arr) pivot) ∧\n    (∀ k . k ≥ lb ∧ k < result ⇒ cmp (EL k s'.arr) pivot) ∧\n    (∀ k . k < lb ∨ k ≥ ub ⇒ (EL k s'.arr = EL k s.arr)) ∧\n    (PERM s.arr s'.arr)",
+    "file": "/Users/brian/Programming/cakeml/translator/monadic/examples/poly_refScript.sml",
+    "line": 559,
+    "type": "Theorem"
+  },
+  {
+    "name": "partition_helper_range_shrink_upper",
+    "statement": "∀ cmp pivot lb ub s result s'.\n    strict_weak_order cmp ∧\n    ub ≤ LENGTH s.arr ∧ lb < ub ∧\n    (∃ index . index ≥ lb ∧ index < ub - 1 ∧ (EL index s.arr = pivot)) ∧\n    (partition_helper cmp pivot lb ub s = (M_success result, s'))\n  ⇒ (result ≥ lb ∧ result < ub - 1)",
+    "file": "/Users/brian/Programming/cakeml/translator/monadic/examples/poly_refScript.sml",
+    "line": 630,
+    "type": "Theorem"
+  },
+  {
+    "name": "array_set_aux_Success",
+    "statement": "∀ l n s . (LENGTH (DROP n s.arr) = LENGTH l)\n  ⇒ ∃ result . (array_set_aux n l s = (M_success (), result)) ∧\n    (DROP n result.arr = l) ∧\n    (TAKE n s.arr = TAKE n result.arr) ∧\n    (LENGTH s.arr = LENGTH result.arr)",
+    "file": "/Users/brian/Programming/cakeml/translator/monadic/examples/poly_refScript.sml",
+    "line": 709,
+    "type": "Theorem"
+  },
+  {
+    "name": "array_set_Success",
+    "statement": "∀ l s . (LENGTH l = LENGTH s.arr)\n  ⇒ ∃ s' . (array_set l s = (M_success (), s')) ∧ (s'.arr = l)",
+    "file": "/Users/brian/Programming/cakeml/translator/monadic/examples/poly_refScript.sml",
+    "line": 734,
+    "type": "Theorem"
+  },
+  {
+    "name": "array_get_aux_Success",
+    "statement": "∀ length n s . (LENGTH s.arr = length)\n  ⇒ ∃ result . (array_get_aux length n s = (M_success result, s)) ∧\n    (result = DROP n s.arr)",
+    "file": "/Users/brian/Programming/cakeml/translator/monadic/examples/poly_refScript.sml",
+    "line": 764,
+    "type": "Theorem"
+  },
+  {
+    "name": "array_get_Success",
+    "statement": "∀ s . array_get () s = (M_success s.arr, s)",
+    "file": "/Users/brian/Programming/cakeml/translator/monadic/examples/poly_refScript.sml",
+    "line": 783,
+    "type": "Theorem"
+  },
+  {
+    "name": "quicksort_aux_result",
+    "statement": "∀ cmp lower upper s result s' .\n    upper ≥ lower ∧\n    strict_weak_order cmp ∧ upper < LENGTH s.arr ∧\n    (∃index. index ≥ lower ∧ index < upper + 1 ∧\n      ¬cmp (EL lower s.arr) (EL index s.arr)) ∧\n    (quicksort_aux cmp lower upper s = (M_success result, s'))\n  ⇒ PERM s.arr s'.arr ∧\n    (∀ k . k < lower ⇒ (EL k s.arr = EL k s'.arr)) ∧\n    (∀ k . k > upper ∧ k < LENGTH s.arr ⇒ (EL k s.arr = EL k s'.arr)) ∧\n    SORTED (λ x y . ¬ cmp y x) (DROP lower (TAKE (upper + 1) s'.arr))",
+    "file": "/Users/brian/Programming/cakeml/translator/monadic/examples/poly_refScript.sml",
+    "line": 818,
+    "type": "Theorem"
+  },
+  {
+    "name": "quicksort_result",
+    "statement": "∀ l l' cmp s s' .\n    strict_weak_order cmp ∧\n    (quicksort cmp l s = (M_success l', s'))\n  ⇒ PERM l l' ∧ SORTED (λ x y . ¬ cmp y x) l'",
+    "file": "/Users/brian/Programming/cakeml/translator/monadic/examples/poly_refScript.sml",
+    "line": 1035,
+    "type": "Theorem"
+  },
+  {
+    "name": "scan_lower_Success",
+    "statement": "∀ cmp pivot lb s .\n    strict_weak_order cmp ∧ lb < LENGTH s.arr ∧\n    (∃ index . index ≥ lb ∧ index < LENGTH s.arr ∧ (EL index s.arr = pivot))\n  ⇒ ∃ result s' . (scan_lower cmp pivot lb s = (M_success result, s'))",
+    "file": "/Users/brian/Programming/cakeml/translator/monadic/examples/poly_refScript.sml",
+    "line": 1096,
+    "type": "Theorem"
+  },
+  {
+    "name": "scan_upper_Success",
+    "statement": "∀ cmp pivot ub s .\n    ub ≤ LENGTH s.arr\n  ⇒ ∃ result s' . (scan_upper cmp pivot ub s = (M_success result, s'))",
+    "file": "/Users/brian/Programming/cakeml/translator/monadic/examples/poly_refScript.sml",
+    "line": 1130,
+    "type": "Theorem"
+  },
+  {
+    "name": "partition_helper_Success",
+    "statement": "∀ cmp pivot lb ub s .\n    strict_weak_order cmp ∧\n    ub ≤ LENGTH s.arr ∧\n    (∃ index . index ≥ lb ∧ index < LENGTH s.arr ∧ (EL index s.arr = pivot))\n  ⇒ ∃ result s' . partition_helper cmp pivot lb ub s = (M_success result, s')",
+    "file": "/Users/brian/Programming/cakeml/translator/monadic/examples/poly_refScript.sml",
+    "line": 1155,
+    "type": "Theorem"
+  },
+  {
+    "name": "partition_helper_state_LENGTH",
+    "statement": "∀ cmp pivot lb ub s result s'.\n    (partition_helper cmp pivot lb ub s = (M_success result, s'))\n  ⇒ (LENGTH s'.arr = LENGTH s.arr)",
+    "file": "/Users/brian/Programming/cakeml/translator/monadic/examples/poly_refScript.sml",
+    "line": 1215,
+    "type": "Theorem"
+  },
+  {
+    "name": "quicksort_aux_Success",
+    "statement": "∀ cmp lower upper s .\n    strict_weak_order cmp ∧\n    upper < LENGTH s.arr\n  ⇒ ∃ result s' . (quicksort_aux cmp lower upper s = (M_success result, s')) ∧\n    (LENGTH s'.arr = LENGTH s.arr)",
+    "file": "/Users/brian/Programming/cakeml/translator/monadic/examples/poly_refScript.sml",
+    "line": 1240,
+    "type": "Theorem"
+  },
+  {
+    "name": "quicksort_Success",
+    "statement": "∀ cmp l s .\n    strict_weak_order cmp\n  ⇒ ∃ l' s' . quicksort cmp l s = (M_success l', s')",
+    "file": "/Users/brian/Programming/cakeml/translator/monadic/examples/poly_refScript.sml",
+    "line": 1284,
+    "type": "Theorem"
+  },
+  {
+    "name": "run_quicksort_Success",
+    "statement": "∀ cmp l . strict_weak_order cmp\n  ⇒ ∃ l' .\n    (run_quicksort l cmp = (M_success l')) ∧\n    PERM l l' ∧ SORTED (λ x y . ¬ cmp y x) l'",
+    "file": "/Users/brian/Programming/cakeml/translator/monadic/examples/poly_refScript.sml",
+    "line": 1300,
+    "type": "Theorem"
+  },
+  {
+    "name": "qsort_thm",
+    "statement": "∀ cmp l l' . strict_weak_order cmp ∧ (qsort cmp l = l')\n  ⇒ PERM l l' ∧ SORTED (λ x y . ¬ cmp y x) l'",
+    "file": "/Users/brian/Programming/cakeml/translator/monadic/examples/poly_refScript.sml",
+    "line": 1366,
+    "type": "Theorem"
+  },
+  {
+    "name": "MALOOKUP_def",
+    "statement": "MALOOKUP k =\n  \\s.\n    dtcase s of\n      [] => (M_success NONE, s)\n    | (x,y)::t => if (x = k) then (M_success (SOME y), s) else MALOOKUP k t",
+    "file": "/Users/brian/Programming/cakeml/translator/monadic/examples/poly_refScript.sml",
+    "line": 52,
+    "type": "Definition"
+  },
+  {
+    "name": "monad_syntax_test_def",
+    "statement": "monad_syntax_test =\n  do\n    v <- arr_length;\n    w <<- 3;\n    return (v, w)\n  od",
+    "file": "/Users/brian/Programming/cakeml/translator/monadic/examples/poly_refScript.sml",
+    "line": 60,
+    "type": "Definition"
+  },
+  {
+    "name": "Msub_Success",
+    "statement": "∀ l n e x . (Msub e n l = M_success x) ⇔ n < LENGTH l ∧ (x = EL n l)",
+    "file": "/Users/brian/Programming/cakeml/translator/monadic/examples/poly_array_sortProgScript.sml",
+    "line": 44,
+    "type": "Theorem"
+  },
+  {
+    "name": "Mupdate_Success",
+    "statement": "∀ l n x e res . (Mupdate e x n l = M_success res)\n  ⇔ (n < LENGTH l ∧ (res = LUPDATE x n l))",
+    "file": "/Users/brian/Programming/cakeml/translator/monadic/examples/poly_array_sortProgScript.sml",
+    "line": 55,
+    "type": "Theorem"
+  },
+  {
+    "name": "strict_weak_order_alt",
+    "statement": "∀ r . strict_weak_order r ⇔\n    (∀ x y. r x y ⇒ ¬ r y x) ∧\n    transitive (λ x y. ¬ r y x)",
+    "file": "/Users/brian/Programming/cakeml/translator/monadic/examples/poly_array_sortProgScript.sml",
+    "line": 93,
+    "type": "Theorem"
+  },
+  {
+    "name": "strict_weak_order_irreflexive",
+    "statement": "∀ r . strict_weak_order r ⇒ irreflexive r",
+    "file": "/Users/brian/Programming/cakeml/translator/monadic/examples/poly_array_sortProgScript.sml",
+    "line": 102,
+    "type": "Theorem"
+  },
+  {
+    "name": "TAKE_LUPDATE_LAST",
+    "statement": "∀ n l new . n < LENGTH l ⇒\n    (TAKE (n + 1) (LUPDATE new n l) = TAKE n l ++ [new])",
+    "file": "/Users/brian/Programming/cakeml/translator/monadic/examples/poly_array_sortProgScript.sml",
+    "line": 110,
+    "type": "Theorem"
+  },
+  {
+    "name": "PERM_SWAP_FIRST_LAST",
+    "statement": "∀ middle a b . PERM ([a] ++ middle ++ [b]) ([b] ++ middle ++ [a])",
+    "file": "/Users/brian/Programming/cakeml/translator/monadic/examples/poly_array_sortProgScript.sml",
+    "line": 118,
+    "type": "Theorem"
+  },
+  {
+    "name": "drop_take",
+    "statement": "∀ l n m . n ≤ m ∧ m ≤ LENGTH l ⇒\n        (DROP n (TAKE m l) = TAKE (m - n) (DROP n l))",
+    "file": "/Users/brian/Programming/cakeml/translator/monadic/examples/poly_array_sortProgScript.sml",
+    "line": 132,
+    "type": "Theorem"
+  },
+  {
+    "name": "PERM_LUPDATE_SWAP",
+    "statement": "∀ l1 l2 n1 n2 .\n    n1 < LENGTH l1 ∧ n2 < LENGTH l1 ∧ n1 ≤ n2 ⇒\n    (PERM l1 l2 ⇔ PERM (LUPDATE (EL n1 l1) n2 (LUPDATE (EL n2 l1) n1 l1)) l2)",
+    "file": "/Users/brian/Programming/cakeml/translator/monadic/examples/poly_array_sortProgScript.sml",
+    "line": 140,
+    "type": "Theorem"
+  },
+  {
+    "name": "LAST_TAKE",
+    "statement": "∀ l n . n < LENGTH l ∧ n ≠ 0 ⇒\n    (LAST (TAKE n l) = EL (n - 1) l)",
+    "file": "/Users/brian/Programming/cakeml/translator/monadic/examples/poly_array_sortProgScript.sml",
+    "line": 214,
+    "type": "Theorem"
+  },
+  {
+    "name": "PERM_narrow_lemma",
+    "statement": "∀ n m l l' .\n    n ≤ m ∧ m ≤ LENGTH l ∧\n    (∀ k . k < n ⇒ (EL k l = EL k l')) ∧\n    (∀ k . k ≥ m ∧ k < LENGTH l ⇒ (EL k l = EL k l')) ∧\n    PERM l l'\n  ⇒ PERM (DROP n (TAKE m l)) (DROP n (TAKE m l'))",
+    "file": "/Users/brian/Programming/cakeml/translator/monadic/examples/poly_array_sortProgScript.sml",
+    "line": 226,
+    "type": "Theorem"
+  },
+  {
+    "name": "PERM_narrow_EL",
+    "statement": "∀ n m l l' .\n    n ≤ m ∧ m ≤ LENGTH l ∧\n    (∀ k . k < n ⇒ (EL k l = EL k l')) ∧\n    (∀ k . k ≥ m ∧ k < LENGTH l ⇒ (EL k l = EL k l')) ∧\n    PERM l l'\n  ⇒ (∀ k . k ≥ n ∧ k < m ⇒ ∃ k' . k' ≥ n ∧ k' < m ∧ (EL k l = EL k' l'))",
+    "file": "/Users/brian/Programming/cakeml/translator/monadic/examples/poly_array_sortProgScript.sml",
+    "line": 246,
+    "type": "Theorem"
+  },
+  {
+    "name": "scan_lower_index",
+    "statement": "∀ cmp pivot lb s new_lb s' .\n    (scan_lower cmp pivot lb s = (M_success new_lb, s'))\n  ⇒ lb < LENGTH s.arr ∧ lb ≤ new_lb ∧ new_lb < LENGTH s.arr",
+    "file": "/Users/brian/Programming/cakeml/translator/monadic/examples/poly_array_sortProgScript.sml",
+    "line": 310,
+    "type": "Theorem"
+  },
+  {
+    "name": "scan_lower_state",
+    "statement": "∀ cmp pivot lb s new_lb s' .\n    (scan_lower cmp pivot lb s = (M_success new_lb, s'))\n  ⇒ (s = s') ∧ ¬ cmp (EL new_lb s.arr) pivot ∧\n    (∀ index . lb ≤ index ∧ index < new_lb ⇒ cmp (EL index s.arr) pivot)",
+    "file": "/Users/brian/Programming/cakeml/translator/monadic/examples/poly_array_sortProgScript.sml",
+    "line": 326,
+    "type": "Theorem"
+  },
+  {
+    "name": "scan_upper_index",
+    "statement": "∀ cmp pivot ub s new_ub s' .\n    (scan_upper cmp pivot ub s = (M_success new_ub, s'))\n  ⇒ (new_ub < ub ∨ ((new_ub = 0) ∧ (ub = 0))) ∧ new_ub ≤ LENGTH s.arr",
+    "file": "/Users/brian/Programming/cakeml/translator/monadic/examples/poly_array_sortProgScript.sml",
+    "line": 348,
+    "type": "Theorem"
+  },
+  {
+    "name": "scan_upper_state",
+    "statement": "∀ cmp pivot ub s new_ub s'.\n    (scan_upper cmp pivot ub s = (M_success new_ub, s'))\n  ⇒ (s = s') ∧ (new_ub ≠ 0 ⇒ ¬ cmp pivot (EL new_ub s.arr)) ∧\n    (∀ index . new_ub < index ∧ index < ub ⇒ cmp pivot (EL index s.arr))",
+    "file": "/Users/brian/Programming/cakeml/translator/monadic/examples/poly_array_sortProgScript.sml",
+    "line": 375,
+    "type": "Theorem"
+  },
+  {
+    "name": "partition_helper_index",
+    "statement": "∀ cmp pivot lb ub s result s'.\n    strict_weak_order cmp ∧\n    ub ≤ LENGTH s.arr ∧ lb < ub ∧\n    (∃ index . index ≥ lb ∧ index < ub ∧ ¬ cmp pivot (EL index s.arr)) ∧\n    (partition_helper cmp pivot lb ub s = (M_success result, s'))\n  ⇒ result ≥ lb ∧ result < ub ∧\n    ¬ (cmp pivot (EL result s'.arr))",
+    "file": "/Users/brian/Programming/cakeml/translator/monadic/examples/poly_array_sortProgScript.sml",
+    "line": 466,
+    "type": "Theorem"
+  },
+  {
+    "name": "partition_helper_result",
+    "statement": "∀ cmp pivot lb ub s result s' .\n    strict_weak_order cmp ∧\n    ub ≤ LENGTH s.arr ∧\n    (partition_helper cmp pivot lb ub s = (M_success result, s'))\n  ⇒ (∀ k . k > result ∧ k < ub ⇒ ¬ cmp (EL k s'.arr) pivot) ∧\n    (∀ k . k ≥ lb ∧ k < result ⇒ cmp (EL k s'.arr) pivot) ∧\n    (∀ k . k < lb ∨ k ≥ ub ⇒ (EL k s'.arr = EL k s.arr)) ∧\n    (PERM s.arr s'.arr)",
+    "file": "/Users/brian/Programming/cakeml/translator/monadic/examples/poly_array_sortProgScript.sml",
+    "line": 521,
+    "type": "Theorem"
+  },
+  {
+    "name": "partition_helper_range_shrink_upper",
+    "statement": "∀ cmp pivot lb ub s result s'.\n    strict_weak_order cmp ∧\n    ub ≤ LENGTH s.arr ∧ lb < ub ∧\n    (∃ index . index ≥ lb ∧ index < ub - 1 ∧ (EL index s.arr = pivot)) ∧\n    (partition_helper cmp pivot lb ub s = (M_success result, s'))\n  ⇒ (result ≥ lb ∧ result < ub - 1)",
+    "file": "/Users/brian/Programming/cakeml/translator/monadic/examples/poly_array_sortProgScript.sml",
+    "line": 592,
+    "type": "Theorem"
+  },
+  {
+    "name": "array_set_aux_Success",
+    "statement": "∀ l n s . (LENGTH (DROP n s.arr) = LENGTH l)\n  ⇒ ∃ result . (array_set_aux n l s = (M_success (), result)) ∧\n    (DROP n result.arr = l) ∧\n    (TAKE n s.arr = TAKE n result.arr) ∧\n    (LENGTH s.arr = LENGTH result.arr)",
+    "file": "/Users/brian/Programming/cakeml/translator/monadic/examples/poly_array_sortProgScript.sml",
+    "line": 671,
+    "type": "Theorem"
+  },
+  {
+    "name": "array_set_Success",
+    "statement": "∀ l s . (LENGTH l = LENGTH s.arr)\n  ⇒ ∃ s' . (array_set l s = (M_success (), s')) ∧ (s'.arr = l)",
+    "file": "/Users/brian/Programming/cakeml/translator/monadic/examples/poly_array_sortProgScript.sml",
+    "line": 696,
+    "type": "Theorem"
+  },
+  {
+    "name": "array_get_aux_Success",
+    "statement": "∀ length n s . (LENGTH s.arr = length)\n  ⇒ ∃ result . (array_get_aux length n s = (M_success result, s)) ∧\n    (result = DROP n s.arr)",
+    "file": "/Users/brian/Programming/cakeml/translator/monadic/examples/poly_array_sortProgScript.sml",
+    "line": 726,
+    "type": "Theorem"
+  },
+  {
+    "name": "array_get_Success",
+    "statement": "∀ s . array_get () s = (M_success s.arr, s)",
+    "file": "/Users/brian/Programming/cakeml/translator/monadic/examples/poly_array_sortProgScript.sml",
+    "line": 745,
+    "type": "Theorem"
+  },
+  {
+    "name": "quicksort_aux_result",
+    "statement": "∀ cmp lower upper s result s' .\n    upper ≥ lower ∧\n    strict_weak_order cmp ∧ upper < LENGTH s.arr ∧\n    (∃index. index ≥ lower ∧ index < upper + 1 ∧\n      ¬cmp (EL lower s.arr) (EL index s.arr)) ∧\n    (quicksort_aux cmp lower upper s = (M_success result, s'))\n  ⇒ PERM s.arr s'.arr ∧\n    (∀ k . k < lower ⇒ (EL k s.arr = EL k s'.arr)) ∧\n    (∀ k . k > upper ∧ k < LENGTH s.arr ⇒ (EL k s.arr = EL k s'.arr)) ∧\n    SORTED (λ x y . ¬ cmp y x) (DROP lower (TAKE (upper + 1) s'.arr))",
+    "file": "/Users/brian/Programming/cakeml/translator/monadic/examples/poly_array_sortProgScript.sml",
+    "line": 780,
+    "type": "Theorem"
+  },
+  {
+    "name": "quicksort_result",
+    "statement": "∀ l l' cmp s s' .\n    strict_weak_order cmp ∧\n    (quicksort cmp l s = (M_success l', s'))\n  ⇒ PERM l l' ∧ SORTED (λ x y . ¬ cmp y x) l'",
+    "file": "/Users/brian/Programming/cakeml/translator/monadic/examples/poly_array_sortProgScript.sml",
+    "line": 997,
+    "type": "Theorem"
+  },
+  {
+    "name": "scan_lower_Success",
+    "statement": "∀ cmp pivot lb s .\n    strict_weak_order cmp ∧ lb < LENGTH s.arr ∧\n    (∃ index . index ≥ lb ∧ index < LENGTH s.arr ∧ (EL index s.arr = pivot))\n  ⇒ ∃ result s' . (scan_lower cmp pivot lb s = (M_success result, s'))",
+    "file": "/Users/brian/Programming/cakeml/translator/monadic/examples/poly_array_sortProgScript.sml",
+    "line": 1058,
+    "type": "Theorem"
+  },
+  {
+    "name": "scan_upper_Success",
+    "statement": "∀ cmp pivot ub s .\n    ub ≤ LENGTH s.arr\n  ⇒ ∃ result s' . (scan_upper cmp pivot ub s = (M_success result, s'))",
+    "file": "/Users/brian/Programming/cakeml/translator/monadic/examples/poly_array_sortProgScript.sml",
+    "line": 1092,
+    "type": "Theorem"
+  },
+  {
+    "name": "partition_helper_Success",
+    "statement": "∀ cmp pivot lb ub s .\n    strict_weak_order cmp ∧\n    ub ≤ LENGTH s.arr ∧\n    (∃ index . index ≥ lb ∧ index < LENGTH s.arr ∧ (EL index s.arr = pivot))\n  ⇒ ∃ result s' . partition_helper cmp pivot lb ub s = (M_success result, s')",
+    "file": "/Users/brian/Programming/cakeml/translator/monadic/examples/poly_array_sortProgScript.sml",
+    "line": 1117,
+    "type": "Theorem"
+  },
+  {
+    "name": "partition_helper_state_LENGTH",
+    "statement": "∀ cmp pivot lb ub s result s'.\n    (partition_helper cmp pivot lb ub s = (M_success result, s'))\n  ⇒ (LENGTH s'.arr = LENGTH s.arr)",
+    "file": "/Users/brian/Programming/cakeml/translator/monadic/examples/poly_array_sortProgScript.sml",
+    "line": 1177,
+    "type": "Theorem"
+  },
+  {
+    "name": "quicksort_aux_Success",
+    "statement": "∀ cmp lower upper s .\n    strict_weak_order cmp ∧\n    upper < LENGTH s.arr\n  ⇒ ∃ result s' . (quicksort_aux cmp lower upper s = (M_success result, s')) ∧\n    (LENGTH s'.arr = LENGTH s.arr)",
+    "file": "/Users/brian/Programming/cakeml/translator/monadic/examples/poly_array_sortProgScript.sml",
+    "line": 1202,
+    "type": "Theorem"
+  },
+  {
+    "name": "quicksort_Success",
+    "statement": "∀ cmp l s .\n    strict_weak_order cmp\n  ⇒ ∃ l' s' . quicksort cmp l s = (M_success l', s')",
+    "file": "/Users/brian/Programming/cakeml/translator/monadic/examples/poly_array_sortProgScript.sml",
+    "line": 1246,
+    "type": "Theorem"
+  },
+  {
+    "name": "run_quicksort_Success",
+    "statement": "∀ cmp l . strict_weak_order cmp\n  ⇒ ∃ l' .\n    (run_quicksort l cmp = (M_success l')) ∧\n    PERM l l' ∧ SORTED (λ x y . ¬ cmp y x) l'",
+    "file": "/Users/brian/Programming/cakeml/translator/monadic/examples/poly_array_sortProgScript.sml",
+    "line": 1262,
+    "type": "Theorem"
+  },
+  {
+    "name": "qsort_thm",
+    "statement": "∀ cmp l l' . strict_weak_order cmp ∧ (qsort cmp l = l')\n  ⇒ PERM l l' ∧ SORTED (λ x y . ¬ cmp y x) l'",
+    "file": "/Users/brian/Programming/cakeml/translator/monadic/examples/poly_array_sortProgScript.sml",
+    "line": 1328,
+    "type": "Theorem"
+  }
+]

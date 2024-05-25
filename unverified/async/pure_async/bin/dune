@@ -1,0 +1,4 @@
+(executable
+ (public_name pure_async)
+ (name main)
+ (libraries pure_async))

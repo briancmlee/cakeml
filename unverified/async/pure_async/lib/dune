@@ -1,0 +1,3 @@
+(library
+ (name pure_async)
+ (libraries core))

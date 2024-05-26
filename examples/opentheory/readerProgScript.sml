@@ -552,7 +552,7 @@ QED
 
 Theorem reader_whole_prog_spec:
   input_exists fs cl ⇒
-    whole_prog_spec reader_main_v cl fs (SOME (HOL_STORE init_refs))
+    whole_prog_spec reader_main_v cl fs ts (SOME (HOL_STORE init_refs))
       ((=) (FST (reader_main fs init_refs (TL cl))))
 Proof
   rw [whole_prog_spec_def]

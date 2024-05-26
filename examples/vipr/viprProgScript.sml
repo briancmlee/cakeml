@@ -260,7 +260,7 @@ QED
 
 Theorem vipr_stdin_whole_prog_spec:
    hasFreeFD fs ∧ stdin_content fs = SOME text ∧ LENGTH cl < 2 ⇒
-   whole_prog_spec main_v cl fs NONE ((=) $ add_stdout (fastForwardFD fs 0) $
+   whole_prog_spec main_v cl fs ts NONE ((=) $ add_stdout (fastForwardFD fs 0) $
                                               run_vipr (lines_of (implode text)))
 Proof
   rw[whole_prog_spec_def]
@@ -280,7 +280,7 @@ QED
 Theorem vipr_file_whole_prog_spec:
    hasFreeFD fs ∧ file_content fs (EL 1 cl) = SOME text ∧ 1 < LENGTH cl ∧
    filename_ok (EL 1 cl) ⇒
-   whole_prog_spec main_v cl fs NONE ((=) $ add_stdout fs $
+   whole_prog_spec main_v cl fs ts NONE ((=) $ add_stdout fs $
                                               run_vipr (lines_of (implode text)))
 Proof
   rw[whole_prog_spec_def]

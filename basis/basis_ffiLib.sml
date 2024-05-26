@@ -42,8 +42,8 @@ val prove_parts_ok_st =
  * - the functionality should be the same when we want a RUNTIME postcond
  *   with a custom precondition. *)
 local
-  val heap_thms = [COMMANDLINE_precond, STDIO_precond];
-  val heap_thms2 = [COMMANDLINE_precond, STDIO_precond, RUNTIME_precond];
+  val heap_thms = [COMMANDLINE_precond, STDIO_precond, TIME_precond];
+  val heap_thms2 = [COMMANDLINE_precond, STDIO_precond, TIME_precond, RUNTIME_precond];
   val user_thms = ref ([]: thm list);
   fun build_set [] = raise(ERR"subset_basis_st""no STDOUT in precondition")
     | build_set [th] = th

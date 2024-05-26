@@ -1202,7 +1202,7 @@ end;
         cl = ^cl_list ∧
         all_float_string ^inp_list ^argList ∧
         theAST_side ^args ⇒
-        whole_prog_spec ^(fetch_v "main" st) cl fs
+        whole_prog_spec ^(fetch_v "main" st) cl fs ts
         NONE
         ((=)
          (add_stdout fs (mlint$toString (&w2n (compress_word (THE (theAST_opt_float_option ^args)))))))

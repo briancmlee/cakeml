@@ -50,7 +50,7 @@ Proof
 QED
 
 Theorem echo_whole_prog_spec:
-   whole_prog_spec ^(fetch_v "echo" st) cl fs NONE
+   whole_prog_spec ^(fetch_v "echo" st) cl fs ts NONE
     ((=) (add_stdout fs (concatWith (strlit" ") (TL cl) ^ (strlit"\n"))))
 Proof
   rw[whole_prog_spec_def]

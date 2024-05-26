@@ -369,7 +369,7 @@ Theorem monadreader_wps:
    wfcl cl
    ==>
    whole_prog_spec ^(fetch_v "readmain" (get_ml_prog_state()))
-     cl fs (SOME (HOL_STORE init_refs))
+     cl fs ts (SOME (HOL_STORE init_refs))
      ((=) (FST (SND (reader_main fs init_refs (TL cl)))))
 Proof
   rw [whole_prog_spec_def]

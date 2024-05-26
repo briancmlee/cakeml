@@ -208,7 +208,7 @@ val st = get_ml_prog_state();
 
 Theorem patch_whole_prog_spec:
    hasFreeFD fs ⇒
-   whole_prog_spec ^(fetch_v"patch"st) cl fs NONE ((=) (patch_sem cl fs))
+   whole_prog_spec ^(fetch_v"patch"st) cl fs ts NONE ((=) (patch_sem cl fs))
 Proof
   rw[whole_prog_spec_def]
   \\ qexists_tac`patch_sem cl fs`

@@ -24,7 +24,7 @@ Proof
 QED
 
 Theorem hello_whole_prog_spec:
-   whole_prog_spec ^(fetch_v "hello" st) cl fs NONE
+   whole_prog_spec ^(fetch_v "hello" st) cl fs ts NONE
     ((=) (add_stdout fs (strlit "Hello World!\n")))
 Proof
   rw[whole_prog_spec_def]

@@ -334,7 +334,7 @@ QED
 
 Theorem check_unsat_whole_prog_spec2:
    hasFreeFD fs ⇒
-   whole_prog_spec2 check_unsat_v cl fs NONE
+   whole_prog_spec2 check_unsat_v cl fs ts NONE
     (λfs'. ∃out err.
         fs' = add_stdout (add_stderr fs err) out ∧
         check_unsat_sem cl fs out)

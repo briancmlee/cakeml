@@ -241,7 +241,7 @@ QED
 Theorem wordcount_whole_prog_spec:
    wordcount_precond cl fs contents fs'
    ⇒
-   whole_prog_spec ^(fetch_v "wordcount" (get_ml_prog_state())) cl fs NONE
+   whole_prog_spec ^(fetch_v "wordcount" (get_ml_prog_state())) cl fs ts NONE
    ((=)
      (add_stdout fs'
        (concat [mlint$toString (&(LENGTH (TOKENS isSpace contents)));

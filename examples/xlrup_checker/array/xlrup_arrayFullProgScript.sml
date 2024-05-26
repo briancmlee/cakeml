@@ -986,7 +986,7 @@ QED
 
 Theorem check_unsat_whole_prog_spec2:
    hasFreeFD fs ⇒
-   whole_prog_spec2 check_unsat_v cl fs NONE (λfs'. ∃err. fs' = check_unsat_sem cl fs err)
+   whole_prog_spec2 check_unsat_v cl fs ts NONE (λfs'. ∃err. fs' = check_unsat_sem cl fs err)
 Proof
   rw[basis_ffiTheory.whole_prog_spec2_def]
   \\ match_mp_tac (MP_CANON (DISCH_ALL (MATCH_MP app_wgframe (UNDISCH check_unsat_spec))))

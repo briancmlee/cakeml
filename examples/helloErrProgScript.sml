@@ -34,7 +34,7 @@ Proof
 QED
 
 Theorem helloErr_whole_prog_spec:
-   whole_prog_ffidiv_spec ^(fetch_v "helloErr" st) cl fs
+   whole_prog_ffidiv_spec ^(fetch_v "helloErr" st) cl fs ts
     (λn c b fs'. n = "exit" /\ c = [] /\ b = [1w] /\ add_stderr fs (strlit "Well oH lord!\n") = fs')
 Proof
   rw[basis_ffiTheory.whole_prog_ffidiv_spec_def]

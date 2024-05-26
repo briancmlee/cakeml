@@ -622,7 +622,7 @@ QED
 
 Theorem main_whole_prog_spec:
   ¬has_repl_flag (TL cl) ⇒
-  whole_prog_spec main_v cl fs NONE
+  whole_prog_spec main_v cl fs ts NONE
                   ((=) (full_compile_64 (TL cl) (get_stdin fs) fs))
 Proof
   strip_tac

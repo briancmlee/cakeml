@@ -304,7 +304,7 @@ Theorem wordfreq_whole_prog_spec:
    hasFreeFD fs ∧ inFS_fname fs fname ∧
    cl = [pname; fname] ∧
    contents = implode (THE (ALOOKUP fs.inode_tbl (File (THE (ALOOKUP fs.files fname)))))   ⇒
-   whole_prog_spec ^(fetch_v "wordfreq" (get_ml_prog_state())) cl fs NONE
+   whole_prog_spec ^(fetch_v "wordfreq" (get_ml_prog_state())) cl fs ts NONE
          ((=) (add_stdout fs (wordfreq_output_spec contents)))
 Proof
   disch_then assume_tac

@@ -979,7 +979,7 @@ val st = get_ml_prog_state()
 
 Theorem grep_whole_prog_spec:
    consistentFS fs ⇒
-   whole_prog_spec ^(fetch_v "grep" st) cl fs NONE
+   whole_prog_spec ^(fetch_v "grep" st) cl fs ts NONE
      ((=) (grep_sem cl fs))
 Proof
   disch_then assume_tac

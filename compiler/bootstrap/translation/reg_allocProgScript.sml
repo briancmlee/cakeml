@@ -422,7 +422,7 @@ val res = append_prog main;
 val st =  get_ml_prog_state ();
 
 Theorem main_whole_prog_spec:
-   F ==> whole_prog_spec ^(fetch_v "main" st) cl fs NONE (\x. T)
+   F ==> whole_prog_spec ^(fetch_v "main" st) cl fs ts NONE (\x. T)
 Proof
   simp []
 QED

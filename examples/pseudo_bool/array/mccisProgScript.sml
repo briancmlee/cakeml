@@ -444,7 +444,7 @@ QED
 
 Theorem main_whole_prog_spec2:
    hasFreeFD fs ⇒
-   whole_prog_spec2 main_v cl fs NONE
+   whole_prog_spec2 main_v cl fs ts NONE
      (λfs'. ∃out err.
         fs' = add_stdout (add_stderr fs err) out ∧
         main_sem fs cl out)

@@ -173,7 +173,7 @@ val st = st();
 
 Theorem cat_whole_prog_spec:
    EVERY (inFS_fname fs) (TL cl) ∧ hasFreeFD fs ⇒
-   whole_prog_spec ^(fetch_v"cat_main"st) cl fs NONE
+   whole_prog_spec ^(fetch_v"cat_main"st) cl fs ts NONE
     ((=) (add_stdout fs (catfiles_string fs (TL cl))))
 Proof
   disch_then assume_tac

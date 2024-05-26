@@ -411,7 +411,7 @@ Proof
 QED
 
 Theorem main_whole_prog_spec:
-   whole_prog_spec main_v cl fs NONE
+   whole_prog_spec main_v cl fs ts NONE
     ((=) (full_compile_32 (TL cl) (get_stdin fs) fs))
 Proof
   simp[whole_prog_spec_def,UNCURRY]

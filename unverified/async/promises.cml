@@ -189,7 +189,7 @@ structure Time =
 
     fun nowMilliseconds () =
       let val outputBuff = Word8Array.array 9 (Word8.fromInt 0)
-          val _ = #(get_now_milliseconds) "" outputBuff
+          val _ = #(now) "" outputBuff
       in
         if Word8Array.sub outputBuff 0 = Word8.fromInt 1
         then raise GetTimeFailed

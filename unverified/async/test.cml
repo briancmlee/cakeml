@@ -1,14 +1,18 @@
-
-
-
-
-structure Promise =
+structure Set =
   struct
-    fun catch f h =
-      let val p1 = Result.try_with f
-      in
-        case p1 of
-          Result.Ok v => v
-        | Result.Error exn => try_with (fun () -> h exn)
-      end;
+    datatype 'a set = Set (('a, unit) map);
+
+    fun empty compare = Set (Map.empty compare);
+
+    fun insert (Set map) el = Set (Map.insert map el ());
+
+    fun delete (Set map) el = Set (Map.delete map el);
+
+    fun mem (Set map) el = case (Map.lookup map el) of
+      None => False
+    | Some _ => True;
+
+    fun toList (Set map) = List.map (fn (k, _) => k) (Map.toAscList map);
+
+    fun fromList compare list = Set (Map.fromList compare (List.map (fn k => (k, ())) list));
   end;

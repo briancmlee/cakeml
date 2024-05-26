@@ -53,5 +53,4 @@ sig
        translator (i.e. fetching the rest of the translator state). *)
     val m_translation_extends : string -> unit
 
-    val check_inv_failed : unit -> (term * term * term * thm)
 end

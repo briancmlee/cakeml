@@ -22,7 +22,7 @@ open ml_monadStoreLib
 
 ******************************************************************************)
 (* TODO add useful debug/info printing *)
-val DEBUG = true;
+val DEBUG = false;
 val INFO = true;
 
 fun info_print msg term =
@@ -1140,14 +1140,13 @@ fun start_dynamic_init_fixed_store_translation refs_manip_list
                                                store_pinv_def_opt =
   let
     val monad_translation_params =
-        (translate_dynamic_init_fixed_store refs_manip_list
+        translate_dynamic_init_fixed_store refs_manip_list
                                            rarrays_manip_list
                                            farrays_manip_list
                                            store_hprop_name
                                            state_type
                                            exn_ri_def
-                                           store_pinv_def_opt)
-        handle HOL_ERR _ => (print "Error in translation\n"; failwith "translate_dynamic_init_fixed_store")
+                                           store_pinv_def_opt
     (*
     val monad_translation_params = it
     *)
@@ -1193,9 +1192,6 @@ val pmatch_index = ref 1;
 
 (* Adapted from ml_translatorLib *)
 val check_inv_fail = ref T;
-val check_inv_fail_2 = ref (T, T, T, T_DEF);
-
-fun check_inv_failed () = !check_inv_fail_2;
 
 fun check_inv name tm result =
   let val result = INST_ro result
@@ -1204,11 +1200,9 @@ fun check_inv name tm result =
                     Term.inst (match_type (type_of tm2) (type_of tm)) tm2
                  else tm2
   in
-    (* if true then result *)
     if aconv tm2' tm then result
     else (
       check_inv_fail := tm;
-      check_inv_fail_2 := (tm, tm2, tm2', result);
       show_types_verbosely := true;
       print ("\n\nhol2deep failed at '" ^ name ^ "'\n\ntarget:\n\n");
       print_term tm;
@@ -2367,8 +2361,7 @@ and m2deep tm =
     val _ = debug_print "normal function application" tm
     val result = m2deep_normal_fun_app tm
     in check_inv "comb" tm result end else
-  (debug_print "failed with" tm;
-  failwith ("cannot translate: " ^ term_to_string tm));
+  failwith ("cannot translate: " ^ term_to_string tm);
 
 
 (******************************************************************************

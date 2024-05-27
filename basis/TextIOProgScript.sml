@@ -8,7 +8,7 @@ open preamble
 
 val _ = new_theory"TextIOProg";
 
-val _ = translation_extends "MarshallingProg";
+val _ = translation_extends "TimeProg";
 
 val _ = ml_prog_update (open_module "TextIO");
 

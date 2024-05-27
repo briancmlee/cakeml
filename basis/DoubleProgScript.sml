@@ -7,11 +7,11 @@
 open preamble
      ml_translatorLib ml_progLib basisFunctionsLib
      wordsTheory
-     CommandLineProgTheory;
+     HashtableProgTheory;
 
 val _ = new_theory"DoubleProg";
 
-val _ = translation_extends "CommandLineProg";
+val _ = translation_extends "HashtableProg";
 
 (* Double module -- translated *)
 

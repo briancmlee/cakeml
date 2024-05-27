@@ -2,11 +2,11 @@
   A module about Arrays for the CakeML standard basis library.
 *)
 open preamble ml_translatorLib ml_progLib basisFunctionsLib
-     Word8ArrayProgTheory
+     TextIOProgTheory
 
 val _ = new_theory"ArrayProg"
 
-val _ = translation_extends"Word8ArrayProg"
+val _ = translation_extends"TextIOProg"
 
 val () = ml_prog_update (open_module "Array");
 

@@ -21,12 +21,12 @@ Char
 Word64
 Word8
 Word8Array
+Marshalling
+CommandLine
+TextIO
 Array
 Map
 Hashtable
-CommandLine
 Double
-Marshalling
-TextIO
 Time
 basis

@@ -4,11 +4,12 @@
 *)
 open preamble
      ml_translatorLib ml_progLib ml_translatorTheory
-     HashtableProgTheory basisFunctionsLib
+     MarshallingProgTheory
+     basisFunctionsLib
 
 val _ = new_theory "CommandLineProg";
 
-val _ = translation_extends "HashtableProg";
+val _ = translation_extends "MarshallingProg";
 
 val _ = option_monadsyntax.temp_add_option_monadsyntax();
 

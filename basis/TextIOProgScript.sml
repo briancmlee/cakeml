@@ -3,12 +3,12 @@
 *)
 open preamble
      ml_translatorTheory ml_translatorLib ml_progLib basisFunctionsLib
-     CommandLineProgTheory MarshallingProgTheory TimeProgTheory
+     CommandLineProgTheory MarshallingProgTheory
      semanticPrimitivesSyntax
 
 val _ = new_theory"TextIOProg";
 
-val _ = translation_extends "TimeProg";
+val _ = translation_extends "MarshallingProg";
 
 val _ = ml_prog_update (open_module "TextIO");
 

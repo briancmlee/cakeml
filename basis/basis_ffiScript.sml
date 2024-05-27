@@ -706,7 +706,7 @@ Proof
   \\ CCONTR_TAC \\ fs[] \\ rfs[]
 QED
 
-val _ = translation_extends "TextIOProg";
+val _ = translation_extends "TimeProg";
 val st_f = get_ml_prog_state () |> get_state |> strip_comb |> fst;
 val st = mk_icomb (st_f, ``basis_ffi cls fs ts``);
 val _ = reset_translation ()

@@ -3,7 +3,7 @@
 *)
 open preamble
      ml_translatorTheory ml_translatorLib ml_progLib basisFunctionsLib
-     CommandLineProgTheory MarshallingProgTheory
+     CommandLineProgTheory MarshallingProgTheory TimeProgTheory
      semanticPrimitivesSyntax
 
 val _ = new_theory"TextIOProg";

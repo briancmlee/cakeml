@@ -1,5 +1,7 @@
 (*
-  Module for getting UNIX epoch time.
+  Module for getting the current time from an FFI call (with gettimeofday).
+  Represents time and time intervals as an abstract type,
+  and defines basic arithmetic operations on time.
 *)
 
 open preamble
@@ -26,7 +28,7 @@ val _ = register_type “:time”;
 val _ = (use_full_type_names := true);
 
 Definition get_time_def:
-  get_time (Time t) = t
+  get_time (Time microseconds) = microseconds
 End
 val _ = (next_ml_names := ["get_time"]);
 val r = translate get_time_def;
@@ -37,11 +39,11 @@ val _ = ml_prog_update (add_dec
   “Dtabbrev unknown_loc [] "time" (Atapp [] (Short "time"))” I);
 
 Definition fromMicroseconds_def:
-  fromMicroseconds t = Time t
+  fromMicroseconds microseconds = Time microseconds
 End
 
 Definition toMicroseconds_def:
-  toMicroseconds (Time t) = t
+  toMicroseconds (Time microseconds) = microseconds
 End
 
 val _ = (next_ml_names := ["fromMicroseconds","toMicroseconds"]);
@@ -49,11 +51,11 @@ val r = translate fromMicroseconds_def;
 val r = translate toMicroseconds_def;
 
 Definition fromMilliseconds_def:
-  fromMilliseconds t = Time (t * 1000)
+  fromMilliseconds milliseconds = Time (milliseconds * 1000)
 End
 
 Definition toMilliseconds_def:
-  toMilliseconds (Time t) = t / 1000
+  toMilliseconds (Time microseconds) = microseconds / 1000
 End
 
 val _ = (next_ml_names := ["fromMilliseconds","toMilliseconds"]);
@@ -61,16 +63,24 @@ val r = translate fromMilliseconds_def;
 val r = translate toMilliseconds_def;
 
 Definition fromSeconds_def:
-  fromSeconds t = Time (t * 1000000)
+  fromSeconds seconds = Time (seconds * 1000000)
 End
 
 Definition toSeconds_def:
-  toSeconds (Time t) = t / 1000000
+  toSeconds (Time microseconds) = microseconds / 1000000
 End
 
 val _ = (next_ml_names := ["fromSeconds","toSeconds"]);
 val r = translate fromSeconds_def;
 val r = translate toSeconds_def;
+
+Definition compare_def:
+  compare (Time t1) (Time t2) = if t1 < t2 then LESS else
+                                if t2 < t1 then GREATER else EQUAL
+End
+
+val _ = (next_ml_names := ["compare"]);
+val r = translate compare_def;
 
 val binopn_lift_def = zDefine ‘
   binopn_lift (f:int->int->int) =

@@ -87,7 +87,9 @@ Module for text-based I/O with the underlying file system.
 Proofs about the code in the TextIO module.
 
 [TimeProgScript.sml](TimeProgScript.sml):
-Module for getting UNIX epoch time.
+Module for getting the current time from an FFI call (with gettimeofday).
+Represents time and time intervals as an abstract type,
+and defines basic arithmetic operations on time.
 
 [TimeProofScript.sml](TimeProofScript.sml):
 Proof about the command-line module of the CakeML standard basis library.

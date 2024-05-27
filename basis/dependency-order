@@ -26,5 +26,7 @@ Map
 Hashtable
 CommandLine
 Double
+Marshalling
+Time
 TextIO
 basis

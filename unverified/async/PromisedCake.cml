@@ -1,5 +1,446 @@
+structure ByteHelper = struct
+  fun editBit bytes i value =
+    let
+      val byteIndex = i div 8
+      val bitIndex = i mod 8
+      val byte = Word8Array.sub bytes byteIndex
+      val newByte = if value then
+        Word8.orb byte (Word8.<< (Word8.fromInt 1) bitIndex)
+      else
+        Word8.andb byte (Word8.notb (Word8.<< (Word8.fromInt 1) bitIndex))
+    in
+      Word8Array.update bytes byteIndex newByte
+    end;
 
-structure Result =
+  fun readBit bytes i =
+    let
+      val byteIndex = i div 8
+      val bitIndex = i mod 8
+      val byte = Word8Array.sub bytes byteIndex
+    in
+      (Word8.andb byte (Word8.<< (Word8.fromInt 1) bitIndex)) <> (Word8.fromInt 0)
+    end;
+
+  fun toString bytes = Word8Array.substring bytes 0 (Word8Array.length bytes);
+end;
+
+structure Set = struct
+  datatype 'a set = Set (('a, unit) map);
+
+  fun empty compare = Set (Map.empty compare);
+
+  fun insert (Set map) el = Set (Map.insert map el ());
+
+  fun singleton compare el = insert (empty compare) el;
+
+  fun delete (Set map) el = Set (Map.delete map el);
+
+  fun mem (Set map) el = case (Map.lookup map el) of
+    None => False
+  | Some _ => True;
+
+  fun union (Set map1) (Set map2) = Set (Map.union map1 map2);
+
+  fun isSubset (Set sub) (Set super) = Map.isSubmap sub super;
+
+  fun toList (Set map) = List.map (fn (k, _) => k) (Map.toAscList map);
+
+  fun fromList compare list = Set (Map.fromList compare (List.map (fn k => (k, ())) list));
+end;
+
+structure FdSet = struct
+  datatype t = FdSet (int Set.set);
+
+  val maxSize =
+    let
+      val iobuff = Word8Array.array 8 (Word8.fromInt 0)
+      val _ = #(get_fd_set_size) "" iobuff
+    in
+      Marshalling.w82n iobuff 0
+    end;
+
+  val byteSize = maxSize div 8;
+
+  val empty = FdSet (Set.empty Int.compare);
+
+  fun insert (FdSet set) fd = FdSet (Set.insert set fd);
+
+  fun singleton fd = insert empty fd;
+
+  fun mem (FdSet set) fd = Set.mem set fd;
+
+  fun union (FdSet set1) (FdSet set2) = FdSet (Set.union set1 set2);
+
+  fun isSubset (FdSet sub) (FdSet super) = Set.isSubset sub super;
+
+  fun delete (FdSet set) fd = FdSet (Set.delete set fd);
+
+  fun fromList list = FdSet (Set.fromList Int.compare list);
+
+  fun toList (FdSet set) = Set.toList set;
+
+  fun toBytes (FdSet set) =
+    let
+      val bytes = Word8Array.array byteSize (Word8.fromInt 0)
+      val _ = List.app (fn fd => ByteHelper.editBit bytes fd True) (Set.toList set)
+    in
+      bytes
+    end;
+
+  fun fromBytes bytes =
+    let
+      val allFds = List.genlist (fn i => i) maxSize
+      fun isSet fd = ByteHelper.readBit bytes fd
+    in
+      List.foldl (fn fd => fn set => if isSet fd then insert set fd else set) empty allFds
+    end;
+end;
+
+structure Unix = struct
+  exception FFIError string;
+  datatype fd = Fd int;
+
+  local
+    val buf = Word8Array.array 8 (Word8.fromInt 0)
+  in
+    fun toFdString (Fd fd) =
+      let val _ = Marshalling.n2w8 fd buf 0 in
+        ByteHelper.toString buf
+      end;
+  end;
+
+  fun select (readFds, writeFds, exceptFds) timeout =
+    let
+      val readBytes = FdSet.toBytes readFds
+      val writeBytes = FdSet.toBytes writeFds
+      val exceptBytes = FdSet.toBytes exceptFds
+      val inputBuf = Word8Array.array (3 * FdSet.byteSize + 8) (Word8.fromInt 0)
+      val _ = Marshalling.n2w8 (Time.toMicroseconds timeout) inputBuf 0;
+      val _ = Word8Array.copy readBytes 0 FdSet.byteSize inputBuf (8 + 0 * FdSet.byteSize);
+      val _ = Word8Array.copy writeBytes 0 FdSet.byteSize inputBuf (8 + 1 * FdSet.byteSize);
+      val _ = Word8Array.copy exceptBytes 0 FdSet.byteSize inputBuf (8 + 2 * FdSet.byteSize);
+      val outputBuff = Word8Array.array (FdSet.byteSize * 3 + 1) (Word8.fromInt 0)
+      val _ = #(select) (ByteHelper.toString inputBuf) outputBuff
+    in
+      if Word8.toInt (Word8Array.sub outputBuff 0) = 1
+      then raise FFIError "select failed"
+      else
+        let
+          val _ = Word8Array.copy outputBuff (1 + 0 * FdSet.byteSize) FdSet.byteSize readBytes 0
+          val _ = Word8Array.copy outputBuff (1 + 1 * FdSet.byteSize) FdSet.byteSize writeBytes 0
+          val _ = Word8Array.copy outputBuff (1 + 2 * FdSet.byteSize) FdSet.byteSize exceptBytes 0
+        in
+          (FdSet.fromBytes readBytes, FdSet.fromBytes writeBytes, FdSet.fromBytes exceptBytes)
+        end
+    end;
+
+  fun openListenFd port =
+    let val outputBuff = Word8Array.array 9 (Word8.fromInt 0)
+        val _ = #(open_listenfd) (Int.toString port) outputBuff
+    in
+      if Word8.toInt (Word8Array.sub outputBuff 0) = 1
+      then raise (FFIError "open_listenfd failed")
+      else Fd (Marshalling.w82n outputBuff 1)
+    end;
+
+  fun accept listenFd =
+    let val outputBuff = Word8Array.array 9 (Word8.fromInt 0)
+        val _ = #(accept) (toFdString listenFd) outputBuff
+    in
+      if Word8.toInt (Word8Array.sub outputBuff 0) = 1
+      then raise (FFIError "accept failed")
+      else Fd (Marshalling.w82n outputBuff 1)
+    end;
+
+  fun close fd =
+    let val outputBuff = Word8Array.array 1 (Word8.fromInt 0)
+        val _ = #(close) (toFdString fd) outputBuff
+    in
+      if Word8.toInt (Word8Array.sub outputBuff 0) = 1
+      then raise (FFIError "close failed")
+      else ()
+    end;
+
+  exception EndOfFile
+  exception InvalidFD
+
+  val iobuff = Word8Array.array 2052 (Word8.fromInt 0)
+
+  fun read fd n =
+    let val _ = Marshalling.n2w2 n iobuff 0
+        val _ = #(read) (toFdString fd) iobuff
+    in
+      if Word8.toInt (Word8Array.sub iobuff 0) = 1
+      then raise InvalidFD
+      else Marshalling.w22n iobuff 1
+    end;
+
+  local
+    fun read_byte fd =
+      if read fd 1 = 0 then raise EndOfFile
+      else Word8Array.sub iobuff 4
+
+    fun extend_array arr =
+      let
+        val len = Word8Array.length arr
+        val arr' = Word8Array.array (2*len) (Word8.fromInt 0)
+      in
+        Word8Array.copy arr 0 len arr' 0; arr'
+      end;
+  in
+    fun inputLine fd =
+      let
+        val nl = Word8.fromInt (Char.ord #"\n")
+        fun inputLine_aux arr i =
+          if i < Word8Array.length arr then
+            let
+              val c = read_byte (fd)
+              val u = Word8Array.update arr i c
+            in
+              if c = nl then Some (Word8Array.substring arr 0 (i+1))
+              else inputLine_aux arr (i+1)
+            end
+            handle EndOfFile =>
+              if i = 0 then None
+              else (Word8Array.update arr i nl;
+                    Some (Word8Array.substring arr 0 (i+1)))
+          else inputLine_aux (extend_array arr) i
+      in
+        inputLine_aux (Word8Array.array 127 (Word8.fromInt 0)) 0
+      end;
+  end;
+
+  fun write fd offset n =
+    let val _ = Marshalling.n2w2 offset iobuff 2
+        val _ = #(write) (toFdString fd) iobuff
+    in
+      if Word8.toInt (Word8Array.sub iobuff 0) = 1
+      then raise InvalidFD
+      else Marshalling.w22n iobuff 1
+    end;
+end;
+
+structure World = struct
+  datatype world =  World (FdSet.t * FdSet.t * FdSet.t * Time.time);
+
+  datatype event =
+    Readable FdSet.t
+  | Writeable FdSet.t
+  | Except FdSet.t
+  | Time (Time.time -> bool)
+  | General (unit -> bool);
+
+
+  local
+    fun mergeFdEvents events =
+      List.foldl (fn event => fn (r, w, e) =>
+        case event of
+          Readable fds => (FdSet.union r fds, w, e)
+        | Writeable fds => (r, FdSet.union w fds, e)
+        | Except fds => (r, w, FdSet.union e fds)
+        | _ => (r, w, e))
+        (FdSet.empty, FdSet.empty, FdSet.empty)
+        events;
+  in
+    fun poll events =
+      let val (readables, writeables, exceptions) =
+            Unix.select
+              (mergeFdEvents events)
+              (Time.fromMicroseconds 0)
+          val time = Time.now ()
+      in
+        World (readables, writeables, exceptions, time)
+      end;
+  end;
+
+
+  fun check event (World (readables, writeables, exceptions, time)) =
+    case event of
+      Readable fds => FdSet.isSubset fds readables
+    | Writeable fds => FdSet.isSubset fds writeables
+    | Except fds => FdSet.isSubset fds exceptions
+    | Time f => f time
+    | General f => f ();
+end;
+
+structure Scheduler = struct
+  type job = World.event * (World.world -> World.world);
+
+  local
+    (* Optimise to use app_list *)
+    val jobs = Ref ([] : job list);
+  in
+    fun schedule (event, f) = jobs := (event, f) :: !jobs;
+
+    fun subscribed_events () = List.map (fn (event, _) => event) (!jobs);
+
+    fun run () = case !jobs of
+      [] => ()
+    | currentJobs => (
+      let val _ = jobs := []
+          val _ = List.foldl
+              (fn (event, f) => fn world =>
+                if World.check event world
+                then (f world)
+                else (schedule (event, f); world))
+              (World.poll (subscribed_events ()))
+              currentJobs
+      in
+        run ()
+      end)
+  end;
+end;
+
+structure AsyncIO = struct
+  type 'a t = (World.event) * (unit -> 'a * World.world);
+
+  fun readLine fd =
+    let
+      val event = World.Readable (FdSet.singleton fd)
+      val f = fn () =>
+        case Unix.inputLine fd of
+          None => (None, )
+        | Some line => (Some line, World.poll ())
+    in
+      (event, f)
+    end;
+end;
+
+structure Promise = struct
+  datatype 'a state = Pending (('a -> unit) list) | Resolved ('a);
+  datatype 'a promise = Promise ('a state ref);
+  datatype 'a resolver = Resolver ('a -> unit);
+
+  fun return value = Promise (Ref (Resolved value));
+
+  fun upon (Promise p) f = case !p of
+    Resolved value => f value
+  | Pending callbacks => p := Pending (f :: callbacks);
+
+  fun poll (Promise p) = case !p of
+    Resolved v => Some v
+  | Pending _ => None;
+
+  local
+    exception Resolve string
+
+    fun resolve (Promise p) value = case !p of
+      Resolved _ => ()
+    | Pending callbacks => (
+        p := Resolved value;
+        List.app (fn f => f value) callbacks
+      );
+
+    fun chain p p' = upon p (resolve p');
+  in
+    fun wait () =
+      let
+        val promise = Promise (Ref (Pending []))
+        val resolver = Resolver (resolve promise)
+      in
+        (promise, resolver)
+      end;
+
+    fun wakeup (Resolver r) value = r value;
+
+    fun bind (Promise p) f = case !p of
+      Resolved v => f v
+    | Pending callbacks => (
+        let
+          val p' = Promise (Ref (Pending []))
+          fun callback v = chain (f v) p'
+        in
+          upon (Promise p) callback;
+          p'
+        end
+      );
+
+    fun map p f = bind p (fn v => return (f v));
+
+    fun both p1 p2 =
+      let
+        val (promise, resolver) = wait ()
+        val _ = upon p1 (fn v1 => upon p2 (fn v2 => wakeup resolver (v1, v2)))
+      in
+        promise
+      end;
+  end;
+end;
+
+structure PromiseIO = struct
+  fun readLine fd =
+end;
+
+structure Future = struct
+  datatype 'a state = Pending | Resolved 'a;
+  type world = unit;
+  datatype 'a future = Future (world -> 'a state * world);
+
+  fun poll (Future f) w = f w;
+
+  fun return value = Future (fn w => (Resolved value, w))
+
+  fun wait isReady run =
+    let val state = Ref Pending in
+      Future (fn w =>
+        case !state of
+          Resolved v => (Resolved v, w)
+        | Pending => (if (isReady w)
+                      then (let val (v, w) = run () in
+                              state := Resolved v;
+                              (Resolved v, w)
+                            end)
+                      else (Pending, w)))
+    end;
+
+  fun bind m f =
+    let val cache = Ref Pending in
+      Future (fn w =>
+        case !cache of
+          Resolved m' => poll m' w
+        | Pending => (
+          case poll m w of
+            (Pending, w) => (Pending, w)
+          | (Resolved v, w) =>
+              (let val m' = f v in
+                cache := Resolved m';
+                poll m' w
+              end)))
+    end;
+
+  fun map m f = bind m (fn v => return (f v));
+
+  fun both m1 m2 =
+    Future (fn w =>
+      let val (s1, w) = poll m1 w
+          val (s2, w) = poll m2 w
+      in
+        case (s1, s2) of
+          (Resolved v1, Resolved v2) => (Resolved (v1, v2), w)
+        | _ => (Pending, w)
+      end)
+
+  (* Can rewrite to save allocation of ref *)
+  fun ignore m1 m2 = map (both m1 m2) (fn (_, v) => v);
+
+  fun choose m1 m2 =
+    Future (fn w =>
+      case (poll m1 w) of
+        (Resolved v1, w) => (Resolved v1, w)
+      | _ => case (poll m2 w) of
+               (Resolved v2, w) => (Resolved v2, w)
+             | _ => (Pending, w))
+
+   fun choose_sum m1 m2 =
+    Future (fn w =>
+      case (poll m1 w) of
+        (Resolved v1, w) => (Resolved (Inl v1), w)
+      | _ => case (poll m2 w) of
+               (Resolved v2, w) => (Resolved (Inr v2), w)
+             | _ => (Pending, w))
+end;
+
+(* structure Result =
   struct
     datatype 'a t = Ok 'a | Error exn;
 
@@ -63,4 +504,4 @@ structure Promise =
       Resolved result => Result.iter_exn result f
     | Pending callbacks =>
         t := Pending (fn _ => f exn :: callbacks);
-  end;
+  end; *)

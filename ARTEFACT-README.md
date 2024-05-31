@@ -5,4 +5,4 @@ The main parts of the artefact can be found in `unverified/async` directory, whi
 I have separately attached the ./PromisedCake binary which was compiled with an updarted compiler.
 
 Additionally, I have made added a new time library to the `basis` directory. I have attached the sexpr-bootstrapped compiler with this
-new library separately.
+new library separately. It should also be possible to rebuild the compiler on a different machine, producing the same result.

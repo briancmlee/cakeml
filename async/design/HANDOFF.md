@@ -8,15 +8,22 @@
     `erase_fix2`, `guarded2_bind2`, `wf2_fix2`); `asyncEcho2` (`echo2`,
     `erase_echo2`, `wf2_echo2`, EVAL checks of its interest); design note
     §7, §12, §13 updated;
-  - next: the adversarial review of PR #1 (`~/.cache/pr1-review/review.md`):
-    1. relativized closure lemmas (wf, settled and quiet of bind under
-       results that can actually happen; choose losers are wf and settled;
-       `fix_preserves` with an invariant on parameters);
-    2. a recursion rule for loops that carry the pending loser, shown on
-       the idle-timeout loop;
-    3. Level 2 laws as `status` equalities if cheap;
-    4. document that dropping a loser (as `pick` does) can lose data that
-       was already read. Don't change `pick`/`choose`: the user decides.
+  - done, from the adversarial review of PR #1
+    (`~/.cache/pr1-review/review.md`):
+    1. relativized closure lemmas (`can_return`; `wf_bind_on`,
+       `settled_bind_on`, `quiet_bind2_on`, `wf2_bind2_on`; `choose_results`,
+       `choose_losers`; `fix_preserves_on`, `wf_fix_on`, `settled_fix_on`);
+    2. the split recursion rule `guarded_bind_split` (plus
+       `choose_at_start`), demonstrated by `asyncIdleScript.sml`, an
+       idle-deadline loop that carries its pending read, proved
+       contractive, wf and settled;
+    3. `status_bind2_right_identity` (status associativity is left as a
+       conjecture, design note §12);
+    4. design note §4 documents that dropping a loser (`pick`) can lose
+       data that was already read. `pick`/`choose` are unchanged: the user
+       decides (§16).
+  - PR #3 (https://github.com/briancmlee/cakeml/pull/3) is open with base
+    `spike/async-semantics`.
 - **Conventions (from the coordinator):**
   - Never kill processes you did not start. No `pkill`/`killall` or any
     pattern-based kill: other workers' Holmake and `hol lsp` processes share
@@ -627,7 +634,12 @@ as deletion; the MAIN list; and what comes next.
   - type-variable capture when `MATCH_MP`/`qspecl_then`/`Q.GENL` meets a
     theorem whose conclusion has free type variables (`GEN_TYVARIFY` fixes
     it), and facts proved by `by` inside a goal carry fixed type variables;
-  - `K` can't be used as a variable name;
+  - `K` and `I` can't be used as variable names (combinator constants);
   - `fs[GSYM LENGTH_NIL]` loops against the `LENGTH_NIL` simp rule;
   - `SIMP_TAC (srw_ss())` doesn't decide simple arithmetic (use
-    `++ ARITH_ss`).
+    `++ ARITH_ss`);
+  - `irule` can't use a theorem whose conclusion is `∀p. ok p ⇒ P …`
+    against a goal of that shape: `rpt strip_tac` first, then `irule`, then
+    supply the existentials;
+  - with `ho_match_mp_tac`, a premise variable that isn't in the
+    conclusion (`m0`) stays a free variable, not an existential.

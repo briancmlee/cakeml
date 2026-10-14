@@ -920,3 +920,31 @@ Proof
   >> disch_then (qspec_then ‘h'’ strip_assume_tac)
   >> fs[Abbr ‘l’, Abbr ‘r’, waiting_on_def]
 QED
+
+(* ------------------------------------------------------------------------
+   Laws as status equalities (what a scheduler sees)
+   ------------------------------------------------------------------------ *)
+
+(* MAIN: right identity holds for status, i.e. including what the
+   computation waits for *)
+Theorem status_bind2_right_identity:
+  wf c.run ⇒ status (bind2 c return2) h = status c h
+Proof
+  strip_tac
+  >> ‘(bind2 c return2).run = c.run’
+       by (simp[bind2_def, return2_def] >> CONV_TAC (DEPTH_CONV ETA_CONV)
+           >> simp[bind_right_identity])
+  >> simp[status_def] >> CASE_TAC >> simp[bind2_def]
+  >> irule bind_interest_running >> rw[]
+  >> irule wf_unfinished_before >> simp[]
+  >> qexists_tac ‘h’ >> simp[TAKE_IS_PREFIX]
+  >> fs[bind2_def]
+QED
+
+(* Left identity holds exactly (bind2_left_identity_exact), so in
+   particular for status *)
+Theorem status_bind2_left_identity:
+  status (bind2 (return2 x) f) h = status (f x) h
+Proof
+  simp[bind2_left_identity_exact]
+QED

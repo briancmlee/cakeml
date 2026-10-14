@@ -16,8 +16,11 @@ world, own whole-program theorem, end-to-end example.
   `Clock_now_spec` (`ffiSpikeClockProof`).
 - 03:28 step 3-4 done and green: `ffiSpikeClockWorld` (composed oracle,
   projections, parts_ok, basis view of a run, initial heap, final file
-  system, MAIN `clock_whole_prog_spec_semantics`).  Example (step 5) and the
-  Lib are drafts (uncommitted until cheat-free).
+  system, MAIN `clock_whole_prog_spec_semantics`).
+- 03:36 step 5 done and green: `ffiSpikeClockExample` (MAIN
+  `clock_example_semantics`, end to end) and `ffiSpikeClockWorldLib`.
+  Full `Holmake -j1` green in 30 s, no cheats.  Next: write-up
+  `04-ffi-integration.md`, then push and PR.
 
 ## Files
 | file | content |

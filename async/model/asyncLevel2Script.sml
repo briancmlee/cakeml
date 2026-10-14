@@ -245,6 +245,7 @@ Proof
   simp[quiet_def, return2_def, return_def]
 QED
 
+(* MAIN: the Level 2 primitives are quiet *)
 Theorem quiet_wait_on:
   quiet (wait_on e p)
 Proof
@@ -258,6 +259,7 @@ Proof
   >> gvs[new_actions_NIL, log_of_def, emit_def]
 QED
 
+(* MAIN: map2 is quiet if its argument is *)
 Theorem quiet_map2:
   quiet c ⇒ quiet (map2 f c)
 Proof

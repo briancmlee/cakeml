@@ -673,6 +673,7 @@ Proof
   simp[never_def, wf_wait]
 QED
 
+(* MAIN: map preserves well-formedness *)
 Theorem wf_map:
   wf m ⇒ wf (map f m)
 Proof
@@ -695,6 +696,7 @@ Proof
   rw[first_done_def] >> first_x_assum (qspec_then ‘n’ mp_tac) >> simp[TAKE_APPEND1]
 QED
 
+(* MAIN: bind preserves well-formedness *)
 Theorem wf_bind:
   wf m ∧ (∀x. wf (f x)) ⇒ wf (bind m f)
 Proof
@@ -807,6 +809,7 @@ Proof
   >> simp[DROP_LENGTH_NIL]
 QED
 
+(* MAIN: both preserves well-formedness *)
 Theorem wf_both:
   wf m1 ∧ wf m2 ⇒ wf (both m1 m2)
 Proof
@@ -930,6 +933,7 @@ Proof
   >> Cases_on ‘(m h).result’ >> gvs[]
 QED
 
+(* MAIN: bind preserves settledness *)
 Theorem settled_bind:
   wf m ∧ settled m ∧ (∀x. settled (f x)) ⇒ settled (bind m f)
 Proof
@@ -951,6 +955,7 @@ Proof
   >> first_x_assum irule >> metis_tac[]
 QED
 
+(* MAIN: both preserves settledness *)
 Theorem settled_both:
   settled m1 ∧ settled m2 ⇒ settled (both m1 m2)
 Proof

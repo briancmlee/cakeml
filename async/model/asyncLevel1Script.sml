@@ -750,6 +750,55 @@ Proof
   >> pairarg_tac >> simp[]
 QED
 
+(* The views, exactly, one round at a time *)
+Theorem left_view_SNOC_eq:
+  left_view m1 m2 (h ++ [s]) =
+    left_view m1 m2 h ++
+    [s with results :=
+       TAKE (LENGTH (new_actions (log_of m1) (left_view m1 m2 h))) s.results]
+Proof
+  simp[left_view_def, par_views_SNOC] >> pairarg_tac >> simp[]
+QED
+
+
+Theorem right_view_SNOC_eq:
+  right_view m1 m2 (h ++ [s]) =
+    right_view m1 m2 h ++
+    [s with results :=
+       DROP (LENGTH (new_actions (log_of m1) (left_view m1 m2 h))) s.results]
+Proof
+  simp[left_view_def, right_view_def, par_views_SNOC] >> pairarg_tac >> simp[]
+QED
+
+
+Theorem left_view_NIL[simp]:
+  left_view m1 m2 [] = []
+Proof
+  simp[left_view_def]
+QED
+
+
+Theorem right_view_NIL[simp]:
+  right_view m1 m2 [] = []
+Proof
+  simp[right_view_def]
+QED
+
+
+Theorem LENGTH_views[simp]:
+  LENGTH (left_view m1 m2 h) = LENGTH h ∧ LENGTH (right_view m1 m2 h) = LENGTH h
+Proof
+  simp[left_view_def, right_view_def, LENGTH_par_views]
+QED
+
+
+Theorem views_EQ_NIL[simp]:
+  (left_view m1 m2 h = [] ⇔ h = []) ∧ (right_view m1 m2 h = [] ⇔ h = [])
+Proof
+  metis_tac[LENGTH_views, LENGTH_NIL]
+QED
+
+
 (* A finished well-formed computation emits nothing new *)
 Theorem wf_finished_new_actions:
   wf m ∧ (m h).result ≠ NONE ⇒ new_actions (log_of m) (h ++ [s]) = []

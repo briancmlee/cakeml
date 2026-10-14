@@ -277,48 +277,6 @@ QED
    Splitting `both` at a point in the history
    ------------------------------------------------------------------------ *)
 
-Theorem left_view_SNOC_eq:
-  left_view m1 m2 (h ++ [s]) =
-    left_view m1 m2 h ++
-    [s with results :=
-       TAKE (LENGTH (new_actions (log_of m1) (left_view m1 m2 h))) s.results]
-Proof
-  simp[left_view_def, par_views_SNOC] >> pairarg_tac >> simp[]
-QED
-
-Theorem right_view_SNOC_eq:
-  right_view m1 m2 (h ++ [s]) =
-    right_view m1 m2 h ++
-    [s with results :=
-       DROP (LENGTH (new_actions (log_of m1) (left_view m1 m2 h))) s.results]
-Proof
-  simp[left_view_def, right_view_def, par_views_SNOC] >> pairarg_tac >> simp[]
-QED
-
-Theorem left_view_NIL[simp]:
-  left_view m1 m2 [] = []
-Proof
-  simp[left_view_def]
-QED
-
-Theorem right_view_NIL[simp]:
-  right_view m1 m2 [] = []
-Proof
-  simp[right_view_def]
-QED
-
-Theorem LENGTH_views[simp]:
-  LENGTH (left_view m1 m2 h) = LENGTH h ∧ LENGTH (right_view m1 m2 h) = LENGTH h
-Proof
-  simp[left_view_def, right_view_def, LENGTH_par_views]
-QED
-
-Theorem views_EQ_NIL[simp]:
-  (left_view m1 m2 h = [] ⇔ h = []) ∧ (right_view m1 m2 h = [] ⇔ h = [])
-Proof
-  metis_tac[LENGTH_views, LENGTH_NIL]
-QED
-
 (* The log of both, split into the rounds before the last one and the last *)
 Theorem par_log_log_before:
   par_log m1 m2 p =

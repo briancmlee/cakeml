@@ -655,3 +655,260 @@ Proof
        by simp[FUN_EQ_THM, erase_def, suspended2_def]
   >> simp[]
 QED
+
+(* ------------------------------------------------------------------------
+   choose2 is quiet
+   ------------------------------------------------------------------------ *)
+
+Theorem TAKE_IS_PREFIX[local]:
+  TAKE n h ≼ h
+Proof
+  metis_tac[TAKE_DROP, IS_PREFIX_APPEND3]
+QED
+
+Theorem choose_finished_before[local]:
+  (choose m1 m2 p).result ≠ NONE ∧ p ≼ h ⇒ (choose m1 m2 h).result ≠ NONE
+Proof
+  strip_tac >> Cases_on ‘(choose m1 m2 p).result’ >> fs[]
+  >> ‘choose m1 m2 h = choose m1 m2 p’
+       by (irule wf_finished_stays >> simp[wf_choose] >> metis_tac[])
+  >> simp[]
+QED
+
+(* If choose has not finished and has no request in flight, no side has
+   finished yet (the round in which choose waits for responses has requests
+   in flight) *)
+Theorem choose_quiet_point:
+  (choose m1 m2 h).result = NONE ∧ new_actions (log_of (choose m1 m2)) h = [] ⇒
+  first_prefix (either_done m1 m2) h = NONE
+Proof
+  rpt strip_tac >> spose_not_then assume_tac
+  >> Cases_on ‘first_prefix (either_done m1 m2) h’ >> fs[]
+  >> rename1 ‘_ = SOME n’
+  >> drule first_either_done_TAKE >> strip_tac
+  >> qabbrev_tac ‘p = TAKE n h’
+  >> ‘p ≼ h’ by simp[Abbr ‘p’, TAKE_IS_PREFIX]
+  >> Cases_on ‘(m1 (left_view m1 m2 p)).result’
+  >- (‘(m2 (right_view m1 m2 p)).result ≠ NONE’
+        by metis_tac[first_either_done_either]
+      >> Cases_on ‘(m2 (right_view m1 m2 p)).result’ >> fs[]
+      >> Cases_on ‘new_actions (log_of m1) (left_view m1 m2 p) = []’
+      >- (drule_all choose_right_wins >> strip_tac
+          >> ‘(choose m1 m2 p).result ≠ NONE’ by fs[first_done_def]
+          >> metis_tac[choose_finished_before])
+      >> Cases_on ‘n = LENGTH h’
+      >- (‘p = h’ by simp[Abbr ‘p’, TAKE_LENGTH_ID]
+          >> drule choose_new_actions_at >> drule_all choose_right_waits
+          >> rpt strip_tac >> gvs[]
+          >> qpat_x_assum ‘LENGTH _ ≤ _’ mp_tac
+          >> simp[Once par_log_log_before]
+          >> Cases_on ‘new_actions (log_of m1) (left_view m1 m2 h)’ >> fs[])
+      >> ‘n < LENGTH h’ by simp[]
+      >> drule_all choose_right_wins_later
+      >> disch_then (qspec_then ‘EL n h’ strip_assume_tac)
+      >> ‘p ++ [EL n h] = TAKE (n + 1) h’
+           by simp[Abbr ‘p’, TAKE_EL_SNOC, SNOC_APPEND]
+      >> ‘(choose m1 m2 (TAKE (n + 1) h)).result ≠ NONE’
+           by (qpat_x_assum ‘_ = TAKE (n + 1) h’ (SUBST_ALL_TAC o GSYM)
+               >> fs[first_done_def])
+      >> metis_tac[choose_finished_before, TAKE_IS_PREFIX])
+  >> drule_all choose_left_wins >> strip_tac
+  >> ‘(choose m1 m2 p).result ≠ NONE’ by fs[first_done_def]
+  >> metis_tac[choose_finished_before]
+QED
+
+(* choose2's log and finishing are those of the Level 1 choose *)
+Theorem choose2_run:
+  ((choose2 c1 c2).run h).actions = (choose c1.run c2.run h).actions ∧
+  (((choose2 c1 c2).run h).result = NONE ⇔ (choose c1.run c2.run h).result = NONE)
+Proof
+  simp[choose2_def, choose_as_choose_with] >> simp[choose_with_def]
+  >> rpt (CASE_TAC >> simp[])
+QED
+
+Theorem log_of_choose2:
+  log_of (choose2 c1 c2).run = log_of (choose c1.run c2.run)
+Proof
+  simp[FUN_EQ_THM, log_of_def, choose2_run]
+QED
+
+(* Deleting an irrelevant snapshot from a suspended side's view *)
+Theorem suspended2_delete:
+  (∀k. c.run (v ++ [s] ++ k) = c.run (v ++ k) ∧
+       c.interest (v ++ [s] ++ k) = c.interest (v ++ k)) ∧ R ≠ [] ⇒
+  suspended2 c (v ++ [s] ++ R) = suspended2 c (v ++ R)
+Proof
+  strip_tac
+  >> ‘FRONT (v ++ [s] ++ R) = v ++ [s] ++ FRONT R ∧
+      FRONT (v ++ R) = v ++ FRONT R’
+       by (Cases_on ‘R’ using SNOC_CASES >> fs[FRONT_APPEND, SNOC_APPEND]
+           >> REWRITE_TAC[GSYM APPEND_ASSOC, FRONT_APPEND, NOT_CONS_NIL]
+           >> simp[FRONT_APPEND])
+  >> simp[suspended2_def, theorem "comp2_component_equality"] >> conj_tac
+  >- (simp[FUN_EQ_THM, outcome_component_equality, suspended_actions]
+      >> qx_gen_tac ‘g’
+      >> first_assum (qspec_then ‘R ++ g’ mp_tac)
+      >> first_assum (qspec_then ‘FRONT R’ mp_tac)
+      >> REWRITE_TAC[APPEND_ASSOC] >> simp[])
+  >> CONV_TAC FUN_EQ_CONV >> qx_gen_tac ‘g’ >> BETA_TAC
+  >> first_assum (qspec_then ‘R ++ g’ mp_tac)
+  >> REWRITE_TAC[APPEND_ASSOC] >> simp[]
+QED
+
+(* Deleting a snapshot that both sides ignore, before either has finished,
+   changes nothing about choose (with any packaging of the loser that also
+   ignores it) *)
+Theorem choose_with_delete:
+  (∀k. m1 (left_view m1 m2 h ++ [s] ++ k) = m1 (left_view m1 m2 h ++ k)) ∧
+  (∀k. m2 (right_view m1 m2 h ++ [s] ++ k) = m2 (right_view m1 m2 h ++ k)) ∧
+  new_actions (log_of m1) (left_view m1 m2 h) = [] ∧ s.results = [] ∧
+  (∀R. R ≠ [] ⇒ k1 (left_view m1 m2 h ++ [s] ++ R) = k1 (left_view m1 m2 h ++ R)) ∧
+  (∀R. R ≠ [] ⇒ k2 (right_view m1 m2 h ++ [s] ++ R) = k2 (right_view m1 m2 h ++ R)) ∧
+  first_prefix (either_done m1 m2) h = NONE ⇒
+  ∀h'. (first_prefix (either_done m1 m2) (h ++ [s] ++ h') = NONE ⇔
+        first_prefix (either_done m1 m2) (h ++ h') = NONE) ∧
+       choose_with k1 k2 m1 m2 (h ++ [s] ++ h') = choose_with k1 k2 m1 m2 (h ++ h')
+Proof
+  strip_tac
+  >> qspecl_then [‘m1’, ‘m2’, ‘h’, ‘s’] mp_tac
+       (Q.GENL [‘m1’, ‘m2’, ‘h’, ‘s’] views_delete)
+  >> impl_tac >- simp[]
+  >> strip_tac
+  >> qspecl_then [‘m1’, ‘m2’, ‘h’, ‘s’] mp_tac
+       (Q.GENL [‘m1’, ‘m2’, ‘h’, ‘s’] par_log_delete)
+  >> impl_tac >- simp[]
+  >> strip_tac
+  (* whether a side has finished does not depend on s *)
+  >> ‘∀k. either_done m1 m2 (h ++ [s] ++ k) ⇔ either_done m1 m2 (h ++ k)’
+       by (gen_tac >> qpat_assum ‘∀h'. ∃R1 R2. _’ (qspec_then ‘k’ strip_assume_tac)
+           >> simp[either_done_def])
+  >> gen_tac
+  >> ‘first_prefix (either_done m1 m2) (h ++ [s] ++ h') =
+      OPTION_MAP SUC (first_prefix (either_done m1 m2) (h ++ h'))’
+       by (irule first_prefix_delete >> simp[])
+  >> Cases_on ‘first_prefix (either_done m1 m2) (h ++ h')’
+  >- simp[choose_with_def]
+  >> rename1 ‘_ = SOME n’
+  >> ‘LENGTH h < n ∧ n ≤ LENGTH h + LENGTH h'’
+       by (fs[first_prefix_SOME, first_prefix_NONE] >> spose_not_then assume_tac
+           >> ‘n ≤ LENGTH h’ by simp[]
+           >> ‘TAKE n (h ++ h') = TAKE n h’ by simp[TAKE_APPEND1]
+           >> metis_tac[])
+  >> ‘∃j. n = LENGTH h + j ∧ 0 < j’ by (qexists_tac ‘n - LENGTH h’ >> simp[])
+  >> gvs[]
+  >> ‘j ≤ LENGTH h'’ by simp[]
+  >> qabbrev_tac ‘q = TAKE j h'’
+  >> ‘q ≠ []’ by (simp[Abbr ‘q’] >> Cases_on ‘h'’ >> fs[])
+  >> ‘TAKE (SUC (j + LENGTH h)) (h ++ [s] ++ h') = h ++ [s] ++ q ∧
+      TAKE (j + LENGTH h) (h ++ h') = h ++ q’
+       by simp[Abbr ‘q’, TAKE_APPEND, TAKE_LENGTH_TOO_LONG, ADD1]
+  >> qpat_assum ‘∀h'. ∃R1 R2. _’ (qspec_then ‘q’ strip_assume_tac)
+  >> ‘R1 ≠ [] ∧ R2 ≠ []’
+       by (‘LENGTH (left_view m1 m2 (h ++ q)) = LENGTH h + LENGTH q ∧
+            LENGTH (right_view m1 m2 (h ++ q)) = LENGTH h + LENGTH q’
+             by SIMP_TAC (srw_ss()) []
+           >> ‘LENGTH q ≠ 0’ by (Cases_on ‘q’ >> fs[])
+           >> conj_tac >> strip_tac
+           >> qpat_x_assum ‘LENGTH (_ _ _ (h ++ q)) = _’ mp_tac
+           >> qpat_x_assum ‘LENGTH (_ _ _ (h ++ q)) = _’ mp_tac
+           >> qpat_x_assum ‘left_view m1 m2 (h ++ q) = _’ (fn th => REWRITE_TAC[th])
+           >> qpat_x_assum ‘right_view m1 m2 (h ++ q) = _’ (fn th => REWRITE_TAC[th])
+           >> simp[])
+  >> ‘new_actions (log_of m1) (left_view m1 m2 h ++ [s] ++ R1) =
+      new_actions (log_of m1) (left_view m1 m2 h ++ R1)’
+       by (irule new_actions_delete >> simp[])
+  >> ‘log_before m1 m2 (h ++ [s] ++ q) = log_before m1 m2 (h ++ q)’
+       by (simp[log_before_def]
+           >> ‘FRONT (h ++ [s] ++ q) = h ++ [s] ++ FRONT q ∧
+               FRONT (h ++ q) = h ++ FRONT q’
+                by (Cases_on ‘q’ using SNOC_CASES >> fs[SNOC_APPEND]
+                    >> REWRITE_TAC[GSYM APPEND_ASSOC, FRONT_APPEND, NOT_CONS_NIL]
+                    >> simp[FRONT_APPEND])
+           >> simp[])
+  (* the round after, for the case where choose waits for responses *)
+  >> qabbrev_tac ‘q' = TAKE (j + 1) h'’
+  >> qabbrev_tac ‘M = j + LENGTH h’
+  >> qabbrev_tac ‘N = SUC M’
+  >> ‘TAKE (N + 1) (h ++ [s] ++ h') = h ++ [s] ++ q' ∧
+      TAKE (M + 1) (h ++ h') = h ++ q' ∧
+      (LENGTH (h ++ [s] ++ h') = N ⇔ LENGTH (h ++ h') = M)’
+       by simp[Abbr ‘q'’, Abbr ‘M’, Abbr ‘N’, TAKE_APPEND, TAKE_LENGTH_TOO_LONG,
+               ADD1]
+  >> qpat_assum ‘∀h'. ∃R1 R2. _’ (qspec_then ‘q'’ strip_assume_tac)
+  >> rename1 ‘left_view m1 m2 (h ++ q') = left_view m1 m2 h ++ R1'’
+  >> ‘R1' ≠ []’
+       by (‘LENGTH (left_view m1 m2 (h ++ q')) = LENGTH h + LENGTH q'’
+             by SIMP_TAC (srw_ss()) []
+           >> ‘LENGTH q' ≠ 0’
+                by (qpat_x_assum ‘j ≤ LENGTH h'’ mp_tac
+                    >> qpat_x_assum ‘0 < j’ mp_tac
+                    >> qpat_x_assum ‘Abbrev (q' = _)’
+                         (fn th => REWRITE_TAC[REWRITE_RULE[markerTheory.Abbrev_def] th])
+                    >> SIMP_TAC (srw_ss()) [LENGTH_TAKE_EQ]
+                    >> Cases_on ‘h'’ >> SIMP_TAC (srw_ss() ++ ARITH_ss) [])
+           >> strip_tac
+           >> qpat_x_assum ‘LENGTH (_ _ _ (h ++ q')) = _’ mp_tac
+           >> qpat_x_assum ‘left_view m1 m2 (h ++ q') = _’ (fn th => REWRITE_TAC[th])
+           >> simp[])
+  >> ONCE_REWRITE_TAC[choose_with_def] >> ASM_REWRITE_TAC[]
+  >> simp[]
+QED
+
+(* MAIN: choose2 is quiet if its sides are *)
+Theorem quiet_choose2:
+  wf c1.run ∧ wf c2.run ∧ quiet c1 ∧ quiet c2 ⇒ quiet (choose2 c1 c2)
+Proof
+  strip_tac >> simp[quiet_def] >> rpt gen_tac >> strip_tac
+  (* no side has finished yet, so choose2 is running both sides *)
+  >> ‘first_prefix (either_done c1.run c2.run) h = NONE’
+       by (irule choose_quiet_point >> gvs[choose2_run, log_of_choose2])
+  >> qabbrev_tac ‘l = left_view c1.run c2.run h’
+  >> qabbrev_tac ‘r = right_view c1.run c2.run h’
+  >> ‘(c1.run l).result = NONE ∧ (c2.run r).result = NONE’
+       by (qpat_x_assum ‘first_prefix _ h = NONE’ mp_tac
+           >> simp[first_prefix_NONE] >> disch_then (qspec_then ‘LENGTH h’ mp_tac)
+           >> simp[TAKE_LENGTH_ID, either_done_def, Abbr ‘l’, Abbr ‘r’])
+  (* neither side has a request in flight *)
+  >> ‘new_actions (log_of c1.run) l = [] ∧ new_actions (log_of c2.run) r = []’
+       by (qpat_x_assum ‘new_actions _ h = []’ mp_tac
+           >> simp[log_of_choose2]
+           >> Cases_on ‘h’ using SNOC_CASES
+           >- simp[Abbr ‘l’, Abbr ‘r’, new_actions_NIL, log_of_def, choose_running,
+                   par_log_def, par_actions_NIL]
+           >> fs[SNOC_APPEND]
+           >> ‘first_prefix (either_done c1.run c2.run) l' = NONE’
+                by fs[first_prefix_SNOC, AllCaseEqs()]
+           >> simp[new_actions_SNOC, log_of_def, choose_running, par_log_SNOC,
+                   Abbr ‘l’, Abbr ‘r’]
+           >> Cases_on ‘new_actions (log_of c1.run) (left_view c1.run c2.run (l' ++ [x]))’
+           >> Cases_on ‘new_actions (log_of c2.run) (right_view c1.run c2.run (l' ++ [x]))’
+           >> simp[])
+  >> ‘DISJOINT (c1.interest l) s.ready ∧ DISJOINT (c2.interest r) s.ready’
+       by (qpat_x_assum ‘DISJOINT _ _’ mp_tac
+           >> simp[choose2_def, choose_interest_def, waiting_on_def,
+                   Abbr ‘l’, Abbr ‘r’])
+  (* so s makes no difference to either side *)
+  >> ‘∀k. c1.run (l ++ [s] ++ k) = c1.run (l ++ k) ∧
+          c1.interest (l ++ [s] ++ k) = c1.interest (l ++ k)’
+       by (gen_tac >> qpat_x_assum ‘quiet c1’ mp_tac >> simp[quiet_def]
+           >> disch_then irule >> simp[])
+  >> ‘∀k. c2.run (r ++ [s] ++ k) = c2.run (r ++ k) ∧
+          c2.interest (r ++ [s] ++ k) = c2.interest (r ++ k)’
+       by (gen_tac >> qpat_x_assum ‘quiet c2’ mp_tac >> simp[quiet_def]
+           >> disch_then irule >> simp[])
+  >> qspecl_then [‘c1.run’, ‘c2.run’, ‘h’, ‘s’, ‘suspended2 c1’, ‘suspended2 c2’]
+       mp_tac (Q.GENL [‘m1’, ‘m2’, ‘h’, ‘s’, ‘k1’, ‘k2’] choose_with_delete)
+  >> impl_tac
+  >- (fs[Abbr ‘l’, Abbr ‘r’] >> rpt strip_tac
+      >> irule suspended2_delete >> simp[])
+  >> disch_then (qspec_then ‘h'’ strip_assume_tac)
+  >> simp[choose2_def, choose_interest_def]
+  >> Cases_on ‘first_prefix (either_done c1.run c2.run) (h ++ h')’
+  >> Cases_on ‘first_prefix (either_done c1.run c2.run) (h ++ [s] ++ h')’ >> fs[]
+  (* still running: the waiting sets are the sides' *)
+  >> qspecl_then [‘c1.run’, ‘c2.run’, ‘h’, ‘s’] mp_tac
+       (Q.GENL [‘m1’, ‘m2’, ‘h’, ‘s’] views_delete)
+  >> impl_tac >- fs[Abbr ‘l’]
+  >> disch_then (qspec_then ‘h'’ strip_assume_tac)
+  >> fs[Abbr ‘l’, Abbr ‘r’, waiting_on_def]
+QED

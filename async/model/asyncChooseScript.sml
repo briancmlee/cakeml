@@ -881,3 +881,12 @@ Proof
   rw[can_return_def] >> drule choose_results >> rw[]
   >> gvs[wf_suspended, settled_suspended]
 QED
+
+(* If m2 needs a snapshot to finish, then before any snapshot choose can
+   only have finished with m1's result *)
+Theorem choose_at_start:
+  (m2 []).result = NONE ∧ (choose m1 m2 []).result = SOME z ⇒ ∃x l. z = INL (x, l)
+Proof
+  rw[choose_def, Once first_prefix_def, either_done_def, AllCaseEqs()] >> gvs[]
+  >> Cases_on ‘(m1 []).result’ >> gvs[]
+QED

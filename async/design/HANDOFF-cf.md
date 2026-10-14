@@ -167,3 +167,14 @@ design decisions are made here; any choices go under "Assumptions made" in
   silently unified them (`p : num ffi_proj`). Fix: annotate types in
   statements. Not a tool bug, but costly to diagnose.
 - **Holmake fixed overhead** stays at ~6.5 s per run in the sparse worktree.
+
+## Final report, follow-up (2026-10-15, ~04:15)
+
+- **PR:** https://github.com/briancmlee/cakeml/pull/5 (spike/cf-loop → spike/cf-feasibility).
+- **(a)** `app_forall` + `app_STEP_of_approx`. `wait_spec`/`bind_spec` are now
+  corollaries of their `_n` lemmas, with statements unchanged.
+- **(b)** `run_spec`: the loop diverges with trace `LGENLIST (λi. snap_event (s i)) NONE`.
+  `step_spec` carries the STEP invariant. The gap: `POSTd` only constrains the trace.
+- No cheats; Holmake -j2 green; nothing in the base or basis_ffi was touched.
+- **Next** (not started, per the rules): the actions/responses `STEP`, after which the
+  loop's trace can carry the model's meaning.

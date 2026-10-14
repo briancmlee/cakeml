@@ -280,3 +280,27 @@ Theorem wf2_bind2:
 Proof
   rw[] >> irule wf2_bind2_on >> simp[]
 QED
+
+(* MAIN: quietness is preserved by Level 2 recursion: a guarded body that
+   preserves Level 2 well-formedness (wf2 = well-formed and quiet) gives a
+   quiet fixpoint.  (A corollary of wf2_fix2, stated separately because
+   quietness is what a blocking scheduler relies on.) *)
+Theorem quiet_fix2:
+  contractive2 body2 ∧ (∀R. (∀p. wf2 (R p)) ⇒ ∀p. wf2 (body2 R p)) ⇒
+  ∀p. quiet (fix2 body2 p)
+Proof
+  rpt strip_tac >> drule_all wf2_fix2 >> simp[wf2_def]
+QED
+
+(* MAIN: the same, for loops whose parameters satisfy an invariant ok *)
+Theorem wf2_fix2_on:
+  contractive2 body2 ∧
+  (∀R. (∀p. ok p ⇒ wf2 (R p)) ⇒ ∀p. ok p ⇒ wf2 (body2 R p)) ⇒
+  ∀p. ok p ⇒ wf2 (fix2 body2 p)
+Proof
+  rw[contractive2_lift, fix2_def]
+  >> ‘(λF. wf2 (unpack F)) (fix (lift_body body2) p)’ suffices_by simp[]
+  >> irule fix_preserves_on >> simp[wf2_closed]
+  >> conj_tac >- (qexists_tac ‘pack never2’ >> simp[wf2_never2])
+  >> qexists_tac ‘ok’ >> simp[lift_body_def]
+QED

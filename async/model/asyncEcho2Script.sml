@@ -101,3 +101,12 @@ Theorem example_echo2_waits_again:
 Proof
   EVAL_TAC
 QED
+
+(* MAIN: the Level 2 echo loop is quiet: it makes no progress, now or later,
+   on a snapshot in which fd is not readable (and no response is due), so a
+   scheduler may block in select until fd becomes readable *)
+Theorem quiet_echo2:
+  quiet (echo2 fd)
+Proof
+  mp_tac wf2_echo2 >> simp[wf2_def]
+QED

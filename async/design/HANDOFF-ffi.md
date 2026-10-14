@@ -13,8 +13,11 @@ world, own whole-program theorem, end-to-end example.
 ## State (update at every commit)
 - 03:20 steps 1-2 done and green: clock model (`ffiSpikeClockFFI`), module
   `Clock.now` (`ffiSpikeClockProg`), `CLOCK` and the CF spec
-  `Clock_now_spec` (`ffiSpikeClockProof`).  World and example are drafts
-  (uncommitted until cheat-free).
+  `Clock_now_spec` (`ffiSpikeClockProof`).
+- 03:28 step 3-4 done and green: `ffiSpikeClockWorld` (composed oracle,
+  projections, parts_ok, basis view of a run, initial heap, final file
+  system, MAIN `clock_whole_prog_spec_semantics`).  Example (step 5) and the
+  Lib are drafts (uncommitted until cheat-free).
 
 ## Files
 | file | content |

@@ -696,9 +696,21 @@ Proof
   rw[first_done_def] >> first_x_assum (qspec_then ‘n’ mp_tac) >> simp[TAKE_APPEND1]
 QED
 
-(* MAIN: bind preserves well-formedness *)
-Theorem wf_bind:
-  wf m ∧ (∀x. wf (f x)) ⇒ wf (bind m f)
+(* x is a possible result of m: m finishes with x on some history *)
+Definition can_return_def:
+  can_return m x ⇔ ∃h. (m h).result = SOME x
+End
+
+Theorem first_done_can_return:
+  first_done m h x ⇒ can_return m x
+Proof
+  rw[first_done_def, can_return_def] >> metis_tac[]
+QED
+
+(* MAIN: bind preserves well-formedness, if the continuation is well-formed
+   for every result m can actually produce *)
+Theorem wf_bind_on:
+  wf m ∧ (∀x. can_return m x ⇒ wf (f x)) ⇒ wf (bind m f)
 Proof
   strip_tac >> simp[wf_def] >> rpt gen_tac
   >> qspecl_then [‘m’, ‘h ++ [s]’] strip_assume_tac history_split
@@ -724,10 +736,17 @@ Proof
        by REWRITE_TAC[APPEND_ASSOC]
   >> pop_assum SUBST1_TAC
   >> qpat_assum ‘first_done m _ _’ (fn th => simp[MATCH_MP bind_continues th])
-  >> ‘wf (f x)’ by simp[]
+  >> ‘wf (f x)’ by metis_tac[first_done_can_return]
   >> gvs[wf_def]
 QED
 
+
+(* MAIN: bind preserves well-formedness *)
+Theorem wf_bind:
+  wf m ∧ (∀x. wf (f x)) ⇒ wf (bind m f)
+Proof
+  rw[] >> irule wf_bind_on >> simp[]
+QED
 (* The log of `both` only grows, and once both sides have finished,
    nothing changes.  The sides' views grow by one snapshot each round. *)
 Theorem left_view_SNOC:
@@ -880,6 +899,17 @@ Proof
   >> qexists_tac ‘never’ >> simp[wf_never]
 QED
 
+
+(* MAIN: the same, for loops whose parameters satisfy an invariant ok, e.g.
+   "the pending computation carried by the loop is well-formed" *)
+Theorem wf_fix_on:
+  contractive body ∧ (∀r. (∀p. ok p ⇒ wf (r p)) ⇒ ∀p. ok p ⇒ wf (body r p)) ⇒
+  ∀p. ok p ⇒ wf (fix body p)
+Proof
+  rpt strip_tac >> irule fix_preserves_on >> simp[wf_closed]
+  >> conj_tac >- (qexists_tac ‘never’ >> simp[wf_never])
+  >> qexists_tac ‘ok’ >> simp[]
+QED
 (* ------------------------------------------------------------------------
    Nothing is dropped by bind.
 
@@ -933,14 +963,16 @@ Proof
   >> Cases_on ‘(m h).result’ >> gvs[]
 QED
 
-(* MAIN: bind preserves settledness *)
-Theorem settled_bind:
-  wf m ∧ settled m ∧ (∀x. settled (f x)) ⇒ settled (bind m f)
+(* MAIN: bind preserves settledness, if the continuation is settled for
+   every result m can actually produce *)
+Theorem settled_bind_on:
+  wf m ∧ settled m ∧ (∀x. can_return m x ⇒ settled (f x)) ⇒ settled (bind m f)
 Proof
-  rw[settled_def] >> rename1 ‘bind m f h’
+  strip_tac >> simp[settled_def] >> qx_gen_tac ‘h’ >> strip_tac
   >> qspecl_then [‘m’, ‘h’] strip_assume_tac history_split
   >- (qpat_x_assum ‘∀n. _’ (fn th => gvs[MATCH_MP bind_running th]))
   >> gvs[]
+  >> ‘settled (f x)’ by metis_tac[first_done_can_return]
   >> qpat_assum ‘first_done m _ _’
        (fn th => assume_tac (MATCH_MP bind_continues_result th))
   >> Cases_on ‘h2 = []’
@@ -948,13 +980,22 @@ Proof
      (gvs[] >> drule_all new_actions_bind_at
       >> disch_then (qspec_then ‘f’ SUBST1_TAC)
       >> ‘(m h1).result ≠ NONE’ by gvs[first_done_def]
+      >> ‘new_actions (log_of m) h1 = []’ by fs[settled_def]
       >> gvs[skip_results_def]
-      >> first_x_assum drule >> simp[new_actions_NIL, log_of_def])
+      >> qpat_x_assum ‘settled (f x)’ mp_tac >> simp[settled_def]
+      >> disch_then (qspec_then ‘[]’ mp_tac) >> simp[new_actions_NIL, log_of_def])
   (* f x finishes in a later round *)
   >> drule_all new_actions_bind_after >> disch_then (qspec_then ‘f’ SUBST1_TAC)
-  >> first_x_assum irule >> metis_tac[]
+  >> qpat_x_assum ‘settled (f x)’ mp_tac >> simp[settled_def]
+  >> disch_then irule >> metis_tac[]
 QED
 
+(* MAIN: bind preserves settledness *)
+Theorem settled_bind:
+  wf m ∧ settled m ∧ (∀x. settled (f x)) ⇒ settled (bind m f)
+Proof
+  rw[] >> irule settled_bind_on >> simp[]
+QED
 (* MAIN: both preserves settledness *)
 Theorem settled_both:
   settled m1 ∧ settled m2 ⇒ settled (both m1 m2)

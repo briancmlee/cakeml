@@ -371,9 +371,10 @@ val continues_tac =
     (fn th => simp[MATCH_MP bind_continues' th,
                    MATCH_MP (GEN_TYVARIFY bind_interest_continues) th]);
 
-(* MAIN: bind2 is quiet if its parts are *)
-Theorem quiet_bind2:
-  wf c.run ∧ quiet c ∧ (∀x. quiet (f x)) ⇒ quiet (bind2 c f)
+(* MAIN: bind2 is quiet if c is, and f x is for every result c can actually
+   produce *)
+Theorem quiet_bind2_on:
+  wf c.run ∧ quiet c ∧ (∀x. can_return c.run x ⇒ quiet (f x)) ⇒ quiet (bind2 c f)
 Proof
   strip_tac >> simp[quiet_def, bind2_def] >> rpt gen_tac >> strip_tac
   >> qspecl_then [‘c.run’, ‘h’] strip_assume_tac history_split
@@ -422,7 +423,7 @@ Proof
            >> qspecl_then [‘c.run’, ‘h1’, ‘x’, ‘h2’, ‘λx. (f x).run’] mp_tac
                 (Q.GENL [‘m’, ‘h1’, ‘x’, ‘q’, ‘f’] new_actions_bind_after)
            >> simp[skip_results_APPEND])
-  >> ‘quiet (f x)’ by simp[]
+  >> ‘quiet (f x)’ by metis_tac[first_done_can_return]
   >> pop_assum (mp_tac o REWRITE_RULE[quiet_def])
   >> disch_then (qspecl_then [‘skip_results kc h2’, ‘s’, ‘h'’] mp_tac)
   >> impl_tac >- simp[]
@@ -433,6 +434,13 @@ Proof
   >> continues_tac
 QED
 
+
+(* MAIN: bind2 is quiet if its parts are *)
+Theorem quiet_bind2:
+  wf c.run ∧ quiet c ∧ (∀x. quiet (f x)) ⇒ quiet (bind2 c f)
+Proof
+  rw[] >> irule quiet_bind2_on >> simp[]
+QED
 (* ------------------------------------------------------------------------
    both2 is quiet
    ------------------------------------------------------------------------ *)

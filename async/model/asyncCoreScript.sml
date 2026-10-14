@@ -516,6 +516,23 @@ Proof
   >> Induct >> simp[FUNPOW_SUC]
 QED
 
+(* fix_preserves, for loops whose parameters satisfy an invariant ok (for
+   example, "the pending computation carried by the loop is well-formed") *)
+Theorem fix_preserves_on:
+  contractive body ∧ closed P ∧ P m0 ∧
+  (∀r. (∀p. ok p ⇒ P (r p)) ⇒ ∀p. ok p ⇒ P (body r p)) ⇒
+  ∀p. ok p ⇒ P (fix body p)
+Proof
+  rw[closed_def] >> first_x_assum irule >> rw[]
+  >> qexists_tac ‘FUNPOW body n (K m0) p’
+  >> conj_tac
+  >- (‘agree_below n (FUNPOW body n (K m0) p) (fix body p)’
+        by metis_tac[fix_agree_FUNPOW]
+      >> fs[agree_below_def])
+  >> ‘∀n p. ok p ⇒ P (FUNPOW body n (K m0) p)’ suffices_by simp[]
+  >> Induct >> simp[FUNPOW_SUC]
+QED
+
 (* Guardedness and non-expansiveness: basic closure properties *)
 
 Theorem nonexpansive_const:

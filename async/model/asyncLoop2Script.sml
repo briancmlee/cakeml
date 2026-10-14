@@ -267,10 +267,16 @@ Proof
   simp[wf2_def, quiet_emit2] >> simp[emit2_def, wf_emit]
 QED
 
+Theorem wf2_bind2_on:
+  wf2 c ∧ (∀x. can_return c.run x ⇒ wf2 (f x)) ⇒ wf2 (bind2 c f)
+Proof
+  rw[wf2_def]
+  >- (simp[bind2_def] >> irule wf_bind_on >> simp[])
+  >> irule quiet_bind2_on >> simp[]
+QED
+
 Theorem wf2_bind2:
   wf2 c ∧ (∀x. wf2 (f x)) ⇒ wf2 (bind2 c f)
 Proof
-  rw[wf2_def]
-  >- (simp[bind2_def] >> irule wf_bind >> simp[])
-  >> irule quiet_bind2 >> simp[]
+  rw[] >> irule wf2_bind2_on >> simp[]
 QED

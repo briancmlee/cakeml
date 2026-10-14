@@ -136,3 +136,15 @@ Proof
   strip_tac >> irule fix_preserves >> simp[settled_closed]
   >> qexists_tac ‘never’ >> simp[settled_never]
 QED
+
+(* MAIN: settledness of guarded recursive definitions whose parameters
+   satisfy an invariant ok *)
+Theorem settled_fix_on:
+  contractive body ∧
+  (∀r. (∀p. ok p ⇒ settled (r p)) ⇒ ∀p. ok p ⇒ settled (body r p)) ⇒
+  ∀p. ok p ⇒ settled (fix body p)
+Proof
+  rpt strip_tac >> irule fix_preserves_on >> simp[settled_closed]
+  >> conj_tac >- (qexists_tac ‘never’ >> simp[settled_never])
+  >> qexists_tac ‘ok’ >> simp[]
+QED

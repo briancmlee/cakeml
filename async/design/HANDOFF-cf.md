@@ -79,3 +79,30 @@ this file plus the coordinator's original brief.
   conclusion becomes a fixed parameter. Quantify such variables explicitly.
 - hol-lsp `goalState` times out (walker >1500 ms) after `xmatch` in these
   proofs. Use `diagnostics` to check, or a Holmake dumped heap.
+
+## Final report (2026-10-15 02:05)
+
+- **PR:** https://github.com/briancmlee/cakeml/pull/2 (spike/cf-feasibility → async-io).
+- **Option A (residuals, no refs) works.** I proved CF specs for `return`, `poll`, `wait`
+  and `bind` against the HOL history model via the coinductive predicate
+  `STEP`, plus `bind_Done_spec`: finished binds leave no wrapper. There are no cheats,
+  and Holmake succeeds. I did not try Option B.
+- **Key definitions:** `STEP` (Done: finished with a represented result;
+  Pending kv: not finished, and for every represented snapshot, `kv wv`
+  returns a value implementing `after w m`). Also `returns` (CF `app` with emp pre
+  and a pure post), `STEPn` (n-poll approximation), and `app_basic_forall`
+  (determinism gives an infinite conjunction of pure posts).
+- **What failed:** nothing in Option A. Friction: the `W` combinator name
+  clash, CoInductive making a free `m` schematic, HO matching for
+  `returns_forall`, and hol-lsp walker timeouts after `xmatch`.
+- **Shared base:** the recipe works. Nothing in the base was modified; the only
+  writes were 65 new make-deps cache files on the first run. Fixed overhead is about 6.5 s per run.
+- **Time:** Step 0 waited ~60 min for the base build (00:40–01:40), during which I
+  designed the setup and drafted the scripts. Step 1 took ~15 min. Step 2 took ~15 min of proving plus
+  ~10 min of docs and PR.
+- **Tools:** hol-lsp MCP tools were available (diagnostics, goalState, eval).
+  `diagnostics` was the main loop, at ~10–60 s per iteration. `goalState` timed out on
+  post-`xmatch` goals.
+- **Recommendation:** use the residual style with CF for the library. Next, in order:
+  actions/responses `STEP`, the `cfDiv` event loop, and a reusable
+  approximation-limit lemma.

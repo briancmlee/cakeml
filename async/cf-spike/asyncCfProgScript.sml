@@ -151,6 +151,22 @@ Proof
         mp_tac returns_forall >> simp[])
 QED
 
+(* The packaged limit argument: if a call returns, for every n, a value
+   satisfying the n-th approximation of STEP, then it returns a value
+   satisfying STEP itself.  So a spec for a recursive function is proved by
+   proving its approximations (by induction on n), and nothing else. *)
+Theorem app_STEP_of_approx:
+  args ≠ [] ∧ (∀n. app p f args H (POSTv v. &STEPn p A WORLD n m v)) ⇒
+  app (p:'ffi ffi_proj) f args H (POSTv v. &STEP p A WORLD m v)
+Proof
+  strip_tac >> irule app_weaken >>
+  qexists_tac ‘POSTv v. &(∀n. STEPn p A WORLD n m v)’ >> conj_tac
+  >- (rw[cfHeapsBaseTheory.SEP_IMPPOST_def, set_sepTheory.SEP_IMP_def,
+         POSTv_cond] >> metis_tac[STEPn_IMP_STEP])
+  >- (qspecl_then [‘p’, ‘λn. STEPn p A WORLD n m’, ‘args’, ‘f’, ‘H’] mp_tac
+        app_forall >> gvs[])
+QED
+
 (* ------------------------------------------------------------------------
    CF specs
    ------------------------------------------------------------------------ *)
@@ -211,23 +227,8 @@ Theorem wait_spec:
   app (p:'ffi ffi_proj) wait_v [fv] emp
     (POSTv v. &STEP p A WORLD (mwait f) v)
 Proof
-  rpt strip_tac >> xcf_with_def (fetch "-" "wait_v_def") >>
-  xfun ‘k’ >> xcon >> xsimpl >>
-  (* the closure k stored in Pending: prove every approximation of STEP *)
-  irule STEPn_IMP_STEP >> qx_gen_tac ‘j’ >> Cases_on ‘j’ >>
-  simp[STEPn_def, mwait_NIL] >>
-  rpt strip_tac >> simp[returns_def] >>
-  qpat_x_assum ‘curried _ _ k ∧ _’ (irule o CONJUNCT2) >>
-  xlet ‘POSTv ov. &OPTION_TYPE A (f w) ov’
-  >- (qpat_x_assum ‘∀w wv. WORLD w wv ⇒ _’ (drule_then assume_tac) >>
-      gvs[returns_def] >> qpat_x_assum ‘app _ fv _ _ _’ xapp_spec >> xsimpl) >>
-  Cases_on ‘f w’ >> gvs[std_preludeTheory.OPTION_TYPE_def] >> xmatch
-  >- ((* the recursive call wait p: use the n-th approximation *)
-      qspecl_then [‘n’, ‘p’, ‘f’, ‘fv’] mp_tac wait_spec_n >>
-      impl_tac >- first_assum ACCEPT_TAC >> strip_tac >>
-      xapp >> xsimpl >> simp[after_mwait_NONE])
-  >- (xcon >> xsimpl >> Cases_on ‘n’ >> simp[STEPn_def] >>
-      metis_tac[after_mwait_SOME])
+  rpt strip_tac >> irule app_STEP_of_approx >> simp[] >>
+  metis_tac[wait_spec_n]
 QED
 
 (* Finite approximation of bind's spec, by induction on n. *)
@@ -274,27 +275,8 @@ Theorem bind_spec:
   app (p:'ffi ffi_proj) bind_v [mv; gv] emp
     (POSTv v. &STEP p B WORLD (mbind m g) v)
 Proof
-  rpt strip_tac >> xcf_with_def (fetch "-" "bind_v_def") >>
-  qpat_x_assum ‘STEP _ _ _ m mv’ mp_tac >> simp[Once STEP_cases] >> rw[]
-  >- ((* Done x: bind is the continuation g x *)
-      qpat_x_assum ‘∀x xv. A x xv ⇒ _’ (drule_then assume_tac) >>
-      gvs[returns_def] >> xmatch >>
-      qpat_x_assum ‘app _ gv _ _ _’ xapp_spec >> xsimpl >>
-      metis_tac[mbind_finished])
-  >- ((* Pending k: bind returns Pending k2, where k2 w = bind (k w) g *)
-      xmatch >> xfun ‘k2’ >> xcon >> xsimpl >>
-      irule STEPn_IMP_STEP >> qx_gen_tac ‘j’ >> Cases_on ‘j’ >>
-      simp[STEPn_def, mbind_NIL_pending] >>
-      rpt strip_tac >> simp[returns_def] >>
-      qpat_x_assum ‘curried _ _ k2 ∧ _’ (irule o CONJUNCT2) >>
-      xlet ‘POSTv r. &STEP p A WORLD (after w m) r’
-      >- (qpat_x_assum ‘∀w wv. WORLD w wv ⇒ returns _ _ _ (STEP _ _ _ _)’
-            (drule_then assume_tac) >>
-          gvs[returns_def] >> qpat_x_assum ‘app _ kv _ _ _’ xapp_spec >> xsimpl) >>
-      (* the recursive call bind (k w) g: use the n-th approximation *)
-      qspecl_then [‘n’, ‘p’, ‘after w m’, ‘r’, ‘g’, ‘gv’] mp_tac bind_spec_n >>
-      impl_tac >- metis_tac[] >> strip_tac >>
-      xapp >> xsimpl >> simp[after_mbind_pending])
+  rpt strip_tac >> irule app_STEP_of_approx >> simp[] >>
+  metis_tac[bind_spec_n]
 QED
 
 (* MAIN: binding a finished computation adds no wrapper: bind (Done x) g

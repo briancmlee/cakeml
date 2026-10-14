@@ -106,3 +106,75 @@ this file plus the coordinator's original brief.
 - **Recommendation:** use the residual style with CF for the library. Next, in order:
   actions/responses `STEP`, the `cfDiv` event loop, and a reusable
   approximation-limit lemma.
+
+## Follow-up on stacked branch spike/cf-loop (PR against spike/cf-feasibility)
+
+Task from the coordinator, worked overnight: (a) package "approximations, then the limit"
+as a reusable lemma; (b) a toy never-ending event loop with cfDiv. No new
+design decisions are made here; any choices go under "Assumptions made" in
+`03-cf-loop.md`.
+
+- (a) DONE. `asyncCfDetScript.sml`:
+  - `app_forall` (curried version of `app_basic_forall`, for any non-empty
+    argument list; it uses determinism to keep the intermediate closure and
+    heap, plus `app_exact_pre`);
+  - helpers `evaluate_to_heap_Val_det`, `POSTv_SEP_EXISTS_cond`, `SPLIT3_merge`.
+
+  `asyncCfProgScript.sml`: `app_STEP_of_approx`. To prove a STEP spec,
+  prove its approximations for every n. `wait_spec` and `bind_spec` are now
+  2-line corollaries of `wait_spec_n`/`bind_spec_n`, so the closure reasoning
+  is no longer duplicated. Statements are unchanged.
+- (b) DONE. `asyncCfSnapScript.sml` (pure HOL: a minimal FFI model of a
+  stream of one-byte snapshots, `after_list`, a lazy-list lemma) and
+  `asyncCfLoopScript.sml` (`get_snapshot`/`step`/`run` in CakeML,
+  `get_snapshot_spec`, `step_spec` (MAIN: one iteration = loop invariant),
+  `run_spec` (MAIN: `POSTd io. io = LGENLIST (λi. snap_event (s i)) NONE`,
+  i.e. it diverges with one get_snapshot event per snapshot)). Proved with
+  `xcf_div_rule IMP_app_POSTd_one_FFI_part_FLATTEN`. The honest gap: `POSTd`
+  only constrains the trace, so residual correctness shows up as the loop
+  invariant, not in `run_spec` itself. Write-up: `03-cf-loop.md` (with
+  "Assumptions made").
+- Holmake -j2 green for all of `async/cf-spike`; no cheats.
+- The 02:30–03:15 HOL maintenance window paused the work; HOL and the base were rebuilt and all
+  theories here rebuilt cleanly.
+
+## Tool feedback (for the upstream tracker)
+
+- **hol-lsp lacks the current theory's CakeML env lookups inside
+  `xcf_div` goals.** In `asyncCfLoop.run_spec`, `xapp` on `step` fails in
+  hol-lsp with `Exception raised at optionSyntax.dest_some`, but the same
+  tactic works under Holmake. Holmake prints "Adding nsLookup representation
+  thms for [asyncCfLoop_env_1, asyncCfLoop_env_0]" at that point, so hol-lsp
+  seems to miss that dynamic registration for the theory's own env
+  constants. Workaround: replay the proof in Holmake's dumped heap
+  (`hol --holstate=<thy>.<thm>.dumpedheap < replay.sml`, with
+  `proofManagerLib.g`/`e`/`p`).
+- **Editing above `Quote add_cakeml` breaks the LSP session**: re-running it
+  gives `HOL_ERR "Out-of-date conclusion to theorem"` (from
+  `Definition.new_definition`). Restarting the server fixes it, so pure HOL
+  material now lives in a separate theory.
+- **After rebuilding an ancestor theory with Holmake, the LSP keeps the old
+  one** (same "Out-of-date" class of errors) until `restart`.
+- **Memory**: one hol-lsp server died with "Run out of store - interrupting
+  threads" while several of my servers (one per open script) were alive.
+  Killing the idle servers fixed it. One server per file adds up quickly when
+  each loads basisProg.
+- **goalState after `xmatch`** (before the HOL rebuild): "walker timed out
+  (>1500ms)". After the rebuild, goalState reports which tactic failed to
+  apply ("Error: Tactic `...` failed to apply"), which was very useful.
+- **Type-variable clashes when instantiating lemmas**: `qspecl_then` on a
+  lemma whose type variable has the same name as an unrelated one in the goal
+  silently unified them (`p : num ffi_proj`). Fix: annotate types in
+  statements. Not a tool bug, but costly to diagnose.
+- **Holmake fixed overhead** stays at ~6.5 s per run in the sparse worktree.
+
+## Final report, follow-up (2026-10-15, ~04:15)
+
+- **PR:** https://github.com/briancmlee/cakeml/pull/5 (spike/cf-loop → spike/cf-feasibility).
+- **(a)** `app_forall` + `app_STEP_of_approx`. `wait_spec`/`bind_spec` are now
+  corollaries of their `_n` lemmas, with statements unchanged.
+- **(b)** `run_spec`: the loop diverges with trace `LGENLIST (λi. snap_event (s i)) NONE`.
+  `step_spec` carries the STEP invariant. The gap: `POSTd` only constrains the trace.
+- No cheats; Holmake -j2 green; nothing in the base or basis_ffi was touched.
+- **Next** (not started, per the rules): the actions/responses `STEP`, after which the
+  loop's trace can carry the model's meaning.

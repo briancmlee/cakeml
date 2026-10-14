@@ -813,3 +813,79 @@ Proof
   >> ‘n + 1 ≤ LENGTH h’ by simp[]
   >> simp[TAKE_APPEND1]
 QED
+
+(* To show settledness, it is enough to look at the round where m first
+   finishes *)
+Theorem settled_from_first_done:
+  wf m ∧ (∀h x. first_done m h x ⇒ new_actions (log_of m) h = []) ⇒ settled m
+Proof
+  rw[settled_def]
+  >> qspecl_then [‘m’, ‘h’] strip_assume_tac history_split
+  >- (first_x_assum (qspec_then ‘LENGTH h’ mp_tac) >> simp[TAKE_LENGTH_ID])
+  >> Cases_on ‘h2’ using SNOC_CASES >- (gvs[] >> metis_tac[])
+  >> gvs[SNOC_APPEND]
+  >> ‘(m (h1 ++ l)).result ≠ NONE’
+       by (‘m (h1 ++ l) = m h1’ by (irule wf_finished_stays >> gvs[first_done_def])
+           >> gvs[first_done_def])
+  >> ‘h1 ++ (l ++ [x']) = (h1 ++ l) ++ [x']’ by simp[]
+  >> pop_assum SUBST1_TAC
+  >> irule wf_finished_new_actions >> simp[]
+QED
+
+(* A computation first finishes after h only, not after a shorter prefix *)
+Theorem first_done_TAKE:
+  first_done m h x ∧ k ≤ LENGTH h ∧ (m (TAKE k h)).result ≠ NONE ⇒ k = LENGTH h
+Proof
+  rw[first_done_def] >> spose_not_then assume_tac
+  >> ‘k < LENGTH h’ by simp[] >> res_tac
+QED
+
+(* MAIN: if both sides are settled, so is choose: nothing it emits in the
+   round where it finishes can lose its response *)
+Theorem settled_choose:
+  settled m1 ∧ settled m2 ⇒ settled (choose m1 m2)
+Proof
+  rw[] >> irule settled_from_first_done >> simp[wf_choose]
+  >> rpt strip_tac >> rename1 ‘first_done _ h z’
+  >> Cases_on ‘first_prefix (either_done m1 m2) h’
+  >- gvs[first_done_def, choose_running]
+  >> rename1 ‘_ = SOME n’
+  >> drule first_either_done_TAKE >> strip_tac
+  >> qabbrev_tac ‘p = TAKE n h’
+  >> ‘LENGTH p = n’ by simp[Abbr ‘p’]
+  (* choose first finishes after h, so if it has finished after a prefix of
+     h, that prefix is h *)
+  >> ‘∀k. k ≤ LENGTH h ∧ (choose m1 m2 (TAKE k h)).result ≠ NONE ⇒ TAKE k h = h’
+       by (rpt strip_tac
+           >> qspecl_then [‘choose m1 m2’, ‘h’, ‘z’, ‘k’] mp_tac
+                (Q.GENL [‘m’, ‘h’, ‘x’, ‘k’] first_done_TAKE)
+           >> simp[TAKE_LENGTH_ID])
+  >> Cases_on ‘(m1 (left_view m1 m2 p)).result’
+  >- (‘(m2 (right_view m1 m2 p)).result ≠ NONE’
+        by metis_tac[first_either_done_either]
+      >> Cases_on ‘(m2 (right_view m1 m2 p)).result’ >> fs[]
+      >> Cases_on ‘new_actions (log_of m1) (left_view m1 m2 p) = []’
+      >- (* m2 wins now *)
+         (drule_all choose_right_wins >> strip_tac
+          >> ‘p = h’ by (fs[Abbr ‘p’] >> first_x_assum irule >> fs[first_done_def])
+          >> qpat_x_assum ‘Abbrev _’ kall_tac >> gvs[settled_def])
+      (* m2 wins one round later *)
+      >> Cases_on ‘n = LENGTH h’
+      >- (‘p = h’ by simp[Abbr ‘p’, TAKE_LENGTH_ID]
+          >> drule_all choose_right_waits >> strip_tac >> gvs[first_done_def])
+      >> ‘n < LENGTH h’ by simp[]
+      >> drule_all choose_right_wins_later
+      >> disch_then (qspec_then ‘EL n h’ strip_assume_tac)
+      >> ‘p ++ [EL n h] = TAKE (n + 1) h’
+           by simp[Abbr ‘p’, TAKE_EL_SNOC, SNOC_APPEND]
+      >> ‘LENGTH h ≤ n + 1’
+           by (first_x_assum irule
+               >> qpat_x_assum ‘_ = TAKE (n + 1) h’ (SUBST_ALL_TAC o GSYM)
+               >> fs[first_done_def])
+      >> ‘TAKE (n + 1) h = h’ by simp[TAKE_LENGTH_TOO_LONG]
+      >> gvs[])
+  (* m1 wins *)
+  >> drule_all choose_left_wins >> strip_tac
+  >> ‘p = h’ by (fs[Abbr ‘p’] >> first_x_assum irule >> fs[first_done_def])
+  >> qpat_x_assum ‘Abbrev _’ kall_tac >> gvs[settled_def]
+QED

@@ -222,7 +222,8 @@ because A worked. The friction, for the record:
    lines each for `wait` and `bind`). For the full library this should be
    packaged once: a lemma or tactic of the form "to prove `STEP` of
    `Pending k`, prove each approximation using the `_n` spec of the
-   recursive callee".
+   recursive callee". *(Done on `spike/cf-loop`: `app_STEP_of_approx`, see
+   `03-cf-loop.md`.)*
 
 ## 4. Implications for the implementation plan
 

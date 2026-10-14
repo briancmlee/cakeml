@@ -2,7 +2,13 @@
 
 ## 0. Current status (second agent; newest first; read this first)
 
-- **Build:** `asyncCore` and `asyncLevel1` build with no cheats. The fastest
+- **Build:** `asyncCore`, `asyncLevel1` and `asyncChoose` build with no
+  cheats. `asyncChoose` proves `choose_rejoin` (MAIN, "nothing lost") as an
+  exact equality, plus `wf_choose` (unconditional), `both_split`, the
+  `choose_*_wins*` characterisations and the resume lemmas.
+  Gotcha: `MATCH_MP thm (assumption)` can capture goal type variables when
+  `thm` has free type variables in its conclusion (e.g. `bind_continues`'s
+  `∀f`). Use `GEN_TYVARIFY thm` first; see `bind_continues'`. The fastest
   loop turned out to be a copy of the scripts in a scratch directory outside
   the repo plus plain `Holmake` (about 1 s per theory, with no 314-directory
   scan). On failure, use the dumped heap and `hol --holstate=… < q.sml`. See §8.

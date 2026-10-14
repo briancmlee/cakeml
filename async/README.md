@@ -24,6 +24,8 @@ scheduler they run on, against a model of the outside world.
 | `asyncLoopScript.sml` | the recursion rule: when a recursive definition is well-defined |
 | `asyncEchoScript.sml` | the echo loop, and sanity checks evaluated on concrete histories |
 | `asyncLevel2Script.sml` | Level 2: declared interest, erasure to Level 1, "no progress without a ready event" |
+| `asyncLoop2Script.sml` | recursion at Level 2 |
+| `asyncEcho2Script.sml` | the echo loop at Level 2: it erases to the Level 1 loop and is quiet |
 
 In one sentence: a computation is a function from the history of world
 snapshots it has been polled with to its action log and (optional) result.
@@ -52,8 +54,10 @@ Highlights:
 - `choose` loses nothing:
   `bind (choose m1 m2) rejoin = both m1 m2`;
 - a recursion rule that admits the echo loop, which is proved well-formed;
-- the Level 2 erasure theorems and quietness for `return`, `wait_on`,
-  `emit`, `map`, `bind` and `both`.
+- the Level 2 erasure theorems and quietness for every combinator,
+  including `choose`;
+- Level 2 recursion, and a quiet Level 2 echo loop that erases to the
+  Level 1 one.
 
 Conjectures and next steps are in `design/01-semantics.md` (§12, §16):
 

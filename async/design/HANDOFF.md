@@ -3,15 +3,20 @@
 ## 0. Current status (second agent; newest first; read this first)
 
 - **Follow-up branch `spike/async-level2`** (stacked on PR #1, which must
-  stay stable): `quiet_choose2` is proved and pushed (b06188ce8, green).
-  **Paused for a HOL maintenance window (2026-10-15):**
-  `async/model/asyncLoop2Script.sml` (Level 2 recursion: `pack`/`unpack`,
-  `fix2`, `fix2_unfold`, `erase_fix2`, `guarded2_bind2`, `wf2_fix2`) is
-  **uncommitted and unfinished**. Its first proof, `unpack_pack`, fails;
-  the rest has never been checked. After the rebuild, continue it, then
-  write `echo2` (`erase echo2 = echo`, `wf2 echo2`) and the `pick`
-  conjecture, update the design note (§7, §12, §13), and open a PR with
-  base `spike/async-semantics`.
+  stay stable; PR #2 has base `spike/async-semantics`):
+  - done: `quiet_choose2`; Level 2 recursion (`asyncLoop2`: `fix2`,
+    `erase_fix2`, `guarded2_bind2`, `wf2_fix2`); `asyncEcho2` (`echo2`,
+    `erase_echo2`, `wf2_echo2`, EVAL checks of its interest); design note
+    §7, §12, §13 updated;
+  - next: the adversarial review of PR #1 (`~/.cache/pr1-review/review.md`):
+    1. relativized closure lemmas (wf, settled and quiet of bind under
+       results that can actually happen; choose losers are wf and settled;
+       `fix_preserves` with an invariant on parameters);
+    2. a recursion rule for loops that carry the pending loser, shown on
+       the idle-timeout loop;
+    3. Level 2 laws as `status` equalities if cheap;
+    4. document that dropping a loser (as `pick` does) can lose data that
+       was already read. Don't change `pick`/`choose`: the user decides.
 - **Conventions (from the coordinator):**
   - Never kill processes you did not start. No `pkill`/`killall` or any
     pattern-based kill: other workers' Holmake and `hol lsp` processes share
@@ -600,3 +605,29 @@ whole-program POSTd theorem; basis_ffi ripple effects (design note §15).
 routing; emit waiting for its response; the bind convention; choose's delay,
 stale snapshot and recursion restriction; laws under `wf`; Level 2's quiet
 as deletion; the MAIN list; and what comes next.
+
+
+## 10. Tool feedback (standing section; an upstream tracker collects these)
+
+- 2026-10-15, hol-lsp MCP `diagnostics`: it reported `par_actions_cong` as
+  "checking" for more than 10 minutes while Holmake failed it in under
+  1 s. Cause (found by the coordinator): when one edit touched two
+  proofs, the language server re-checked only the first. Fixed in HOL
+  plus a wrapper workaround; MCP servers started before the fix keep the
+  old code until restarted.
+- `goalState` queued behind `diagnostics` (fixed in the newer wrapper).
+- Holmake inside the CakeML repo scans about 314 directories (about 7 s
+  per run) because of `holproject.toml`. Workaround: copy the scripts to a
+  scratch dir with an empty Holmakefile.
+- A killed `hol` REPL loses its buffered stdout, so a step that hangs looks
+  like an earlier step. Workaround: print markers and flush after each
+  step, or run the tactic as `tac (top_goal())` without the goalstack
+  printer.
+- Recurring HOL gotchas, worth lint warnings or better error messages:
+  - type-variable capture when `MATCH_MP`/`qspecl_then`/`Q.GENL` meets a
+    theorem whose conclusion has free type variables (`GEN_TYVARIFY` fixes
+    it), and facts proved by `by` inside a goal carry fixed type variables;
+  - `K` can't be used as a variable name;
+  - `fs[GSYM LENGTH_NIL]` loops against the `LENGTH_NIL` simp rule;
+  - `SIMP_TAC (srw_ss())` doesn't decide simple arithmetic (use
+    `++ ARITH_ss`).

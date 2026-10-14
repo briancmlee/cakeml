@@ -531,7 +531,8 @@ never shows the computation those snapshots at all. Deletion is exactly the
 statement that this is invisible.
 
 Proved: `quiet_return2`, `quiet_wait_on`, `quiet_emit2`, `quiet_map2`,
-`quiet_bind2` and `quiet_both2`. `quiet_choose2` is a conjecture (§12).
+`quiet_bind2`, `quiet_both2` and `quiet_choose2`, so every Level 2
+combinator preserves quietness.
 The general lemma underneath is `first_prefix_delete`: deleting a snapshot
 that never changes whether a property holds delays the first point where
 it holds by one.
@@ -546,6 +547,43 @@ wait_on_always: EVERY (λs. e ∈ s.ready) h ⇒ erase (wait_on e p) h = wait p 
 
 Such a computation is quiet only vacuously (it never blocks), which is the
 honest price of busy-polling.
+
+**Recursion at Level 2** (`asyncLoop2Script.sml`). We pack a Level 2
+computation into one function of the history,
+`pack c = λh. (c.run h, c.interest h)`, which lets us reuse the Level 1
+guarded-recursion machinery (`fix`, `fix_unfold`, `fix_unique`,
+`fix_preserves`) unchanged:
+
+```
+fix2 body2 p = unpack (fix (lift_body body2) p)
+
+(* MAIN *) fix2_unfold:   contractive2 body2 ⇒ fix2 body2 = body2 (fix2 body2)
+(* MAIN *) guarded2_bind2:
+  (c.run []).result = NONE ∧ (∀x. nonexpansive2 (λR. G x R)) ⇒
+  guarded2 (λR. bind2 c (λx. G x R))
+(* MAIN *) erase_fix2:
+  contractive body1 ∧ contractive2 body2 ∧
+  (∀R p. erase (body2 R p) = body1 (λq. erase (R q)) p) ⇒
+  ∀p. erase (fix2 body2 p) = fix body1 p
+(* MAIN *) wf2_fix2:
+  contractive2 body2 ∧ (∀R. (∀p. wf2 (R p)) ⇒ ∀p. wf2 (body2 R p)) ⇒
+  ∀p. wf2 (fix2 body2 p)
+```
+
+The recursion rule is the same as at Level 1. `wf2 c = wf c.run ∧ quiet c`
+is preserved by the fixpoint because it is a "closed" property: it only
+ever looks at finitely many histories at a time.
+
+**The echo loop at Level 2** (`asyncEcho2Script.sml`). `echo2` is the echo
+loop written with `wait_on (Readable fd)`, `emit2`, `bind2` and `return2`.
+Proved: `echo2_unfold`, `erase_echo2: erase (echo2 fd) = echo fd`, and
+`wf2_echo2: wf2 (echo2 fd)`. So a scheduler may block until `fd` is
+readable. EVAL checks confirm what it waits for:
+
+- `Waiting {Readable 0}` at first;
+- `Waiting ∅` while its read is in flight (it waits only for the
+  response);
+- `Waiting {Readable 0}` again after echoing.
 
 ## 8. Decisions and rejected alternatives
 
@@ -682,30 +720,22 @@ All files build with `Holmake` in `async/model`, with no `cheat`.
 | `asyncChooseScript.sml` | `resume`, `suspended`, Async-style `choose`, `both_split`, `choose_rejoin`, `wf_choose`, `settled_choose` |
 | `asyncLoopScript.sml` | agreement lemmas, `guarded_bind`, `settled_fix` |
 | `asyncEchoScript.sml` | the echo loop and 10 EVAL sanity theorems |
-| `asyncLevel2Script.sml` | `comp2`, erasure, transferred laws, `quiet`, quiet preservation, `choose2` |
+| `asyncLevel2Script.sml` | `comp2`, erasure, transferred laws, `quiet`, quiet preservation for every combinator including `choose2` |
+| `asyncLoop2Script.sml` | Level 2 recursion: `fix2`, `guarded2_bind2`, `erase_fix2`, `wf2_fix2` |
+| `asyncEcho2Script.sml` | the Level 2 echo loop: `erase echo2 = echo`, `wf2 echo2`, EVAL checks of its interest |
 
 **Conjectures** (not in the scripts):
 
-1. `quiet_choose2: wf c1.run ∧ wf c2.run ∧ quiet c1 ∧ quiet c2 ⇒ quiet (choose2 c1 c2)`.
-   Evidence:
-   - while no side has finished, choose behaves like both, and the proof of
-     `quiet_both2` applies (its lemmas `views_delete`, `par_log_delete` and
-     `side_delete` are generic);
-   - in the waiting round choose has requests in flight, so quiet's
-     hypothesis does not apply;
-   - after the first finishing round, deleting an earlier irrelevant
-     snapshot changes the loser only by deleting the same snapshot from its
-     view, and the losers are then equal as functions by the sides'
-     quietness.
-
-   Estimated at 150 lines of proof.
-2. `pick` (choose that drops the loser) is non-expansive, so recursion
+1. `pick` (choose that drops the loser) is non-expansive, so recursion
    through `pick`'s arguments is allowed. Evidence: the result contains no
    computation, and `choose`'s decision and log only depend on the sides'
    shorter histories (as for `both_agree`).
-3. Level 2 recursion: a `fix2` with `erase (fix2 body2) = fix (erase ∘ body2)`
-   and quietness preserved. The Level 1 machinery should transfer, but
-   `interest` also needs the agreement argument.
+
+   Note that dropping a loser can lose data that was already read (§4).
+   This conjecture is about well-definedness, not about safety.
+
+`quiet_choose2` and Level 2 recursion, conjectures in the first version of
+this note, are now proved (`quiet_choose2`, `asyncLoop2`, `asyncEcho2`).
 
 ## 13. Proposed MAIN theorems
 
@@ -729,9 +759,13 @@ M1, Level 1 (asyncCore, asyncLevel1, asyncChoose, asyncLoop, asyncEcho):
 
 M1, Level 2 (asyncLevel2): `erase_return2`, `erase_wait_on`, `erase_emit2`,
 `erase_map2`, `erase_bind2`, `erase_both2`, `erase_choose2`,
-`bind2_left_identity` (with right identity and associativity under the same
-comment), `no_progress_without_ready_event`, `quiet_wait_on` (primitives),
-`quiet_map2`, `quiet_bind2`, `quiet_both2`.
+`bind2_left_identity`, `bind2_right_identity`, `bind2_assoc`,
+`no_progress_without_ready_event`, `quiet_wait_on` (primitives),
+`quiet_map2`, `quiet_bind2`, `quiet_both2`, `quiet_choose2`.
+
+M1, Level 2 recursion (asyncLoop2, asyncEcho2): `fix2_unfold`,
+`erase_fix2`, `guarded2_bind2`, `wf2_fix2`, `echo2_unfold`, `erase_echo2`,
+`wf2_echo2`.
 
 The full statements are in the PR description and in the scripts.
 
@@ -857,8 +891,9 @@ Paths are relative to the CakeML repository root (upstream master f73189499).
    connect the two, a new kind of bookkeeping (but local to `poll`).
 5. **choose's one-round delay** must be mirrored by the implementation, or
    the refinement must allow finishing early.
-6. **Level 2 is incomplete**: `quiet_choose2` and Level 2 recursion are
-   conjectures (§12).
+6. **Level 2 coverage**: every combinator and recursion are covered, but
+   the M2 theorem that a blocking scheduler is sound (built on `quiet`) is
+   still to be done.
 7. **Fairness assumptions** for sockets (connections eventually accepted,
    data eventually delivered) have no precedent beyond `live_numchars`.
 
@@ -882,5 +917,4 @@ Paths are relative to the CakeML repository root (upstream master f73189499).
    blocking-scheduler theorem to rest on?
 7. **The MAIN theorem list** (§13): which statements do you want to own,
    reword, or demote to helpers?
-8. **Next step**: finish `quiet_choose2` and Level 2 recursion (an `echo2`
-   with `erase echo2 = echo`), or move on to the M2 scheduler?
+8. **Next step**: move on to the M2 scheduler?

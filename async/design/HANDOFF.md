@@ -2,16 +2,43 @@
 
 ## 0. Current status (second agent; newest first; read this first)
 
-- **Build:** `asyncCore`, `asyncLevel1` and `asyncChoose` build with no
-  cheats. `asyncChoose` proves `choose_rejoin` (MAIN, "nothing lost") as an
-  exact equality, plus `wf_choose` (unconditional), `both_split`, the
-  `choose_*_wins*` characterisations and the resume lemmas.
-  Gotcha: `MATCH_MP thm (assumption)` can capture goal type variables when
-  `thm` has free type variables in its conclusion (e.g. `bind_continues`'s
-  `∀f`). Use `GEN_TYVARIFY thm` first; see `bind_continues'`. The fastest
-  loop turned out to be a copy of the scripts in a scratch directory outside
-  the repo plus plain `Holmake` (about 1 s per theory, with no 314-directory
-  scan). On failure, use the dumped heap and `hol --holstate=… < q.sml`. See §8.
+- **Conventions (from the coordinator):**
+  - Never kill processes you did not start. No `pkill`/`killall` or any
+    pattern-based kill: other workers' Holmake and `hol lsp` processes share
+    the machine. Kill your own processes only by the PID you recorded.
+  - Wrap every Holmake/hol run in `timeout`, and use `Holmake -j2` at most
+    while a base build is running.
+  - Every pushed commit must build with `Holmake` *in the worktree*
+    (`async/model`), so that this file always describes a building state.
+- **Build (in-worktree Holmake, green):** asyncCore, asyncLevel1, asyncChoose,
+  asyncLoop, asyncEcho and asyncLevel2, with no cheats.
+  - asyncChoose: `choose_rejoin` (MAIN, "nothing lost") is an exact equality.
+    Also proved: `wf_choose` (unconditional), `settled_choose`,
+    `both_split`, the `choose_*_wins*` characterisations and the resume
+    lemmas.
+  - asyncLoop: `guarded_bind` (MAIN recursion rule), the agreement lemmas,
+    `settled_fix`.
+  - asyncEcho: `echo` is proved contractive, with `echo_unfold`, `wf_echo`,
+    `settled_echo`, and 10 EVAL sanity theorems.
+  - asyncLevel2 (in progress): `comp2` record (`run`, `interest`);
+    `erase = run`, so the erase commutation theorems hold by construction;
+    the transferred monad laws; `quiet` (deletion of irrelevant snapshots);
+    `no_progress_without_ready_event`; quiet for return/wait_on/emit/map/bind.
+  - Still to do: quiet for both2; choose2 (maybe left as a conjecture); docs;
+    PR.
+- **Fast proof loop:** copy the scripts to a scratch dir outside the repo
+  (empty Holmakefile) and run plain `Holmake --qof` (about 1 s per theory,
+  no 314-directory scan). On failure, feed `g`/`e` steps to
+  `hol --holstate=<dumpedheap>`. A helper script splits a proof at its
+  top-level `>>` into `e()` steps. The hol-lsp MCP `diagnostics` hung on a
+  failing proof (it reported "checking" for more than 10 min), so it wasn't
+  usable as the main loop.
+- **Gotchas found:**
+  - `MATCH_MP thm asm` can capture goal type variables when `thm` has free
+    type variables in its conclusion (e.g. `bind_continues`'s `∀f`). Use
+    `GEN_TYVARIFY thm` first, and pass the result straight to `simp`. Never
+    `assume_tac` it: an assumption's type variables can't be instantiated.
+  - `K` is the K combinator, so it can't be used as a variable name.
 - **Decision from the user (via the coordinator), 2026-10-15:** `choose` becomes
   Async-style and loses nothing.
   `choose m1 m2 : (('a × 'b t) + ('a t × 'b)) t` returns the loser still

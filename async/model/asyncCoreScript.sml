@@ -654,3 +654,44 @@ Proof
   >> simp[SNOC_APPEND, par_views_SNOC] >> gen_tac
   >> pairarg_tac >> gvs[]
 QED
+
+(* ------------------------------------------------------------------------
+   Deleting a snapshot that makes no difference
+   ------------------------------------------------------------------------ *)
+
+(* If inserting s after h never changes whether P holds, and P does not
+   hold on any prefix of h, then searching the history with s inserted finds
+   the same prefix, one longer. *)
+Theorem first_prefix_delete:
+  (∀k. P (h ++ [s] ++ k) ⇔ P (h ++ k)) ∧ first_prefix P h = NONE ⇒
+  first_prefix P (h ++ [s] ++ h') = OPTION_MAP SUC (first_prefix P (h ++ h'))
+Proof
+  strip_tac
+  >> ‘∀k. k ≤ LENGTH h ⇒ ¬P (TAKE k h)’ by fs[first_prefix_NONE]
+  (* prefixes of h ++ [s] ++ h' are prefixes of h, or h ++ [s] ++ (part of h') *)
+  >> ‘∀j. j ≤ LENGTH h ⇒ TAKE j (h ++ [s] ++ h') = TAKE j h ∧
+                          TAKE j (h ++ h') = TAKE j h’
+       by simp[TAKE_APPEND1]
+  >> ‘∀j. TAKE (LENGTH h + 1 + j) (h ++ [s] ++ h') = h ++ [s] ++ TAKE j h' ∧
+          TAKE (LENGTH h + j) (h ++ h') = h ++ TAKE j h'’
+       by simp[TAKE_APPEND2, TAKE_LENGTH_APPEND]
+  >> Cases_on ‘first_prefix P (h ++ h')’ >> simp[]
+  >- (fs[first_prefix_NONE] >> rpt strip_tac
+      >> Cases_on ‘k ≤ LENGTH h’ >- metis_tac[]
+      >> ‘∃j. k = LENGTH h + 1 + j’ by (qexists_tac ‘k - (LENGTH h + 1)’ >> simp[])
+      >> gvs[]
+      >> qpat_x_assum ‘∀k. k ≤ LENGTH h + LENGTH h' ⇒ _’
+           (qspec_then ‘j + LENGTH h’ mp_tac) >> simp[])
+  >> rename1 ‘first_prefix P (h ++ h') = SOME n’ >> fs[first_prefix_SOME]
+  >> ‘LENGTH h < n’
+       by (spose_not_then assume_tac >> ‘n ≤ LENGTH h’ by simp[] >> metis_tac[])
+  >> ‘∃j. n = LENGTH h + j’ by (qexists_tac ‘n - LENGTH h’ >> simp[])
+  >> gvs[]
+  >> ‘SUC (j + LENGTH h) = j + (LENGTH h + 1)’ by simp[]
+  >> pop_assum SUBST1_TAC >> simp[]
+  >> rpt strip_tac >> Cases_on ‘k ≤ LENGTH h’ >- metis_tac[]
+  >> ‘∃i. k = i + (LENGTH h + 1)’ by (qexists_tac ‘k - (LENGTH h + 1)’ >> simp[])
+  >> gvs[]
+  >> qpat_x_assum ‘∀k. k < j + LENGTH h ⇒ _’ (qspec_then ‘i + LENGTH h’ mp_tac)
+  >> simp[]
+QED

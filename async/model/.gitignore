@@ -1,0 +1,7 @@
+.hol/
+*Theory.sml
+*Theory.sig
+*Theory.dat
+*.uo
+*.ui
+*.dumpedheap

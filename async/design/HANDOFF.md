@@ -2,6 +2,16 @@
 
 ## 0. Current status (second agent; newest first; read this first)
 
+- **Follow-up branch `spike/async-level2`** (stacked on PR #1, which must
+  stay stable): `quiet_choose2` is proved and pushed (b06188ce8, green).
+  **Paused for a HOL maintenance window (2026-10-15):**
+  `async/model/asyncLoop2Script.sml` (Level 2 recursion: `pack`/`unpack`,
+  `fix2`, `fix2_unfold`, `erase_fix2`, `guarded2_bind2`, `wf2_fix2`) is
+  **uncommitted and unfinished**. Its first proof, `unpack_pack`, fails;
+  the rest has never been checked. After the rebuild, continue it, then
+  write `echo2` (`erase echo2 = echo`, `wf2 echo2`) and the `pick`
+  conjecture, update the design note (§7, §12, §13), and open a PR with
+  base `spike/async-semantics`.
 - **Conventions (from the coordinator):**
   - Never kill processes you did not start. No `pkill`/`killall` or any
     pattern-based kill: other workers' Holmake and `hol lsp` processes share

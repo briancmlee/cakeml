@@ -106,3 +106,24 @@ this file plus the coordinator's original brief.
 - **Recommendation:** use the residual style with CF for the library. Next, in order:
   actions/responses `STEP`, the `cfDiv` event loop, and a reusable
   approximation-limit lemma.
+
+## Follow-up on stacked branch spike/cf-loop (PR against spike/cf-feasibility)
+
+Task from the coordinator, worked overnight: (a) package "approximations, then the limit"
+as a reusable lemma; (b) a toy never-ending event loop with cfDiv. No new
+design decisions are made here; any choices go under "Assumptions made" in
+`03-cf-loop.md`.
+
+- (a) DONE. `asyncCfDetScript.sml`:
+  - `app_forall` (curried version of `app_basic_forall`, for any non-empty
+    argument list; it uses determinism to keep the intermediate closure and
+    heap, plus `app_exact_pre`);
+  - helpers `evaluate_to_heap_Val_det`, `POSTv_SEP_EXISTS_cond`, `SPLIT3_merge`.
+
+  `asyncCfProgScript.sml`: `app_STEP_of_approx`. To prove a STEP spec,
+  prove its approximations for every n. `wait_spec` and `bind_spec` are now
+  2-line corollaries of `wait_spec_n`/`bind_spec_n`, so the closure reasoning
+  is no longer duplicated. Statements are unchanged.
+- (b) In progress: `asyncCfLoopScript.sml`.
+- The 02:30–03:15 HOL maintenance window paused the work; HOL and the base were rebuilt and all
+  theories here rebuilt cleanly.

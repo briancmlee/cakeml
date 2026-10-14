@@ -16,3 +16,5 @@ structure Set =
 
     fun fromList compare list = Set (Map.fromList compare (List.map (fn k => (k, ())) list));
   end;
+
+print_int 1;

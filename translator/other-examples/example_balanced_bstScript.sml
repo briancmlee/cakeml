@@ -20,6 +20,21 @@ val _ = translate balanceR_def;
 val _ = translate insert_def;
 val _ = translate num_cmp_def;
 
+fun get_current_prog() =
+let
+val state = get_ml_prog_state()
+val state_thm =
+state |> ml_progLib.remove_snocs
+      |> ml_progLib.clean_state
+      |> get_thm
+val current_prog =
+state_thm
+  |> concl
+  |> strip_comb |> #2
+                |> el 3
+in current_prog end
+
+
 (* Code to print the source, unverified *)
 (* taken from the tutorial
 fun get_current_prog() =

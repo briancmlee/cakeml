@@ -2,6 +2,7 @@
   An example of how to translate `run`
 *)
 open preamble ml_monad_translator_interfaceLib
+open astPP
 
 val _ = new_theory "runProg"
 

@@ -4,6 +4,7 @@
 *)
 
 open preamble ml_monad_translator_interfaceLib
+open ml_translatorLib ml_monad_translatorTheory astPP
 
 val _ = new_theory "promise"
 
@@ -44,29 +45,41 @@ val config =  local_state_config |>
 val _ = start_translation config;
 
 Definition create_def:
-  create (p:snapshot->bool) (f:unit->'a) (s:snapshot) =
+  create (p:snapshot->bool) (f:unit->'a) =
   do
-    cached <- get_arr;
+    (cached : 'a option) <- get_arr;
     dtcase cached of
-      SOME result => return (SOME result)
-    | NONE =>
-        if (p s)
-        then (do
-               result <<- f ();
-               set_arr (SOME result);
-               return (SOME result)
-             od)
-        else (return NONE)
+      SOME result =>
+        return (λ(s:snapshot). SOME result)
+    | NONE => (do
+                result <<- f ();
+                set_arr (SOME result);
+                return (λ(s:snapshot). SOME result)
+              od)
   od
 End
 val create_v_thm = create_def |> m_translate;
 
 Definition run_create_def:
-  run_create p f s = run (create p f s) <| arr := NONE; arr2 := NONE |>
+  run_create p f = run (create p f) <| arr := NONE; arr2 := NONE |>
 End
 val run_create_v_thm = m_translate_run run_create_def;
 
 val OPTION_MAP_v_thm = translate optionTheory.OPTION_MAP_DEF;
+
+
+Definition map_def:
+  map (p:snapshot->'c option) (f:'c->'a) =
+  do
+    (cached :'a option) <- get_arr;
+    dtcase cached of
+      SOME result =>
+        return (λ(s:snapshot). SOME result)
+    | NONE => (do
+                
+              od)
+  od
+End
 
 Definition map_def:
   map (p:snapshot->'c option) (f:'c->'a) (s:snapshot) =
@@ -104,5 +117,4 @@ val join_v_thm = translate join_def;
 (* End *)
 (* val bind_v_thm = bind_def |> m_translate; *)
 
-
-val _ = export_theory ();
+val _ = export_theory();

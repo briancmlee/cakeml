@@ -324,7 +324,7 @@ void ffiset_fd_non_blocking (unsigned char *c, long clen, unsigned char *a, long
  *
  *     On error, returns -1 and sets errno.
  */
-// copied from CSAPP, may edit later
+// This code is the boilerplate provided by CSAPP, and not my own contribution.
 int open_listenfd(char *port) {
   struct addrinfo hints, *listp, *p;
   int listenfd, optval=1;

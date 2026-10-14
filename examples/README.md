@@ -79,6 +79,10 @@ Implementation of an OpenTheory reader based on the Candle kernel.
 [patchProgScript.sml](patchProgScript.sml):
 patch example: apply a patch to a file.
 
+[promiseScript.sml](promiseScript.sml):
+An example showing how to use the monadic translator to translate polymorphic
+monadic array quicksort, including exceptions.
+
 [pseudo_bool](pseudo_bool):
 A checker for pseudo-boolean constraints
 

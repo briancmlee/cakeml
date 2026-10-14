@@ -1,5 +1,48 @@
 # Handoff: async semantics spike (M1 design spike)
 
+## 0. Current status (second agent; newest first; read this first)
+
+- **Build:** `asyncCore` and `asyncLevel1` build with no cheats. The fastest
+  loop turned out to be a copy of the scripts in a scratch directory outside
+  the repo plus plain `Holmake` (about 1 s per theory, with no 314-directory
+  scan). On failure, use the dumped heap and `hol --holstate=… < q.sml`. See §8.
+- **Decision from the user (via the coordinator), 2026-10-15:** `choose` becomes
+  Async-style and loses nothing.
+  `choose m1 m2 : (('a × 'b t) + ('a t × 'b)) t` returns the loser still
+  running. Plan, now being implemented in `asyncChooseScript.sml`:
+  - **m1 wins in round n:** m2 is not polled in round n. The loser is
+    `suspended m2 r`: m2 with snapshot n delivered but its poll still to come.
+  - **m2 wins in round n:** m1 has already been polled in round n.
+    - If that poll emitted nothing, the loser is `resume m1 l`.
+    - Otherwise choose waits **one more round** for those responses and returns
+      `suspended m1 l'`.
+
+    The delay is unavoidable in a pure model: a value made in round n can't
+    contain round n+1's responses.
+  - Invariant: a returned loser never has requests in flight, so nothing is
+    lost even if the caller polls it much later.
+  - `resume m p` (polled with p) gets the requested lemmas: wf preserved,
+    resume twice = once, and resuming a finished m gives `return`.
+  - `settled m` (m emits nothing in the round where it finishes) is
+    preserved by every combinator. So bind's "responses to m's last-round
+    actions are skipped" convention never drops anything for library-built
+    programs. `bind_settled_continues` is MAIN. **bind and the monad laws are
+    unchanged**, and the laws remain exact equalities.
+  - Planned MAIN "nothing lost":
+    `wf m1 ∧ wf m2 ⇒ bind (choose m1 m2) (λr. case r of INL (x,n') => both (return x) n' | INR (m',y) => both m' (return y)) = both m1 m2`.
+    The continuation must have the shape of `both`, because `both` caps each
+    side's results at its own count, while a bare `map` would see extra
+    responses.
+  - Caveats (sent to the coordinator for the user):
+    1. the one-round delay;
+    2. a suspended loser sees a stale snapshot at its first poll;
+    3. choose's result contains a computation, so choose is not
+       non-expansive in its arguments: recursion can't go through choose's
+       arguments while keeping the loser (a loser-dropping `pick` would be
+       fine);
+    4. Level 2 `quiet` becomes "no progress unless a declared event is ready
+       **or there are requests in flight**".
+
 Written by the first agent when the coordinator asked it to stop. A fresh agent
 should be able to continue from this file alone. The original task brief, which
 lists the deliverables, the user's priorities and the git/PR rules, is in the

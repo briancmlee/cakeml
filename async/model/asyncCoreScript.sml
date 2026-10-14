@@ -567,10 +567,10 @@ Proof
   rpt strip_tac
   >> Cases_on ‘first_prefix P h’ >> Cases_on ‘first_prefix Q h’
   >> gvs[first_prefix_SOME, first_prefix_NONE]
-  >> TRY (metis_tac[])
-  >> CCONTR_TAC
-  >> ‘x < x' ∨ x' < x’ by decide_tac
-  >> metis_tac[]
+  (* only x = x' is left, where x and x' are both minimal *)
+  >> spose_not_then assume_tac
+  >> ‘x < x' ∨ x' < x’ by simp[]
+  >> res_tac
 QED
 
 Theorem new_actions_cong:
@@ -607,11 +607,17 @@ Proof
   >> ‘par_actions a1 a2 h = par_actions b1 b2 h’ by simp[]
   >> ‘par_views a1 a2 (h ++ [x]) = par_views b1 b2 (h ++ [x])’
        by (irule par_views_cong >> simp[])
-  >> simp[] >> pairarg_tac >> simp[]
-  >> ‘LENGTH h1 = LENGTH h + 1 ∧ LENGTH h2 = LENGTH h + 1’
-       by metis_tac[LENGTH_par_views, FST, SND, LENGTH_APPEND, LENGTH]
-  >> ‘new_actions a1 h1 = new_actions b1 h1 ∧ new_actions a2 h2 = new_actions b2 h2’
-       by (conj_tac >> irule new_actions_cong >> simp[])
+  >> simp[] >> Cases_on ‘par_views b1 b2 (h ++ [x])’ >> simp[]
+  >> rename1 ‘_ = (h1, h2)’
+  >> qspecl_then [‘b1’, ‘b2’, ‘h ++ [x]’] mp_tac
+       (Q.GENL [‘acts1’, ‘acts2’] LENGTH_par_views)
+  >> simp[] >> strip_tac
+  >> ‘new_actions a1 h1 = new_actions b1 h1’
+       by (irule new_actions_cong >> rpt strip_tac
+           >> first_x_assum (qspec_then ‘p’ mp_tac) >> simp[])
+  >> ‘new_actions a2 h2 = new_actions b2 h2’
+       by (irule new_actions_cong >> rpt strip_tac
+           >> first_x_assum (qspec_then ‘p’ mp_tac) >> simp[])
   >> simp[]
 QED
 

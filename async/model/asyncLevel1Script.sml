@@ -17,9 +17,9 @@
     round n (so pure steps cost nothing), but only sees snapshots from n+1
     on.  A `wait` or `emit` inside the continuation therefore needs a fresh
     snapshot to finish; this is what makes loops well-defined.
-  - both/choose.  The two sides see the same snapshots; within a round the
-    left side's actions come first; each side only gets the responses to
-    its own actions.
+  - both.  The two sides see the same snapshots; within a round the left
+    side's actions come first; each side only gets the responses to its own
+    actions.  (choose is in asyncChooseScript.sml.)
 *)
 Theory asyncLevel1
 Ancestors
@@ -201,24 +201,6 @@ Definition both_def:
                (m2 (right_view m1 m2 h)).result) of
            (SOME x, SOME y) => SOME (x, y)
          | _ => NONE |>
-End
-
-(* race m1 m2: run side by side; the result is m1's if it has one, else
-   m2's.  Not well-formed on its own (it keeps going after finishing). *)
-Definition race_def:
-  race m1 m2 h =
-    <| actions := par_log m1 m2 h;
-       result :=
-         case (m1 (left_view m1 m2 h)).result of
-           SOME x => SOME x
-         | NONE => (m2 (right_view m1 m2 h)).result |>
-End
-
-(* choose m1 m2: run side by side; finish as soon as either has finished,
-   preferring m1 if both finish in the same round.  The other side is
-   abandoned: it emits nothing more and its pending responses are lost. *)
-Definition choose_def:
-  choose m1 m2 = freeze (λout. out.result ≠ NONE) (race m1 m2)
 End
 
 (* A computation that never finishes and does nothing *)
@@ -557,4 +539,399 @@ Proof
   >> ‘skip_results (LENGTH (new_actions (log_of m) h1)) (TAKE j h2) = p1’
        by metis_tac[TAKE_skip_results]
   >> simp[]
+QED
+
+(* ------------------------------------------------------------------------
+   map
+   ------------------------------------------------------------------------ *)
+
+Theorem log_of_map[simp]:
+  log_of (map f m) = log_of m
+Proof
+  simp[FUN_EQ_THM, log_of_def, map_def]
+QED
+
+(* MAIN: functor law, identity *)
+Theorem map_id:
+  map (λx. x) m = m
+Proof
+  simp[FUN_EQ_THM, map_def, outcome_component_equality]
+  >> gen_tac >> Cases_on ‘(m x).result’ >> simp[]
+QED
+
+(* MAIN: functor law, composition *)
+Theorem map_map:
+  map f (map g m) = map (f o g) m
+Proof
+  simp[FUN_EQ_THM, map_def, OPTION_MAP_COMPOSE]
+QED
+
+(* MAIN: mapping over the first computation of a bind *)
+Theorem bind_map:
+  bind (map g m) f = bind m (λx. f (g x))
+Proof
+  simp[FUN_EQ_THM] >> gen_tac
+  >> simp[bind_def]
+  >> simp[map_def]
+  >> CASE_TAC >> simp[]
+  >> gvs[first_prefix_SOME]
+  >> Cases_on ‘(m (TAKE x' x)).result’ >> gvs[]
+QED
+
+(* MAIN: mapping over the result of a bind *)
+Theorem map_bind:
+  map f (bind m g) = bind m (λx. map f (g x))
+Proof
+  simp[FUN_EQ_THM] >> gen_tac
+  >> simp[bind_def, map_def] >> CASE_TAC >> simp[]
+QED
+
+Theorem map_return:
+  map f (return x) = return (f x)
+Proof
+  simp[FUN_EQ_THM, map_def, return_def]
+QED
+
+(* MAIN: map is bind followed by return *)
+Theorem map_as_bind:
+  wf m ⇒ map f m = bind m (λx. return (f x))
+Proof
+  strip_tac
+  >> ‘map f (bind m return) = bind m (λx. return (f x))’
+       by simp[map_bind, map_return]
+  >> gvs[bind_right_identity]
+QED
+
+(* ------------------------------------------------------------------------
+   wait and emit
+   ------------------------------------------------------------------------ *)
+
+Theorem first_some_SNOC:
+  first_some p (h ++ [s]) =
+    case first_some p h of SOME x => SOME x | NONE => p s
+Proof
+  Induct_on ‘h’ >> simp[first_some_def] >> rpt strip_tac
+  >> every_case_tac >> gvs[]
+QED
+
+(* wait p has not finished exactly when p gave NONE on every snapshot *)
+Theorem wait_unfinished:
+  (wait p h).result = NONE ⇔ EVERY (λs. p s = NONE) h
+Proof
+  simp[wait_def] >> Induct_on ‘h’ >> simp[first_some_def]
+  >> rpt strip_tac >> CASE_TAC >> simp[]
+QED
+
+(* Waiting and emitting both need at least one snapshot to finish.
+   This is what makes recursive definitions through them well-founded. *)
+Theorem wait_needs_snapshot:
+  (wait p []).result = NONE
+Proof
+  simp[wait_def, first_some_def]
+QED
+
+Theorem emit_needs_snapshot:
+  (emit a []).result = NONE
+Proof
+  simp[emit_def]
+QED
+
+(* emit a finishes with the first response routed to it *)
+Theorem emit_result:
+  (emit a (s :: rest)).result = oHD s.results
+Proof
+  simp[emit_def]
+QED
+
+(* ------------------------------------------------------------------------
+   Well-formedness is preserved by every primitive and combinator
+   ------------------------------------------------------------------------ *)
+
+Theorem wf_return:
+  wf (return x)
+Proof
+  simp[wf_def, return_def]
+QED
+
+Theorem wf_wait:
+  wf (wait p)
+Proof
+  simp[wf_def, wait_def, first_some_SNOC] >> rpt strip_tac
+  >> Cases_on ‘first_some p h’ >> gvs[]
+QED
+
+Theorem wf_emit:
+  wf (emit a)
+Proof
+  simp[wf_def, emit_def] >> rpt gen_tac
+  >> Cases_on ‘h’ >> simp[]
+QED
+
+Theorem wf_never:
+  wf never
+Proof
+  simp[never_def, wf_wait]
+QED
+
+Theorem wf_map:
+  wf m ⇒ wf (map f m)
+Proof
+  simp[wf_def, map_def] >> rpt strip_tac >> gvs[]
+  >> Cases_on ‘(m h).result’ >> gvs[]
+QED
+
+(* Prefixes of h are prefixes of h ++ [s] *)
+Theorem unfinished_SNOC[local]:
+  (∀n. n ≤ LENGTH (h ++ [s]) ⇒ (m (TAKE n (h ++ [s]))).result = NONE) ⇒
+  ∀n. n ≤ LENGTH h ⇒ (m (TAKE n h)).result = NONE
+Proof
+  rpt strip_tac >> first_x_assum (qspec_then ‘n’ mp_tac) >> simp[TAKE_APPEND1]
+QED
+
+Theorem first_done_SNOC_unfinished[local]:
+  first_done m (h ++ [s]) x ⇒
+  ∀n. n ≤ LENGTH h ⇒ (m (TAKE n h)).result = NONE
+Proof
+  rw[first_done_def] >> first_x_assum (qspec_then ‘n’ mp_tac) >> simp[TAKE_APPEND1]
+QED
+
+Theorem wf_bind:
+  wf m ∧ (∀x. wf (f x)) ⇒ wf (bind m f)
+Proof
+  strip_tac >> simp[wf_def] >> rpt gen_tac
+  >> qspecl_then [‘m’, ‘h ++ [s]’] strip_assume_tac history_split
+  >- (* m has not finished, even with s *)
+     (drule unfinished_SNOC >> strip_tac
+      >> simp[bind_running, wf_SNOC_actions])
+  >> Cases_on ‘h2’ using SNOC_CASES
+  >- (* m first finishes on h ++ [s]: bind was still running on h *)
+     (gvs[] >> drule first_done_SNOC_unfinished >> strip_tac
+      >> simp[bind_running]
+      >> qpat_assum ‘first_done m _ _’
+           (fn th => assume_tac (MATCH_MP bind_continues_actions th))
+      >> pop_assum (qspecl_then [‘f’, ‘[]’] mp_tac) >> simp[]
+      >> strip_tac
+      >> ‘(m h).actions ≼ (m (h ++ [s])).actions’ by simp[wf_SNOC_actions]
+      >> metis_tac[IS_PREFIX_TRANS, IS_PREFIX_APPEND3])
+  (* m had already finished on h: bind behaves like f x *)
+  >> fs[SNOC_APPEND] >> rpt BasicProvers.VAR_EQ_TAC
+  >> rename1 ‘h1 ++ q ++ [s]’
+  >> qspecl_then [‘LENGTH (new_actions (log_of m) h1)’, ‘q’, ‘s’]
+       strip_assume_tac (Q.GENL [‘k’, ‘h’, ‘s’] skip_results_SNOC)
+  >> ‘bind m f (h1 ++ q ++ [s]) = bind m f (h1 ++ (q ++ [s]))’
+       by REWRITE_TAC[APPEND_ASSOC]
+  >> pop_assum SUBST1_TAC
+  >> qpat_assum ‘first_done m _ _’ (fn th => simp[MATCH_MP bind_continues th])
+  >> ‘wf (f x)’ by simp[]
+  >> gvs[wf_def]
+QED
+
+(* The log of `both` only grows, and once both sides have finished,
+   nothing changes.  The sides' views grow by one snapshot each round. *)
+Theorem left_view_SNOC:
+  ∃s1. left_view m1 m2 (h ++ [s]) = left_view m1 m2 h ++ [s1]
+Proof
+  simp[left_view_def, par_views_SNOC] >> pairarg_tac >> simp[]
+QED
+
+Theorem right_view_SNOC:
+  ∃s2. right_view m1 m2 (h ++ [s]) = right_view m1 m2 h ++ [s2]
+Proof
+  simp[right_view_def, par_views_SNOC] >> pairarg_tac >> simp[]
+QED
+
+Theorem par_log_SNOC:
+  par_log m1 m2 (h ++ [s]) =
+    par_log m1 m2 h ++
+    new_actions (log_of m1) (left_view m1 m2 (h ++ [s])) ++
+    new_actions (log_of m2) (right_view m1 m2 (h ++ [s]))
+Proof
+  simp[par_log_def, left_view_def, right_view_def, par_actions_SNOC]
+  >> pairarg_tac >> simp[]
+QED
+
+(* A finished well-formed computation emits nothing new *)
+Theorem wf_finished_new_actions:
+  wf m ∧ (m h).result ≠ NONE ⇒ new_actions (log_of m) (h ++ [s]) = []
+Proof
+  rw[new_actions_SNOC, log_of_def] >> drule_all wf_SNOC_finished
+  >> simp[DROP_LENGTH_NIL]
+QED
+
+Theorem wf_both:
+  wf m1 ∧ wf m2 ⇒ wf (both m1 m2)
+Proof
+  strip_tac >> simp[wf_def, both_def] >> rpt gen_tac
+  >> conj_tac
+  >- (simp[GSYM par_log_def, par_log_SNOC]
+      >> REWRITE_TAC[GSYM APPEND_ASSOC, IS_PREFIX_APPEND3])
+  >> qspecl_then [‘m1’, ‘m2’, ‘h’, ‘s’] strip_assume_tac
+       (Q.GENL [‘m1’, ‘m2’, ‘h’, ‘s’] left_view_SNOC)
+  >> qspecl_then [‘m1’, ‘m2’, ‘h’, ‘s’] strip_assume_tac
+       (Q.GENL [‘m1’, ‘m2’, ‘h’, ‘s’] right_view_SNOC)
+  >> ‘(m1 (left_view m1 m2 h)).result ≠ NONE ∧
+      (m2 (right_view m1 m2 h)).result ≠ NONE ⇒
+      m1 (left_view m1 m2 h ++ [s1]) = m1 (left_view m1 m2 h) ∧
+      m2 (right_view m1 m2 h ++ [s2]) = m2 (right_view m1 m2 h)’
+       by metis_tac[wf_SNOC_finished]
+  >> rpt CASE_TAC >> gvs[]
+  >> simp[GSYM par_log_def, par_log_SNOC, new_actions_SNOC, log_of_def,
+          DROP_LENGTH_NIL]
+QED
+
+(* MAIN: both finishes exactly when both sides have finished (each on what
+   it has been shown), with the pair of their results *)
+Theorem both_result:
+  (both m1 m2 h).result = SOME (x, y) ⇔
+    (m1 (left_view m1 m2 h)).result = SOME x ∧
+    (m2 (right_view m1 m2 h)).result = SOME y
+Proof
+  simp[both_def] >> rpt CASE_TAC >> simp[]
+QED
+
+(* MAIN: each round, both emits the left side's new actions, then the
+   right side's *)
+Theorem both_new_actions:
+  new_actions (log_of (both m1 m2)) (h ++ [s]) =
+    new_actions (log_of m1) (left_view m1 m2 (h ++ [s])) ++
+    new_actions (log_of m2) (right_view m1 m2 (h ++ [s]))
+Proof
+  simp[new_actions_SNOC, log_of_def, both_def, GSYM par_log_def, par_log_SNOC]
+  >> REWRITE_TAC[GSYM APPEND_ASSOC, DROP_LENGTH_APPEND]
+QED
+
+(* MAIN: both sides see the same ready sets and times as the whole program *)
+Theorem both_views_world:
+  MAP (λs. (s.ready, s.now)) (left_view m1 m2 h) = MAP (λs. (s.ready, s.now)) h ∧
+  MAP (λs. (s.ready, s.now)) (right_view m1 m2 h) = MAP (λs. (s.ready, s.now)) h
+Proof
+  simp[left_view_def, right_view_def, par_views_world]
+QED
+
+Theorem wf_closed:
+  closed wf
+Proof
+  rw[closed_def, wf_def] >> rpt gen_tac
+  >> first_x_assum (qspec_then ‘LENGTH h + 2’ strip_assume_tac)
+  >> gvs[agree_below_def]
+  >> ‘m h = m' h ∧ m (h ++ [s]) = m' (h ++ [s])’ by simp[]
+  >> simp[]
+QED
+
+(* MAIN: a guarded recursive definition whose body preserves well-formedness
+   is well-formed *)
+Theorem wf_fix:
+  contractive body ∧ (∀r. (∀p. wf (r p)) ⇒ ∀p. wf (body r p)) ⇒
+  ∀p. wf (fix body p)
+Proof
+  strip_tac >> irule fix_preserves >> simp[wf_closed]
+  >> qexists_tac ‘never’ >> simp[wf_never]
+QED
+
+(* ------------------------------------------------------------------------
+   Nothing is dropped by bind.
+
+   bind m f does not pass f x the responses to the actions m emitted in the
+   round where it finished.  A computation is *settled* if it never emits
+   anything in the round where it finishes, so that there are no such
+   responses.  Every primitive and combinator preserves this, so for
+   programs built from them bind drops nothing.
+   ------------------------------------------------------------------------ *)
+
+Definition settled_def:
+  settled m ⇔ ∀h. (m h).result ≠ NONE ⇒ new_actions (log_of m) h = []
+End
+
+(* MAIN: for a settled m, bind m f hands f x every response after m finished *)
+Theorem bind_settled_continues:
+  settled m ∧ first_done m h1 x ⇒
+  bind m f (h1 ++ h2) =
+    <| actions := (m h1).actions ++ (f x h2).actions;
+       result := (f x h2).result |>
+Proof
+  strip_tac
+  >> ‘new_actions (log_of m) h1 = []’
+       by (gvs[settled_def, first_done_def])
+  >> qpat_assum ‘first_done m _ _’ (fn th => simp[MATCH_MP bind_continues th])
+QED
+
+Theorem settled_return:
+  settled (return x)
+Proof
+  simp[settled_def, return_def, new_actions_def, log_of_def]
+QED
+
+Theorem settled_wait:
+  settled (wait p)
+Proof
+  simp[settled_def, wait_def, new_actions_def, log_of_def]
+QED
+
+Theorem settled_emit:
+  settled (emit a)
+Proof
+  simp[settled_def, emit_def, new_actions_def, log_of_def]
+  >> Cases >> simp[]
+QED
+
+Theorem settled_map:
+  settled m ⇒ settled (map f m)
+Proof
+  simp[settled_def, map_def] >> rpt strip_tac
+  >> Cases_on ‘(m h).result’ >> gvs[]
+QED
+
+Theorem settled_bind:
+  wf m ∧ settled m ∧ (∀x. settled (f x)) ⇒ settled (bind m f)
+Proof
+  rw[settled_def] >> rename1 ‘bind m f h’
+  >> qspecl_then [‘m’, ‘h’] strip_assume_tac history_split
+  >- (qpat_x_assum ‘∀n. _’ (fn th => gvs[MATCH_MP bind_running th]))
+  >> gvs[]
+  >> qpat_assum ‘first_done m _ _’
+       (fn th => assume_tac (MATCH_MP bind_continues_result th))
+  >> Cases_on ‘h2 = []’
+  >- (* m and f x finish in the same round *)
+     (gvs[] >> drule_all new_actions_bind_at
+      >> disch_then (qspec_then ‘f’ SUBST1_TAC)
+      >> ‘(m h1).result ≠ NONE’ by gvs[first_done_def]
+      >> gvs[skip_results_def]
+      >> first_x_assum drule >> simp[new_actions_NIL, log_of_def])
+  (* f x finishes in a later round *)
+  >> drule_all new_actions_bind_after >> disch_then (qspec_then ‘f’ SUBST1_TAC)
+  >> first_x_assum irule >> metis_tac[]
+QED
+
+Theorem settled_both:
+  settled m1 ∧ settled m2 ⇒ settled (both m1 m2)
+Proof
+  rw[settled_def] >> rename1 ‘both m1 m2 h’
+  >> Cases_on ‘(both m1 m2 h).result’ >> gvs[]
+  >> rename1 ‘_ = SOME xy’ >> PairCases_on ‘xy’ >> gvs[both_result]
+  >> ‘new_actions (log_of m1) (left_view m1 m2 h) = [] ∧
+      new_actions (log_of m2) (right_view m1 m2 h) = []’ by simp[]
+  >> Cases_on ‘h’ using SNOC_CASES
+  >- (gvs[new_actions_NIL, log_of_def, both_def, par_log_def, par_actions_NIL,
+          left_view_def, right_view_def]
+      >> first_x_assum (qspec_then ‘[]’ mp_tac)
+      >> first_x_assum (qspec_then ‘[]’ mp_tac)
+      >> simp[new_actions_NIL, log_of_def])
+  >> fs[SNOC_APPEND, both_new_actions]
+QED
+
+Theorem settled_closed:
+  closed settled
+Proof
+  rw[closed_def, settled_def] >> rename1 ‘new_actions (log_of m) h’
+  >> first_x_assum (qspec_then ‘LENGTH h + 1’ strip_assume_tac)
+  >> ‘new_actions (log_of m) h = new_actions (log_of m') h’
+       by (irule new_actions_cong >> gvs[agree_below_def, log_of_def])
+  >> ‘m h = m' h’ by gvs[agree_below_def]
+  >> gvs[]
+QED
+
+Theorem settled_never:
+  settled never
+Proof
+  simp[never_def, settled_wait]
 QED

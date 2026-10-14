@@ -60,8 +60,10 @@ End
    The representation predicate
    ------------------------------------------------------------------------ *)
 
-(* returns p f args R: calling closure f on args (from an empty heap
-   precondition) terminates normally with a value satisfying R. *)
+(* returns p f args R: calling closure f on args terminates normally (no
+   exception) with a value satisfying R.  The precondition is the empty
+   heap and the postcondition keeps no heap, so f is effectively pure: this
+   spike does not cover closures that use refs or I/O. *)
 Definition returns_def:
   returns (p:'ffi ffi_proj) f args R ⇔ app p f args emp (POSTv v. &R v)
 End
@@ -71,7 +73,9 @@ Theorem returns_mono[mono]:
   (∀v. R1 v ⇒ R2 v) ⇒ returns p f args R1 ⇒ returns p f args R2
 Proof
   rw[returns_def] >> irule app_weaken >> first_x_assum (irule_at Any) >>
-  rw[cfHeapsBaseTheory.SEP_IMPPOST_def, set_sepTheory.SEP_IMP_def, POSTv_cond] >> metis_tac[]
+  rw[cfHeapsBaseTheory.SEP_IMPPOST_def, set_sepTheory.SEP_IMP_def,
+     POSTv_cond] >>
+  metis_tac[]
 QED
 
 (* STEP p A WORLD m v: the CakeML value v implements the model computation m.

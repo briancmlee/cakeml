@@ -20,12 +20,15 @@
     `settled_fix`.
   - asyncEcho: `echo` is proved contractive, with `echo_unfold`, `wf_echo`,
     `settled_echo`, and 10 EVAL sanity theorems.
-  - asyncLevel2 (in progress): `comp2` record (`run`, `interest`);
-    `erase = run`, so the erase commutation theorems hold by construction;
-    the transferred monad laws; `quiet` (deletion of irrelevant snapshots);
-    `no_progress_without_ready_event`; quiet for return/wait_on/emit/map/bind.
-  - Still to do: quiet for both2; choose2 (maybe left as a conjecture); docs;
-    PR.
+  - asyncLevel2: `comp2` record (`run`, `interest`); `erase = run`; the
+    transferred monad laws; `quiet` (deletion of irrelevant snapshots);
+    `no_progress_without_ready_event`; quiet for
+    return/wait_on/emit/map/bind/both; `choose2` with `erase_choose2`.
+  - Docs written: `async/design/01-semantics.md` and `async/README.md`.
+  - **PR open: https://github.com/briancmlee/cakeml/pull/1** (against
+    `async-io`).
+  - Left open (conjectures in the design note, §12): `quiet_choose2`,
+    `pick` non-expansive, Level 2 recursion (`fix2`, `echo2`).
 - **Fast proof loop:** copy the scripts to a scratch dir outside the repo
   (empty Holmakefile) and run plain `Holmake --qof` (about 1 s per theory,
   no 314-directory scan). On failure, feed `g`/`e` steps to
@@ -523,3 +526,67 @@ The README should be short: what is here, how to build
   - A looping metis/gvs hangs Holmake silently, so a per-theorem timeout
     would help.
   - The Bash tool runs under Rosetta, so everything needs `arch -arm64`.
+
+
+## 9. Report (second agent, 2026-10-15)
+
+**PR:** https://github.com/briancmlee/cakeml/pull/1 (`spike/async-semantics`
+→ `async-io`). Holmake is green in `async/model` (six theories, no cheats).
+
+**Decisions and why:**
+
+- **Recursion rule.** Guarded recursion: `fix body` for a `contractive`
+  body. The usable rule is `guarded_bind`: a recursive call may appear
+  anywhere after something that needs a snapshot to finish (`wait`, `emit`).
+  In words, each loop iteration uses up at least one snapshot. The echo
+  loop is defined with it, and proved contractive, well-formed and settled.
+  The CakeML loop will be related to `fix` through `fix_unique`.
+- **bind's snapshot convention.** The continuation starts in the round
+  where m finished (pure steps are free) but only sees later snapshots.
+  The skipped responses (to m's last-round actions) are justified by
+  `settled`, which every combinator preserves (`bind_settled_continues`).
+  bind itself is unchanged, and the laws stay exact equalities.
+- **choose (the user's decision, via the coordinator).** Async-style: the
+  loser is returned suspended, with all its responses delivered.
+  - When the right side wins while the left has requests in flight, choose
+    waits one round.
+  - `choose_rejoin`: `bind (choose m1 m2) rejoin = both m1 m2`, exactly.
+- **Level 2.** A `run` + `interest` record, so erasure commutes by
+  construction. `quiet` is formulated as deleting irrelevant snapshots,
+  because the one-step version is too weak for a blocking scheduler.
+
+**Proved vs conjectured.** See the design note, §12–13. 54 MAIN-marked
+theorems are proved. Conjectures: `quiet_choose2`, `pick` non-expansive,
+Level 2 recursion.
+
+**Surprises:**
+
+- the old lossy `choose` was the *only* source of responses dropped by
+  bind, hence the `settled` invariant;
+- type-variable capture with `MATCH_MP` on assumptions (`GEN_TYVARIFY` is
+  the fix);
+- deletion, rather than one-step quietness, is what a blocking scheduler
+  needs.
+
+**Risks:** closures in refs for a CF-verified stateful bind; no existing
+whole-program POSTd theorem; basis_ffi ripple effects (design note §15).
+
+**Tool feedback:**
+
+- I **had** the hol-lsp MCP tools. `diagnostics` hung for more than 10 min
+  showing a proof as "checking" while Holmake failed it in under 1 s, and
+  `goalState` queued behind it. So I used:
+  1. a scratch-dir copy of the scripts with plain Holmake (about 1 s per
+     theory);
+  2. the dumped heap plus `hol --holstate` with `g`/`e` steps;
+  3. a small script that splits a proof at its top-level `>>` into `e()`
+     steps.
+
+  That loop took 3–8 s per iteration.
+- I reported this to the coordinator, who has a worker improving
+  hol-lsp-mcp.
+
+**Decisions needed from the user:** design note §16. In short: positional
+routing; emit waiting for its response; the bind convention; choose's delay,
+stale snapshot and recursion restriction; laws under `wf`; Level 2's quiet
+as deletion; the MAIN list; and what comes next.

@@ -542,3 +542,109 @@ Proof
   rw[guarded_def, nonexpansive_def]
   >> first_x_assum drule >> rw[agree_below_def]
 QED
+
+(* ------------------------------------------------------------------------
+   More about freeze
+   ------------------------------------------------------------------------ *)
+
+(* If the frozen computation is not done, nothing was frozen yet *)
+Theorem freeze_not_done:
+  ¬is_done (freeze is_done m h) ⇒ freeze is_done m h = m h
+Proof
+  rw[freeze_def] >> every_case_tac >> gvs[first_prefix_SOME]
+QED
+
+(* ------------------------------------------------------------------------
+   Congruence: these functions only look at prefixes of the history.
+   Used to show that combinators are non-expansive.
+   ------------------------------------------------------------------------ *)
+
+Theorem first_prefix_cong:
+  ∀h P Q.
+    (∀k. k ≤ LENGTH h ⇒ (P (TAKE k h) ⇔ Q (TAKE k h))) ⇒
+    first_prefix P h = first_prefix Q h
+Proof
+  rpt strip_tac
+  >> Cases_on ‘first_prefix P h’ >> Cases_on ‘first_prefix Q h’
+  >> gvs[first_prefix_SOME, first_prefix_NONE]
+  >> TRY (metis_tac[])
+  >> CCONTR_TAC
+  >> ‘x < x' ∨ x' < x’ by decide_tac
+  >> metis_tac[]
+QED
+
+Theorem new_actions_cong:
+  (∀p. LENGTH p ≤ LENGTH h ⇒ a p = b p) ⇒ new_actions a h = new_actions b h
+Proof
+  rw[new_actions_def]
+  >> ‘LENGTH (FRONT h) ≤ LENGTH h’
+       by (Cases_on ‘h’ using SNOC_CASES >> gvs[FRONT_APPEND])
+  >> simp[]
+QED
+
+(* The views only depend on the left side's log on shorter histories *)
+Theorem par_views_cong:
+  ∀h. (∀p. LENGTH p < LENGTH h ⇒ a1 p = b1 p) ⇒
+      par_views a1 a2 h = par_views b1 b2 h
+Proof
+  Induct_on ‘h’ using SNOC_INDUCT
+  >> simp[SNOC_APPEND, par_views_SNOC] >> rpt strip_tac
+  >> ‘par_views a1 a2 h = par_views b1 b2 h’ by simp[]
+  >> simp[] >> pairarg_tac >> simp[]
+  >> ‘LENGTH h1 = LENGTH h’ by metis_tac[LENGTH_par_views, FST]
+  >> ‘new_actions a1 h1 = new_actions b1 h1’
+       by (irule new_actions_cong >> simp[])
+  >> simp[]
+QED
+
+Theorem par_actions_cong:
+  ∀h. (∀p. LENGTH p ≤ LENGTH h ⇒ a1 p = b1 p ∧ a2 p = b2 p) ⇒
+      par_actions a1 a2 h = par_actions b1 b2 h
+Proof
+  Induct_on ‘h’ using SNOC_INDUCT
+  >- simp[par_actions_NIL]
+  >> simp[SNOC_APPEND, par_actions_SNOC] >> rpt strip_tac
+  >> ‘par_actions a1 a2 h = par_actions b1 b2 h’ by simp[]
+  >> ‘par_views a1 a2 (h ++ [x]) = par_views b1 b2 (h ++ [x])’
+       by (irule par_views_cong >> simp[])
+  >> simp[] >> pairarg_tac >> simp[]
+  >> ‘LENGTH h1 = LENGTH h + 1 ∧ LENGTH h2 = LENGTH h + 1’
+       by metis_tac[LENGTH_par_views, FST, SND, LENGTH_APPEND, LENGTH]
+  >> ‘new_actions a1 h1 = new_actions b1 h1 ∧ new_actions a2 h2 = new_actions b2 h2’
+       by (conj_tac >> irule new_actions_cong >> simp[])
+  >> simp[]
+QED
+
+Theorem freeze_agree:
+  agree_below n m m' ⇒ agree_below n (freeze is_done m) (freeze is_done m')
+Proof
+  rw[agree_below_def, freeze_def]
+  >> ‘first_prefix (λp. is_done (m p)) h = first_prefix (λp. is_done (m' p)) h’
+       by (irule first_prefix_cong >> rw[] >> simp[LENGTH_TAKE_EQ] >> rw[])
+  >> simp[] >> CASE_TAC >> simp[LENGTH_TAKE_EQ] >> rw[]
+QED
+
+Theorem skip_results_SNOC:
+  ∃s'. skip_results k (h ++ [s]) = skip_results k h ++ [s']
+Proof
+  Cases_on ‘h’ >> simp[skip_results_def]
+QED
+
+Theorem par_views_SNOC_exists:
+  ∃s1 s2. par_views a1 a2 (h ++ [s]) =
+          (FST (par_views a1 a2 h) ++ [s1], SND (par_views a1 a2 h) ++ [s2])
+Proof
+  simp[par_views_SNOC] >> pairarg_tac >> simp[]
+QED
+
+(* The views show the same ready sets and times as the parent's history *)
+Theorem par_views_world:
+  ∀h. MAP (λs. (s.ready, s.now)) (FST (par_views a1 a2 h)) =
+        MAP (λs. (s.ready, s.now)) h ∧
+      MAP (λs. (s.ready, s.now)) (SND (par_views a1 a2 h)) =
+        MAP (λs. (s.ready, s.now)) h
+Proof
+  Induct_on ‘h’ using SNOC_INDUCT
+  >> simp[SNOC_APPEND, par_views_SNOC] >> gen_tac
+  >> pairarg_tac >> gvs[]
+QED

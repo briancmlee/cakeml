@@ -2,7 +2,8 @@
 
 Status: done, 2026-10-15. Branch `spike/ffi-integration`, code in
 `async/ffi-spike/` (876 lines in 6 files). Everything builds with
-`Holmake -j1` in about 30 s against the shared base, with no cheats.
+`Holmake -j1` against the shared base in 74 s from clean (about 30 s
+incremental), with no cheats.
 
 ## The question
 

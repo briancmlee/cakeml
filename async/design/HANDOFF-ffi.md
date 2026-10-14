@@ -68,3 +68,36 @@ The hol-lsp MCP tools were available and used for all proof work.
 - Check-waiting: Holmake 10 runs, 134 s total; ~35 `diagnostics` calls,
   roughly 10–60 s each (not individually timed), together at most ~10 of the
   19 minutes of proof work.
+
+## Report (final)
+- PR: https://github.com/briancmlee/cakeml/pull/4 (base `async-io`).
+- **Proved end to end (source semantics):** `clock_example_semantics`.
+  Under `wfcl cl ∧ wfFS fs ∧ STD_streams fs ∧ clock_ok (t1:::t2:::rest)`,
+  the whole program (basis + Clock + main + call) terminates successfully,
+  its replayed file-system events give `add_stdout fs ("<t1>\n<t2>\n")`, and
+  t1 ≤ t2.  It goes through the generic `clock_whole_prog_spec_semantics`
+  (MAIN) and `Clock_now_spec` (MAIN).  Compiler correctness for the new
+  oracle was not instantiated (same as basis's examples at this level).
+- **Copied/adapted from basis_ffi:**
+  - definitions `whole_prog_spec_def` → `clock_whole_prog_spec_def`, plus
+    oracle, ffi and projection definitions that *wrap/extend* the basis
+    ones;
+  - the statement shape of `whole_prog_spec_IMP`;
+  - ~10 tactic lines;
+  - `basis_ffiLib.prove_sem_thm` (~55 lines);
+  - `IMP_STDIO_general` (local upstream) re-proved compositionally.
+
+  Reused unchanged: `basis_ffi_oracle`, `basis_proj1/2`, `oracle_parts*`,
+  `extract_fs*`, `RTC_call_FFI_rel_IMP_basis_events`, `STDIO_precond`,
+  `COMMANDLINE_precond`, `append_hprop`, `SPLIT_exists`, `is_refs_basis`,
+  `call_main_thm2` and all library specs.  No upstream change.
+- **Time per step:** base wait 34 min (overlapped with 14 min
+  reading/drafting); model 2 min; CF spec 3 min; world + whole-program
+  theorem 7 min; example 6 min; write-up + PR ~25 min.  Check-waiting:
+  Holmake 134 s over 10 runs, plus ≤ ~10 min of hol-lsp diagnostics.
+  Clean build 74 s.
+- **Socket estimate:** integration ~400–500 lines via this pattern; the
+  total is 2–4 kLOC (model, Socket CF library, and a new whole-program
+  theorem for diverging programs), 1–3 weeks supervised.
+- **MCP tools:** yes, hol-lsp MCP was available and used throughout.
+- **Assumptions:** the 10 items in `04-ffi-integration.md`.

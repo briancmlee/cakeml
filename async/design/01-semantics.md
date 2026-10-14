@@ -588,7 +588,13 @@ The Level 1 laws transfer up to erasure (`bind2_left_identity`,
 - Left identity even holds exactly, interest included.
 - Right identity holds as a `status` equality, which is what a scheduler
   sees: `status_bind2_right_identity: wf c.run ⇒ status (bind2 c return2) h = status c h`.
-- Associativity as a `status` equality is a conjecture (§12).
+- Associativity holds as a `status` equality too:
+  `status_bind2_assoc: wf c.run ⇒ status (bind2 (bind2 c f) g) h = status (bind2 c (λx. bind2 (f x) g)) h`.
+  It reuses the view argument of `bind_assoc`, factored out as
+  `bind_assoc_view`.
+
+So rewriting a program by the monad laws doesn't change what a scheduler
+sees.
 
 The primitive `wait_on e p` declares interest `{e}` and looks only at
 snapshots where `e` is ready. `emit2` declares no events: it waits only for
@@ -667,11 +673,18 @@ The recursion rule is the same as at Level 1. `wf2 c = wf c.run ∧ quiet c`
 is preserved by the fixpoint because it is a "closed" property: it only
 ever looks at finitely many histories at a time.
 
+In particular, **quietness reaches loops**:
+
+- `quiet_fix2`: a guarded body that preserves `wf2` gives a quiet
+  fixpoint;
+- `wf2_fix2_on`: the same, for loops whose parameters satisfy an
+  invariant.
+
 **The echo loop at Level 2** (`asyncEcho2Script.sml`). `echo2` is the echo
 loop written with `wait_on (Readable fd)`, `emit2`, `bind2` and `return2`.
-Proved: `echo2_unfold`, `erase_echo2: erase (echo2 fd) = echo fd`, and
-`wf2_echo2: wf2 (echo2 fd)`. So a scheduler may block until `fd` is
-readable. EVAL checks confirm what it waits for:
+Proved: `echo2_unfold`, `erase_echo2: erase (echo2 fd) = echo fd`,
+`wf2_echo2: wf2 (echo2 fd)` and `quiet_echo2: quiet (echo2 fd)`. So a
+scheduler may block until `fd` is readable. EVAL checks confirm what it waits for:
 
 - `Waiting {Readable 0}` at first;
 - `Waiting ∅` while its read is in flight (it waits only for the
@@ -828,12 +841,15 @@ All files build with `Holmake` in `async/model`, with no `cheat`.
    Note that dropping a loser can lose data that was already read (§4).
    This conjecture is about well-definedness, not about safety.
 
-2. `status_bind2_assoc`: associativity at Level 2 as a `status` equality,
-   under `wf` of `c` and of every `f x`. Evidence: the run part is
-   `bind_assoc`. For the interest part, while unfinished both sides wait
-   for whichever component is running, on the same view, by the same view
-   arithmetic as in the proof of `bind_assoc`. Estimated at about 100
-   lines.
+2. The idle-deadline loop at Level 2 (quiet, so a scheduler could block
+   on `Readable fd` and the deadline's timer event). Not a conjecture
+   about correctness, just work not done. It needs four things:
+   - `wf` of the generalised `choose_with`;
+   - quietness of suspended Level 2 losers;
+   - a Level 2 version of `choose_results`;
+   - a Level 2 split recursion rule.
+
+   About 150–200 lines, mostly mirroring the Level 1 proofs.
 
 `quiet_choose2` and Level 2 recursion, conjectures in the first version of
 this note, are now proved (`quiet_choose2`, `asyncLoop2`, `asyncEcho2`).
@@ -875,7 +891,8 @@ Added after the review of PR #1:
 - `guarded_bind_split`;
 - the idle loop: `idle_body_contractive`, `idle_unfold`, `wf_idle`,
   `settled_idle`;
-- `status_bind2_right_identity`.
+- `status_bind2_right_identity`, `status_bind2_assoc`;
+- `quiet_fix2`, `wf2_fix2_on`, `quiet_echo2`.
 
 The full statements are in the PR description and in the scripts.
 

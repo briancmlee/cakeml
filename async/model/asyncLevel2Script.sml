@@ -948,3 +948,65 @@ Theorem status_bind2_left_identity:
 Proof
   simp[bind2_left_identity_exact]
 QED
+
+(* MAIN: associativity holds for status, i.e. including what the
+   computation waits for *)
+Theorem status_bind2_assoc:
+  wf c.run ⇒
+  status (bind2 (bind2 c f) g) h = status (bind2 c (λx. bind2 (f x) g)) h
+Proof
+  strip_tac
+  >> ‘(bind2 (bind2 c f) g).run = (bind2 c (λx. bind2 (f x) g)).run’
+       by simp[bind2_def, bind_assoc]
+  >> simp[status_def] >> CASE_TAC >> simp[]
+  (* both unfinished: they wait for the same events *)
+  >> ‘(bind2 (bind2 c f) g).interest h = bind_interest (bind2 c f) g h ∧
+      (bind2 c (λx. bind2 (f x) g)).interest h =
+        bind_interest c (λx. bind2 (f x) g) h’ by simp[bind2_def]
+  >> simp[]
+  >> qspecl_then [‘c.run’, ‘h’] strip_assume_tac history_split
+  >- (* c is still running *)
+     (‘bind_interest c (λx. bind2 (f x) g) h = c.interest h’
+        by (irule bind_interest_running >> simp[])
+      >> ‘bind_interest c f h = c.interest h’
+        by (irule bind_interest_running >> simp[])
+      >> ‘bind_interest (bind2 c f) g h = (bind2 c f).interest h’
+        by (irule bind_interest_running >> simp[bind2_def]
+            >> qpat_x_assum ‘∀n. _’
+                 (fn th => simp[MATCH_MP (GEN_TYVARIFY bind_running_TAKE) th]))
+      >> simp[bind2_def])
+  (* c has finished, first after h1 *)
+  >> gvs[]
+  >> qabbrev_tac ‘v = skip_results (LENGTH (new_actions (log_of c.run) h1)) h2’
+  >> ‘bind_interest c (λx. bind2 (f x) g) (h1 ++ h2) = bind_interest (f x) g v ∧
+      bind_interest c f (h1 ++ h2) = (f x).interest v’
+       by (qpat_assum ‘first_done _ _ _’
+             (fn th => simp[MATCH_MP (GEN_TYVARIFY bind_interest_continues) th])
+           >> simp[bind2_def, Abbr ‘v’])
+  >> simp[]
+  >> qspecl_then [‘(f x).run’, ‘v’] strip_assume_tac history_split
+  >- (* f x is still running *)
+     (‘bind_interest (f x) g v = (f x).interest v’
+        by (irule bind_interest_running >> simp[])
+      >> ‘∀n. n ≤ LENGTH (h1 ++ h2) ⇒
+              (bind c.run (λx. (f x).run) (TAKE n (h1 ++ h2))).result = NONE’
+        by (rpt strip_tac >> irule bind_unfinished_after
+            >> simp[] >> qexists_tac ‘x’ >> fs[Abbr ‘v’])
+      >> ‘bind_interest (bind2 c f) g (h1 ++ h2) = (bind2 c f).interest (h1 ++ h2)’
+        by (irule bind_interest_running >> simp[bind2_def])
+      >> simp[bind2_def])
+  (* f x has finished, first after p1: both continue with g y on the same
+     snapshots *)
+  >> rename1 ‘v = p1 ++ p2’ >> rename1 ‘first_done (f x).run p1 y’
+  >> qspecl_then [‘c.run’, ‘h1’, ‘x’, ‘h2’, ‘p1’, ‘p2’, ‘λx. (f x).run’, ‘y’]
+       mp_tac (Q.GENL [‘m’, ‘h1’, ‘x’, ‘h2’, ‘p1’, ‘p2’, ‘f’, ‘y’] bind_assoc_view)
+  >> impl_tac >- fs[Abbr ‘v’]
+  >> strip_tac
+  >> ‘h1 ++ h2 = (h1 ++ TAKE (LENGTH p1) h2) ++ DROP (LENGTH p1) h2’ by simp[]
+  >> pop_assum SUBST1_TAC
+  >> ‘first_done (bind2 c f).run (h1 ++ TAKE (LENGTH p1) h2) y’ by simp[bind2_def]
+  >> pop_assum (fn th => simp[MATCH_MP (GEN_TYVARIFY bind_interest_continues) th])
+  >> qpat_assum ‘first_done (f x).run _ _’
+       (fn th => simp[MATCH_MP (GEN_TYVARIFY bind_interest_continues) th])
+  >> fs[bind2_def]
+QED

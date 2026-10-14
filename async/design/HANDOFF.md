@@ -22,8 +22,14 @@
     4. design note §4 documents that dropping a loser (`pick`) can lose
        data that was already read. `pick`/`choose` are unchanged: the user
        decides (§16).
+  - also done (coordinator request): `quiet_fix2`, `wf2_fix2_on`,
+    `quiet_echo2`; `status_bind2_assoc` (via `bind_assoc_view`, factored out
+    of the Level 1 `bind_assoc` proof).
+  - not done: the idle loop at Level 2 (design note §12 lists what it
+    needs; about 150–200 lines).
   - PR #3 (https://github.com/briancmlee/cakeml/pull/3) is open with base
-    `spike/async-semantics`.
+    `spike/async-semantics`. Per the coordinator: stop here and wait; no
+    new milestones.
 - **Conventions (from the coordinator):**
   - Never kill processes you did not start. No `pkill`/`killall` or any
     pattern-based kill: other workers' Holmake and `hol lsp` processes share

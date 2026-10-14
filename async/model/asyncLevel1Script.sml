@@ -448,6 +448,57 @@ Proof
 QED
 
 (* MAIN: monad law, associativity *)
+(* Where bind (bind m f) g and bind m (λx. bind (f x) g) hand over to g:
+   at the same point, with g shown the same snapshots *)
+Theorem bind_assoc_view:
+  wf m ∧ first_done m h1 x ∧
+  skip_results (LENGTH (new_actions (log_of m) h1)) h2 = p1 ++ p2 ∧
+  first_done (f x) p1 y ⇒
+  first_done (bind m f) (h1 ++ TAKE (LENGTH p1) h2) y ∧
+  skip_results (LENGTH (new_actions (log_of (bind m f)) (h1 ++ TAKE (LENGTH p1) h2)))
+               (DROP (LENGTH p1) h2) =
+  skip_results (LENGTH (new_actions (log_of (f x)) p1)) p2
+Proof
+  strip_tac
+  >> qabbrev_tac ‘k = LENGTH (new_actions (log_of m) h1)’
+  >> qabbrev_tac ‘j = LENGTH p1’
+  >> ‘TAKE j (skip_results k h2) = p1 ∧ DROP j (skip_results k h2) = p2’
+       by (qpat_x_assum ‘_ = p1 ++ p2’ (fn th => simp[th])
+           >> simp[Abbr ‘j’, TAKE_LENGTH_APPEND, DROP_LENGTH_APPEND])
+  >> conj_tac
+  >- (irule first_done_bind >> qexists_tac ‘x’
+      >> gvs[TAKE_skip_results, Abbr ‘k’])
+  >> qpat_x_assum ‘Abbrev (j = _)’
+       (assume_tac o REWRITE_RULE[markerTheory.Abbrev_def])
+  >> qpat_x_assum ‘Abbrev (k = _)’
+       (assume_tac o REWRITE_RULE[markerTheory.Abbrev_def])
+  >> ‘LENGTH h2 = LENGTH p1 + LENGTH p2’
+       by metis_tac[LENGTH_skip_results, LENGTH_APPEND]
+  >> Cases_on ‘j = 0’
+  >- (* f x finished in the round it started: the responses of that round
+        are split between m, f x and g *)
+     (‘p1 = []’ by metis_tac[LENGTH_NIL]
+      >> ‘p2 = skip_results k h2’ by metis_tac[APPEND]
+      >> qpat_x_assum ‘j = 0’ SUBST_ALL_TAC
+      >> qpat_x_assum ‘p1 = []’ SUBST_ALL_TAC
+      >> qpat_x_assum ‘p2 = _’ SUBST_ALL_TAC
+      >> REWRITE_TAC[TAKE_0, DROP_0, APPEND_NIL]
+      >> qpat_assum ‘wf m’ (fn w => qpat_assum ‘first_done m h1 x’
+           (fn th => REWRITE_TAC[MATCH_MP new_actions_bind_at (CONJ w th)]))
+      >> qpat_x_assum ‘k = _’ SUBST_ALL_TAC
+      >> simp[new_actions_NIL, log_of_def, skip_results_skip_results])
+  (* f x finished in a later round *)
+  >> ‘0 < LENGTH h2’ by simp[]
+  >> ‘TAKE j h2 ≠ []’ by (simp[TAKE_EQ_NIL] >> strip_tac >> fs[])
+  >> ‘DROP j h2 = p2’ by metis_tac[DROP_skip_results, NOT_ZERO_LT_ZERO]
+  >> qpat_x_assum ‘k = _’ SUBST_ALL_TAC
+  >> qpat_assum ‘TAKE j h2 ≠ []’ (fn ne => qpat_assum ‘first_done m h1 x’
+       (fn th => REWRITE_TAC[MATCH_MP new_actions_bind_after (CONJ th ne)]))
+  >> ‘skip_results (LENGTH (new_actions (log_of m) h1)) (TAKE j h2) = p1’
+       by metis_tac[TAKE_skip_results]
+  >> simp[]
+QED
+
 Theorem bind_assoc:
   wf m ⇒ bind (bind m f) g = bind m (λx. bind (f x) g)
 Proof

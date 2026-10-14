@@ -167,13 +167,14 @@ QED
    Level 1 laws, transferred
    ------------------------------------------------------------------------ *)
 
-(* MAIN: monad laws at Level 2, up to erasure *)
+(* MAIN: monad law at Level 2 (up to erasure), left identity *)
 Theorem bind2_left_identity:
   erase (bind2 (return2 x) f) = erase (f x)
 Proof
   simp[erase_bind2, erase_return2, bind_left_identity]
 QED
 
+(* MAIN: monad law at Level 2 (up to erasure), right identity *)
 Theorem bind2_right_identity:
   wf (erase c) ⇒ erase (bind2 c return2) = erase c
 Proof
@@ -181,6 +182,7 @@ Proof
   >> CONV_TAC (DEPTH_CONV ETA_CONV) >> simp[bind_right_identity]
 QED
 
+(* MAIN: monad law at Level 2 (up to erasure), associativity *)
 Theorem bind2_assoc:
   wf (erase c) ⇒
   erase (bind2 (bind2 c f) g) = erase (bind2 c (λx. bind2 (f x) g))

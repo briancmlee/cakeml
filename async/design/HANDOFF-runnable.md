@@ -21,7 +21,8 @@ Kept current at every commit.
     `make demo` runs the demo.
   - `demo_clients.py`: the demo (3 concurrent clients plus a late 4th),
     the benchmark, and an asyncio baseline server.
-  - `demo-transcript.txt`: the recorded demo.
+  - `demo-transcript.txt`: the recorded demo; `bench-results.txt`: the
+    indicative numbers; `check_printer.sh`: the printer cross-check.
 - Compiler: the CakeML release **v3479**
   (https://github.com/CakeML/cakeml/releases/tag/v3479,
   `cake-arm8-64.tar.gz`), extracted under
@@ -37,8 +38,8 @@ Kept current at every commit.
 
 ## Status
 
-- DONE: export, compile, run, demo transcript.
-- IN PROGRESS: benchmarks, 21-runnable.md, PR.
+- DONE: export, compile, run, demo transcript, printer cross-check,
+  benchmarks, 21-runnable.md.
 
 ## Assumptions made
 
@@ -54,3 +55,19 @@ Kept current at every commit.
 
 - `ml_progLib.add_dec` rejects `val _ = e` with a non-value `e`. Use
   `fun main u = ...` and append the call to the exported program instead.
+- `hol` cannot load the base's `astToSexprLib.sml` as is: it opens
+  `fromSexpTheory`, which is not built in the base and which it does not
+  use. `check_printer.sh` drops the `open`.
+
+## Final report (2026-10-15)
+
+- The verified echo program (m4-safety's socket server under the
+  dynamic-interest loop) plus `main` is exported, compiled with the CakeML
+  release v3479 (arm8, native on the M1), linked with a 189-line trusted
+  `socket_ffi.c`, and runs. Demo: 3 concurrent clients and a late 4th each
+  receive exactly their own lines (`demo-transcript.txt`).
+- The printer is cross-checked against the official printer, byte for byte
+  modulo locations and Var/Ident.
+- Indicative numbers: 60–70% of a Python asyncio echo server's throughput.
+- What the in-logic machine-code theorem needs: 21 §6.
+- No cheats; Holmake green in async/runnable.

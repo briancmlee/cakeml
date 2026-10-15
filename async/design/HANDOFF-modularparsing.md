@@ -27,13 +27,17 @@ Kept current at every commit.
 - DONE Phase 3b (branch `spike/proto-handler-live` = spike/proto-live +
   merge of m4-server's spike/sw-live): asyncProtoLive (`proto_handler_live`,
   `proto_live_rounds`) and `asyncProtoLiveVia{Strict,H,B}` (`http_live_X_via_proto`).
-- IN PROGRESS Phase 4 (branch `spike/proto-cakeml`, stacked on
+- DONE Phase 4 for _b: `http_prog_pb_spec` (asyncProtoSemB). Earlier note:
+  Phase 4 (branch `spike/proto-cakeml`, stacked on
   spike/proto-live, NOT on proto-handler-live): asyncProtoProg (the generic
   CakeML handler, higher-order in parse/respond) and asyncProtoSockSpec
   (`sproto_handler_spec`, `sproto_server_spec`, with hypothesis PROTO_IMPL).
   Next: an instance (P_b) translated into presult, the generic whole-program
   theorem, and `http_prog_b_spec`'s twin.
 - Not mine any more: cause-of-actions (async-spike's `hok_cause`).
+
+- NEXT: proto_handler_v (m4-server's server-v vocabulary, handler_live_v,
+  spike/server-v PR #71) with the query form ans_q/fin, for KV.
 
 ## Gotchas (phase 3)
 
@@ -61,3 +65,11 @@ See 32 §3.
 - A `gvs[]` after two `parse (print r ++ x) = …` facts plus
   `print r1 ++ x = print r2 ++ y` looped; rewriting with the equality once
   (`qpat_x_assum … (fn th => fs[th])`) avoids it.
+
+## Gotchas (phase 4)
+
+- Passing a partial application (`bresp demo_files`) to a CakeML
+  higher-order function needs an extra CF step; translating a named
+  constant (`bresp_demo`) gives the Arrow certificate directly.
+- The LSP reported a spurious xfun failure in sproto_handler_spec_d that
+  Holmake did not; trust Holmake.

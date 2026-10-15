@@ -9,16 +9,26 @@ rules, gotchas) is in ~/.cache/async-spike/STATE.md.
     `http_quiet_b`, `select_ffi`, `arrivals_finite`, `asleep`;
   - `QuietSpecBite`;
   - `design/33-option-c-quiescence.md` (the costing; approved).
-- spike/quiet-echo (stacked on it): `async/quiet/echo/asyncEchoCause`,
-  `handler_cause` (proved).
+- spike/quiet-spec also has the SPEC CHANGE (user-approved) cccfddec4:
+  select fails on an fd that is not a socket of the model (`sel_ok`).
+- spike/quiet-echo (stacked on it), `async/quiet/echo/`, all proved, no
+  cheats. **Q1 is done.**
+  - `asyncEchoCause`: `handler_cause`.
+  - `asyncEchoServerCause`: `both_cause`, `server_cause` (the server acts
+    only on: readable listener; a readable fd it accepted more often than
+    it read EOF; Data).
+  - `asyncStaticRounds`: `static_after` (arrivals_finite ⇒ static from
+    some N), `static_round` (exact per-round accounting).
+  - `asyncEchoReadySoon`: `read_ready_soon_s`.
+  - `asyncEchoMeasure`: `meas_mono`, `meas_progress`, `meas_zero`.
+  - `asyncEchoStable`: **`echo_stable`** (Q1): with arrivals_finite, from
+    some round on the polling run has no actions, and nothing in
+    `(server2 lfdn).interest` is ready. Also `conns_no_listener`,
+    `eofr_eofs`, `accs_le_one`, `zero_no_actions`, `zero_interest`.
 
 ## Plan (design/33 §2.5), echo first
-1. Q1 `echo_stable`: static world after the last arrival; the measure
-   (queue + unread bytes / unread EOF on connections not EOF-read) is
-   non-increasing and decreases within 4 rounds (`accept_soon_s`, and
-   `read_soon_s` generalised to "ready"). Then stability through
-   `handler_cause`, a server-level cause lemma, and Level 2 `quiet`.
-2. Q2: a generic loop lemma (stable polling ⇒ the declared-interest
+1. Q1 `echo_stable`: DONE (above).
+2. Q2 (NEXT): a generic loop lemma (stable polling ⇒ the declared-interest
    select loop ends asleep), via #46's `lbgrounds`.
 3. Q3: the finite trace is safe and live.
 4. The L2 CF library, the loop, echo at Level 2 in CF, the bridge, and

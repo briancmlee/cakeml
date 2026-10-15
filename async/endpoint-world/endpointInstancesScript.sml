@@ -146,7 +146,7 @@ QED
 (* The fds a socket event names *)
 Definition event_fds_def:
   event_fds (IO_event (ExtCall n) conf bytes) =
-    (if n = «sock_poll» then bytes_fds conf
+    (if n = «sock_poll» ∨ n = «sock_select» then bytes_fds conf
      else if n = «sock_write» ∨ n = «sock_send» then [bytes_fd (TAKE 8 conf)]
      else if n = «sock_connect» then []
      else [bytes_fd conf]) ∧

@@ -31,17 +31,18 @@ Alongside:
 - **a blocking version** that sleeps in `select` on the listener and the
   live connections only. It is proved to refine the headline
   (`echo_live_spec`), and it idles at 0.0% CPU;
-- **an HTTP server** that tolerates request headers. It meets a
-  header-tolerant HTTP specification **in full**, safety and liveness:
+- **an HTTP server**: GET and POST, with any headers and Content-Length
+  bodies; `POST /echo` answers the body. It meets a short HTTP
+  specification **in full**, safety and liveness:
 
   ```
-  (* headline/asyncHttpSpecHScript.sml *)
-  Theorem http_prog_h_spec:
-    http_spec_h 3w demo_files http_prog_h
+  (* headline/asyncHttpSpecBScript.sml *)
+  Theorem http_prog_b_spec:
+    http_spec_b 3w demo_files http_prog_b
   ```
 
-  The HTTP server is also proved quiet (no busy-waiting at Level 2,
-  `servers/http-quiet`).
+  Its header-tolerant predecessor is also proved quiet (no busy-waiting
+  at Level 2, `servers/http-quiet`).
 
 **Polling and blocking.** The trusted C (`runnable/socket_ffi.c`) does
 exactly what the model says: `sock_poll` is one `poll(2)` with timeout 0.
@@ -64,7 +65,7 @@ from `cpu-results-no-idle-wait.txt` (#50, the C as it is now).
 | file | what it says |
 |---|---|
 | `spec/EchoSpecScript.sml` | the sockets-only FFI oracle, per-connection projections of raw I/O events, `echo_safe`, `echo_live`, `echo_spec` |
-| `spec/HttpSpecHeadersScript.sml` (with HttpSpec's paths, files and response printer from `spec/HttpSpecScript.sml`) | GET requests with any headers except body-framing ones (no request bodies), `http_safe_h`, `http_live_h`, `http_spec_h` |
+| `spec/HttpSpecBodiesScript.sml` (with the vocabulary of `spec/HttpSpecScript.sml` and `spec/HttpSpecHeadersScript.sml`: paths, files, the response and header printers) | GET and POST requests with headers and a Content-Length body, `http_safe_b`, `http_live_b`, `http_spec_b` |
 | `world/sockets/ffiSpikeSocketFFIScript.sml` | the socket world: listeners, connections, a schedule of future arrivals; the byte-level FFI functions |
 | `world/sockets/ffiSpikeSocketFairScript.sml` | fairness of schedules (`sched_wf`, used by `server_world`) |
 | CakeML | the source semantics (`semantics_prog`) and its I/O events |
@@ -87,11 +88,14 @@ of them appears in the statement.
   - writing before reading (`broken_writes_before_reading`);
   - never echoing (`broken_never_echoes`).
 
-  `spec/HttpSpecHeadersBiteScript.sml` does the same for HTTP. It covers
-  letting a header change the response, answering before the blank line,
-  answering a request that carries a body (`broken_answers_body_request`),
-  and never answering. It also shows that curl's default request is a
-  valid request (`curl_request`).
+  `spec/HttpSpecBodiesBiteScript.sml` does the same for HTTP:
+  - answering a body that looks like a request as if it were one
+    (`broken_body_as_request`);
+  - answering before the last body byte (`broken_answers_before_body`);
+  - never answering.
+
+  It also shows that the framing is unique (`print_brequest_unique`), and
+  that `curl -d` sends a valid request (`curl_post_request`).
 - **The spec is not vacuous.** A fair world exists
   (`server_world_exists`). In it, an ideal trace satisfies safety and
   liveness together (`ideal_trace_safe_and_live`).
@@ -107,11 +111,11 @@ $ make demo          # runnable/echo: 3 concurrent clients and a late 4th
 ...
 [  0.466s] check    alice: received exactly its own lines: True
 
-$ curl -s -i http://127.0.0.1:7840/        # runnable/http: plain curl, default headers
+$ curl -s -i -d hello http://127.0.0.1:7850/echo    # runnable/http-bodies: plain curl
 HTTP/1.0 200 OK
-Content-Length: 42
+Content-Length: 5
 
-Hello from a verified CakeML HTTP server!
+hello
 ```
 
 - **Build route.** The verified programs are exported from HOL as
@@ -149,8 +153,10 @@ Hello from a verified CakeML HTTP server!
 
 ## Honest limitations
 
-- **This HTTP subset has no request bodies.** Requests with
-  Content-Length or Transfer-Encoding are not answered.
+- **The HTTP subset is small.** It has GET and POST only, and bodies
+  framed by one Content-Length header with a canonical decimal value. There
+  is no chunked Transfer-Encoding: such requests are invalid and are not
+  answered.
 - **Proofs establish values, not running time.** An exponential-time
   parser passed all proofs until a long header exposed it: the translated
   code of a recursive split made its recursive call twice per character,
@@ -169,8 +175,11 @@ Hello from a verified CakeML HTTP server!
 - **The socket model is idealized.** It has no errors besides EOF, and
   writes always succeed in full. `socket_ffi.c` documents how reality is
   mapped onto it.
-- An earlier, strict HTTP spec (`GET <path> HTTP/1.0` with no headers) and
-  its results are archived on the spike branches.
+- Two earlier HTTP specs are kept as stepping stones; both are proved for
+  their programs:
+  - the strict `GET <path> HTTP/1.0` spec (`HttpSpec`);
+  - the header-tolerant spec without bodies (`HttpSpecHeaders`,
+    `http_prog_h_spec`).
 
 ## How it was built
 

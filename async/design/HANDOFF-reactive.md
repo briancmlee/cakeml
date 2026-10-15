@@ -17,7 +17,7 @@ Kept current at every commit. Read with the coordinator's brief and
   - `asyncCfReactLoopScript.sml`: CakeML `fill`, `read_bytes`, `step`, `run`;
     `fill_spec`, `read_bytes_spec`, `step_spec` (MAIN), `run_spec` (MAIN).
   - `asyncCfChooseModelScript.sml`, `asyncCfChooseScript.sml`: `choose`.
-- Docs: this file; `async/design/10-cf-reactive.md` (to be written at the end).
+- Docs: this file; `async/design/10-cf-reactive.md`.
 
 ## Status
 
@@ -26,9 +26,11 @@ Kept current at every commit. Read with the coordinator's brief and
   incl. `suspended_choose`, from the model's `views_split`/`par_log_split`)
   and `asyncCfChooseScript.sml` (CakeML `choose`, `choose_spec_n`,
   `choose_spec` MAIN). Holmake green, no cheats.
-- TODO: 10-cf-reactive.md; PR.
+- DONE: 10-cf-reactive.md (write-up, socket instantiation notes, assumptions).
 
-## Assumptions made (so far)
+## Assumptions made
+
+(Full list of 8 in 10-cf-reactive.md §4.)
 
 1. One FFI call per round (`round`): the buffer holds the round's
    actions followed by `nready` padding bytes, and comes back holding

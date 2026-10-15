@@ -251,3 +251,20 @@ The transcript shows:
 - **Known limitation, documented in the spec:** `Expect: 100-continue` is
   not supported.
 
+## 8. Spec change: RFC character sets for paths and field values (PENDING user approval)
+
+- **Finding H-CHARS (low severity):** a compliance gap, not a framing
+  issue. A TAB or non-ASCII character in a path, or NUL in a header
+  value, was valid. RFC 9112 frames no message for these, and RFC 9110
+  §5.5 requires rejecting NUL, yet liveness forced a 200/404 answer.
+- **Fix:** `uri_char` (RFC 3986 characters; `valid_brequest` adds
+  `EVERY uri_char p`) and `field_char` (VCHAR / obs-text / SP / HTAB;
+  `valid_bheader` values).
+  - New bite: `rfc_chars_bites`.
+  - The parser rejects other characters, and the CakeML program
+    translates both predicates.
+  - `http_prog_b_spec` is unchanged and re-proved. The demo has a
+    tab-in-path case, which gets no response.
+- **Rollback:** this is a separate commit, and reverting it restores §7's
+  spec.
+

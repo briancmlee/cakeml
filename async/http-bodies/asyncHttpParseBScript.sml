@@ -59,7 +59,7 @@ Definition parse_bheaders_def:
           let v = FST (split_at #"\r" (DROP 2 u));
               w = SND (split_at #"\r" (DROP 2 u))
           in
-            if EXISTS (λc. c = #"\n") v then HBad
+            if EXISTS (λc. ¬field_char c) v then HBad
             else if w = [] then HMore
             else if ¬(crlf ≼ w) then (if w ≼ crlf then HMore else HBad)
             else
@@ -111,7 +111,7 @@ Definition bline_def:
     let p = FST (split_path t);
         u = SND (split_path t)
     in
-      if EXISTS (λc. c = #"\r" ∨ c = #"\n") p then BInvalid
+      if EXISTS (λc. ¬uri_char c) p then BInvalid
       else if u = [] then BIncomplete
       else if p = [] then BInvalid
       else if sp_http10 ≼ u then bfinish m p "1.0" (parse_bheaders (DROP 11 u))
@@ -179,7 +179,7 @@ QED
    ------------------------------------------------------------------------ *)
 
 Theorem parse_bheaders_line[local]:
-  n ≠ [] ∧ EVERY tchar n ∧ EVERY (λc. c ≠ #"\r" ∧ c ≠ #"\n") v ⇒
+  n ≠ [] ∧ EVERY tchar n ∧ EVERY field_char v ⇒
   parse_bheaders (n ++ #":" :: #" " :: (v ++ #"\r" :: #"\n" :: Y)) =
   case parse_bheaders Y of
     HDone hs r => HDone ((n, v) :: hs) r
@@ -197,9 +197,12 @@ Proof
    (n, #":" :: #" " :: (v ++ #"\r" :: #"\n" :: Y))’
     by (irule split_at_char >> fs[EVERY_MEM] >> strip_tac >> res_tac >> fs[]) >>
   ‘¬EXISTS (λc. ¬tchar c) n’ by fs[EVERY_MEM, EXISTS_MEM] >>
+  ‘EVERY (λc. c ≠ #"\r" ∧ c ≠ #"\n") v’
+    by (irule EVERY_MONOTONIC >> qexists_tac ‘field_char’ >>
+        rw[field_char_def] >> rpt strip_tac >> gvs[]) >>
   ‘split_at #"\r" (v ++ #"\r" :: #"\n" :: Y) = (v, #"\r" :: #"\n" :: Y)’
     by (irule split_at_char >> fs[EVERY_MEM] >> strip_tac >> res_tac >> fs[]) >>
-  ‘¬EXISTS (λc. c = #"\n") v’ by (fs[EVERY_MEM, EXISTS_MEM] >> metis_tac[]) >>
+  ‘¬EXISTS (λc. ¬field_char c) v’ by fs[EVERY_MEM, EXISTS_MEM] >>
   CONV_TAC (LAND_CONV (ONCE_REWRITE_CONV [parse_bheaders_def])) >>
   asm_simp_tac std_ss [LET_THM, crlf_prefix, colon_sp_prefix, DROP_2_CONS] >>
   simp[]
@@ -383,15 +386,24 @@ Proof
   EVAL_TAC
 QED
 
+(* Request-target characters exclude the separators *)
+Theorem uri_char_not_sep[local]:
+  uri_char c ⇒ c ≠ #" " ∧ c ≠ #"\r" ∧ c ≠ #"\n"
+Proof
+  rw[uri_char_def] >> fs[stringTheory.isAlpha_def, stringTheory.isLower_def,
+                         stringTheory.isUpper_def, stringTheory.isDigit_def] >>
+  rpt strip_tac >> gvs[]
+QED
+
 (* The request line after the method, in bline's terms *)
 Theorem bline_line[local]:
-  valid_path p ∧ (sp_http10 ≼ u ∨ sp_http11 ≼ u) ⇒
+  valid_path p ∧ EVERY uri_char p ∧ (sp_http10 ≼ u ∨ sp_http11 ≼ u) ⇒
   bline m (p ++ u) =
     if sp_http10 ≼ u then bfinish m p "1.0" (parse_bheaders (DROP 11 u))
     else bfinish m p "1.1" (parse_bheaders (DROP 11 u))
 Proof
   strip_tac >>
-  ‘EVERY (λc. c ≠ #" ") p ∧ ¬EXISTS (λc. c = #"\r" ∨ c = #"\n") p ∧ p ≠ []’
+  ‘EVERY (λc. c ≠ #" ") p ∧ ¬EXISTS (λc. ¬uri_char c) p ∧ p ≠ []’
     by (fs[valid_path_def, EVERY_MEM, EXISTS_MEM] >> metis_tac[]) >>
   ‘split_path (p ++ u) = (p, u) ∧ u ≠ []’
     by (‘∃y. u = sp_http10 ++ y ∨ u = sp_http11 ++ y’
@@ -474,7 +486,9 @@ Proof
   rename1 ‘u = _ ++ l1’ >>
   ‘DROP 11 u = l1’ by (qpat_x_assum ‘u = _ ++ l1’ (fn th => REWRITE_TAC[th, DROP_sp_http])) >>
   simp[valid_brequest_def, valid_version_def, valid_path_def] >>
-  rpt conj_tac >> TRY (fs[EVERY_MEM, EXISTS_MEM] >> metis_tac[] >> NO_TAC) >>
+  rpt conj_tac >>
+  TRY (fs[EVERY_MEM, EXISTS_MEM, combinTheory.o_DEF] >>
+       metis_tac[uri_char_not_sep] >> NO_TAC) >>
   simp[print_brequest_def] >>
   qpat_x_assum ‘t = _’ SUBST1_TAC >> qpat_x_assum ‘u = _’ SUBST1_TAC >>
   ‘l1 = FLAT (MAP print_header hs) ++ crlf ++ (b ++ rest)’ by metis_tac[APPEND_ASSOC] >>

@@ -100,7 +100,7 @@ Definition parse_bheaders2_def:
           else
             case split_at2 #"\r" (DROP 2 u) of
               (v, w) =>
-                if EXISTS (λc. c = #"\n") v then HBad
+                if EXISTS (λc. ¬field_char c) v then HBad
                 else if w = [] then HMore
                 else if ¬(crlf ≼ w) then (if w ≼ crlf then HMore else HBad)
                 else
@@ -129,7 +129,7 @@ Definition bline2_def:
   bline2 m t =
     case split_path2 t of
       (p, u) =>
-        if EXISTS (λc. c = #"\r" ∨ c = #"\n") p then BInvalid
+        if EXISTS (λc. ¬uri_char c) p then BInvalid
         else if u = [] then BIncomplete
         else if p = [] then BInvalid
         else if sp_http10 ≼ u then bfinish m p "1.0" (parse_bheaders2 (DROP 11 u))
@@ -165,6 +165,8 @@ val r = translate stringTheory.isLower_def;
 val r = translate stringTheory.isAlpha_def;
 val r = translate stringTheory.isDigit_def;
 val r = translate tchar_ord;
+val r = translate field_char_def;
+val r = translate uri_char_def;
 val r = translate is_cl_def;
 val r = translate is_te_def;
 val r = translate post_sp_def;

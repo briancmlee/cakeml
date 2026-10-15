@@ -16,6 +16,7 @@ INCLUDES = ../cakeml/approx \
            ../programs/http \
            ../programs/http-b \
            ../programs/http-h \
+           ../quiet/echo \
            ../servers/echo \
            ../servers/http \
            ../servers/relabel \

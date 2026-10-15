@@ -22,13 +22,13 @@ Kept current at every commit.
     file, wrong Content-Length, answering a partial request, never
     answering; a fair one-client world; the ideal trace is safe and live
     (with a request-uniqueness lemma).
-- Docs: this file; `async/design/16-final-spec.md` (to be written).
+- Docs: this file; `async/design/16-final-spec.md`.
 
 ## Status
 
 - DONE: EchoSpec + bite; Holmake green, no cheats.
 - DONE: HttpSpec + bite; Holmake green, no cheats.
-- TODO: 16-final-spec.md, PR.
+- DONE: 16-final-spec.md.
 
 ## Assumptions made (so far)
 

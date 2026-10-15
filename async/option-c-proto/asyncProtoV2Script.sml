@@ -54,6 +54,13 @@ Definition server_v2_def:
   server_v2 V h2 = fix2 (server_v_body2 V h2)
 End
 
+(* The skeleton satisfies its recursive equation *)
+Theorem server_v2_unfold:
+  server_v2 V h2 lfd = server_v_body2 V h2 (server_v2 V h2) lfd
+Proof
+  simp[server_v2_def, Once (MATCH_MP fix2_unfold server_v_body2_contractive)]
+QED
+
 Theorem erase_server_v_body2:
   (∀fd. erase (h2 fd) = h fd) ⇒
   erase (server_v_body2 V h2 R lfd) = server_v_body V h (λq. erase (R q)) lfd
@@ -136,6 +143,15 @@ QED
 Definition proto_handler_v2_def:
   proto_handler_v2 V P ansq fin = fix2 (proto_body_v2 V P ansq fin)
 End
+
+(* MAIN: the Level 2 handler satisfies its recursive equation *)
+Theorem proto_handler_v2_unfold:
+  proto_handler_v2 V P ansq fin p =
+    proto_body_v2 V P ansq fin (proto_handler_v2 V P ansq fin) p
+Proof
+  simp[proto_handler_v2_def,
+       Once (MATCH_MP fix2_unfold proto_body_v2_contractive)]
+QED
 
 Theorem erase_proto_body_v2:
   erase (proto_body_v2 V P ansq fin R p) =

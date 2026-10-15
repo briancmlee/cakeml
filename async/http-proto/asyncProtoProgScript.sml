@@ -26,6 +26,10 @@
 
      fun proto_server parse respond lfd =
        sserver_with (fn fd => proto_handler parse respond fd []) lfd;
+
+  and the event loop on it, for the listener fd 3 (created by the C side):
+
+     fun proto_main parse respond u = run_i ([3], proto_server parse respond 3);
 *)
 Theory asyncProtoProg
 Ancestors
@@ -59,4 +63,6 @@ Quote add_cakeml:
 
   fun proto_server parse respond lfd =
     sserver_with (fn fd => proto_handler parse respond fd []) lfd;
+
+  fun proto_main parse respond u = run_i ([3], proto_server parse respond 3);
 End

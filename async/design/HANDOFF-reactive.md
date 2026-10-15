@@ -58,3 +58,11 @@ Kept current at every commit. Read with the coordinator's brief and
 - `W` (W combinator) again: a renaming regex also hit `W8ARRAY`.
 - `xif` leaves `∃b. BOOL b bv ∧ ...` even when `BOOL T bv` is an
   assumption; `qexists_tac ‘T’ >> simp[]` was needed.
+
+## Final report (2026-10-15)
+
+- **PR:** https://github.com/briancmlee/cakeml/pull/14 (spike/cf-reactive → spike/cf-actions).
+- **Reactive world:** done. `run_spec` + `wtrace_actions_rounds` hold for any
+  `world_ok` world (state + step function, one `round` FFI part).
+- **choose:** done (`choose_spec`), via the new model lemma `suspended_choose`.
+- No cheats; Holmake green. Socket instantiation notes are in 10 §1.

@@ -1,0 +1,8 @@
+# The echo program's safety in EchoSpec's own form (socket_ffi,
+# server_world).  Reuses the machine-code worker's echo_semantics_prog.
+INCLUDES = ../model ../cf-spike ../cf-actions ../cf-reactive ../ffi-spike \
+           ../m3-assembly ../m4-server ../m4-common ../spec ../m4-safety \
+           ../runnable ../machine-code
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

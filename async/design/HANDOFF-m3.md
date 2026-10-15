@@ -32,7 +32,7 @@ Kept current at every commit. Read with the coordinator's brief and
   `srun_ok_accept3`) and `asyncM3ExampleScript.sml` (`main_spec`,
   `m3_semantics` (MAIN: the whole program diverges with the round-by-round
   socket trace), `m3_trace_actions` (MAIN)). Holmake green, no cheats.
-- TODO: 13-m3-assembly.md; PR (base spike/cf-reactive).
+- DONE: 13-m3-assembly.md.
 
 ## Assumptions made (so far)
 

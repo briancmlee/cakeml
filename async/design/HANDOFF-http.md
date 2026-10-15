@@ -15,12 +15,20 @@ Kept current at every commit.
     (Complete r rest | Incomplete | Invalid), proved against HttpSpec's
     `print_request`: `parse_print`, `parse_complete`, `parse_prefix`,
     `parse_invalid`, `parse_extend`; `parse_all` and `parse_all_requests`.
+  - `asyncServerWithScript.sml`: `server_with h lfd` (the echo server's
+    skeleton for any handler), `server_with_handler` (echo is the instance),
+    wf/settled, `server_with_isolates` (per-connection isolation).
+  - `asyncHttpServerScript.sml`: `http_handler files (fd, buf)` (fix,
+    wf, settled), `http_server`, `http_handler_serves`,
+    `http_server_safety`, `http_server_safety_requests`, EVAL examples.
 
 ## Status
 
-- DONE: the parser (task 1). Holmake green, no cheats.
-- TODO: `server_with` (generic server skeleton), the HTTP handler and server,
-  model-level safety, 18-http-model.md, PR.
+- DONE: parser, server_with, HTTP handler/server, safety (tasks 1-4).
+  Holmake green, no cheats.
+- NOT DONE (estimated in 18-http-model.md): Level 2 quiet, the world-async
+  style closed-system result.
+- TODO: 18-http-model.md, PR.
 
 ## Assumptions made (so far)
 

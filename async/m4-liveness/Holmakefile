@@ -1,0 +1,8 @@
+# M4 liveness: the echo server's I/O satisfies EchoSpec's echo_live.
+# Reuses the base basis heap, the model, the CF layers, the socket model,
+# M3, the M4 server, the shared M4 pieces and the spec.
+INCLUDES = ../model ../cf-spike ../cf-actions ../cf-reactive ../ffi-spike \
+           ../m3-assembly ../m4-server ../m4-common ../spec
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

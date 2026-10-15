@@ -4,3 +4,4 @@
 # See design/shared-base-build.md.
 /holproject.toml
 holproject.local.toml
+/programs/http/http_server.sexp

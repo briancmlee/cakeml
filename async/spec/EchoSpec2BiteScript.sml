@@ -12,9 +12,13 @@
     to the new connection on the same fd violates echo_safe2.  EchoSpec's
     per-fd echo_safe does NOT catch this bug (v1_misses_leak), which is why
     EchoSpec2 projects per episode.
-  - Non-vacuity: a fair version-2 world in which the kernel really reuses
-    an fd (hello_world2_reuses), and an ideal echo trace for it, with two
-    episodes on the same fd, that is both safe and live.
+  - NEW, closing: a server that never closes (version 1's behaviour) is
+    safe and live but violates echo_closes2 (broken_never_closes).
+  - Non-vacuity: POSIX's lowest-free policy is an allocation policy
+    (lowest_free_alloc_ok); a fair version-2 world with it in which the
+    kernel really reuses an fd (hello_world2_reuses); and an ideal echo
+    trace for it, with two episodes on the same fd, that is safe, live and
+    closes (ideal2_trace_spec).
 *)
 Theory EchoSpec2Bite
 Ancestors
@@ -140,7 +144,7 @@ Overload YO = “[121w; 111w; 10w] : word8 list”
 Definition hello_world2_def:
   hello_world2 =
     <| listening := [(3w, [])]; clients := []; open_fds := [];
-       reserved := [0w; 1w; 2w];
+       reserved := [0w; 1w; 2w]; alloc := (λj. lowest_free);
        future := [| [Connect2 3w; Data2 0 HI; Eof2 0];
                     [Connect2 3w; Data2 1 YO; Eof2 1] |] |>
 End
@@ -162,10 +166,46 @@ Proof
   >> simp[ticks2_quiet, next_step2_def, step_ok2_def]
 QED
 
+(* Pigeonhole: fewer than N values cannot contain N distinct ones *)
+Theorem pigeon[local]:
+  ∀N (used : α list) f.
+    (∀n m. n < N ∧ m < N ∧ f n = f m ⇒ n = m) ∧ LENGTH used < N ⇒
+    ∃n. n < N ∧ ¬MEM (f n) used
+Proof
+  rw[] >> CCONTR_TAC >> gvs[] >>
+  ‘set (GENLIST f N) ⊆ set used’ by (rw[SUBSET_DEF, MEM_GENLIST] >> metis_tac[]) >>
+  ‘ALL_DISTINCT (GENLIST f N)’ by (simp[ALL_DISTINCT_GENLIST] >> metis_tac[]) >>
+  ‘CARD (set (GENLIST f N)) = N’ by simp[ALL_DISTINCT_CARD_LIST_TO_SET] >>
+  ‘CARD (set (GENLIST f N)) ≤ CARD (set used)’ by (irule CARD_SUBSET >> simp[]) >>
+  ‘CARD (set used) ≤ LENGTH used’ by simp[CARD_LIST_TO_SET] >>
+  gvs[]
+QED
+
+(* With fewer than 2^64 fds in use, some fd is free *)
+Theorem free_fd_exists[local]:
+  LENGTH (used : word64 list) < dimword (:64) ⇒ ∃n. ¬MEM (n2w n : word64) used
+Proof
+  strip_tac >>
+  qspecl_then [‘dimword (:64)’, ‘used’, ‘λn. n2w n’] mp_tac
+    (INST_TYPE [alpha |-> “:word64”] pigeon) >>
+  impl_tac >- (simp_tac std_ss [] >> rw[] >> gvs[n2w_11]) >>
+  metis_tac[]
+QED
+
+(* NON-VACUITY: POSIX's policy, the lowest free fd, gives free fds *)
+Theorem lowest_free_alloc_ok:
+  alloc_ok (λj. lowest_free)
+Proof
+  rw[alloc_ok_def, lowest_free_def] >>
+  ‘∃n. ¬MEM (n2w n : word64) used’ by (irule free_fd_exists >> simp[]) >>
+  numLib.LEAST_ELIM_TAC >> metis_tac[]
+QED
+
 Theorem server_world2_exists:
   server_world2 3w hello_world2
 Proof
-  simp[server_world2_def, hello_world2_sched_wf] >> EVAL_TAC
+  simp[server_world2_def, hello_world2_sched_wf] >> conj_tac >- EVAL_TAC >>
+  simp[hello_world2_def, lowest_free_alloc_ok]
 QED
 
 Theorem lowest_free_eq[local]:
@@ -245,4 +285,58 @@ Proof
       ‘j = 0 ∨ j = 1 ∨ 2 ≤ j’ by simp[] >> gvs[] >> EVAL_TAC >> simp[])
   >> rw[echo_live2_def] >> qexists_tac ‘ideal2_evs’ >>
   simp[LPREFIX_fromList_fromList, sent2_upto_hello_world2] >> rw[] >> EVAL_TAC
+QED
+
+(* ... and it closes both episodes *)
+Theorem ideal2_trace_closes:
+  echo_closes2 (fromList ideal2_evs)
+Proof
+  rw[echo_closes2_def, LPREFIX_fromList_fromList] >>
+  qexists_tac ‘ideal2_evs’ >> simp[] >>
+  ‘j < LENGTH (accepted_fds evs)’ by gvs[ep_eof_read_def] >>
+  ‘accepted_fds evs ≼ accepted_fds ideal2_evs’
+    by (qpat_x_assum ‘evs ≼ _’ (strip_assume_tac o REWRITE_RULE [IS_PREFIX_APPEND]) >>
+        ASM_REWRITE_TAC [accepted_fds_def, MAP_APPEND, FLAT_APPEND] >>
+        REWRITE_TAC [IS_PREFIX_APPEND] >> metis_tac[]) >>
+  ‘LENGTH (accepted_fds ideal2_evs) = 2’ by EVAL_TAC >>
+  imp_res_tac IS_PREFIX_LENGTH >>
+  ‘j = 0 ∨ j = 1’ by simp[] >> gvs[] >> EVAL_TAC
+QED
+
+(* NON-VACUITY: the three clauses are jointly satisfiable, with reuse *)
+Theorem ideal2_trace_spec:
+  echo_safe2 (fromList ideal2_evs) ∧ echo_live2 hello_world2 (fromList ideal2_evs) ∧
+  echo_closes2 (fromList ideal2_evs)
+Proof
+  simp[ideal2_trace_safe_and_live, ideal2_trace_closes]
+QED
+
+(* ------------------------------------------------------------------------
+   A server that never closes
+   ------------------------------------------------------------------------ *)
+
+(* Version 1's behaviour: echo each client, read its EOF, never close; the
+   second client gets a fresh fd (5), as fd 4 is still in use *)
+Overload noclose_evs =
+  “[acc L 4w; rd 4w HI 100; wr 4w HI; rdeof 4w 100;
+    acc L 5w; rd 5w YO 100; wr 5w YO; rdeof 5w 100]”
+
+(* NEW: it is safe and live, but violates echo_closes2 *)
+Theorem broken_never_closes:
+  echo_safe2 (fromList noclose_evs) ∧ echo_live2 hello_world2 (fromList noclose_evs) ∧
+  ¬echo_closes2 (fromList noclose_evs)
+Proof
+  rpt conj_tac
+  >- (rw[echo_safe2_def, LPREFIX_fromList_fromList, prefix_take] >>
+      ‘n ≤ 8’ by gvs[] >>
+      ‘n = 0 ∨ n = 1 ∨ n = 2 ∨ n = 3 ∨ n = 4 ∨ n = 5 ∨ n = 6 ∨ n = 7 ∨
+       n = 8’ by simp[] >>
+      ‘j = 0 ∨ j = 1 ∨ 2 ≤ j’ by simp[] >> gvs[] >> EVAL_TAC >> simp[])
+  >- (rw[echo_live2_def] >> qexists_tac ‘noclose_evs’ >>
+      simp[LPREFIX_fromList_fromList, sent2_upto_hello_world2] >> rw[] >> EVAL_TAC)
+  >> rw[echo_closes2_def, LPREFIX_fromList_fromList] >>
+  qexistsl [‘noclose_evs’, ‘0’] >> simp[] >> conj_tac >- EVAL_TAC >>
+  rw[] >> Cases_on ‘evs' ≼ noclose_evs’ >> simp[] >> gvs[prefix_take] >>
+  ‘n = 0 ∨ n = 1 ∨ n = 2 ∨ n = 3 ∨ n = 4 ∨ n = 5 ∨ n = 6 ∨ n = 7 ∨
+   n = 8’ by simp[] >> gvs[] >> EVAL_TAC
 QED

@@ -51,15 +51,33 @@ Proof
   simp [num_step2_def, step2_num_def, MAP_MAP_o, combinTheory.o_DEF]
 QED
 
+(* The allocation function, as the stream of its values on all arguments
+   (client j and a list of fds, numbered by npair and nlist_of) *)
+Definition alloc_stream_def:
+  alloc_stream (a : num -> word64 list -> word64) =
+    LGENLIST (λn. w2n (a (nfst n) (MAP n2w (listOfN (nsnd n))))) NONE
+End
+
 Definition sockets2_encode_def:
   sockets2_encode s =
     Cons (Cons (Cons (encode_list (encode_pair (Num o w2n) (encode_list Num))
                                   s.listening)
                      (encode_list encode_conn s.clients))
                (Cons (encode_list (encode_pair (Num o w2n) Num) s.open_fds)
-                     (encode_list (Num o w2n) s.reserved)))
+                     (Cons (encode_list (Num o w2n) s.reserved)
+                           (Stream (alloc_stream s.alloc)))))
          (Stream (LMAP step2_num s.future))
 End
+
+Theorem alloc_stream_11[local]:
+  alloc_stream a = alloc_stream b ⇔ a = b
+Proof
+  rw[alloc_stream_def, EQ_IMP_THM, FUN_EQ_THM] >>
+  rename1 ‘a j l = b j l’ >>
+  pop_assum (mp_tac o Q.AP_TERM ‘LNTH (npair j (nlist_of (MAP w2n (l : word64 list))))’) >>
+  simp[LNTH_LGENLIST, MAP_MAP_o, combinTheory.o_DEF] >>
+  ‘∀l. MAP (λx. n2w (w2n x)) l = l’ by (Induct >> simp[]) >> simp[]
+QED
 
 Theorem encode_words_11[local]:
   encode_list (Num o w2n) (x:'a word list) = encode_list (Num o w2n) y ⇔
@@ -107,7 +125,7 @@ Theorem sockets2_encode_11[local]:
   ∀x y. sockets2_encode x = sockets2_encode y ⇔ x = y
 Proof
   rw [sockets2_encode_def, fetch "socketV2FFI" "sockets2_component_equality",
-      LMAP_step2_num_11, EQ_IMP_THM, encode_words_11]
+      LMAP_step2_num_11, EQ_IMP_THM, encode_words_11, alloc_stream_11]
   \\ irule encode_list_11 \\ first_x_assum (irule_at Any)
   \\ simp [FORALL_PROD, encode_pair_def, encode_words_11, encode_nums_11,
            encode_conn_11]

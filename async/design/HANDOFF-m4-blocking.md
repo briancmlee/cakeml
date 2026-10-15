@@ -2,6 +2,8 @@
 
 The write-up is `async/design/17-m4-blocking.md`.
 
+PR: https://github.com/briancmlee/cakeml/pull/27
+
 ## State
 
 - Branch `spike/m4-blocking`, pushed, stacked on `spike/l2-blocking`

@@ -109,3 +109,27 @@ by recorded PID; no cheats in commits.
   coordinator's tip, from CONVENTIONS.md); hol-lsp restarts are much faster.
 - `S` (as a variable name) is the S combinator: type errors far from the cause
   (cf. `W` in HANDOFF-cf.md).
+
+## Final report (2026-10-15)
+
+- **PR:** https://github.com/briancmlee/cakeml/pull/10 (spike/cf-actions → spike/cf-loop;
+  it also merges spike/async-level2, so the diff includes the model).
+- **Representation:** a computation value is the pair `(acts, residual)`, with
+  `datatype step = Done 'a | Pending ('w -> 'act list * step)`.
+  Snapshots are triples `(ready, now, results)`. `STEPA`/`COMP` relate
+  values to the model's own `suspended m [w]` and `finished A x`, so each
+  poll emits exactly the model's `new_actions`.
+- **Proved** (no cheats, Holmake green): model step lemmas (incl.
+  `suspended_bind`, `suspended_both`); CF specs `return_spec`, `poll_spec`,
+  `wait_spec`, `never_spec`, `emit_spec`, `skip_spec`, `bind_spec`, `both_spec`.
+- **Event loop:** fully connected for a restricted world. `run_spec` (cfDiv:
+  diverges, trace = LFLATTEN of `round_events m ws i`) plus
+  `trace_actions_rounds` (the trace's actions in rounds 0..n =
+  `(m (hist m ws n)).actions`). The world: bytes, an oblivious response stream,
+  `now = 0`, ready set `{b}`.
+- **Not done:** `choose` (estimated at 300–450 lines). Estimates for the
+  M2 scheduler (~400–600) and Level 2 (~600) are in 05 §4.
+- **Tools:** hol-lsp MCP tools were available and used throughout
+  (diagnostics, goalState, eval, restart, retryCompile). `xcf_div` + `xapp`
+  worked in hol-lsp this time.
+- **Assumptions:** see 05-cf-actions.md §5 (10 items).

@@ -14,6 +14,18 @@
   | sock_read   | ffi_sock_read    | connection fd (8)     | status (0 data, 1 would block, |
   |             |                  |                       |   2 EOF), 8-byte count, data   |
   | sock_write  | ffi_sock_write   | fd (8) ++ data        | unused                         |
+  | sock_select | ffi_sock_select  | k fds, 8 bytes each   | empty (length 0)               |
+  |             | (asyncM4BlkLoop) |                       |                                |
+
+  sock_select is used only by the blocking echo program
+  (async/m4-blocking, run_b).  The model's ffi_sock_select lets rounds of
+  the world pass (sock_wait) until a poll of the fds would report one of
+  them ready, and returns nothing; if that never happens it diverges
+  (FFIdiverge).  Here: block in poll(2) with no timeout until one of the
+  fds is ready (POLLIN/POLLHUP/POLLERR, as for sock_poll), consuming
+  nothing.  The sock_poll that follows reports the ready set.  With no fd
+  ready ever (or an empty list) this blocks forever, which is the model's
+  divergence.  TRUST ITEM: this function behaves as ffi_sock_select.
 
   fds are 8-byte big-endian numbers (fd_bytes).  The model's readiness
   (is_ready): a listener with a pending connection, or a connection with
@@ -41,6 +53,9 @@
      operation since the last poll and the same ready set for IDLE_ROUNDS
      polls in a row.  Then it waits (at most IDLE_WAIT_MS) for an fd that
      was not ready to become ready.  Otherwise the loop would spin.
+     Compiling with -DNO_IDLE_WAIT turns this wait off: sock_poll then
+     never waits, exactly as the model's poll (one round per call).  The
+     blocking program does not need the wait (it sleeps in sock_select).
    - closing: the model has no close, so fds are never closed.  A closed
      connection stays ready (EOF) and stays in the loop's interest list.
 */
@@ -128,7 +143,11 @@ void ffisock_poll(unsigned char *c, long clen, unsigned char *a, long alen) {
   ready_now(pfds, n, a);
   int same = (n == last_n) && memcmp(a, last_ready, n) == 0;
   idle_polls = (!busy && same) ? idle_polls + 1 : 0;
+#ifdef NO_IDLE_WAIT
+  if (0) {
+#else
   if (idle_polls >= IDLE_ROUNDS) {
+#endif
     /* idle: wait for one of the fds that are not ready to become ready */
     struct pollfd wait[MAX_FDS];
     long m = 0;
@@ -185,5 +204,25 @@ void ffisock_write(unsigned char *c, long clen, unsigned char *a, long alen) {
     else if (w < 0 && errno == EINTR) continue;
     else if (w < 0 && (errno == EBADF || errno == ENOTSOCK)) die("sock_write");
     else break;                    /* e.g. EPIPE: the peer has gone */
+  }
+}
+
+/* ffi_sock_select: block until one of the fds c[0..clen) is ready; the
+   buffer is empty and nothing is consumed.  (The model: sock_wait, then
+   the next sock_poll reports the ready set.) */
+void ffisock_select(unsigned char *c, long clen, unsigned char *a, long alen) {
+  if (clen % 8 != 0 || alen != 0 || clen / 8 > MAX_FDS) {
+    errno = EINVAL; die("sock_select: lengths");
+  }
+  long n = clen / 8;
+  struct pollfd pfds[MAX_FDS];
+  for (long i = 0; i < n; i++) { pfds[i].fd = (int)get_fd(c + 8 * i); pfds[i].events = POLLIN; }
+  for (;;) {
+    int r = poll(pfds, n, -1);       /* no timeout: n = 0 blocks forever */
+    if (r < 0 && errno == EINTR) continue;
+    if (r < 0) die("sock_select: poll");
+    for (long i = 0; i < n; i++)
+      if (pfds[i].revents & POLLNVAL) { errno = EBADF; die("sock_select: not an fd"); }
+    return;
   }
 }

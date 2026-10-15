@@ -28,7 +28,7 @@ Kept current at every commit.
   Holmake green, no cheats.
 - NOT DONE (estimated in 18-http-model.md): Level 2 quiet, the world-async
   style closed-system result.
-- TODO: 18-http-model.md, PR.
+- DONE: 18-http-model.md.
 
 ## Assumptions made (so far)
 

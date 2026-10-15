@@ -1,6 +1,6 @@
-# Reuses the CakeML heap (built in the base, see holproject.local.toml),
+# Reuses the base basis heap (built in the base, see holproject.local.toml),
 # the HOL model (../model) and the CF determinism lemmas (../cf-spike).
 INCLUDES = ../model ../cf-spike
 ifdef POLY
-HOLHEAP = $(CAKEMLDIR)/misc/cakeml-heap
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
 endif

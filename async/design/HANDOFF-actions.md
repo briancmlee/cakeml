@@ -39,9 +39,11 @@ Snapshots are CakeML triples `(ready, now, results)` (`SNAPSHOT READY R`).
 
 - DONE: all model lemmas, including `suspended_bind` (needs `wf m`).
 - DONE: `STEPA`, `COMP`, `STEPAn`, `app_COMP_of_approx`, `STEPA_prepend`.
-- DONE: `return_spec`.
-- TODO next: `poll_spec`, `wait_spec(_n)`, `never_spec`, `emit_spec`,
-  `skip_spec`, `bind_spec(_n)`; then the event loop (step 4) and 05-cf-actions.md.
+- DONE (`asyncCfActSpecScript.sml`): `return_spec`, `poll_spec`,
+  `wait_spec` (via `wait_spec_n`), `never_spec`, `emit_spec`, `skip_spec`,
+  `bind_Done_spec_n`, `bind_spec` (via `bind_spec_n`). Step 2 is complete.
+- TODO next: estimate both/choose (step 3); the event loop (step 4);
+  05-cf-actions.md.
 
 ## Plan for the event loop (step 4)
 
@@ -73,5 +75,10 @@ by recorded PID; no cheats in commits.
 - After building ancestor theories with Holmake, `retryCompile` in hol-lsp
   failed with `target theory "asyncCore" is sealed; cross-theory mints are
   refused`. `restart` fixed it.
+- `imp_res_tac` with a polymorphic lemma leaves a type variable fixed in the
+  new assumption, unrelated to the goal's (e.g. the action type of `emit`),
+  so `simp` silently doesn't use it. Fix: `‘...’ by metis_tac[lemma]`.
+- The Holmakefile now uses `HOLHEAP = $(CAKEMLDIR)/basis/basis-heap` (the
+  coordinator's tip, from CONVENTIONS.md); hol-lsp restarts are much faster.
 - `S` (as a variable name) is the S combinator: type errors far from the cause
   (cf. `W` in HANDOFF-cf.md).

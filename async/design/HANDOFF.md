@@ -2,6 +2,15 @@
 
 ## 0. Current status (second agent; newest first; read this first)
 
+- **Branch `spike/async-closed-loop`** (stacked on `spike/async-echo-server`)
+  — M4 closed loop, safety and liveness in pure HOL. **Done**, no cheat:
+  `asyncWorld`, `asyncClosedLoop` (safety), `asyncProgress` (program-level
+  progress), `asyncLiveness` (headline `closed_loop_liveness`: every byte
+  that arrives by round n is written back by round n + 3q + 5). Write-up:
+  `design/09-closed-loop.md` (world mirror and differences from the socket
+  model, assumptions, gaps: blocking closed loop, schedule-level statement).
+  Proof-engineering notes for this branch are in §10 (tool feedback).
+
 - **Follow-up branch `spike/async-level2`** (stacked on PR #1, which must
   stay stable; PR #2 has base `spike/async-semantics`):
   - done: `quiet_choose2`; Level 2 recursion (`asyncLoop2`: `fix2`,
@@ -648,6 +657,20 @@ as deletion; the MAIN list; and what comes next.
 
 
 ## 10. Tool feedback (standing section; an upstream tracker collects these)
+
+- (closed-loop branch) Recurring HOL friction, worth knowing before editing
+  `asyncProgress` / `asyncLiveness`:
+  - `drule`/`qspecl_then` with polymorphic lemmas (e.g. `bind_emit_CONS`,
+    `readable`, `NONE`) can clash with the goal's type variables; state
+    lemmas at the server's concrete types (`first_readable` exists for
+    this) and annotate `NONE : response option`.
+  - `simp`/`gvs` use assumptions; with goal `F` they turn `A ⇒ F` into odd
+    negated forms — use `impl_tac >- simp[]` instead.
+  - Lists: `h1 ++ [s] ++ q` vs `h1 ++ s :: q` are different normal forms;
+    the server step lemmas use `h1 ++ [s] ++ q`.
+  - Induction lemmas over `closed_loop`: instantiate `closed_loop_step` /
+    `closed_loop_prefix` explicitly (`Q.GENL [‘m’, ‘w0’, ‘n’, ...]`);
+    `n + d + 1` normalises to `d + (n + 1)` and defeats `drule`.
 
 - 2026-10-15, hol-lsp MCP `diagnostics`: it reported `par_actions_cong` as
   "checking" for more than 10 minutes while Holmake failed it in under

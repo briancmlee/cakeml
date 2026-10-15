@@ -141,19 +141,60 @@ HTTP bodies:
 Echo first (simplest handler), then HTTP bodies. HTTP headers is archive
 and need not be redone.
 
-## 4. Does `with_store` (KV, design/30 option A) compose?
+## 4. Does `with_store` (KV) compose?
 
-**Yes, cleanly.** The store is reached by a `Kv` action that the loop
-answers in the same round, from a CakeML ref.
-- At Level 2, a computation with a `Kv` in flight has a response due. The
-  loop never selects while actions are pending: it selects only when the
-  round's actions are `[]`. `quiet`'s side condition (no response due)
-  already excludes those rounds.
-- A `Kv` action declares no event, like `emit2`.
-- The store ref is one more `REF` in the loop's frame. It is untouched
-  by select.
-- Quiescence: a `Kv` is answered at once, so it never prevents
-  stability. The measure is unchanged.
+**Corrected (the user approved the pure `with_store δ s0 m`:
+stacked-pr-continuation, `http-kv/asyncWithStore`).**
+
+`with_store` answers the inner computation's `Kv` queries itself, from a
+store carried in the history. It passes only `Sock` actions out, and its
+answers arrive **in the next snapshot**, merged into that round's results
+(`inner_hist`).
+
+**The catch for option C.**
+- In a round where `m` emits only `Kv` queries, `with_store δ s0 m` emits
+  *nothing*, and has no outer response due.
+- If its declared interest were just `m`'s socket events, a loop
+  selecting on the declared interest would block. The `Kv` answers would
+  then wait for an unrelated socket to become ready, possibly forever.
+- The model sees the same problem as a failure of `quiet`. That snapshot,
+  with nothing declared ready and no outer response due, *does* change
+  what `m` sees, because it carries the store's answers. So it cannot be
+  deleted.
+
+**The fix: declare "ready now" while answers are pending.**
+- Add one event, `Now`, which every snapshot reports ready: the poll
+  always includes it.
+- `with_store`'s Level 2 interest is `{Now}` (with `m`'s socket events)
+  while some `Kv` query has no answer yet, and `m`'s socket events
+  otherwise.
+- Then `quiet (with_store2 δ s0 m2)` follows from `quiet m2`:
+  - a snapshot in which nothing declared is ready can only occur when no
+    `Kv` is pending, because `Now` is always ready;
+  - so it carries no store answers, and `m2`'s own quietness applies.
+- In the loop, a declared `Now` means "do not select; poll". `step_q`
+  selects only when the round's actions are `[]` *and* `Now ∉ es`.
+- Cost: one event constructor, the interest of `with_store2` (about 150
+  lines with `quiet_with_store2`), and one test in `step_q`.
+- An alternative is to answer `Kv` queries in the *same* round (no
+  pending state at all), but that changes `with_store`'s approved
+  semantics, so I don't propose it.
+
+**Quiescence.** The measure needs a term for pending `Kv` answers, but a
+trivial one.
+- A pending answer is delivered in the very next round, whatever the
+  world does. With `Now`, the loop does not sleep in between.
+- New queries come only from handling requests: one `Kv` per complete
+  request, in the KV handler's `HA → HK → HB` pipeline.
+- So the measure's "complete requests not yet answered" term becomes
+  lexicographic in the pipeline stage. A request in stage `HK` moves on
+  in one round, unconditionally.
+- No new progress lemma is needed beyond the handler's: `hmachine_live`'s
+  bound becomes 3K+2, as design/30 notes.
+
+The store is no heap object, and the loop and FFI are unchanged, so
+nothing else in §2 changes. **Est. +250 lines** on top of §3's total, for
+`with_store2`, its interest and `quiet`, and the measure term.
 
 ## 5. Risks and alternatives
 - **Recursion at Level 2 in CF (2.1)** is the largest mechanical piece.

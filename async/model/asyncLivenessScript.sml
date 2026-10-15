@@ -495,3 +495,49 @@ Proof
       >> simp[])
   >> gvs[]
 QED
+
+Theorem read_prefix[local]:
+  p ≼ p' ⇒ FLAT (read c (sperf p)) ≼ FLAT (read c (sperf p'))
+Proof
+  rw[IS_PREFIX_APPEND] >> simp[]
+QED
+
+(* MAIN: liveness for an accepted connection.  Everything that has arrived
+   on it by round n has been written back to it by round n + 5. *)
+Theorem closed_loop_echo_accepted:
+  closed_loop (server lfd) (start_world lfd sch) n = (h, w, perf) ∧
+  ALOOKUP w.conns c = SOME cn ∧ MEM c (accepted (sperf perf)) ∧
+  closed_loop (server lfd) (start_world lfd sch) (n + 5) = (h5, w5, p5) ⇒
+  ∃cn5. ALOOKUP w5.conns c = SOME cn5 ∧ cn.received ≼ cn5.outgoing
+Proof
+  strip_tac
+  >> qspecl_then [‘5’, ‘h5’, ‘w5’, ‘p5’] mp_tac received_later
+  >> impl_tac >- simp[] >> strip_tac >> qexists_tac ‘cn'’ >> simp[]
+  (* by round n + 5, everything read by round n + 4 is written back *)
+  >> Cases_on ‘closed_loop (server lfd) (start_world lfd sch) (n + 4)’
+  >> PairCases_on ‘r’ >> rename1 ‘_ = (h4, w4, p4)’
+  >> qspecl_then [‘n + 4’, ‘h4’, ‘w4’, ‘p4’, ‘h5’, ‘w5’, ‘p5’, ‘cn'’] mp_tac
+       (Q.GENL [‘n’, ‘h’, ‘w’, ‘perf’, ‘h'’, ‘w'’, ‘perf'’, ‘cn'’] echo_next)
+  >> impl_tac >- simp[] >> disch_then SUBST1_TAC
+  >> qspecl_then [‘server lfd’, ‘start_world lfd sch’, ‘n’, ‘4’, ‘h’, ‘w’, ‘perf’,
+                  ‘h4’, ‘w4’, ‘p4’] mp_tac (Q.GENL [‘m’, ‘w0’, ‘n’] closed_loop_prefix)
+  >> impl_tac >- simp[] >> strip_tac
+  >> Cases_on ‘cn.incoming = ""’
+  (* nothing unread: everything has been read already *)
+  >- (qpat_assum ‘closed_loop _ _ n = _’ (mp_tac o MATCH_MP closed_loop_consistent)
+      >> simp[consistent_def] >> strip_tac >> first_x_assum drule >> strip_tac
+      >> gvs[read_prefix])
+  (* otherwise the server reads c in some round n + i, i ≤ 3 *)
+  >> drule_all read_soon >> strip_tac
+  >> Cases_on ‘closed_loop (server lfd) (start_world lfd sch) (n + i + 1)’
+  >> PairCases_on ‘r’ >> rename1 ‘_ = (hj, wj, pj)’
+  >> qspecl_then [‘i’, ‘hi’, ‘wi’, ‘pi’] mp_tac received_later
+  >> impl_tac >- simp[] >> strip_tac
+  >> qspecl_then [‘n + i’, ‘hi’, ‘wi’, ‘pi’, ‘hj’, ‘wj’, ‘pj’, ‘cn''’] mp_tac
+       (Q.GENL [‘n’, ‘h’, ‘w’, ‘perf’, ‘h'’, ‘w'’, ‘perf'’, ‘cn’] round_conn)
+  >> impl_tac >- simp[] >> strip_tac >> gvs[]
+  >> qspecl_then [‘server lfd’, ‘start_world lfd sch’, ‘n + i + 1’, ‘3 − i’, ‘hj’, ‘wj’,
+                  ‘pj’, ‘h4’, ‘w4’, ‘p4’] mp_tac (Q.GENL [‘m’, ‘w0’, ‘n’] closed_loop_prefix)
+  >> impl_tac >- simp[] >> strip_tac
+  >> metis_tac[IS_PREFIX_TRANS, read_prefix]
+QED

@@ -303,3 +303,195 @@ Proof
   rw[ready_fds_def, MEM_MAP, MEM_FILTER, is_ready_def]
   >> imp_res_tac ALOOKUP_MEM >> disj2_tac >> qexists_tac ‘(c, cn)’ >> simp[]
 QED
+
+(* ------------------------------------------------------------------------
+   Several rounds
+   ------------------------------------------------------------------------ *)
+
+(* What has arrived on a connection only grows *)
+Theorem received_later:
+  ∀d h' w' perf'.
+    closed_loop (server lfd) (start_world lfd sch) n = (h, w, perf) ∧
+    ALOOKUP w.conns c = SOME cn ∧
+    closed_loop (server lfd) (start_world lfd sch) (n + d) = (h', w', perf') ⇒
+    ∃cn'. ALOOKUP w'.conns c = SOME cn' ∧ cn.received ≼ cn'.received
+Proof
+  Induct >- (rw[] >> gvs[])
+  >> rpt strip_tac
+  >> Cases_on ‘closed_loop (server lfd) (start_world lfd sch) (n + d)’
+  >> PairCases_on ‘r’
+  >> first_x_assum (qspecl_then [‘q’, ‘r0’, ‘r1’] mp_tac) >> simp[] >> strip_tac
+  >> qspecl_then [‘n + d’, ‘q’, ‘r0’, ‘r1’, ‘h'’, ‘w'’, ‘perf'’, ‘cn'’] mp_tac
+       (Q.GENL [‘n’, ‘h’, ‘w’, ‘perf’, ‘h'’, ‘w'’, ‘perf'’, ‘cn’] round_conn)
+  >> gvs[ADD1] >> strip_tac >> metis_tac[IS_PREFIX_TRANS]
+QED
+
+(* While the server does not read c, c's unread data only grows, and no
+   read of c is performed *)
+Theorem quiet_rounds:
+  ∀d h' w' perf'.
+    closed_loop (server lfd) (start_world lfd sch) n = (h, w, perf) ∧
+    ALOOKUP w.conns c = SOME cn ∧
+    closed_loop (server lfd) (start_world lfd sch) (n + d) = (h', w', perf') ∧
+    (∀i hi wi pi. i < d ∧
+                  closed_loop (server lfd) (start_world lfd sch) (n + i) = (hi, wi, pi) ⇒
+                  ¬MEM (Read c) (new_actions (log_of (server lfd)) hi)) ⇒
+    ∃cn'. ALOOKUP w'.conns c = SOME cn' ∧ cn.incoming ≼ cn'.incoming ∧
+          ∀r. MEM (Read c, r) perf' ⇒ MEM (Read c, r) perf
+Proof
+  Induct >- (rw[] >> gvs[])
+  >> rpt strip_tac
+  >> Cases_on ‘closed_loop (server lfd) (start_world lfd sch) (n + d)’
+  >> PairCases_on ‘r’
+  >> first_x_assum (qspecl_then [‘q’, ‘r0’, ‘r1’] mp_tac) >> simp[]
+  >> impl_tac
+  >- (rpt strip_tac >> first_x_assum (qspecl_then [‘i’, ‘hi’, ‘wi’, ‘pi’] mp_tac)
+      >> gvs[])
+  >> strip_tac
+  >> ‘¬MEM (Read c) (new_actions (log_of (server lfd)) q)’
+       by (first_x_assum (qspecl_then [‘d’, ‘q’, ‘r0’, ‘r1’] mp_tac) >> simp[])
+  >> qspecl_then [‘n + d’, ‘q’, ‘r0’, ‘r1’, ‘h'’, ‘w'’, ‘perf'’, ‘cn'’] mp_tac
+       (Q.GENL [‘n’, ‘h’, ‘w’, ‘perf’, ‘h'’, ‘w'’, ‘perf'’, ‘cn’] round_conn)
+  >> gvs[ADD1] >> strip_tac >> qexists_tac ‘cn''’ >> simp[]
+  >> conj_tac >- metis_tac[IS_PREFIX_TRANS]
+  >> qspecl_then [‘server lfd’, ‘start_world lfd sch’, ‘n + d’, ‘q’, ‘r0’, ‘r1’,
+                  ‘h'’, ‘w'’, ‘perf'’] mp_tac
+       (Q.GENL [‘m’, ‘w0’, ‘n’, ‘h’, ‘w’, ‘perf’, ‘h'’, ‘w'’, ‘perf'’] closed_loop_step)
+  >> simp[] >> strip_tac >> gvs[]
+  >> rpt strip_tac >- metis_tac[]
+  >> qpat_x_assum ‘MEM _ (ZIP _)’ mp_tac >> drule perform_all_length
+  >> simp[MEM_ZIP] >> metis_tac[MEM_EL]
+QED
+
+Theorem actions_SNOC[local]:
+  (server lfd (h ++ [s])).actions =
+  (server lfd h).actions ++ new_actions (log_of (server lfd)) (h ++ [s])
+Proof
+  qspecl_then [‘log_of (server lfd)’, ‘h’, ‘s’] mp_tac
+    (Q.GENL [‘acts’, ‘h’, ‘s’] new_actions_prefix)
+  >> simp[log_of_def, wf_SNOC_actions, wf_server]
+QED
+
+(* If the server reads c in none of the rounds n+1 .. n+d, its reads of c
+   stay the same *)
+Theorem nreads_quiet:
+  ∀d h' w' perf'.
+    closed_loop (server lfd) (start_world lfd sch) n = (h, w, perf) ∧
+    closed_loop (server lfd) (start_world lfd sch) (n + d) = (h', w', perf') ∧
+    (∀i hi wi pi. 0 < i ∧ i ≤ d ∧
+                  closed_loop (server lfd) (start_world lfd sch) (n + i) = (hi, wi, pi) ⇒
+                  ¬MEM (Read c) (new_actions (log_of (server lfd)) hi)) ⇒
+    nreads c (server lfd h').actions = nreads c (server lfd h).actions
+Proof
+  Induct >- (rw[] >> gvs[])
+  >> rpt strip_tac
+  >> Cases_on ‘closed_loop (server lfd) (start_world lfd sch) (n + d)’
+  >> PairCases_on ‘r’
+  >> first_x_assum (qspecl_then [‘q’, ‘r0’, ‘r1’] mp_tac) >> simp[]
+  >> impl_tac
+  >- (rpt strip_tac >> first_x_assum (qspecl_then [‘i’, ‘hi’, ‘wi’, ‘pi’] mp_tac)
+      >> gvs[])
+  >> strip_tac
+  >> ‘¬MEM (Read c) (new_actions (log_of (server lfd)) h')’
+       by (first_x_assum (qspecl_then [‘SUC d’, ‘h'’, ‘w'’, ‘perf'’] mp_tac) >> simp[])
+  >> qspecl_then [‘server lfd’, ‘start_world lfd sch’, ‘n + d’, ‘q’, ‘r0’, ‘r1’,
+                  ‘h'’, ‘w'’, ‘perf'’] mp_tac
+       (Q.GENL [‘m’, ‘w0’, ‘n’, ‘h’, ‘w’, ‘perf’, ‘h'’, ‘w'’, ‘perf'’] closed_loop_step)
+  >> gvs[ADD1] >> strip_tac >> gvs[actions_SNOC]
+  >> gvs[nreads_def, FILTER_EQ_NIL, EVERY_MEM, FILTER_APPEND_DISTRIB]
+  >> rw[] >> metis_tac[]
+QED
+
+(* ------------------------------------------------------------------------
+   Liveness
+   ------------------------------------------------------------------------ *)
+
+Theorem MEM_accepted_prefix[local]:
+  p ≼ p' ∧ MEM c (accepted (sperf p)) ⇒ MEM c (accepted (sperf p'))
+Proof
+  rw[IS_PREFIX_APPEND] >> simp[]
+QED
+
+(* On an accepted connection with unread data, the server reads it in one
+   of the next four rounds (n .. n + 3).  The proof: if not, the data stays
+   unread, so the connection is readable in three snapshots in a row, and
+   then by handler_progress its handler, and so the server, reads it. *)
+Theorem read_soon:
+  closed_loop (server lfd) (start_world lfd sch) n = (h, w, perf) ∧
+  ALOOKUP w.conns c = SOME cn ∧ cn.incoming ≠ "" ∧
+  MEM c (accepted (sperf perf)) ⇒
+  ∃i hi wi pi. i ≤ 3 ∧
+     closed_loop (server lfd) (start_world lfd sch) (n + i) = (hi, wi, pi) ∧
+     MEM (Read c) (new_actions (log_of (server lfd)) hi)
+Proof
+  rpt strip_tac >> CCONTR_TAC
+  >> ‘∀i hi wi pi. i ≤ 3 ∧
+        closed_loop (server lfd) (start_world lfd sch) (n + i) = (hi, wi, pi) ⇒
+        ¬MEM (Read c) (new_actions (log_of (server lfd)) hi)’ by metis_tac[]
+  >> qpat_x_assum ‘¬∃i. _’ kall_tac
+  (* no read of c is performed in these rounds, so c's data stays unread *)
+  >> ‘∀d hd wd pd.
+        d ≤ 3 ∧ closed_loop (server lfd) (start_world lfd sch) (n + d) = (hd, wd, pd) ⇒
+        ∃cn'. ALOOKUP wd.conns c = SOME cn' ∧ cn.incoming ≼ cn'.incoming ∧
+              ∀r. MEM (Read c, r) pd ⇒ MEM (Read c, r) perf’
+       by (rpt strip_tac
+           >> qspecl_then [‘d’, ‘hd’, ‘wd’, ‘pd’] mp_tac quiet_rounds
+           >> impl_tac
+           >- (simp[] >> rpt strip_tac
+               >> first_x_assum (qspecl_then [‘i’, ‘hi’, ‘wi’, ‘pi’] mp_tac) >> simp[])
+           >> simp[])
+  >> Cases_on ‘closed_loop (server lfd) (start_world lfd sch) (n + 3)’
+  >> PairCases_on ‘r’ >> rename1 ‘_ = (h3, w3, p3)’
+  (* so c stays readable *)
+  >> ‘∀j. n ≤ j ∧ j < n + 3 ⇒ Readable c ∈ (EL j h3).ready’
+       by (rpt strip_tac
+           >> Cases_on ‘closed_loop (server lfd) (start_world lfd sch) (j + 1)’
+           >> PairCases_on ‘r’
+           >> first_x_assum (qspecl_then [‘j + 1 − n’, ‘q’, ‘r0’, ‘r1’] mp_tac)
+           >> simp[] >> strip_tac
+           >> drule_all closed_loop_snapshot >> disch_then SUBST1_TAC
+           >> irule incoming_ready >> qexists_tac ‘cn'’ >> simp[]
+           >> strip_tac >> gvs[])
+  (* the closed loop gives the server a fresh, prompt history *)
+  >> qpat_assum ‘closed_loop _ _ (n + 3) = _’ (strip_assume_tac o MATCH_MP closed_loop_fresh)
+  >> qpat_assum ‘closed_loop _ _ (n + 3) = _’ (assume_tac o MATCH_MP closed_loop_prompt)
+  >> qpat_assum ‘closed_loop _ _ n = _’ (strip_assume_tac o MATCH_MP closed_loop_fresh)
+  >> qspecl_then [‘server lfd’, ‘start_world lfd sch’, ‘n’, ‘3’, ‘h’, ‘w’, ‘perf’,
+                  ‘h3’, ‘w3’, ‘p3’] mp_tac (Q.GENL [‘m’, ‘w0’, ‘n’] closed_loop_prefix)
+  >> impl_tac >- simp[] >> strip_tac
+  (* the handler of c, inside the server, started at round a ≤ n *)
+  >> qspec_then ‘h3’ mp_tac (Q.INST [‘fd’ |-> ‘c’] server_handler_view)
+  >> impl_tac >- (simp[accepted_pending] >> metis_tac[MEM_accepted_prefix])
+  >> strip_tac
+  >> qpat_assum ‘closed_loop _ _ (n + 3) = _’ (assume_tac o MATCH_MP closed_loop_length)
+  >> ‘a ≤ n’ by (first_x_assum (qspec_then ‘n’ mp_tac)
+                 >> qpat_x_assum ‘h = TAKE _ _’ (assume_tac o GSYM)
+                 >> simp[accepted_pending])
+  (* by handler_progress, it reads c in rounds n + 1 .. n + 3 *)
+  >> qspecl_then [‘g’, ‘n − a’] mp_tac (Q.INST [‘fd’ |-> ‘c’] handler_progress)
+  >> impl_tac
+  >- (rpt conj_tac >- simp[] >- simp[]
+      >- (rpt strip_tac >> first_x_assum (qspec_then ‘j’ mp_tac) >> simp[]
+          >> disch_then SUBST1_TAC >> first_x_assum irule >> simp[])
+      (* it has not seen end-of-file: c still has unread data *)
+      >> qpat_x_assum ‘FILTER _ _ = trans (handler c) g’ (SUBST1_TAC o GSYM)
+      >> simp[MEM_FILTER, sperf_def, MEM_MAP] >> rpt strip_tac
+      >> PairCases_on ‘y’ >> gvs[]
+      >> qpat_x_assum ‘∀d hd wd pd. _’ (qspecl_then [‘3’, ‘h3’, ‘w3’, ‘p3’] mp_tac)
+      >> impl_tac >- simp[]
+      >> strip_tac >> ‘MEM (Read c, Eof) perf’ by metis_tac[]
+      >> qspecl_then [‘n’, ‘TAKE n h3’, ‘w’, ‘perf’] mp_tac closed_loop_eof
+      >> impl_tac >- simp[] >> strip_tac >> gvs[])
+  >> strip_tac >> qpat_assum ‘∀j. j ≤ LENGTH g ⇒ _’ (qspec_then ‘n − a’ mp_tac)
+  >> qpat_x_assum ‘∀j. j ≤ LENGTH g ⇒ _’ (qspec_then ‘n − a + 3’ mp_tac)
+  >> simp[TAKE_LENGTH_ID_rwt] >> rpt strip_tac
+  >> ‘TAKE (n − a + 3) g = g’ by simp[TAKE_LENGTH_ID_rwt]
+  (* but the server's reads of c did not change in those rounds *)
+  >> qspecl_then [‘3’, ‘h3’, ‘w3’, ‘p3’] mp_tac nreads_quiet
+  >> impl_tac
+  >- (simp[] >> rpt strip_tac
+      >> qpat_x_assum ‘∀i hi wi pi. _ ⇒ ¬MEM _ _’
+           (qspecl_then [‘i’, ‘hi’, ‘wi’, ‘pi’] mp_tac)
+      >> simp[])
+  >> gvs[]
+QED

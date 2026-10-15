@@ -40,6 +40,9 @@ Alongside:
     http_spec_h 3w demo_files http_prog_h
   ```
 
+  The HTTP server is also proved quiet (no busy-waiting at Level 2,
+  `servers/http-quiet`).
+
 **Polling and blocking.** The trusted C (`runnable/socket_ffi.c`) does
 exactly what the model says: `sock_poll` is one `poll(2)` with timeout 0.
 So the polling headline busy-polls while idle, and the verified blocking

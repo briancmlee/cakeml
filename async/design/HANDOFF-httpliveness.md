@@ -24,17 +24,19 @@ Kept current at every commit.
 
 ## Status
 
-- DONE (model level), write-up `25-http-liveness.md`:
-  `closed_loop_http_accepted` / `closed_loop_http_requests`
-  (asyncHttpLiveness). On an accepted connection, the responses to the K
-  complete requests that have arrived by round n are written by round
-  n + 2K + 3. Machine-level `hmachine_live` (asyncHttpDrain). Holmake
-  green, no cheats.
-- DONE: pending connections, `closed_loop_http_liveness` (bound
-  n + 3q + 2K + 3), via asyncSWQueue.
-- NEXT (coordinator): link to the CakeML program, target
-  `http_prog_spec : ⊢ http_spec 3w http_prog` (original HttpSpec),
-  mirroring spike/m4-liveness's echo route.
+- DONE (headline): `http_prog_h_spec : ⊢ http_spec_h 3w demo_files http_prog_h`
+  (async/http-liveness-h/asyncHttpSpecH): the header-tolerant program meets
+  HttpSpecHeaders' whole spec, safety and liveness, with no extra
+  hypotheses. Write-up `26-http-liveness-h.md`. Holmake green, no cheats,
+  tag DISK_THM only.
+- DONE (model level, strict HTTP): `closed_loop_http_liveness` etc.
+  (async/http-liveness/), write-up `25-http-liveness.md`.
+- Merged: origin/spike/http-headers, origin/spike/m4-liveness (both clean).
+- Not done (archive/optional): program-level link for the strict HttpSpec.
+
+## How to build (headline)
+
+    timeout 3000 arch -arm64 /bin/zsh -lc "cd async/http-liveness-h && ~/HOL/bin/Holmake -j2"
 
 ## Assumptions made
 
@@ -63,6 +65,13 @@ world model.
 - `drule_all` picks the first matching assumption; with several
   `closed_loop … = …` assumptions it often picks the wrong round. Explicit
   instantiation, or a wrapper lemma, avoids it.
+- Two different `bytes`: HttpSpec's constant (bytes_def) and
+  asyncM4EchoSafe's overload `MAP (n2w o ORD)`; they print identically, so
+  rewrites silently fail to match. Normalise with `bytes_def`.
+- `drule` on a theorem with free variables gives a ∀-quantified result in an
+  unpredictable order; `Q.GEN … |> Q.ISPEC …` then `Q.SPECL`/`Q.INST` is
+  reliable for polymorphic lemmas (hf, m).
+- gvs expands Abbrevs; use fs to keep them.
 - hol-lsp `goalState` was the most useful tool for finding looping
   tactics; `metis_tac` with many arithmetic-shaped assumptions
   (`a + j + 1` vs `a + (j + 1)`) loops.

@@ -1,0 +1,8 @@
+# Integration (spike/option-c-int): proto-kv lineage files (ffi-spike) placed
+# in the review layout; see async/design/HANDOFF-option-c-int.md.
+INCLUDES = ../../world/clock \
+           ../../world/composed \
+           ../../world/sockets
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

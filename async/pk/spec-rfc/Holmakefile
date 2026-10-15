@@ -1,0 +1,6 @@
+# Integration (spike/option-c-int): proto-kv lineage files (spec-rfc) placed
+# in the review layout; see async/design/HANDOFF-option-c-int.md.
+INCLUDES = ../../spec
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

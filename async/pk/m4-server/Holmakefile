@@ -1,0 +1,10 @@
+# Integration (spike/option-c-int): proto-kv lineage files (m4-server) placed
+# in the review layout; see async/design/HANDOFF-option-c-int.md.
+INCLUDES = ../../cakeml/approx \
+           ../../cakeml/library \
+           ../../model/core \
+           ../../programs/http \
+           ../../servers/echo
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

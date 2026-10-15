@@ -23,7 +23,7 @@ this file plus the coordinator's original brief.
     sequence the world provides, and the trace/model link.
   - `asyncCfActLoopScript.sml`: the CakeML event loop and its cfDiv spec.
   - `asyncCfActBothModelScript.sml`, `asyncCfActBothScript.sml`: `both`.
-- Docs: this file; `async/design/05-cf-actions.md` (to be written).
+- Docs: this file; `async/design/05-cf-actions.md` (the write-up).
 
 ## Representation (decided, see the comment at the top of asyncCfActProg)
 
@@ -56,7 +56,9 @@ Snapshots are CakeML triples `(ready, now, results)` (`SNAPSHOT READY R`).
   (`suspended_both`, from the model's `both_split`; `both_finished_finished`)
   and `asyncCfActBothScript.sml` (CakeML `both`, `both_spec_n`, `both_spec`).
 - NOT DONE: `choose` (estimated and deferred, see 05-cf-actions.md).
-- TODO next: 05-cf-actions.md; PR.
+- DONE: `05-cf-actions.md` (the write-up, with estimates and assumptions).
+- Next for the project: `choose` (estimate in 05 §4), then the M2
+  scheduler, Level 2, a non-oblivious world.
 
 ## Plan for the event loop (step 4)
 
@@ -69,14 +71,14 @@ snapshot's ready set `{b}`; `now` is 0. Loop:
 pure corollary says that the actions in the first n+1 rounds are
 `(m h_n).actions` for the world-induced history `h_n`.
 
-## Assumptions made (so far)
+## Assumptions made
 
-1. Poll results are `(actions, residual)` pairs, and `Done` carries no
-   actions (the pair does). This is the form closest to the model's `outcome`.
-2. Specs that need the model's log to grow (bind, the loop) assume `wf m`,
-   which every library computation satisfies.
-3. `skip k s` always wraps the residual (even when k = 0). This is simpler
-   to verify, at the cost of one closure per finished bind.
+The full list (10 items) is in `05-cf-actions.md` §5. In short:
+`(actions, residual)` pairs; the general (not settled-only) representation
+with `skip`; `skip` always wraps; `wf` as an explicit hypothesis; snapshots
+as triples; a byte-stream world (oblivious, `now = 0`, ready set `{b}`);
+the loop polls `Done` forever; `both` exactly as the model; the loop
+before `both`; seven small theories.
 
 ## Conventions
 

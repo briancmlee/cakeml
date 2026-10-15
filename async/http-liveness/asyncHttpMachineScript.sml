@@ -277,3 +277,138 @@ Proof
   simp[GENLIST_FUN_EQ, round_trans_def] >> rpt strip_tac >>
   AP_THM_TAC >> AP_TERM_TAC >> irule hmachine_new_actions >> simp[]
 QED
+
+(* ------------------------------------------------------------------------
+   What the handler has read and written, in terms of its state
+   ------------------------------------------------------------------------ *)
+
+(* The transcript up to round n *)
+Theorem hmachine_trans_TAKE:
+  prompt (hcomp files fd st0) g ∧ n ≤ LENGTH g ⇒
+  trans (hcomp files fd st0) (TAKE n g) =
+  FLAT (GENLIST (λi. zipr (hacts files fd (hrun files fd st0 (TAKE i g)))
+                          (if i < n then (EL i g).results else [])) (SUC n))
+Proof
+  strip_tac >>
+  ‘prompt (hcomp files fd st0) (TAKE n g)’ by simp[prompt_TAKE] >>
+  drule hmachine_trans >> simp[LENGTH_TAKE] >> disch_then kall_tac >>
+  AP_TERM_TAC >> simp[GENLIST_FUN_EQ] >> rpt strip_tac >>
+  simp[TAKE_TAKE, responses_at_def, EL_TAKE, LENGTH_TAKE]
+QED
+
+(* The transcript up to round j, and up to round j + 1 *)
+Theorem hmachine_trans_SUC:
+  prompt (hcomp files fd st0) g ∧ j < LENGTH g ⇒
+  let TR = FLAT (GENLIST (λi. zipr (hacts files fd (hrun files fd st0 (TAKE i g)))
+                                    (EL i g).results) j) in
+  trans (hcomp files fd st0) (TAKE j g) =
+    TR ++ zipr (hacts files fd (hrun files fd st0 (TAKE j g))) [] ∧
+  trans (hcomp files fd st0) (TAKE (SUC j) g) =
+    TR ++ zipr (hacts files fd (hrun files fd st0 (TAKE j g))) (EL j g).results ++
+    zipr (hacts files fd (hrun files fd st0 (TAKE (SUC j) g))) []
+Proof
+  strip_tac >> simp[] >>
+  ‘∀k. k ≤ j ⇒
+       GENLIST (λi. zipr (hacts files fd (hrun files fd st0 (TAKE i g)))
+                        (if i < k then (EL i g).results else [])) k =
+       GENLIST (λi. zipr (hacts files fd (hrun files fd st0 (TAKE i g)))
+                        (EL i g).results) k’
+    by simp[GENLIST_FUN_EQ] >>
+  ‘∀k. k ≤ SUC j ⇒
+       GENLIST (λi. zipr (hacts files fd (hrun files fd st0 (TAKE i g)))
+                        (if i < SUC j then (EL i g).results else [])) k =
+       GENLIST (λi. zipr (hacts files fd (hrun files fd st0 (TAKE i g)))
+                        (EL i g).results) k’
+    by simp[GENLIST_FUN_EQ] >>
+  simp[hmachine_trans_TAKE, GENLIST, SNOC_APPEND]
+QED
+
+Theorem read_zipr_NIL[simp]:
+  ∀as. read fd (zipr as []) = []
+Proof
+  Induct >> simp[zipr_def] >> Cases >> simp[]
+QED
+
+(* The strings written to fd by a list of actions, whatever the responses *)
+Definition writes_def:
+  writes fd as =
+    FLAT (MAP (λa. case a of Write fd' d => if fd' = fd then [d] else [] | _ => []) as)
+End
+
+Theorem written_zipr:
+  ∀as rs. written fd (zipr as rs) = writes fd as
+Proof
+  Induct >> simp[zipr_def, writes_def] >> Cases >> simp[writes_def]
+QED
+
+Theorem writes_hacts[simp]:
+  writes fd (hacts files fd st) = hpend files st
+Proof
+  Cases_on ‘st’ >> simp[hacts_def, hpend_def, writes_def] >>
+  CASE_TAC >> simp[]
+QED
+
+Theorem parse_all_print:
+  ∀rs. EVERY valid_request rs ⇒
+       parse_all (FLAT (MAP print_request rs) ++ s) = rs ++ parse_all s
+Proof
+  Induct >> rw[] >>
+  ‘parse_request (print_request h ++ (FLAT (MAP print_request rs) ++ s)) =
+   Complete h (FLAT (MAP print_request rs) ++ s)’ by simp[parse_print] >>
+  drule parse_all_Complete >> REWRITE_TAC[APPEND_ASSOC] >> simp[]
+QED
+
+(* MAIN: the handler's accounting.  Started on buffer b0, after any prompt
+   history, there are valid requests rs that it has completely handled:
+   its buffer before, followed by what it has read, is rs printed,
+   followed by its current buffer; and what it has written is the
+   responses to rs, followed by the response it is writing this round (if
+   its buffer starts with a complete request).  It only reads with an
+   incomplete buffer, and it stops only on a buffer that does not start
+   with a complete request. *)
+Theorem hmachine_inv:
+  prompt (hcomp files fd (HA b0)) g ⇒
+  ∀j. j ≤ LENGTH g ⇒
+    ∃rs. EVERY valid_request rs ∧
+         b0 ++ CONCAT (read fd (trans (hcomp files fd (HA b0)) (TAKE j g))) =
+           FLAT (MAP print_request rs) ++ hbuf (hrun files fd (HA b0) (TAKE j g)) ∧
+         written fd (trans (hcomp files fd (HA b0)) (TAKE j g)) =
+           MAP (print_response o handle files) rs ++
+           hpend files (hrun files fd (HA b0) (TAKE j g)) ∧
+         (∀b. hrun files fd (HA b0) (TAKE j g) = HB b ⇒ parse_request b = Incomplete) ∧
+         (∀b r rest. hrun files fd (HA b0) (TAKE j g) = HD b ⇒
+                     parse_request b ≠ Complete r rest)
+Proof
+  strip_tac >> Induct
+  >- (simp[hrun_def, hbuf_def] >> qexists_tac ‘[]’ >>
+      simp[trans_def, round_trans_def, responses_at_def, written_zipr] >>
+      simp[new_actions_NIL, log_of_def, hcomp_NIL_actions])
+  >> strip_tac >> gvs[]
+  >> drule_then (qspec_then ‘j’ mp_tac) hmachine_trans_SUC >> simp[] >> strip_tac
+  >> qmatch_asmsub_abbrev_tac ‘TR ++ zipr _ []’
+  >> ‘TAKE (SUC j) g = TAKE j g ++ [EL j g]’ by simp[GSYM SNOC_EL_TAKE, SNOC_APPEND]
+  >> qabbrev_tac ‘st = hrun files fd (HA b0) (TAKE j g)’
+  >> ‘hrun files fd (HA b0) (TAKE (SUC j) g) = hstep files fd st (EL j g)’
+       by simp[hrun_SNOC, Abbr ‘st’]
+  >> drule_then (qspec_then ‘j’ mp_tac) hmachine_answered >> simp[] >> strip_tac
+  >> gvs[written_zipr]
+  >> Cases_on ‘st’ >> gvs[hstep_def, hbuf_def, hpend_def, hacts_def]
+  (* HA s *)
+  >- (Cases_on ‘parse_request s’ >> gvs[hbuf_def, hpend_def]
+      (* a complete request: its response is written; continue with rest *)
+      >- (rename1 ‘Complete req rest’ >>
+          Cases_on ‘(EL j g).results’ >> gvs[zipr_def] >>
+          drule parse_complete >> strip_tac >>
+          qexists_tac ‘rs ++ [req]’ >> gvs[written_zipr, writes_def])
+      (* incomplete: wait, or read next round *)
+      >- (rw[hbuf_def, hpend_def] >> qexists_tac ‘rs’ >> simp[zipr_def] >>
+          gvs[hpend_def, zipr_def])
+      (* invalid: stop *)
+      >> qexists_tac ‘rs’ >> gvs[hbuf_def, hpend_def, zipr_def])
+  (* HB s: the read's response arrives *)
+  >- (Cases_on ‘(EL j g).results’ >> gvs[zipr_def] >>
+      rename1 ‘_ = r :: _’ >> Cases_on ‘r’ >> gvs[hbuf_def, hpend_def] >>
+      qexists_tac ‘rs’ >> simp[] >> gvs[])
+  (* HD s *)
+  >> qexists_tac ‘rs’ >> gvs[hbuf_def, hpend_def, zipr_def]
+QED

@@ -515,3 +515,26 @@ Branch `spike/proto-handler-live`, which merges m4-server's
   server's trace-level spec now go through the generic pipeline. What
   remains per instance is the program-level part (phase 4).
 
+### Phase 4: the generic CakeML handler and program (DONE for _b)
+
+- **`asyncProtoProg`**: `proto_handler`, `proto_server` and `proto_main` in
+  CakeML, higher-order in the parser and the responder.
+- **`asyncProtoSockSpec`**: `sproto_handler_spec` and `sproto_server_spec`,
+  proved once under `PROTO_IMPL` (the translator's Arrow certificates).
+- **`asyncProtoMain`**:
+  - `proto_main_spec`: the generic main diverges with the server's run;
+  - `proto_spec_of_semantics`: a program with that semantics meets
+    `proto_spec`.
+- **The _b instance** (`http-proto-inst/asyncProtoProgB`, `asyncProtoSemB`):
+  - the bodies parser is translated into `presult` (`b_parse =
+    P_b.parse`), with the responder `bresp_demo` (= `print_response o
+    bhandle demo_files`);
+  - main is `proto_main b_parse bresp_demo`;
+  - **`http_prog_pb_spec : http_spec_b 3w demo_files http_prog_pb`**. This
+    is the bodies headline, for a second program built entirely on the
+    generic pipeline. The original `http_prog_b` is untouched.
+  - What stayed per instance: the translation of the parser (~100 lines,
+    mostly copied), `proto_impl_b`, `main_pb_spec` (5 lines) and the
+    Decls/lookup/syntax boilerplate (~50 lines).
+- Strict and `_h` program twins would follow the same ~200-line pattern.
+

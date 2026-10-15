@@ -581,3 +581,251 @@ Proof
       xapp_spec wait_ready_stuck_spec >> simp[]) >>
   xsimpl
 QED
+
+(* ------------------------------------------------------------------------
+   The loop
+   ------------------------------------------------------------------------ *)
+
+(* The kept history and the world after round i of the blocking loop *)
+Definition bkept_def:
+  bkept fds0 m s0 i = FST (THE (bgrounds fds0 m s0 i))
+End
+
+Definition bstate_def:
+  bstate fds0 m s0 i = SND (SND (THE (bgrounds fds0 m s0 i)))
+End
+
+(* The rounds with actions perform them without misuse: they are the
+   polling loop's rounds (bgrounds_inv), which do (grun_ok) *)
+Theorem bgrounds_sock_acts:
+  wf m ∧ idle_quiet m ∧ grun_ok (interest fds0) m s0 ∧
+  bgrounds fds0 m s0 n = SOME (kept, N, s) ⇒
+  sock_acts s (new_actions (log_of m) kept) ≠ NONE
+Proof
+  strip_tac >> drule_all bgrounds_inv >> rw[binv_def] >>
+  drule same_for_new_actions >> strip_tac >>
+  gvs[grun_ok_def, gacts_def] >> metis_tac[]
+QED
+
+(* One iteration of the loop, for a round that returns *)
+Theorem step_b_bgrounds:
+  wf m ∧ idle_quiet m ∧ grun_ok (interest fds0) m s0 ∧
+  bgrounds fds0 m s0 i = SOME (kept, N, s) ∧
+  bgrounds fds0 m s0 (SUC i) = SOME (kept', N', s') ∧
+  LIST_TYPE NUM (MAP w2n (interest fds0 kept)) fdsv ∧
+  COMP p SACT A (SNAPSHOT SREADY SRESP) (suspended m kept) cv ⇒
+  app (p:'ffi ffi_proj) step_b_v [Conv NONE [fdsv; cv]] (SSEL s evs)
+    (POSTv v.
+       &(∃fdsv' cv'. v = Conv NONE [fdsv'; cv'] ∧
+               LIST_TYPE NUM (MAP w2n (interest fds0 kept')) fdsv' ∧
+               COMP p SACT A (SNAPSHOT SREADY SRESP) (suspended m kept') cv') *
+       SSEL s' (evs ++ bround_events fds0 m s0 i))
+Proof
+  strip_tac >>
+  ‘(suspended m kept []).actions = new_actions (log_of m) kept’
+    by simp[suspended_first_poll] >>
+  ‘sock_acts s (new_actions (log_of m) kept) ≠ NONE’
+    by (irule bgrounds_sock_acts >> simp[] >> metis_tac[]) >>
+  qpat_x_assum ‘bgrounds _ _ _ (SUC _) = _’ mp_tac >>
+  simp[bgrounds_def, bround_events_def] >>
+  Cases_on ‘new_actions (log_of m) kept = []’ >> simp[]
+  >- (Cases_on ‘sock_wait (interest fds0 kept) s’ >> simp[] >>
+      strip_tac >> gvs[] >>
+      qabbrev_tac ‘fds = interest fds0 kept’ >>
+      ‘app p step_b_v [Conv NONE [fdsv; cv]] (SSEL s evs)
+         (POSTv v.
+            &(∃fdsv' cv'. v = Conv NONE [fdsv'; cv'] ∧
+                    LIST_TYPE NUM (MAP w2n fds) fdsv' ∧
+                    COMP p SACT A (SNAPSHOT SREADY SRESP)
+                      (suspended (suspended m kept)
+                         [ssnap (FST (sock_poll fds (ticks x s))) []]) cv') *
+            SSEL (SND (sock_poll fds (ticks x s)))
+              (evs ++ [select_event fds; spoll_event fds (ticks x s)]))’
+        by (irule step_b_wait_spec >> simp[]) >>
+      irule app_weaken >> first_x_assum (irule_at Any) >>
+      xsimpl >> rw[] >>
+      gvs[suspended_suspended_one, interest_SNOC, Abbr ‘fds’] >>
+      gvs[ssnap_def, add_accepted_def])
+  >- (Cases_on ‘sock_acts s (new_actions (log_of m) kept)’ >> gvs[] >>
+      rename1 ‘_ = SOME x’ >> PairCases_on ‘x’ >>
+      simp[sock_acts_tot_def] >> strip_tac >> gvs[] >>
+      qabbrev_tac ‘fds = interest fds0 kept’ >>
+      ‘app p step_b_v [Conv NONE [fdsv; cv]] (SSEL s evs)
+         (POSTv v.
+            &(∃fdsv' cv'. v = Conv NONE [fdsv'; cv'] ∧
+                    LIST_TYPE NUM (MAP w2n (add_accepted fds x0)) fdsv' ∧
+                    COMP p SACT A (SNAPSHOT SREADY SRESP)
+                      (suspended (suspended m kept)
+                         [ssnap (FST (sock_poll fds x2)) x0]) cv') *
+            SSEL (SND (sock_poll fds x2)) (evs ++ x1 ++ [spoll_event fds x2]))’
+        by (irule step_b_spec >> simp[]) >>
+      irule app_weaken >> first_x_assum (irule_at Any) >>
+      xsimpl >> rw[] >>
+      gvs[suspended_suspended_one, interest_SNOC, Abbr ‘fds’] >>
+      gvs[ssnap_def])
+QED
+
+Theorem FLAT_GENLIST_SUC[local]:
+  FLAT (GENLIST f (SUC n)) = FLAT (GENLIST f n) ++ f n
+Proof
+  simp[GENLIST, SNOC_APPEND, FLAT_APPEND]
+QED
+
+Theorem bgrounds_SOME_LE:
+  ∀n x i. bgrounds fds0 m s0 n = SOME x ∧ i ≤ n ⇒
+          ∃k N s. bgrounds fds0 m s0 i = SOME (k, N, s)
+Proof
+  Induct >> rpt strip_tac
+  >- (gvs[] >> PairCases_on ‘x’ >> metis_tac[])
+  >> Cases_on ‘i = SUC n’
+  >- (gvs[] >> PairCases_on ‘x’ >> metis_tac[])
+  >> PairCases_on ‘x’ >> drule bgrounds_SUC_SOME >> strip_tac >>
+  first_x_assum irule >> simp[] >> metis_tac[]
+QED
+
+(* MAIN (outcome 1): if the blocking loop never blocks forever, it
+   diverges, and its trace is the rounds' events (block_io) *)
+Theorem run_b_spec:
+  limited_parts ssel_names p ∧ wf m ∧ idle_quiet m ∧
+  grun_ok (interest fds0) m s0 ∧ (∀n. bgrounds fds0 m s0 n ≠ NONE) ∧
+  LIST_TYPE NUM (MAP w2n fds0) fdsv ∧
+  COMP p SACT A (SNAPSHOT SREADY SRESP) m cv ⇒
+  app (p:'ffi ffi_proj) run_b_v [Conv NONE [fdsv; cv]] (SSEL s0 [])
+    (POSTd io. io = block_io fds0 m s0)
+Proof
+  xcf_div_rule IMP_app_POSTd_one_FFI_part_FLATTEN "run_b" st >>
+  qexists_tac ‘K emp’ >>
+  qexists_tac ‘λi. if i = 0 then [] else bround_events fds0 m s0 (i - 1)’ >>
+  qexists_tac ‘λi stv. ∃fdsv cv. stv = Conv NONE [fdsv; cv] ∧
+                 LIST_TYPE NUM (MAP w2n (interest fds0 (bkept fds0 m s0 i))) fdsv ∧
+                 COMP p SACT A (SNAPSHOT SREADY SRESP)
+                   (suspended m (bkept fds0 m s0 i)) cv’ >>
+  qexists_tac ‘λi. sockets_encode (bstate fds0 m s0 i)’ >>
+  qexists_tac ‘mk_ffi_next ssel_ffi_part’ >>
+  simp[bkept_def, bstate_def, CONJUNCT1 bgrounds_def] >> rpt conj_tac
+  >- (simp[SSEL_def] >> xsimpl)
+  >- ((* one iteration: step_b_bgrounds *)
+      rpt strip_tac >> gvs[] >> simp[GSYM SSEL_def] >>
+      ‘∃k1 N1 s1. bgrounds fds0 m s0 i = SOME (k1, N1, s1)’
+        by metis_tac[optionTheory.option_CASES, pairTheory.PAIR] >>
+      ‘∃k2 N2 s2. bgrounds fds0 m s0 (SUC i) = SOME (k2, N2, s2)’
+        by metis_tac[optionTheory.option_CASES, pairTheory.PAIR] >>
+      gvs[] >>
+      sg ‘app p step_b_v [Conv NONE [fdsv'; cv']] (SSEL s1 [])
+            (POSTv v.
+               &(∃fdsv2 cv2. v = Conv NONE [fdsv2; cv2] ∧
+                       LIST_TYPE NUM (MAP w2n (interest fds0 k2)) fdsv2 ∧
+                       COMP p SACT A (SNAPSHOT SREADY SRESP) (suspended m k2) cv2) *
+               SSEL s2 ([] ++ bround_events fds0 m s0 i))’
+      >- (irule step_b_bgrounds >> simp[] >> metis_tac[]) >>
+      xlet ‘POSTv v.
+              &(∃fdsv2 cv2. v = Conv NONE [fdsv2; cv2] ∧
+                      LIST_TYPE NUM (MAP w2n (interest fds0 k2)) fdsv2 ∧
+                      COMP p SACT A (SNAPSHOT SREADY SRESP) (suspended m k2) cv2) *
+              SSEL s2 (bround_events fds0 m s0 i)’
+      >- (qpat_x_assum ‘app _ step_b_v _ _ _’ xapp_spec >> xsimpl) >>
+      xvar >> xsimpl >> metis_tac[])
+  >> CONV_TAC (LAND_CONV (ONCE_REWRITE_CONV [LGENLIST_NONE_UNFOLD])) >>
+     simp[combinTheory.o_DEF]
+QED
+
+(* MAIN (outcome 2): if the blocking loop blocks forever in select in
+   round n, the run ends in an FFI divergence of «sock_select» on the
+   interest fds, after the events of the first n rounds *)
+Theorem run_b_stuck_spec:
+  wf m ∧ idle_quiet m ∧ grun_ok (interest fds0) m s0 ∧
+  bgrounds fds0 m s0 n = SOME (kept, N, s) ∧
+  new_actions (log_of m) kept = [] ∧
+  sock_wait (interest fds0 kept) s = NONE ∧
+  LIST_TYPE NUM (MAP w2n fds0) fdsv ∧
+  COMP p SACT A (SNAPSHOT SREADY SRESP) m cv ⇒
+  app (p:'ffi ffi_proj) run_b_v [Conv NONE [fdsv; cv]] (SSEL s0 [])
+    (POSTf nm. λc b.
+       &(nm = «sock_select» ∧ c = fds_bytes (interest fds0 kept) ∧ b = []) *
+       SSEL s (FLAT (GENLIST (bround_events fds0 m s0) n)) *
+       SEP_EXISTS av. W8ARRAY av [])
+Proof
+  strip_tac >>
+  ‘∀j i k1 N1 s1 fdsv cv.
+     i + j = n ∧ bgrounds fds0 m s0 i = SOME (k1, N1, s1) ∧
+     LIST_TYPE NUM (MAP w2n (interest fds0 k1)) fdsv ∧
+     COMP p SACT A (SNAPSHOT SREADY SRESP) (suspended m k1) cv ⇒
+     app p run_b_v [Conv NONE [fdsv; cv]]
+       (SSEL s1 (FLAT (GENLIST (bround_events fds0 m s0) i)))
+       (POSTf nm. λc b.
+          &(nm = «sock_select» ∧ c = fds_bytes (interest fds0 kept) ∧ b = []) *
+          SSEL s (FLAT (GENLIST (bround_events fds0 m s0) n)) *
+          SEP_EXISTS av. W8ARRAY av [])’
+    suffices_by (disch_then (qspecl_then [‘n’, ‘0’] mp_tac) >>
+                 simp[bgrounds_def]) >>
+  Induct
+  >- ((* round n: select blocks forever *)
+      rpt strip_tac >> ‘i = n’ by simp[] >> pop_assum SUBST_ALL_TAC >>
+      ‘k1 = kept ∧ s1 = s’ by gvs[] >> rpt strip_tac >>
+      ‘(suspended m kept []).actions = []’
+        by (drule suspended_first_poll >> simp[]) >>
+      xcf_with_def (fetch "-" "run_b_v_def") >>
+      xlet ‘POSTf nm. λc b.
+              &(nm = «sock_select» ∧ c = fds_bytes (interest fds0 kept) ∧ b = []) *
+              SSEL s (FLAT (GENLIST (bround_events fds0 m s0) n)) *
+              SEP_EXISTS av. W8ARRAY av []’
+      >- (xapp_spec step_b_stuck_spec >>
+          qexistsl [‘emp’, ‘s’, ‘interest fds0 kept’,
+                    ‘FLAT (GENLIST (bround_events fds0 m s0) n)’] >> gvs[] >>
+          conj_tac >- metis_tac[] >> xsimpl) >>
+      xsimpl)
+  >- ((* round i < n returns *)
+      rpt strip_tac >>
+      ‘∃k2 N2 s2. bgrounds fds0 m s0 (SUC i) = SOME (k2, N2, s2)’
+        by (irule bgrounds_SOME_LE >> qexistsl [‘n’, ‘(kept, N, s)’] >> simp[]) >>
+      ‘app p step_b_v [Conv NONE [fdsv'; cv']]
+         (SSEL s1 (FLAT (GENLIST (bround_events fds0 m s0) i)))
+         (POSTv v.
+            &(∃fdsv2 cv2. v = Conv NONE [fdsv2; cv2] ∧
+                    LIST_TYPE NUM (MAP w2n (interest fds0 k2)) fdsv2 ∧
+                    COMP p SACT A (SNAPSHOT SREADY SRESP) (suspended m k2) cv2) *
+            SSEL s2 (FLAT (GENLIST (bround_events fds0 m s0) i) ++
+                     bround_events fds0 m s0 i))’
+        by (irule step_b_bgrounds >> simp[] >> metis_tac[]) >>
+      xcf_with_def (fetch "-" "run_b_v_def") >>
+      xlet ‘POSTv v.
+              &(∃fdsv2 cv2. v = Conv NONE [fdsv2; cv2] ∧
+                      LIST_TYPE NUM (MAP w2n (interest fds0 k2)) fdsv2 ∧
+                      COMP p SACT A (SNAPSHOT SREADY SRESP) (suspended m k2) cv2) *
+              SSEL s2 (FLAT (GENLIST (bround_events fds0 m s0) (SUC i)))’
+      >- (qpat_x_assum ‘app _ step_b_v _ _ _’ xapp_spec >>
+          simp[FLAT_GENLIST_SUC] >> xsimpl) >>
+      first_x_assum (qspecl_then [‘SUC i’, ‘k2’, ‘N2’, ‘s2’, ‘fdsv2’, ‘cv2’] mp_tac) >>
+      impl_tac >- simp[] >> strip_tac >>
+      qpat_x_assum ‘v = _’ SUBST_ALL_TAC >> xapp)
+QED
+
+(* MAIN: the blocking loop's two outcomes, at the level of the code *)
+Theorem run_b_two_outcomes:
+  limited_parts ssel_names p ∧ wf m ∧ idle_quiet m ∧
+  grun_ok (interest fds0) m s0 ∧
+  LIST_TYPE NUM (MAP w2n fds0) fdsv ∧
+  COMP p SACT A (SNAPSHOT SREADY SRESP) m cv ⇒
+  ((∀n. bgrounds fds0 m s0 n ≠ NONE) ∧
+   app (p:'ffi ffi_proj) run_b_v [Conv NONE [fdsv; cv]] (SSEL s0 [])
+     (POSTd io. io = block_io fds0 m s0)) ∨
+  (∃n kept N s.
+     bgrounds fds0 m s0 n = SOME (kept, N, s) ∧
+     new_actions (log_of m) kept = [] ∧
+     sock_wait (interest fds0 kept) s = NONE ∧
+     app (p:'ffi ffi_proj) run_b_v [Conv NONE [fdsv; cv]] (SSEL s0 [])
+       (POSTf nm. λc b.
+          &(nm = «sock_select» ∧ c = fds_bytes (interest fds0 kept) ∧ b = []) *
+          SSEL s (FLAT (GENLIST (bround_events fds0 m s0) n)) *
+          SEP_EXISTS av. W8ARRAY av []))
+Proof
+  strip_tac >> Cases_on ‘∀n. bgrounds fds0 m s0 n ≠ NONE’
+  >- (disj1_tac >> simp[] >> irule run_b_spec >> simp[] >> metis_tac[])
+  >- (disj2_tac >>
+      ‘∃n kept N s. bgrounds fds0 m s0 n = SOME (kept, N, s) ∧
+                    new_actions (log_of m) kept = [] ∧
+                    sock_wait (interest fds0 kept) s = NONE’
+        by metis_tac[bgrounds_two_outcomes] >>
+      qexistsl [‘n’, ‘kept’, ‘N’, ‘s’] >> simp[] >>
+      irule run_b_stuck_spec >> simp[] >> metis_tac[])
+QED

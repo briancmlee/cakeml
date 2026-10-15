@@ -176,19 +176,16 @@ with `FFI_diverged`. `parts_ok_ssel` and `ssel_init_heap` connect it to
 | asyncM4BlkLoop | `wait_ready_spec`, `wait_ready_stuck_spec` (POSTf), `step_b_spec`, `step_b_wait_spec`, `step_b_stuck_spec`, `run_b_spec` (POSTd), `run_b_stuck_spec` (POSTf), `run_b_two_outcomes` |
 | asyncM4BlkMain | `main_spec_div`, `main_spec_stuck`, `parts_ok_ssel`, `echo_blocking_semantics`, `echo_blocking_spec` |
 
-## 7. For the user to decide (not decided here)
+## 7. Status and open items
 
-- **The headline.** Two options; this work serves both, and EchoSpec is
-  unchanged.
-  - (a) Keep `echo_spec` about the polling program, and present
-    `echo_blocking_spec` as a companion theorem.
-  - (b) Amend EchoSpec so the world may include `«sock_select»`, and
-    allow the "blocked in select" outcome. That outcome would read: "the
-    run ends in an FFI divergence of select, after a finite trace that is
-    safe and live".
+- **The headline (decided by the user).** EchoSpec stays unchanged, and
+  the polling program remains the headline (`echo_spec`).
+  `echo_blocking_spec` is the official refinement/companion theorem,
+  presented directly under it.
 - **Trust base.** The C side of `«sock_select»` must behave like
   `ffi_sock_select`: block until some fd in the config is readable, then
-  return without consuming anything.
+  return without consuming anything. It is implemented and listed as a
+  trust item in `24-blocking-runnable.md`.
 - **`blk_live` in PR #21 (`async/l2-blocking`).** The same two-outcome
   structure would remove it there too. Not done; that PR is under review.
 

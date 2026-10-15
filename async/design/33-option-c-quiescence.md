@@ -73,6 +73,14 @@ special case, and no live-list bookkeeping.
     at h`;
   - `sel_covers` is the definition;
   - quiet comes from `wf2` of the server.
+- **Selects only on model sockets.** QuietSpec's `ffi_select` fails on an
+  fd that is not a listener or connection of the model (`sel_ok`, a
+  user-approved spec change). The declared interest is `Readable lfd` and
+  `Readable fd` for fds returned by accept, which are sockets of the model
+  (`deliver1` adds a connection to `conns` when it arrives, and the
+  v1 model never removes one). So `step_q`'s select set satisfies `sel_ok`
+  by construction. The proof obligation is one invariant of the loop:
+  every fd in the interest is the listener or was accepted.
 - **Est. 500 lines.** Template: asyncM4LiveLoop (653 lines), with the
   live-list lemmas dropped.
 

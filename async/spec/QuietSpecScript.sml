@@ -28,7 +28,13 @@
   What is trusted, beyond EchoSpec: the select call's model below
   (sel_wait, ffi_select: block until a poll of the given fds would
   report one ready; forever if none ever will be), which the C side's
-  sock_select (a poll(2) with no timeout) must implement.
+  sock_select (a poll(2) with no timeout) must implement.  Selecting on
+  an fd that is not a socket of the model (not a listener or connection,
+  e.g. fd 0) is a misuse: the call FAILS, as the other calls do on
+  misuse.  (Otherwise the model would block forever there, while a real
+  poll(2) may return at once, and a busy-looping program could meet the
+  statement.)  A program that meets the statement therefore never makes
+  such a call, so the C side need not detect it.
 
   Nothing here is proved; the statements are definitions.
   QuietSpecBiteScript.sml shows that they bite and are not vacuous.
@@ -54,12 +60,18 @@ Definition sel_wait_def:
     else NONE
 End
 
+(* An fd the model knows: a listener or a connection *)
+Definition sel_ok_def:
+  sel_ok s fds ⇔ EVERY (λfd. is_listener s fd ∨ is_conn s fd) fds
+End
+
 (* «sock_select»: conf is a list of fds (8 bytes each, as for «sock_poll»);
    the buffer is empty and nothing is returned in it.  The «sock_poll» that
-   follows reports which fds are ready. *)
+   follows reports which fds are ready.  NONE (the call fails): an fd that
+   is not a socket of the model. *)
 Definition ffi_select_def:
   ffi_select (conf:word8 list) (bytes:word8 list) s =
-    if bytes = [] then
+    if bytes = [] ∧ sel_ok s (bytes_fds conf) then
       case sel_wait (bytes_fds conf) s of
       | NONE => SOME FFIdiverge
       | SOME k => SOME (FFIreturn [] (ticks k s))

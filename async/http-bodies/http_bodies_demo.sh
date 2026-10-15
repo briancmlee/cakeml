@@ -5,7 +5,8 @@ SERVER=${1:-build/http_server_b}
 PORT=${PORT:-7850}
 CAKE_ECHO_PORT=$PORT $SERVER 2>/dev/null </dev/null &
 PID=$!
-sleep 0.5
+# wait until the server accepts connections
+for i in $(seq 1 50); do nc -z 127.0.0.1 $PORT 2>/dev/null && break; sleep 0.1; done
 step() { echo; printf '$ %s\n' "$*"; }
 
 step curl -s -i http://127.0.0.1:$PORT/

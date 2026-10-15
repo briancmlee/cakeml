@@ -5,7 +5,8 @@
      parse_brequest s = BComplete r rest | BIncomplete | BInvalid
 
   Method "GET " or "POST "; then the request line and header lines as in
-  asyncHttpParseH (split_path, the version constants, parse_headers);
+  asyncHttpParseH (split_path, the version constants);
+  (parse_bheaders: its own header-line parser, the character rules only);
   then the body (bbody): any Transfer-Encoding header or two
   Content-Length headers is invalid; a single Content-Length value must be
   canonical decimal (dec_fold reads it, toString checks it); the body is
@@ -29,6 +30,49 @@ End
 
 Definition post_sp_def:
   post_sp = "POST "
+End
+
+(* The header lines, up to and including the blank line.  The bodies
+   protocol has its own header-line parser: asyncHttpParseH's parse_headers
+   rejects the body-framing headers (spike/http-nobody), which this
+   protocol needs.  parse_bheaders is that parser before the restriction:
+   the character rules of HttpSpecBodies' valid_bheader. *)
+Theorem split_at_LENGTH_b[local]:
+  ∀s. LENGTH (SND (split_at c s)) ≤ LENGTH s
+Proof
+  Induct >> rw[split_at_def]
+QED
+
+Definition parse_bheaders_def:
+  parse_bheaders s =
+    if crlf ≼ s then HDone [] (DROP 2 s)
+    else if s ≼ crlf then HMore
+    else
+      let n = FST (split_at #":" s);
+          u = SND (split_at #":" s)
+      in
+        if EXISTS (λc. c = #" " ∨ c = #"\r" ∨ c = #"\n") n then HBad
+        else if u = [] then HMore
+        else if n = [] then HBad
+        else if ¬(colon_sp ≼ u) then (if u ≼ colon_sp then HMore else HBad)
+        else
+          let v = FST (split_at #"\r" (DROP 2 u));
+              w = SND (split_at #"\r" (DROP 2 u))
+          in
+            if EXISTS (λc. c = #"\n") v then HBad
+            else if w = [] then HMore
+            else if ¬(crlf ≼ w) then (if w ≼ crlf then HMore else HBad)
+            else
+              case parse_bheaders (DROP 2 w) of
+                HDone hs r => HDone ((n, v) :: hs) r
+              | HMore => HMore
+              | HBad => HBad
+Termination
+  WF_REL_TAC ‘measure LENGTH’ >> rw[] >>
+  qspecl_then [‘#":"’, ‘s’] assume_tac (GEN_ALL split_at_LENGTH_b) >>
+  qspecl_then [‘#"\r"’, ‘DROP 2 (SND (split_at #":" s))’] assume_tac
+    (GEN_ALL split_at_LENGTH_b) >>
+  fs[IS_PREFIX_APPEND, colon_sp_def] >> gvs[]
 End
 
 (* The value of a decimal numeral (meaningful when every character is a
@@ -70,8 +114,8 @@ Definition bline_def:
       if EXISTS (λc. c = #"\r" ∨ c = #"\n") p then BInvalid
       else if u = [] then BIncomplete
       else if p = [] then BInvalid
-      else if sp_http10 ≼ u then bfinish m p "1.0" (parse_headers (DROP 11 u))
-      else if sp_http11 ≼ u then bfinish m p "1.1" (parse_headers (DROP 11 u))
+      else if sp_http10 ≼ u then bfinish m p "1.0" (parse_bheaders (DROP 11 u))
+      else if sp_http11 ≼ u then bfinish m p "1.1" (parse_bheaders (DROP 11 u))
       else if u ≼ sp_http10 ∨ u ≼ sp_http11 then BIncomplete
       else BInvalid
 End
@@ -134,11 +178,11 @@ QED
    Header lines against the printer, with valid_bheader
    ------------------------------------------------------------------------ *)
 
-Theorem parse_headers_line[local]:
+Theorem parse_bheaders_line[local]:
   n ≠ [] ∧ EVERY (λc. c ≠ #":" ∧ c ≠ #" " ∧ c ≠ #"\r" ∧ c ≠ #"\n") n ∧
   EVERY (λc. c ≠ #"\r" ∧ c ≠ #"\n") v ⇒
-  parse_headers (n ++ #":" :: #" " :: (v ++ #"\r" :: #"\n" :: Y)) =
-  case parse_headers Y of
+  parse_bheaders (n ++ #":" :: #" " :: (v ++ #"\r" :: #"\n" :: Y)) =
+  case parse_bheaders Y of
     HDone hs r => HDone ((n, v) :: hs) r
   | HMore => HMore
   | HBad => HBad
@@ -155,30 +199,30 @@ Proof
   ‘split_at #"\r" (v ++ #"\r" :: #"\n" :: Y) = (v, #"\r" :: #"\n" :: Y)’
     by (irule split_at_char >> fs[EVERY_MEM] >> strip_tac >> res_tac >> fs[]) >>
   ‘¬EXISTS (λc. c = #"\n") v’ by (fs[EVERY_MEM, EXISTS_MEM] >> metis_tac[]) >>
-  CONV_TAC (LAND_CONV (ONCE_REWRITE_CONV [parse_headers_def])) >>
+  CONV_TAC (LAND_CONV (ONCE_REWRITE_CONV [parse_bheaders_def])) >>
   asm_simp_tac std_ss [LET_THM, crlf_prefix, colon_sp_prefix, DROP_2_CONS] >>
   simp[]
 QED
 
 (* MAIN (helper): printed valid header lines, then the blank line *)
-Theorem parse_headers_print_b:
+Theorem parse_bheaders_print:
   ∀hs rest. EVERY valid_bheader hs ⇒
-    parse_headers (FLAT (MAP print_header hs) ++ crlf ++ rest) = HDone hs rest
+    parse_bheaders (FLAT (MAP print_header hs) ++ crlf ++ rest) = HDone hs rest
 Proof
   Induct
-  >- simp[Once parse_headers_def, crlf_def] >>
+  >- simp[Once parse_bheaders_def, crlf_def] >>
   PairCases >> rw[valid_bheader_def] >>
   simp[print_header_def] >> REWRITE_TAC[GSYM APPEND_ASSOC, APPEND] >>
-  dep_rewrite.DEP_ONCE_REWRITE_TAC[parse_headers_line] >> simp[]
+  dep_rewrite.DEP_ONCE_REWRITE_TAC[parse_bheaders_line] >> simp[]
 QED
 
 (* MAIN (helper): HDone means printed valid header lines, then the blank line *)
-Theorem parse_headers_done_b:
-  ∀s hs r. parse_headers s = HDone hs r ⇒
+Theorem parse_bheaders_done:
+  ∀s hs r. parse_bheaders s = HDone hs r ⇒
            EVERY valid_bheader hs ∧ s = FLAT (MAP print_header hs) ++ crlf ++ r
 Proof
   gen_tac >> completeInduct_on ‘LENGTH s’ >> rpt gen_tac >> strip_tac >>
-  rpt gen_tac >> simp[Once parse_headers_def] >>
+  rpt gen_tac >> simp[Once parse_bheaders_def] >>
   qabbrev_tac ‘nm = FST (split_at #":" s)’ >>
   qabbrev_tac ‘uu = SND (split_at #":" s)’ >>
   qabbrev_tac ‘vl = FST (split_at #"\r" (DROP 2 uu))’ >>
@@ -208,7 +252,7 @@ Proof
   ‘LENGTH ww = 2 + LENGTH l2’
     by (qpat_x_assum ‘ww = crlf ++ l2’ (fn th => REWRITE_TAC[th, LENGTH_APPEND]) >>
         simp[]) >>
-  ‘parse_headers l2 = HDone hs' r’ by metis_tac[] >>
+  ‘parse_bheaders l2 = HDone hs' r’ by metis_tac[] >>
   first_x_assum (qspec_then ‘LENGTH l2’ mp_tac) >>
   (impl_tac >- fs[]) >>
   disch_then (qspec_then ‘l2’ mp_tac) >> simp[] >>
@@ -342,8 +386,8 @@ QED
 Theorem bline_line[local]:
   valid_path p ∧ (sp_http10 ≼ u ∨ sp_http11 ≼ u) ⇒
   bline m (p ++ u) =
-    if sp_http10 ≼ u then bfinish m p "1.0" (parse_headers (DROP 11 u))
-    else bfinish m p "1.1" (parse_headers (DROP 11 u))
+    if sp_http10 ≼ u then bfinish m p "1.0" (parse_bheaders (DROP 11 u))
+    else bfinish m p "1.1" (parse_bheaders (DROP 11 u))
 Proof
   strip_tac >>
   ‘EVERY (λc. c ≠ #" ") p ∧ ¬EXISTS (λc. c = #"\r" ∨ c = #"\n") p ∧ p ≠ []’
@@ -394,7 +438,7 @@ Proof
   REWRITE_TAC[method_dispatch_cons] >>
   dep_rewrite.DEP_ONCE_REWRITE_TAC[bline_line] >>
   REWRITE_TAC[DROP_sp_http] >>
-  dep_rewrite.DEP_REWRITE_TAC[parse_headers_print_b |> REWRITE_RULE [GSYM APPEND_ASSOC]] >>
+  dep_rewrite.DEP_REWRITE_TAC[parse_bheaders_print |> REWRITE_RULE [GSYM APPEND_ASSOC]] >>
   REWRITE_TAC[bfinish_def, asyncHttpParseHTheory.headers_result_case_def] >>
   fs[IS_PREFIX_APPEND3, sp_http_distinct] >>
   irule bbody_framed >> fs[EVERY_MEM, EXISTS_MEM]
@@ -420,7 +464,7 @@ Proof
   qabbrev_tac ‘p = FST (split_path t)’ >>
   qabbrev_tac ‘u = SND (split_path t)’ >>
   rw[AllCaseEqs()] >>
-  drule parse_headers_done_b >> strip_tac >>
+  drule parse_bheaders_done >> strip_tac >>
   drule bbody_complete >> strip_tac >> gvs[] >>
   ‘t = p ++ u’ by simp[Abbr ‘p’, Abbr ‘u’, split_path_join_h] >>
   ‘EVERY (λc. c ≠ #" ") p’ by simp[Abbr ‘p’, split_path_every_h] >>

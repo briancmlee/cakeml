@@ -24,15 +24,35 @@ Kept current at every commit.
 
 ## Status
 
-- DONE: spec plus bites (proved), feasibility note.
-- IN PROGRESS: the parser and the `_b` pipeline (waiting for the
-  dependency build in this fresh worktree, at `-j1`).
+- DONE: spec plus bites (proved), feasibility, parser, safety
+  (`http_prog_b_safe`), liveness and the whole spec
+  (`http_prog_b_spec : ⊢ http_spec_b 3w demo_files http_prog_b`, DISK_THM
+  only), the linear-time parsing fix (2d54fd809), and the runnable demo with
+  plain curl. No cheats; Holmake -j1 green.
+- DONE (option R1): merged origin/spike/http-h-linear (#54, which includes
+  #48). The bodies parser now has its own header-line parser,
+  `parse_bheaders` (the pre-#48 `parse_headers`, matching `valid_bheader`),
+  with the linear `parse_bheaders2` for the translation. It reuses
+  ProgH's `split_at2`/`toLower` and strict's `split_path2`.
+  `http_prog_b_spec` is unchanged as a statement. The demo was rerun.
 
 ## Assumptions made
 
-See 28 §3.
+See 28 §6.
 
 ## Tool feedback
 
 - A fresh sparse worktree builds the whole async stack (~81 theories) at
   `-j1` before anything downstream can be checked.
+- The hol-lsp session goes stale ("No merge for grammars", "not in
+  ancestry") after ancestors are rebuilt underneath it. Restart it, or
+  check with Holmake.
+- Merging a branch that translates the same constants (`split_at2`,
+  `toLower`) as this one makes the descendant's translation clash. Reusing
+  the ancestor's translation is the only fix, so put shared helpers low
+  in the stack.
+- The translator has no `toLower` and no `FOLDL`; num subtraction gives a
+  precondition unless guarded.
+- Running time is invisible to the proofs. A double recursive call made
+  the parsers exponential, and only the runnable demo revealed it. Worth
+  checking `FST (f x) … SND (f x)` patterns in any translated code.

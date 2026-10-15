@@ -13,15 +13,19 @@ heap predicate `SOCKETS`, fairness assumptions with non-vacuity, a CakeML
 theorem(s), a tiny example, and the write-up.
 
 ## State (update at every commit)
+Times from the commit log.
 - 10:12 branch created; worktree already up to date with the rebuilt base
   (Holmake no-op).
-- ~11:05 committed `810f8ef2a`: model (`ffiSpikeSocketFFI`), module
-  (`ffiSpikeSocketProg`), `SOCKETS` + 4 CF specs (`ffiSpikeSocketProof`),
-  and `call_main_thm_div` (`ffiSpikeDivMain`, proved by a forked helper).
-  Full Holmake green.
-- ~11:30 `ffiSpikeSocketFair` (assumption `sched_wf`, liveness lemmas,
-  non-vacuity, invariance under all operations) proved in hol-lsp.
-- Next: composed world (`ffiSpikeSocketWorld`), example, divergence.
+- 10:37 `810f8ef2a`: model, Socket module, `SOCKETS` + 4 CF specs,
+  `call_main_thm_div` (forked helper). Pushed early for async-spike.
+- 10:40 `4629bcc01`: `ffiSpikeSocketFair` (sched_wf, liveness, non-vacuity,
+  invariance).
+- 10:50 `6073423a3`: composed world, terminating + diverging whole-program
+  theorems.
+- 10:56 `3d2938eb1`: one-shot echo example, end to end.
+- 11:05 `cef723b8b`: never-ending poll loop in a sockets-only world.
+- ~11:10 write-up `07-socket-model.md`; PR opened (see Report).
+  Nothing in progress.
 
 ## Files
 | file | content |
@@ -31,6 +35,10 @@ theorem(s), a tiny example, and the write-up.
 | `ffiSpikeSocketProofScript.sml` | `SOCKETS`, CF specs `Socket_{poll,accept,read,write}_spec` |
 | `ffiSpikeSocketFairScript.sml` | `sched_wf`, liveness lemmas, non-vacuity, invariance |
 | `ffiSpikeDivMainScript.sml` | `call_main_thm_div` (POSTd analogue of cfMain's call_main_thm2) |
+| `ffiSpikeSocketWorldScript.sml` | composed world cl+fs+clock+sockets, both whole-program theorems |
+| `ffiSpikeSocketWorldLib.sml` | `prove_sem_thm` for the socket world |
+| `ffiSpikeSocketExampleScript.sml` | one-shot echo, MAIN `echo_example_semantics` |
+| `ffiSpikeSocketDivScript.sml` | sockets-only world, never-ending loop, MAIN `serve_semantics` |
 
 ## Build
 ```sh
@@ -39,7 +47,7 @@ timeout 3600 arch -arm64 /bin/zsh -lc '~/HOL/bin/Holmake -j1'
 ```
 
 ## Assumptions made
-(collected here as they are made; the final list goes into 07-socket-model.md)
+Final list: the end of `07-socket-model.md` (11 items). Summary:
 1. Time = the schedule, advanced only by `sock_poll` (one step per poll);
    accept/read/write do not advance it.
 2. fds are `word64` (always fit the 8-byte encoding); CakeML side uses
@@ -64,3 +72,16 @@ timeout 3600 arch -arm64 /bin/zsh -lc '~/HOL/bin/Holmake -j1'
   "markerSyntax.Abbr: Ill-formed quotation" in `qabbrev_tac`; renaming fixed it.
 - `eval` does not keep `open`s between calls; every call needs
   `open HolKernel boolLib bossLib`.
+- After editing a `Quote add_cakeml` block, the file's server reported
+  "Out-of-date conclusion to theorem" for every later add_cakeml and
+  "xcf: theorem does not define main_v"; `restart` fixed it.
+- `serve_spec` (xcf_div_rule) failed in hol-lsp with
+  `optionSyntax.dest_some` but built fine with Holmake; after a server
+  restart hol-lsp proved it too (stale server state again).
+- `xmatch` left an unreduced `if` when the first case of an option match
+  was the nullary `None`; putting `Some` first fixed it (seen in both
+  hol-lsp and Holmake, so a real CF-tactic quirk, not a tool issue).
+- Positive: goalState at the end of a failing `>-` branch, and the
+  "checking for 3m (finished proofs here took ≤1s)" hint for a looping
+  metis, were the two most useful features.
+- Holmake: ~5 s fixed overhead per run; full socket build ~30–60 s.

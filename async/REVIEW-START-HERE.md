@@ -21,8 +21,8 @@ Companion results:
   liveness: `⊢ http_spec_b 3w demo_files http_prog_b`;
 - both servers compile and run.
 
-**How to read it.** The work is split into 11 stacked PRs, `[review 1/11]`
-to `[review 11/11]`. Each is one layer that builds on its own. Read them in
+**How to read it.** The work is split into 12 stacked PRs, `[review 1/12]`
+to `[review 12/12]`. Each is one layer that builds on its own. Read them in
 order. In each PR, read only the definitions and the ≤ 5 statements its
 description lists; skip all proofs. The layers:
 
@@ -39,6 +39,7 @@ description lists; skip all proofs. The layers:
 | 9 | **HTTP: `http_spec_b 3w demo_files http_prog_b`** | 5 | 40 min |
 | 10 | it runs (`socket_ffi.c` is the C trust item) | 1 file | 15 min |
 | 11 | README and design notes | as wanted | 15 min |
+| 12 | **close and fd reuse: `echo_spec2 3w echo2_prog`** (its own trusted spec and v2 socket world) | all of `spec-v2/EchoSpec2Script.sml`, `world/sockets-v2/socketV2FFIScript.sml`; 5 statements | 45 min |
 
 Total: about 6 hours at this depth. For a short review, read PR 1 and the
 first statement of PRs 7 and 9 (about 1 hour). They contain everything you must
@@ -49,6 +50,9 @@ trust and the theorem that rests on it.
 - The socket model and the fairness assumption `sched_wf` (PR 1).
 - The two spec files (PR 1).
 - The C implementation of the socket calls (PR 10).
+- For PR 12 only: the version-2 socket model with `close` (lowest-free fd
+  reuse), its fairness `sched_wf2`, and EchoSpec2 (all in PR 12), and
+  `sock_close` in the C (PR 10).
 
 Everything else is proved.
 

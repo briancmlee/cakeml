@@ -15,12 +15,20 @@ Kept current at every commit.
   - `EchoSpecBiteScript.sml` (proved): broken servers violate the spec
     (swap clients, drop/duplicate a byte, write before reading, never
     echo); non-vacuity (`server_world_exists`, `ideal_trace_safe_and_live`).
+  - `HttpSpecScript.sml` (115 lines, TRUSTED SURFACE, no proofs): GET over
+    a fixed file map, `print_request`/`print_response`/`handle`,
+    `http_safe`, `http_live`, `http_spec lfd files prog`.
+  - `HttpSpecBiteScript.sml` (proved): wrong order, 200 for a missing
+    file, wrong Content-Length, answering a partial request, never
+    answering; a fair one-client world; the ideal trace is safe and live
+    (with a request-uniqueness lemma).
 - Docs: this file; `async/design/16-final-spec.md` (to be written).
 
 ## Status
 
 - DONE: EchoSpec + bite; Holmake green, no cheats.
-- TODO: HttpSpec (+ bite, non-vacuity), 16-final-spec.md, PR.
+- DONE: HttpSpec + bite; Holmake green, no cheats.
+- TODO: 16-final-spec.md, PR.
 
 ## Assumptions made (so far)
 

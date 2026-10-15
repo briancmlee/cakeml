@@ -15,5 +15,5 @@ Kept current at every push. Worker state: ~/.cache/moonshot/STATE.md; log ~/.cac
 - M1: ChatSpec + bites: GREEN (Holmake), no cheats.
 
 ## Tool feedback
-- holslot queue: the M1 build waited ~1.5 h for a slot (7–8 waiters); hol-lsp can't check a theory until its ancestors are Holmade in the same worktree.
+- holslot queue: the M1 build waited ~15 min for a slot (7–8 waiters); hol-lsp can't check a theory until its ancestors are Holmade in the same worktree.
 - `simp` does not use assumptions (use `gvs`/`fs`, or `metis_tac`); SPLITP lemmas need `rich_listTheory.SPLITP` qualified in this context.

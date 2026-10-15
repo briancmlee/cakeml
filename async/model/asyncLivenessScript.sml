@@ -620,3 +620,151 @@ Proof
   >> qspecl_then [‘x’, ‘w with sched := THE (LTL w.sched)’, ‘q’] mp_tac deliver_listener
   >> simp[] >> metis_tac[]
 QED
+
+(* In one round: the accepts take connections d from the front of the
+   queue, which are handed out; new connections x join the back *)
+Theorem round_listener:
+  closed_loop (server lfd) (start_world lfd sch) n = (h, w, perf) ∧
+  closed_loop (server lfd) (start_world lfd sch) (n + 1) = (h', w', perf') ∧
+  w.listeners = [(lfd, q)] ⇒
+  ∃d q' x. w'.listeners = [(lfd, q' ++ x)] ∧ q = d ++ q' ∧
+           accepted (sperf perf') = accepted (sperf perf) ++ d ∧
+           (MEM (Accept lfd) (new_actions (log_of (server lfd)) h) ∧ q ≠ [] ⇒ d ≠ []) ∧
+           (¬MEM (Accept lfd) (new_actions (log_of (server lfd)) h) ⇒ d = []) ∧
+           ∀c. ALOOKUP w'.conns c ≠ NONE ⇒ ALOOKUP w.conns c ≠ NONE ∨ MEM c x
+Proof
+  strip_tac >> drule_all closed_loop_step >> strip_tac >> gvs[]
+  >> drule_all perform_all_listener >> strip_tac
+  >> drule tick_listener >> strip_tac
+  >> qexistsl_tac [‘q'’, ‘x’] >> gvs[] >> metis_tac[]
+QED
+
+(* Every connection has been handed out, or is pending on the listener *)
+Theorem conns_known:
+  ∀n h w perf.
+    closed_loop (server lfd) (start_world lfd sch) n = (h, w, perf) ⇒
+    ∃q. w.listeners = [(lfd, q)] ∧
+        ∀c. ALOOKUP w.conns c ≠ NONE ⇒ MEM c (accepted (sperf perf)) ∨ MEM c q
+Proof
+  Induct >- simp[closed_loop_def, start_world_def]
+  >> rpt strip_tac
+  >> Cases_on ‘closed_loop (server lfd) (start_world lfd sch) n’ >> PairCases_on ‘r’
+  >> first_x_assum (qspecl_then [‘q’, ‘r0’, ‘r1’] mp_tac) >> simp[] >> strip_tac
+  >> qspecl_then [‘n’, ‘q’, ‘r0’, ‘r1’, ‘h’, ‘w’, ‘perf’, ‘q'’] mp_tac
+       (Q.GENL [‘n’, ‘h’, ‘w’, ‘perf’, ‘h'’, ‘w'’, ‘perf'’, ‘q’] round_listener)
+  >> gvs[ADD1] >> strip_tac >> simp[] >> rpt strip_tac
+  >> first_x_assum drule >> strip_tac >> gvs[]
+  >> Cases_on ‘ALOOKUP r0.conns c = NONE’ >> gvs[] >> metis_tac[]
+QED
+
+(* A listener with pending connections is reported readable *)
+Theorem listener_ready:
+  w.listeners = [(lfd, q)] ∧ q ≠ [] ⇒
+  Readable lfd ∈ set (MAP Readable (ready_fds w))
+Proof
+  rw[ready_fds_def, MEM_MAP, MEM_FILTER, is_ready_def]
+  >> qexists_tac ‘lfd’ >> simp[]
+QED
+
+(* While the server does not accept, the queue only grows *)
+Theorem quiet_listener:
+  ∀d h' w' perf'.
+    closed_loop (server lfd) (start_world lfd sch) n = (h, w, perf) ∧
+    w.listeners = [(lfd, q)] ∧
+    closed_loop (server lfd) (start_world lfd sch) (n + d) = (h', w', perf') ∧
+    (∀i hi wi pi. i < d ∧
+                  closed_loop (server lfd) (start_world lfd sch) (n + i) = (hi, wi, pi) ⇒
+                  ¬MEM (Accept lfd) (new_actions (log_of (server lfd)) hi)) ⇒
+    ∃y. w'.listeners = [(lfd, q ++ y)]
+Proof
+  Induct >- (rw[] >> gvs[])
+  >> rpt strip_tac
+  >> Cases_on ‘closed_loop (server lfd) (start_world lfd sch) (n + d)’
+  >> PairCases_on ‘r’
+  >> first_x_assum (qspecl_then [‘q'’, ‘r0’, ‘r1’] mp_tac) >> simp[]
+  >> impl_tac
+  >- (rpt strip_tac >> first_x_assum (qspecl_then [‘i’, ‘hi’, ‘wi’, ‘pi’] mp_tac)
+      >> gvs[])
+  >> strip_tac
+  >> ‘¬MEM (Accept lfd) (new_actions (log_of (server lfd)) q')’
+       by (first_x_assum (qspecl_then [‘d’, ‘q'’, ‘r0’, ‘r1’] mp_tac) >> simp[])
+  >> qspecl_then [‘n + d’, ‘q'’, ‘r0’, ‘r1’, ‘h'’, ‘w'’, ‘perf'’, ‘q ++ y’] mp_tac
+       (Q.GENL [‘n’, ‘h’, ‘w’, ‘perf’, ‘h'’, ‘w'’, ‘perf'’, ‘q’] round_listener)
+  >> gvs[ADD1] >> strip_tac >> gvs[]
+QED
+
+(* If the server accepts in none of the rounds n+1 .. n+d, its accepts
+   stay the same *)
+Theorem naccepts_quiet:
+  ∀d h' w' perf'.
+    closed_loop (server lfd) (start_world lfd sch) n = (h, w, perf) ∧
+    closed_loop (server lfd) (start_world lfd sch) (n + d) = (h', w', perf') ∧
+    (∀i hi wi pi. 0 < i ∧ i ≤ d ∧
+                  closed_loop (server lfd) (start_world lfd sch) (n + i) = (hi, wi, pi) ⇒
+                  ¬MEM (Accept lfd) (new_actions (log_of (server lfd)) hi)) ⇒
+    naccepts lfd (server lfd h').actions = naccepts lfd (server lfd h).actions
+Proof
+  Induct >- (rw[] >> gvs[])
+  >> rpt strip_tac
+  >> Cases_on ‘closed_loop (server lfd) (start_world lfd sch) (n + d)’
+  >> PairCases_on ‘r’
+  >> first_x_assum (qspecl_then [‘q’, ‘r0’, ‘r1’] mp_tac) >> simp[]
+  >> impl_tac
+  >- (rpt strip_tac >> first_x_assum (qspecl_then [‘i’, ‘hi’, ‘wi’, ‘pi’] mp_tac)
+      >> gvs[])
+  >> strip_tac
+  >> ‘¬MEM (Accept lfd) (new_actions (log_of (server lfd)) h')’
+       by (first_x_assum (qspecl_then [‘SUC d’, ‘h'’, ‘w'’, ‘perf'’] mp_tac) >> simp[])
+  >> qspecl_then [‘server lfd’, ‘start_world lfd sch’, ‘n + d’, ‘q’, ‘r0’, ‘r1’,
+                  ‘h'’, ‘w'’, ‘perf'’] mp_tac
+       (Q.GENL [‘m’, ‘w0’, ‘n’, ‘h’, ‘w’, ‘perf’, ‘h'’, ‘w'’, ‘perf'’] closed_loop_step)
+  >> gvs[ADD1] >> strip_tac >> gvs[actions_SNOC]
+  >> gvs[naccepts_def, count_def, FILTER_EQ_NIL, EVERY_MEM, FILTER_APPEND_DISTRIB]
+  >> rw[] >> metis_tac[]
+QED
+
+(* With connections pending, the server accepts in one of the next three
+   rounds (n .. n + 2), by server_accept_progress *)
+Theorem accept_soon:
+  closed_loop (server lfd) (start_world lfd sch) n = (h, w, perf) ∧
+  w.listeners = [(lfd, q)] ∧ q ≠ [] ⇒
+  ∃i hi wi pi. i ≤ 2 ∧
+     closed_loop (server lfd) (start_world lfd sch) (n + i) = (hi, wi, pi) ∧
+     MEM (Accept lfd) (new_actions (log_of (server lfd)) hi)
+Proof
+  rpt strip_tac >> CCONTR_TAC
+  >> ‘∀i hi wi pi. i ≤ 2 ∧
+        closed_loop (server lfd) (start_world lfd sch) (n + i) = (hi, wi, pi) ⇒
+        ¬MEM (Accept lfd) (new_actions (log_of (server lfd)) hi)’ by metis_tac[]
+  >> qpat_x_assum ‘¬∃i. _’ kall_tac
+  >> Cases_on ‘closed_loop (server lfd) (start_world lfd sch) (n + 2)’
+  >> PairCases_on ‘r’ >> rename1 ‘_ = (h2, w2, p2)’
+  (* the listener stays readable *)
+  >> ‘∀j. n ≤ j ∧ j < n + 2 ⇒ Readable lfd ∈ (EL j h2).ready’
+       by (rpt strip_tac
+           >> Cases_on ‘closed_loop (server lfd) (start_world lfd sch) (j + 1)’
+           >> PairCases_on ‘r’
+           >> qspecl_then [‘j + 1 − n’, ‘q'’, ‘r0’, ‘r1’] mp_tac quiet_listener
+           >> impl_tac
+           >- (simp[] >> rpt strip_tac
+               >> qpat_x_assum ‘∀i hi wi pi. _ ⇒ ¬MEM _ _’
+                    (qspecl_then [‘i’, ‘hi’, ‘wi’, ‘pi’] mp_tac) >> simp[])
+           >> strip_tac
+           >> drule_all closed_loop_snapshot >> disch_then SUBST1_TAC
+           >> irule listener_ready >> simp[])
+  >> qpat_assum ‘closed_loop _ _ (n + 2) = _’ (assume_tac o MATCH_MP closed_loop_prompt)
+  >> qpat_assum ‘closed_loop _ _ (n + 2) = _’ (assume_tac o MATCH_MP closed_loop_length)
+  >> qspecl_then [‘server lfd’, ‘start_world lfd sch’, ‘n’, ‘2’, ‘h’, ‘w’, ‘perf’,
+                  ‘h2’, ‘w2’, ‘p2’] mp_tac (Q.GENL [‘m’, ‘w0’, ‘n’] closed_loop_prefix)
+  >> impl_tac >- simp[] >> strip_tac
+  >> qspecl_then [‘h2’, ‘n’] mp_tac server_accept_progress
+  >> impl_tac >- simp[]
+  >> simp[TAKE_LENGTH_ID_rwt] >> qpat_x_assum ‘h = TAKE _ _’ (SUBST1_TAC o GSYM)
+  >> qspecl_then [‘2’, ‘h2’, ‘w2’, ‘p2’] mp_tac naccepts_quiet
+  >> impl_tac
+  >- (simp[] >> rpt strip_tac
+      >> qpat_x_assum ‘∀i hi wi pi. _ ⇒ ¬MEM _ _’
+           (qspecl_then [‘i’, ‘hi’, ‘wi’, ‘pi’] mp_tac)
+      >> simp[])
+  >> simp[]
+QED

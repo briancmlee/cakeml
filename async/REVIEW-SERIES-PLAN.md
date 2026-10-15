@@ -163,7 +163,9 @@ statements only.
     forever only when the polling program would never act again.
 - **Own:**
   1. `sock_select_polls` (the model of select; trusted with socket_ffi.c);
-  2. `blocking_trace_same_actions` (blocking ≡ polling at Level 2);
+  2. `brun_two_outcomes` (the generic blocking loop: it runs as the
+     polling loop would, or it ends asleep in `select` only once polling
+     would never act again; `brun_spec` is its first outcome);
   3. `sel_covers` and the select-set loop's two outcomes
      (`asyncM4BlkSelWorld`, `asyncM4LiveLoop`);
   4. `echo_live_spec` (the companion theorem, directly under the headline).
@@ -172,7 +174,7 @@ statements only.
   - `echo_blocking_spec` (the first version, which selects on the whole
     interest list and spins after a disconnect; it is kept because the
     live-fd version builds on it).
-- **From:** l2-blocking (#21), m4-blocking (#27), m4-blocking-live (#46;
+- **From:** l2-blocking (#21) and asyncL2BlkStuck (#49), m4-blocking (#27), m4-blocking-live (#46;
   its `asyncM4LiveWorld` is renamed `asyncM4BlkSelWorld` here, because
   the liveness proof already has a theory of that name),
   ffiSpikeSocketSelect.
@@ -210,11 +212,14 @@ statements only.
 - **Claims:** both servers compile with the release compiler and run, and
   the blocking one idles at 0% CPU.
 - **Own:** `socket_ffi.c` (TRUSTED: the C side of the four calls plus
-  `select`; one mapping table to check against `ffiSpikeSocketFFI`).
+  `select`; one mapping table to check against `ffiSpikeSocketFFI`). It
+  does exactly what the model says: `sock_poll` is one `poll(2)` with
+  timeout 0 (the earlier idle-wait heuristic is gone, #50).
 - **Skip:** the Makefiles, demo clients, the printer cross-check, the
   generated `.sexp` files, and the machine-code scripts (`compile/`, not
   built by default; blocked on memory, see note 22).
-- **From:** runnable (#23), blocking-runnable (#29), http-safety's demo,
+- **From:** runnable (#23), blocking-runnable (#29), m4-blocking-live (#46),
+  no-idle-wait (#50), http-headers' and http-nobody's demo (#48),
   machine-code/compile (#24).
 
 ### 11. `review/11-docs`: README, design notes, START-HERE (15 min)
@@ -253,6 +258,8 @@ lemmas), `asyncM4ServerProg` (the HTTP translation reuses its code).
 - **blocking fix**: folded in (`echo_live_spec`, PR 8).
 - **no request bodies** (HttpSpecHeaders, user-approved): folded into PR 1
   (spec and bite) and PR 9 (the program and its proofs).
+- **`brun_two_outcomes`** (#49): folded into PR 8.
+- **no idle wait in the trusted C** (#50): folded into PR 10.
 - **close / fd reuse (close-v2)**: a new PR 12 (`review/12-close-v2`) on
   top. It holds EchoSpec2 (spec first), the v2 world and the handle layer,
   and touches nothing below it.

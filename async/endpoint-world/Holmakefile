@@ -1,0 +1,7 @@
+# The endpoint socket world (spec first, for review).
+# Built against the prebuilt shared base (async/design/shared-base-build.md).
+INCLUDES = ../model ../ffi-spike ../m3-assembly ../m4-server ../m4-common \
+           ../spec ../socket-v2
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

@@ -1,4 +1,4 @@
-# 27: Request bodies (Content-Length): spec and feasibility
+# 28: Request bodies (Content-Length): spec and feasibility
 
 Status: **step 1 (spec) is done and proved. Step 2 (this note) concludes
 it is feasible, with no blocking issue.** Branch `spike/http-bodies`,

@@ -1,0 +1,9 @@
+# M4 shared pieces (echo_safe and echo_live): the generic socket-world
+# history, the vocabulary bridge, and the dynamic-interest event loop.
+# Reuses the base basis heap, the model, the CF layers, the socket model,
+# M3's loop and the M4 server's model theories.
+INCLUDES = ../model ../cf-spike ../cf-actions ../cf-reactive ../ffi-spike \
+           ../m3-assembly ../m4-server
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

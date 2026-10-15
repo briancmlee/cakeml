@@ -32,17 +32,25 @@ Overload rp = “Req "POST" "/echo" "1.1" [("Content-Length", "19")] looks_like_
    HttpSpecHeaders is the bodiless case
    ------------------------------------------------------------------------ *)
 
-(* MAIN (compatibility): a GET request without Content-Length or
-   Transfer-Encoding headers and with an empty body is HttpSpecHeaders'
-   request: same validity, same bytes, same response *)
+(* HttpSpecHeaders' header lines are valid here *)
+Theorem valid_header_bheader:
+  valid_header h ⇒ valid_bheader h
+Proof
+  PairCases_on ‘h’ >> simp[valid_header_def, valid_bheader_def]
+QED
+
+(* MAIN (compatibility): a request of HttpSpecHeaders without
+   Content-Length or Transfer-Encoding headers is a bodiless GET request
+   here, with the same bytes and the same response *)
 Theorem bodiless_requests:
-  ¬EXISTS is_cl hs ∧ ¬EXISTS is_te hs ⇒
-  (valid_brequest (Req "GET" p ver hs "") ⇔ valid_hrequest (GetH p ver hs)) ∧
+  valid_hrequest (GetH p ver hs) ∧ ¬EXISTS is_cl hs ∧ ¬EXISTS is_te hs ⇒
+  valid_brequest (Req "GET" p ver hs "") ∧
   print_brequest (Req "GET" p ver hs "") = print_hrequest (GetH p ver hs) ∧
   bhandle files (Req "GET" p ver hs "") = handle files (hpath (GetH p ver hs))
 Proof
   rw[valid_brequest_def, valid_hrequest_def, valid_method_def, framed_def,
-     print_brequest_def, print_hrequest_def, bhandle_def, hpath_def] >>
+     print_brequest_def, print_hrequest_def, bhandle_def, hpath_def]
+  >- (fs[EVERY_MEM] >> metis_tac[valid_header_bheader]) >>
   ‘FILTER is_cl hs = []’ by (simp[FILTER_EQ_NIL] >> fs[EVERY_MEM]) >>
   simp[]
 QED
@@ -75,19 +83,19 @@ QED
 
 Theorem headers_unique[local]:
   ∀hs1 hs2 x y.
-    EVERY valid_header hs1 ∧ EVERY valid_header hs2 ∧
+    EVERY valid_bheader hs1 ∧ EVERY valid_bheader hs2 ∧
     FLAT (MAP print_header hs1) ++ "\r\n" ++ x =
     FLAT (MAP print_header hs2) ++ "\r\n" ++ y ⇒
     hs1 = hs2 ∧ x = y
 Proof
   Induct
   >- (Cases >> simp[] >> PairCases_on ‘h’ >>
-      simp[print_header_def, valid_header_def] >> Cases_on ‘h0’ >> simp[] >>
+      simp[print_header_def, valid_bheader_def] >> Cases_on ‘h0’ >> simp[] >>
       rpt strip_tac >> gvs[]) >>
   PairCases >> Cases >> simp[]
-  >- (simp[print_header_def, valid_header_def] >> Cases_on ‘h0’ >> simp[] >>
+  >- (simp[print_header_def, valid_bheader_def] >> Cases_on ‘h0’ >> simp[] >>
       rpt strip_tac >> gvs[]) >>
-  PairCases_on ‘h’ >> simp[print_header_def, valid_header_def] >>
+  PairCases_on ‘h’ >> simp[print_header_def, valid_bheader_def] >>
   rpt gen_tac >> strip_tac >>
   qpat_x_assum ‘_ = _’ mp_tac >>
   REWRITE_TAC[GSYM APPEND_ASSOC, APPEND] >> strip_tac >>

@@ -20,8 +20,11 @@
     POST /echo        200 with the request's body
     POST p (other)    404
 
-  Everything else is HttpSpecHeaders': the world, the projections, and
-  the shapes of safety, liveness and the statement.
+  Header lines have their own validity, valid_bheader (the character
+  rules only), so that the spec does not depend on later restrictions of
+  HttpSpecHeaders' valid_header.  Everything else is HttpSpecHeaders': the
+  printer for header lines, the world, the projections, and the shapes of
+  safety, liveness and the statement.
 *)
 Theory HttpSpecBodies
 Ancestors
@@ -36,6 +39,14 @@ Libs
 Datatype:
   brequest = Req string string string ((string # string) list) string
                               (* method, path, version, headers, body *)
+End
+
+(* Header lines: a non-empty name without colon, space, CR or LF; a value
+   without CR or LF (so a request is unambiguous) *)
+Definition valid_bheader_def:
+  valid_bheader (n, v) ⇔
+    n ≠ [] ∧ EVERY (λc. c ≠ #":" ∧ c ≠ #" " ∧ c ≠ #"\r" ∧ c ≠ #"\n") n ∧
+    EVERY (λc. c ≠ #"\r" ∧ c ≠ #"\n") v
 End
 
 Definition valid_method_def:
@@ -64,7 +75,7 @@ End
 Definition valid_brequest_def:
   valid_brequest (Req m p ver hs b) ⇔
     valid_method m ∧ valid_path p ∧ valid_version ver ∧
-    EVERY valid_header hs ∧ ¬EXISTS is_te hs ∧ framed hs b
+    EVERY valid_bheader hs ∧ ¬EXISTS is_te hs ∧ framed hs b
 End
 
 Definition print_brequest_def:

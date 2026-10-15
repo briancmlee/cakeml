@@ -46,3 +46,14 @@ Kept current at every commit.
 - `isPREFIX` against string literals is evaluated by simp into nested
   `case`s; wrapping the literals in constants (`get_sp`, `after_path`)
   keeps goals readable.
+
+## Final report (2026-10-15)
+
+- **PR:** https://github.com/briancmlee/cakeml/pull/20 (spike/http-model → spike/final-spec;
+  merges spike/async-echo-server).
+- Proved: the parser (parse_print, parse_complete, parse_prefix, parse_invalid,
+  parse_all_requests); server_with, server_with_handler, server_with_isolates;
+  http_handler/http_server (wf, settled); http_handler_serves,
+  http_server_safety, http_server_safety_requests; EVAL checks.
+- Not done (estimated in 18 §6): Level 2 quiet, the world-async closed-system result.
+- No cheats; Holmake green.

@@ -1,0 +1,5 @@
+# The version-2 socket world (close, fd reuse) and its CF layer.
+INCLUDES = ../ffi-spike
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

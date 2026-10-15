@@ -14,9 +14,13 @@ Write-up and decisions for review: `35-endpoint-world.md`.
     `never_polls_bite`;
   - drafted: fd discipline for version 1 (pending decision);
     `endpointOpen` (`rg_spec_term`, `sys_spec`, `buffer_closure`).
-- Next: `echo2_sym_equiv`. It needs Drains per tick in the constructed
-  world, and prefix determinism (async-spike is writing a restricted
-  same-answers lemma on top of `endpointSemantics`).
+- `echo2_sym_equiv_thm` is proved, both directions; the converse holds for
+  `nonsat` worlds. Theories: `endpointTrace`, `endpointEcho2`
+  (`dworld`, `dworld_inv`), `endpointV2Prefix`, `endpointEcho2Conv`
+  (`class_inv`, `echo_spec2_ticks`). `ffiAgreeUpto` is imported from
+  spike/quiet-echo at `async/quiet/ffi`.
+- Parked pending the user: the v1 equivalences (fd discipline), http/kv,
+  buffer closure (§7 questions).
 - `endpointV2Sim`'s relation `v2rel` (core + al_rel of the futures) is the
   template for the version-1 disciplined instance.
 

@@ -19,10 +19,14 @@ Kept current at every push. Worker state: ~/.cache/moonshot/STATE.md; log ~/.cac
 - M1: ChatSpec + bites: GREEN (Holmake), no cheats. PR #66.
 - M2: asyncWithTap (generic tap handler), asyncChatSW (copy of KV server_with_k, uses_accepted fixed), asyncChatModel, asyncChatSafe: GREEN. MAIN: chat_server_safe.
 - M3: CF specs GREEN (asyncChatSpec 20/20); trace bridge asyncChatTrace 38/38 (lsp); Main/Semantics/Headline building.
-- Next: M3 PR; M4 liveness via m4-server's server_v/wrap_ok (spike/server-v); M5 nc demo.
+- M3: PR #75 GREEN (chat_prog_safe). M5: PR #76 (demo + design/41 write-up).
+- M4 (spike/chat-live, pushed 09ea4e4a7): asyncChatLiveV (library instance), asyncServerVPushLive (generic push
+  liveness, for the library), asyncChatLiveAccept (clause 1: chat_live_accepts), asyncChatLiveDeliver/Cover/Glue/
+  CoverRun/DeliverRun (clause 3: chat_live_deliver). TODO: clause 2 (reads: reader progress through `both`, then
+  henv_t via m_view_henv), and the chat_prog_live headline (asyncChatSemantics-style, with sched_wf).
 
 ## Tool feedback
 - holslot queue: the M1 build waited ~15 min for a slot (7–8 waiters); hol-lsp can't check a theory until its ancestors are Holmade in the same worktree.
-- `simp` does not use assumptions (use `gvs`/`fs`, or `metis_tac`); SPLITP lemmas need `rich_listTheory.SPLITP` qualified in this context.
+- `simp` DOES use assumptions (asm_simp): in long proofs it rewrites with context equations — orient them towards abbreviations; SPLITP lemmas need `rich_listTheory.SPLITP` qualified in this context.
 - CF: nested constructor patterns in CakeML (`Kvr (Lines s)`) block xmatch's case split: flatten to one constructor per match. Polymorphic basis functions (List.length) leave existentials at a free type variable: translate a monomorphic wrapper.
 - `dimword(:64)` vs its numeral after simp is the main source of irule/qpat misses in bridge proofs; metis_tac[] with ~25 assumptions loops.

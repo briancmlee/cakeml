@@ -1,0 +1,6 @@
+# Option C (design/33 §2.1): the Level 2 CakeML library, completed.
+INCLUDES = ../../model/core ../../model/level2 ../../model/sched \
+           ../../cakeml/library ../../loop/blocking-l2
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

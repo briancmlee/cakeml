@@ -100,3 +100,18 @@ of the events in that window. The target is `echo_spec2 3w <program>`.
 
 Out of scope: HTTP's explicit close-after-response (a new Close action,
 later, via an embedding).
+
+## 5. Status of the proof (branch `spike/close-v2-sim`)
+
+**Proved, no cheats:** `echo2_prog_spec : echo_spec2 3w echo2_prog`
+(`close-v2-sim/asyncHLEchoSpec2`). The steps, all in `async/close-v2-sim/`:
+
+| theory | result |
+|---|---|
+| `asyncHLSimWorld`, `asyncHLSimTick` | the relation `hsim` between a v2 world with handle state and the renamed v1 world `v1of`; arrivals and ticks keep it; `v1of` of a fair v2 world is fair |
+| `asyncHLSimOps`, `asyncHLSimPoll` | each action and each poll of the handle layer answers as the v1 world does |
+| `asyncHLSimRun` | round by round the handle loop has the v1 loop's history (`hrun_sim`); so it never misuses the API (`hrun_ok_echo`, the hypothesis of `echo2_semantics_prog`) |
+| `asyncHLEof` | the v1 echo server never acts on a connection after reading its EOF (`echo_sock_eof_last`), so the handle layer's auto-close loses no write |
+| `asyncHLEpisodes` | renaming each fd of the v2 trace to its episode's handle (`rn_evs`) turns `ep_read`/`ep_written` into EchoSpec's per-fd bytes |
+| `asyncHLSimEvents`, `asyncHLSimTrace` | at every round boundary the renamed v2 trace carries the v1 trace's bytes per handle (`hrun_events`); every EOF read is followed by its close |
+| `asyncHLEchoSpec2` | safety, liveness and closing from the v1 results (`echo_rounds_written_read`, `echo_comp_live`), unchanged |

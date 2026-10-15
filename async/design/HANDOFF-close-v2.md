@@ -46,24 +46,22 @@ Kept current at every push. Write-up: `25-echospec2.md`.
     `ep_read_rn`/`ep_written_rn`, monotonicity, `ep_eof_closes`;
   - `asyncHLSimEvents` (`hdo_events`, `hacts_events`), `asyncHLSimTrace`
     (`hrun_events`, `hround_events_eof_then_close`);
-  - `asyncHLEchoSpec2Script.sml.wip` (not built): the final assembly
-    (`echo2_safe`, `echo2_live`, `echo2_closes`, `echo2_prog_spec`), draft
-    with failing proofs; rename to `...Script.sml` to work on it.
+  - `asyncHLEchoSpec2`: THE RESULT `echo2_prog_spec : echo_spec2 3w
+    echo2_prog`, from `echo2_safe`, `echo2_live`, `echo2_closes`.
 
 ## How to build
 
     timeout 900 arch -arm64 /bin/zsh -lc "cd async/spec && ~/HOL/bin/Holmake -j2"
     timeout 3000 arch -arm64 /bin/zsh -lc "cd async/socket-v2-cf && ~/HOL/bin/Holmake -j2"
     timeout 3000 arch -arm64 /bin/zsh -lc "cd async/close-v2-loop && ~/HOL/bin/Holmake -j2"
+    timeout 6000 arch -arm64 /bin/zsh -lc "cd async/close-v2-sim && ~/HOL/bin/Holmake -j1"
 
 ## Status
 
 - DONE: EchoSpec2 statement, bite and non-vacuity (no cheats).
 - DONE: the v2 world's CF layer (25 §4 step 1), no cheats.
 - DONE: the handle layer (25 §4 step 2): `run_h_spec`, `echo2_semantics_prog`.
-- IN PROGRESS: the simulation (25 §4 step 3). Everything up to
-  `hrun_events` is proved and builds; NEXT: fix the final assembly
-  (`asyncHLEchoSpec2Script.sml.wip`), then PR.
+- DONE: the simulation (25 §4 step 3) and `echo2_prog_spec`, no cheats.
 
 ## Assumptions made (spec decisions, flagged for review in 25 §2)
 

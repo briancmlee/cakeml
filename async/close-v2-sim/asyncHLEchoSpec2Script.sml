@@ -83,10 +83,10 @@ Proof
   conj_tac
   >- (qspecl_then [‘dimword (:64) − 1’, ‘n2w lfdn’, ‘FLAT (GENLIST (R2 lfdn s2) n)’, ‘j’]
         mp_tac (Q.GENL [‘N’, ‘lfd’, ‘evs’, ‘j’] ep_read_rn) >>
-      simp[hdl_inj])
+      simp[hdl_inj] >> impl_tac >- fs[] >> fs[])
   >> qspecl_then [‘dimword (:64) − 1’, ‘n2w lfdn’, ‘FLAT (GENLIST (R2 lfdn s2) n)’, ‘j’]
        mp_tac (Q.GENL [‘N’, ‘lfd’, ‘evs’, ‘j’] ep_written_rn) >>
-  simp[hdl_inj]
+  simp[hdl_inj] >> impl_tac >- fs[] >> fs[]
 QED
 
 (* ------------------------------------------------------------------------
@@ -114,7 +114,7 @@ Proof
         by (qpat_x_assum ‘evs ≼ _’ mp_tac >> rw[IS_PREFIX_APPEND] >>
             simp[accepted_fds_APPEND]) >>
       drule_all accepted_bound >> disch_then (qspec_then ‘SUC n’ assume_tac) >>
-      ‘j < dimword (:64) − 1’ by simp[] >>
+      ‘j < dimword (:64) − 1’ by fs[] >>
       irule IS_PREFIX_TRANS >>
       qexists_tac ‘ep_written j (FLAT (GENLIST (R2 lfdn s2) (SUC n)))’ >>
       simp[ep_written_mono] >>
@@ -157,8 +157,9 @@ Theorem sent_rn[local]:
                    (SND (rn_step lfd k as))) =
          FLAT (MAP (λa. case a of Data2 j bs => if hdl lfd j = c then bs else [] | _ => []) as)
 Proof
-  Induct >> simp[rn_step_def] >> rpt gen_tac >> rpt (pairarg_tac >> gvs[]) >>
-  Cases_on ‘h’ >> gvs[rn_arr_def]
+  Induct >> simp[rn_step_def] >> rpt gen_tac >> rpt (pairarg_tac >> fs[]) >>
+  qpat_x_assum ‘rn_step _ _ as = _’ (assume_tac o SYM o Q.AP_TERM ‘SND’) >>
+  fs[] >> Cases_on ‘h’ >> fs[rn_arr_def] >> rveq >> simp[]
 QED
 
 Theorem deliver2_clients_mono[local]:
@@ -172,10 +173,12 @@ Theorem step_data[local]:
 Proof
   ‘∀st t. LENGTH t.clients ≤ LENGTH (FOLDL deliver2 t st).clients’
     by (Induct >> simp[] >> metis_tac[deliver2_clients_mono, LESS_EQ_TRANS]) >>
-  Induct >> simp[step_ok2_def] >> rpt strip_tac >> gvs[arrival_ok2_def]
-  >- (first_x_assum (qspecl_then [‘h’, ‘deliver2 t (Data2 j bs)’] mp_tac) >>
-      metis_tac[deliver2_clients_mono, LESS_LESS_EQ_TRANS])
-  >> metis_tac[]
+  Induct >> simp[step_ok2_def] >> rpt strip_tac
+  >- (rveq >> fs[arrival_ok2_def] >>
+      qpat_assum ‘∀st t. LENGTH _ ≤ _’ (qspecl_then [‘st’, ‘deliver2 t (Data2 j bs)’] mp_tac) >>
+      qspecl_then [‘t’, ‘Data2 j bs’] mp_tac (Q.GENL [‘s’, ‘a’] deliver2_clients_mono) >>
+      rpt strip_tac >> fs[])
+  >> qpat_x_assum ‘∀t. step_ok2 t st ∧ _ ⇒ _’ irule >> conj_tac >> first_assum ACCEPT_TAC
 QED
 
 Theorem deliver2_future[local]:
@@ -210,7 +213,11 @@ Proof
       ‘hsim0 lfd (tick s1) (tick2 s, hs)’ by fs[hsim_def] >>
       drule_all hsim0_bound >> simp[])
   >> ‘(tick2 s).future = THE (LTL s.future)’ by simp[tick2_def, deliver2_future] >>
-  first_x_assum drule_all >> simp[]
+  qpat_x_assum ‘∀s1 s hs. _’ (qspecl_then [‘tick s1’, ‘tick2 s’, ‘hs’] mp_tac) >>
+  impl_tac >- (conj_tac >> first_assum ACCEPT_TAC) >>
+  disch_then (qspecl_then [‘j’, ‘bs’] mp_tac) >>
+  qpat_x_assum ‘(tick2 s).future = _’ (fn th => REWRITE_TAC[th]) >>
+  impl_tac >- first_assum ACCEPT_TAC >> simp[]
 QED
 
 Theorem sent2_rn[local]:
@@ -219,10 +226,13 @@ Theorem sent2_rn[local]:
   sent2_upto j n s2 = sent_upto (hdl (n2w lfdn) j) n (v1of (n2w lfdn) s2)
 Proof
   strip_tac >> drule_all hsim_init >> strip_tac >>
-  drule_all data_bound >> disch_then (qspec_then ‘n’ assume_tac) >>
+  mp_tac (Q.SPECL [‘n’, ‘v1of (n2w lfdn) s2’, ‘s2’, ‘hinit’]
+           (Q.INST [‘lfd’ |-> ‘n2w lfdn’] data_bound)) >>
+  impl_tac >- (conj_tac >> first_assum ACCEPT_TAC) >> strip_tac >>
   simp[sent2_upto_def, sent_upto_def, v1of_def, arrivals_rn, sent_rn] >>
   AP_TERM_TAC >> irule MAP_CONG >> simp[] >> Cases >> simp[] >>
-  rw[] >> gvs[] >> metis_tac[hdl_inj]
+  rw[] >> gvs[] >> res_tac >>
+  qspecl_then [‘n'’, ‘j’] mp_tac (Q.INST [‘lfd’ |-> ‘n2w lfdn’] hdl_inj) >> fs[]
 QED
 
 (* MAIN: everything client j sends is eventually echoed in episode j *)
@@ -233,16 +243,21 @@ Theorem echo2_live:
 Proof
   rw[echo_live2_def] >>
   Cases_on ‘sent2_upto j n s2 = []’
-  >- (qexists_tac ‘[]’ >> simp[LPREFIX_def, from_toList]) >>
+  >- (qexists_tac ‘[]’ >> simp[LPREFIX_def, from_toList] >> CASE_TAC) >>
   ‘j < dimword (:64) − 1’
-    by (drule_all hsim_init >> strip_tac >> drule_all data_bound >>
-        disch_then (qspec_then ‘n’ assume_tac) >>
-        gvs[sent2_upto_def, FLAT_EQ_NIL, EVERY_MEM] >>
-        Cases_on ‘e’ >> gvs[] >> metis_tac[]) >>
+    by (drule_all hsim_init >> strip_tac >>
+        mp_tac (Q.SPECL [‘n’, ‘v1of (n2w lfdn) s2’, ‘s2’, ‘hinit’]
+                 (Q.INST [‘lfd’ |-> ‘n2w lfdn’] data_bound)) >>
+        impl_tac >- (conj_tac >> first_assum ACCEPT_TAC) >> strip_tac >>
+        gvs[sent2_upto_def, FLAT_EQ_NIL, EVERY_MEM, MEM_MAP] >>
+        rename1 ‘MEM y (arrivals2_upto _ _)’ >> Cases_on ‘y’ >> gvs[] >>
+        Cases_on ‘n' = j’ >> gvs[] >> res_tac) >>
   drule_all sent2_rn >> disch_then (qspec_then ‘n’ SUBST1_TAC) >>
   qspecl_then [‘v1of (n2w lfdn) s2’, ‘lfdn’, ‘n’, ‘hdl (n2w lfdn) j’] mp_tac
     (Q.GENL [‘s0’, ‘lfdn’, ‘n’, ‘c’] echo_comp_live) >>
-  impl_tac >- (simp[v1of_def] >> irule v1of_sched_wf >> simp[]) >>
+  impl_tac
+  >- (‘sched_wf (v1of (n2w lfdn) s2)’ by (irule v1of_sched_wf >> fs[]) >>
+      fs[v1of_def]) >>
   strip_tac >> qexists_tac ‘FLAT (GENLIST (R2 lfdn s2) N)’ >>
   simp[rounds_LPREFIX] >>
   drule_all ep_rounds >> disch_then (qspec_then ‘N’ strip_assume_tac) >> simp[]

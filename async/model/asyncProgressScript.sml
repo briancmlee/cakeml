@@ -566,3 +566,491 @@ Proof
   >> qspecl_then [‘h3’, ‘fd’, ‘2’] mp_tac (Q.GENL [‘q’, ‘fd’, ‘i’] handler_fresh_reads)
   >> simp[]
 QED
+
+(* ------------------------------------------------------------------------
+   Counting actions through both
+   ------------------------------------------------------------------------ *)
+
+(* How many actions satisfy P *)
+Definition count_def:
+  count P acts = LENGTH (FILTER P acts)
+End
+
+Theorem count_FLAT_GENLIST_APPEND[local]:
+  ∀k. count P (FLAT (GENLIST (λn. f n ++ g n) k)) =
+      count P (FLAT (GENLIST f k)) + count P (FLAT (GENLIST g k))
+Proof
+  Induct >> gvs[count_def, GENLIST, SNOC_APPEND, FILTER_APPEND_DISTRIB]
+QED
+
+Theorem count_MAP_FST[local]:
+  count P (MAP FST l) = count (P o FST) l
+Proof
+  simp[count_def, rich_listTheory.FILTER_MAP]
+QED
+
+(* Each action of both is the left side's or the right side's *)
+Theorem count_both:
+  wf m1 ∧ wf m2 ⇒
+  count P (both m1 m2 h).actions =
+    count P (m1 (left_view m1 m2 h)).actions +
+    count P (m2 (right_view m1 m2 h)).actions
+Proof
+  strip_tac
+  >> ‘(both m1 m2 h).actions = MAP FST (trans (both m1 m2) h) ∧
+      (m1 (left_view m1 m2 h)).actions = MAP FST (trans m1 (left_view m1 m2 h)) ∧
+      (m2 (right_view m1 m2 h)).actions = MAP FST (trans m2 (right_view m1 m2 h))’
+       by simp[MAP_FST_trans, wf_both]
+  >> ASM_REWRITE_TAC[] >> simp[count_MAP_FST, trans_def]
+  >> ‘GENLIST (round_trans (both m1 m2) h) (SUC (LENGTH h)) =
+      GENLIST (λn. round_trans m1 (left_view m1 m2 h) n ++
+                   round_trans m2 (right_view m1 m2 h) n) (SUC (LENGTH h))’
+       by simp[GENLIST_FUN_EQ, round_trans_both]
+  >> ASM_REWRITE_TAC[count_FLAT_GENLIST_APPEND] >> CONV_TAC (DEPTH_CONV ETA_CONV)
+  >> simp[left_view_def, right_view_def, LENGTH_par_views]
+QED
+
+Theorem nreads_count:
+  nreads fd acts = count (λa. a = Read fd) acts
+Proof
+  simp[nreads_def, count_def]
+QED
+
+Theorem count_prefix:
+  as ≼ bs ∧ count P bs = 0 ⇒ count P as = 0
+Proof
+  rw[IS_PREFIX_APPEND] >> gvs[count_def, FILTER_APPEND_DISTRIB]
+QED
+
+(* A connection's handler only acts on its own fd, and never accepts *)
+Theorem handler_actions_own:
+  MEM a (handler fd h).actions ⇒ a = Read fd ∨ ∃d. a = Write fd d
+Proof
+  qspecl_then [‘fd’, ‘h’] mp_tac (Q.GEN ‘fd’ handler_echoes)
+  >> ‘MAP FST (trans (handler fd) h) = (handler fd h).actions’
+       by simp[MAP_FST_trans, wf_handler]
+  >> rw[EVERY_MEM]
+  >> qpat_x_assum ‘MEM a _’ mp_tac
+  >> qpat_x_assum ‘MAP FST _ = _’ (SUBST1_TAC o GSYM) >> rw[MEM_MAP]
+  >> first_x_assum drule >> PairCases_on ‘y’ >> simp[on_fd_def] >> metis_tac[]
+QED
+
+(* ------------------------------------------------------------------------
+   The server, step by step
+   ------------------------------------------------------------------------ *)
+
+(* What the server does with the response to its accept *)
+Definition after_accept_def:
+  after_accept lfd res =
+    case res of
+      Accepted fd => map (λp. ()) (both (handler fd) (server lfd))
+    | _ => server lfd
+End
+
+Theorem server_steps:
+  server lfd = bind (readable lfd) (λu. bind (emit (Accept lfd)) (after_accept lfd))
+Proof
+  simp[Once server_unfold]
+  >> AP_TERM_TAC >> ABS_TAC >> AP_TERM_TAC
+  >> simp[FUN_EQ_THM] >> Cases >> simp[after_accept_def]
+QED
+
+(* Until the listener is readable, the server has accepted nothing *)
+Theorem server_waiting:
+  first_readable lfd h1 ∧ m ≤ LENGTH h1 ⇒
+  accepted (trans (server lfd) (TAKE m h1)) = []
+Proof
+  rw[] >> ONCE_REWRITE_TAC[server_steps] >> Cases_on ‘m < LENGTH h1’
+  >- (qmatch_goalsub_abbrev_tac ‘trans (bind _ K0) _’
+      >> ‘trans (bind (readable lfd) K0) (TAKE m h1) = trans (readable lfd) (TAKE m h1)’
+           by (irule trans_bind_running >> gvs[first_readable_def, first_done_def]
+               >> rw[] >> ‘TAKE n (TAKE m h1) = TAKE n h1’
+                            by (rw[TAKE_TAKE_MIN] >> ‘MIN n m = n’ by simp[MIN_DEF]
+                                >> simp[])
+               >> simp[])
+      >> simp[readable_def])
+  >> ‘m = LENGTH h1’ by simp[] >> gvs[TAKE_LENGTH_ID]
+  >> qspecl_then [‘readable lfd’, ‘h1’, ‘()’,
+                  ‘λu. bind (emit (Accept lfd)) (after_accept lfd)’, ‘[]’] mp_tac
+       (Q.GENL [‘m’, ‘h1’, ‘x’, ‘f’, ‘h2’] trans_bind_continues)
+  >> impl_tac >- gvs[first_readable_def, readable_def, wf_wait, settled_wait]
+  >> simp[readable_def]
+  >> ‘trans (bind (emit (Accept lfd)) (after_accept lfd)) [] =
+      trans (emit (Accept lfd)) ([] : (event, response) snapshot list)’
+       by (irule trans_bind_running >> simp[emit_def])
+  >> simp[trans_emit]
+QED
+
+(* Once the listener is readable, the server accepts *)
+Theorem server_accepts:
+  first_readable lfd h1 ⇒
+  server lfd (h1 ++ q) = bind (emit (Accept lfd)) (after_accept lfd) q
+Proof
+  rw[first_readable_def] >> ONCE_REWRITE_TAC[server_steps]
+  >> drule_then (qspecl_then [‘λu. bind (emit (Accept lfd)) (after_accept lfd)’, ‘q’]
+                 mp_tac) bind_continues
+  >> simp[new_actions_def, log_of_def, readable_def, wait_def]
+  >> simp[outcome_component_equality]
+QED
+
+Theorem server_waiting_actions:
+  first_readable lfd h1 ∧ n < LENGTH h1 ⇒
+  (server lfd (TAKE n h1)).actions = []
+Proof
+  rw[] >> ONCE_REWRITE_TAC[server_steps]
+  >> ‘bind (readable lfd) (λu. bind (emit (Accept lfd)) (after_accept lfd)) (TAKE n h1) =
+      <|actions := (readable lfd (TAKE n h1)).actions; result := NONE|>’
+       by (irule bind_before_first_done >> gvs[first_readable_def] >> metis_tac[])
+  >> simp[readable_def, wait_def]
+QED
+
+Theorem server_new_accept:
+  first_readable lfd h1 ⇒
+  new_actions (log_of (server lfd)) h1 = [Accept lfd]
+Proof
+  rw[] >> drule first_readable_nonempty >> strip_tac
+  >> ‘(server lfd h1).actions = [Accept lfd]’
+       by (drule_then (qspec_then ‘[]’ mp_tac) server_accepts >> simp[bind_emit_NIL])
+  >> ‘(server lfd (FRONT h1)).actions = []’
+       by (‘FRONT h1 = TAKE (LENGTH h1 - 1) h1’ by simp[FRONT_BY_TAKE]
+           >> simp[] >> irule server_waiting_actions >> simp[]
+           >> Cases_on ‘h1’ >> gvs[])
+  >> simp[new_actions_def, log_of_def]
+QED
+
+(* The accept's response r arrives in s: the server continues with r *)
+Theorem server_after_accept:
+  first_readable lfd h1 ∧ oHD s.results = SOME r ⇒
+  (server lfd (h1 ++ [s] ++ q)).actions = Accept lfd :: (after_accept lfd r q).actions
+Proof
+  REWRITE_TAC[GSYM APPEND_ASSOC, APPEND] >>
+  rpt strip_tac >> drule_then (qspec_then ‘s :: q’ SUBST1_TAC) server_accepts
+  >> qspecl_then [‘s’, ‘r’, ‘Accept lfd’, ‘after_accept lfd’, ‘q’] mp_tac
+       (Q.GENL [‘s’, ‘r’, ‘a’, ‘f’, ‘q’] bind_emit_CONS)
+  >> simp[]
+QED
+
+Theorem server_trans_accept:
+  first_readable lfd h1 ∧ oHD s.results = SOME r ⇒
+  trans (server lfd) (h1 ++ [s] ++ q) =
+    (Accept lfd, SOME r) :: trans (after_accept lfd r) q
+Proof
+  REWRITE_TAC[GSYM APPEND_ASSOC, APPEND] >>
+  rpt strip_tac >> ONCE_REWRITE_TAC[server_steps]
+  >> qspecl_then [‘readable lfd’, ‘h1’, ‘()’,
+                  ‘λu. bind (emit (Accept lfd)) (after_accept lfd)’, ‘s :: q’] mp_tac
+       (Q.GENL [‘m’, ‘h1’, ‘x’, ‘f’, ‘h2’] trans_bind_continues)
+  >> impl_tac >- gvs[first_readable_def, readable_def, wf_wait, settled_wait]
+  >> simp[] >> disch_then kall_tac
+  >> qspecl_then [‘emit (Accept lfd)’, ‘[s]’, ‘r’, ‘after_accept lfd’, ‘q’] mp_tac
+       (Q.GENL [‘m’, ‘h1’, ‘x’, ‘f’, ‘h2’] trans_bind_continues)
+  >> simp[wf_emit, settled_emit, first_done_emit_SOME, trans_emit, readable_def]
+QED
+
+Theorem prompt_after_accept:
+  prompt (server lfd) (h1 ++ [s] ++ q) ∧ first_readable lfd h1 ∧
+  oHD s.results = SOME r ⇒
+  prompt (after_accept lfd r) q
+Proof
+  REWRITE_TAC[GSYM APPEND_ASSOC, APPEND] >>
+  rpt strip_tac
+  >> qpat_x_assum ‘prompt _ _’ (mp_tac o ONCE_REWRITE_RULE[server_steps])
+  >> strip_tac
+  >> qspecl_then [‘readable lfd’, ‘h1’, ‘()’,
+                  ‘λu. bind (emit (Accept lfd)) (after_accept lfd)’, ‘s :: q’] mp_tac
+       (Q.GENL [‘m’, ‘h1’, ‘x’, ‘f’, ‘q’] prompt_bind)
+  >> impl_tac >- gvs[first_readable_def, readable_def, wf_wait, settled_wait]
+  >> simp[] >> strip_tac
+  >> qspecl_then [‘emit (Accept lfd)’, ‘[s]’, ‘r’, ‘after_accept lfd’, ‘q’] mp_tac
+       (Q.GENL [‘m’, ‘h1’, ‘x’, ‘f’, ‘q’] prompt_bind)
+  >> simp[wf_emit, settled_emit, first_done_emit_SOME]
+QED
+
+Theorem prompt_accept_answered:
+  prompt (server lfd) (h1 ++ [s] ++ q) ∧ first_readable lfd h1 ⇒
+  ∃r. oHD s.results = SOME r
+Proof
+  REWRITE_TAC[GSYM APPEND_ASSOC, APPEND] >>
+  rw[prompt_def] >> first_x_assum (qspec_then ‘LENGTH h1’ mp_tac)
+  >> simp[TAKE_LENGTH_APPEND, responses_at_def, EL_APPEND2]
+  >> drule server_new_accept >> simp[]
+  >> Cases_on ‘s.results’ >> simp[]
+QED
+
+(* ------------------------------------------------------------------------
+   A new connection's handler, alongside the rest of the server
+   ------------------------------------------------------------------------ *)
+
+Theorem TAKE_after_cons[local]:
+  LENGTH h1 + 1 ≤ m ⇒
+  TAKE m (h1 ++ [s] ++ h3) = h1 ++ [s] ++ TAKE (m − LENGTH h1 − 1) h3
+Proof
+  REWRITE_TAC[GSYM APPEND_ASSOC, APPEND] >>
+  rw[TAKE_APPEND, TAKE_LENGTH_TOO_LONG]
+  >> Cases_on ‘m − LENGTH h1’ >> gvs[]
+QED
+
+(* Both sides see the ready sets of the whole history *)
+Theorem views_ready:
+  i < LENGTH q ⇒
+  (EL i (left_view (handler c) (server lfd) q)).ready = (EL i q).ready ∧
+  (EL i (right_view (handler c) (server lfd) q)).ready = (EL i q).ready
+Proof
+  strip_tac
+  >> qspecl_then [‘log_of (handler c)’, ‘log_of (server lfd)’, ‘q’] mp_tac
+       (Q.GENL [‘a1’, ‘a2’] par_views_world)
+  >> rw[left_view_def, right_view_def]
+  >> qpat_x_assum ‘MAP _ (FST _) = _’ (mp_tac o Q.AP_TERM ‘EL i’)
+  >> qpat_x_assum ‘MAP _ (SND _) = _’ (mp_tac o Q.AP_TERM ‘EL i’)
+  >> simp[EL_MAP, LENGTH_par_views]
+QED
+
+Theorem LENGTH_views[simp]:
+  LENGTH (left_view m1 m2 q) = LENGTH q ∧ LENGTH (right_view m1 m2 q) = LENGTH q
+Proof
+  simp[left_view_def, right_view_def, LENGTH_par_views]
+QED
+
+Theorem handler_no_accepts[local]:
+  FILTER is_accept (trans (handler c) h) = []
+Proof
+  qspecl_then [‘c’, ‘h’] mp_tac (Q.GEN ‘fd’ handler_echoes)
+  >> simp[FILTER_EQ_NIL, EVERY_MEM] >> rpt strip_tac
+  >> first_x_assum drule >> PairCases_on ‘x’ >> gvs[on_fd_def, is_accept_def]
+QED
+
+(* The connections accepted alongside a handler are the rest of the server's *)
+Theorem accepted_both:
+  accepted (trans (both (handler c) (server lfd)) q) =
+  accepted (trans (server lfd) (right_view (handler c) (server lfd) q))
+Proof
+  ONCE_REWRITE_TAC[GSYM accepted_FILTER] >> AP_TERM_TAC
+  >> irule trans_both_filter_right >> simp[handler_no_accepts]
+QED
+
+(* Another connection's actions alongside a handler are the rest of the
+   server's *)
+Theorem filter_both_other:
+  fd ≠ c ⇒
+  FILTER (on_fd fd) (trans (both (handler c) (server lfd)) q) =
+  FILTER (on_fd fd) (trans (server lfd) (right_view (handler c) (server lfd) q))
+Proof
+  strip_tac >> irule trans_both_filter_right
+  >> qspecl_then [‘c’, ‘left_view (handler c) (server lfd) q’] mp_tac
+       (Q.GEN ‘fd’ handler_echoes)
+  >> simp[FILTER_EQ_NIL, EVERY_MEM] >> rpt strip_tac
+  >> first_x_assum drule >> PairCases_on ‘x’ >> gvs[on_fd_def] >> metis_tac[]
+QED
+
+(* The connection's own actions alongside its handler are the handler's,
+   if the rest of the server never touches it *)
+Theorem filter_both_own:
+  FILTER (on_fd c) (trans (server lfd) (right_view (handler c) (server lfd) q)) = [] ⇒
+  FILTER (on_fd c) (trans (both (handler c) (server lfd)) q) =
+  trans (handler c) (left_view (handler c) (server lfd) q)
+Proof
+  strip_tac >> drule trans_both_filter_left >> simp[]
+  >> disch_then kall_tac >> simp[FILTER_EQ_ID]
+  >> qspecl_then [‘c’, ‘left_view (handler c) (server lfd) q’] mp_tac
+       (Q.GEN ‘fd’ handler_echoes)
+  >> simp[]
+QED
+
+Theorem nreads_both:
+  nreads fd (both (handler c) (server lfd) q).actions =
+  nreads fd (handler c (left_view (handler c) (server lfd) q)).actions +
+  nreads fd (server lfd (right_view (handler c) (server lfd) q)).actions
+Proof
+  simp[nreads_count] >> irule count_both >> simp[wf_handler, wf_server]
+QED
+
+Theorem nreads_handler_other:
+  fd ≠ c ⇒ nreads fd (handler c h).actions = 0
+Proof
+  rw[nreads_def, FILTER_EQ_NIL, EVERY_MEM] >> strip_tac
+  >> drule handler_actions_own >> simp[]
+QED
+
+(* If the server never touches c, none of its prefixes reads c *)
+Theorem nreads_server_untouched:
+  ¬EXISTS (on_fd c) (trans (server lfd) R) ⇒
+  nreads c (server lfd (TAKE j R)).actions = 0
+Proof
+  rw[nreads_count] >> irule count_prefix
+  >> qexists_tac ‘(server lfd R).actions’
+  >> reverse conj_tac
+  >- (irule wf_actions_grow >> simp[wf_server, IS_PREFIX_APPEND] >> metis_tac[TAKE_DROP])
+  >> ‘MAP FST (trans (server lfd) R) = (server lfd R).actions’
+       by simp[MAP_FST_trans, wf_server]
+  >> pop_assum (SUBST1_TAC o GSYM)
+  >> gvs[count_def, FILTER_EQ_NIL, EVERY_MEM, MEM_MAP, EXISTS_MEM]
+  >> rpt strip_tac >> first_x_assum drule >> PairCases_on ‘y’ >> gvs[on_fd_def]
+QED
+
+(* If the server has accepted something, it waited for the listener (h1),
+   accepted, and got the response r (in s) *)
+Theorem server_split:
+  prompt (server lfd) h ∧ accepted (trans (server lfd) h) ≠ [] ⇒
+  ∃h1 s h3 r. h = h1 ++ [s] ++ h3 ∧ first_readable lfd h1 ∧ oHD s.results = SOME r
+Proof
+  strip_tac
+  >> qspecl_then [‘readable lfd : (event, response) snapshot list ->
+                                  (action, unit option) outcome’, ‘h’]
+       strip_assume_tac history_split
+  >- (‘trans (server lfd) h = trans (readable lfd) h’
+        by (ONCE_REWRITE_TAC[server_steps] >> irule trans_bind_running >> simp[])
+      >> qpat_x_assum ‘trans _ _ = trans _ _’ mp_tac
+      >> simp[readable_def] >> strip_tac >> gvs[])
+  >> ‘x = ()’ by simp[oneTheory.one] >> gvs[]
+  >> ‘first_readable lfd h1’ by simp[first_readable_def]
+  >> Cases_on ‘h2’
+  >- (drule_then (qspec_then ‘LENGTH h1’ mp_tac) server_waiting >> gvs[])
+  >> qspecl_then [‘lfd’, ‘h1’, ‘h’, ‘t’] mp_tac
+       (Q.GENL [‘lfd’, ‘h1’, ‘s’, ‘q’] prompt_accept_answered)
+  >> REWRITE_TAC[GSYM APPEND_ASSOC, APPEND] >> simp[] >> strip_tac
+  >> qexistsl_tac [‘h1’, ‘h’, ‘t’, ‘r’] >> REWRITE_TAC[GSYM APPEND_ASSOC, APPEND]
+  >> simp[]
+QED
+
+(* MAIN: inside the server, each accepted connection fd is served by its own
+   handler, running on a view g of the server's history from the round a in
+   which fd was accepted: g has the same ready sets, the world answers the
+   handler promptly, the handler's transcript is the server's transcript
+   restricted to fd, and the server's reads of fd are the handler's. *)
+Theorem server_handler_view:
+  ∀h. fresh (trans (server lfd) h) ∧ prompt (server lfd) h ∧
+      MEM fd (accepted (trans (server lfd) h)) ⇒
+      ∃a g. LENGTH g + a = LENGTH h ∧
+            (∀i. i < LENGTH g ⇒ (EL i g).ready = (EL (a + i) h).ready) ∧
+            prompt (handler fd) g ∧
+            FILTER (on_fd fd) (trans (server lfd) h) = trans (handler fd) g ∧
+            (∀j. j ≤ LENGTH g ⇒
+                 nreads fd (server lfd (TAKE (a + j) h)).actions =
+                 nreads fd (handler fd (TAKE j g)).actions) ∧
+            (∀m. m ≤ LENGTH h ∧ MEM fd (accepted (trans (server lfd) (TAKE m h))) ⇒
+                 a ≤ m)
+Proof
+  gen_tac >> measureInduct_on ‘LENGTH h’ >> rpt strip_tac
+  (* the server waited (h1), accepted, and got the response r (in s) *)
+  >> ‘accepted (trans (server lfd) h) ≠ []’ by (strip_tac >> gvs[])
+  >> drule_all server_split >> strip_tac >> gvs[]
+  >> ‘∀m. LENGTH h1 + 1 ≤ m ⇒
+          trans (server lfd) (TAKE m (h1 ++ [s] ++ h3)) =
+            (Accept lfd, SOME r) ::
+            trans (after_accept lfd r) (TAKE (m − LENGTH h1 − 1) h3) ∧
+          (server lfd (TAKE m (h1 ++ [s] ++ h3))).actions =
+            Accept lfd :: (after_accept lfd r (TAKE (m − LENGTH h1 − 1) h3)).actions’
+       by (rpt strip_tac >> simp[TAKE_after_cons]
+           >> qspecl_then [‘lfd’, ‘h1’, ‘s’, ‘r’, ‘TAKE (m − (LENGTH h1 + 1)) h3’] mp_tac
+                (Q.GENL [‘lfd’, ‘h1’, ‘s’, ‘r’, ‘q’] server_trans_accept)
+           >> qspecl_then [‘lfd’, ‘h1’, ‘s’, ‘r’, ‘TAKE (m − (LENGTH h1 + 1)) h3’] mp_tac
+                (Q.GENL [‘lfd’, ‘h1’, ‘s’, ‘r’, ‘q’] server_after_accept)
+           >> simp[])
+  >> ‘trans (server lfd) (h1 ++ [s] ++ h3) =
+      (Accept lfd, SOME r) :: trans (after_accept lfd r) h3’
+       by (qspecl_then [‘lfd’, ‘h1’, ‘s’, ‘r’, ‘h3’] mp_tac
+             (Q.GENL [‘lfd’, ‘h1’, ‘s’, ‘r’, ‘q’] server_trans_accept) >> simp[])
+  >> ‘∀m. m ≤ LENGTH h1 ⇒ accepted (trans (server lfd) (TAKE m (h1 ++ [s] ++ h3))) = []’
+       by (rpt strip_tac >> ‘TAKE m (h1 ++ [s] ++ h3) = TAKE m h1’ by simp[TAKE_APPEND1]
+           >> simp[] >> irule server_waiting >> simp[])
+  >> drule_all prompt_after_accept >> strip_tac
+  >> Cases_on ‘∃c. r = Accepted c’
+  (* a new connection c: its handler runs on L, the rest of the server on R *)
+  >- (pop_assum strip_assume_tac >> rpt BasicProvers.VAR_EQ_TAC
+      >> qabbrev_tac ‘L = left_view (handler c) (server lfd) h3’
+      >> qabbrev_tac ‘R = right_view (handler c) (server lfd) h3’
+      >> ‘∀q. trans (after_accept lfd (Accepted c)) q =
+              trans (both (handler c) (server lfd)) q ∧
+              (after_accept lfd (Accepted c) q).actions =
+              (both (handler c) (server lfd) q).actions’
+           by simp[after_accept_def, map_def]
+      >> ‘accepted (trans (server lfd) (h1 ++ [s] ++ h3)) =
+          c :: accepted (trans (server lfd) R)’
+           by simp[accepted_both, Abbr ‘R’]
+      >> ‘¬MEM c (accepted (trans (server lfd) R)) ∧ fresh (trans (server lfd) R)’
+           by gvs[fresh_def]
+      >> ‘prompt (handler c) L ∧ prompt (server lfd) R’
+           by (gvs[after_accept_def] >> drule prompt_both >> simp[Abbr ‘L’, Abbr ‘R’])
+      (* the rest of the server never touches c *)
+      >> ‘¬EXISTS (on_fd c) (trans (server lfd) R)’
+           by (strip_tac >> drule_all server_echoes >> metis_tac[])
+      >> Cases_on ‘fd = c’
+      (* fd is this connection: it is served by its handler, on L *)
+      >- (rpt BasicProvers.VAR_EQ_TAC >> qexistsl_tac [‘LENGTH h1 + 1’, ‘L’]
+          >> rpt conj_tac
+          >- simp[Abbr ‘L’]
+          >- (rpt strip_tac >> gvs[Abbr ‘L’, views_ready]
+              >> simp[EL_APPEND2, EL_CONS, PRE_SUB1, views_ready])
+          >- simp[]
+          >- (simp[] >> simp[Abbr ‘L’] >> irule filter_both_own
+              >> gvs[FILTER_EQ_NIL, EVERY_MEM, EXISTS_MEM, Abbr ‘R’])
+          >- (rpt strip_tac
+              >> qpat_x_assum ‘∀m. LENGTH h1 + 1 ≤ m ⇒ _’
+                   (qspec_then ‘LENGTH h1 + 1 + j’ mp_tac)
+              >> simp[nreads_both, views_TAKE]
+              >> strip_tac >> irule nreads_server_untouched >> fs[])
+          >> rpt strip_tac >> spose_not_then assume_tac
+          >> qpat_x_assum ‘∀m. m ≤ LENGTH h1 ⇒ _’ (qspec_then ‘m’ mp_tac)
+          >> impl_tac >- simp[] >> strip_tac
+          >> qpat_x_assum ‘MEM c (accepted (trans _ (TAKE _ _)))’ mp_tac
+          >> ASM_REWRITE_TAC[MEM])
+      (* fd is another connection: it is served inside the rest of the server *)
+      >> ‘LENGTH R = LENGTH h3 ∧ ∀i. i < LENGTH h3 ⇒ (EL i R).ready = (EL i h3).ready’
+           by simp[Abbr ‘R’, views_ready]
+      >> qpat_x_assum ‘∀y. LENGTH y < _ ⇒ _’ (qspec_then ‘R’ mp_tac)
+      >> impl_tac >- simp[] >> impl_tac >- gvs[] >> strip_tac
+      >> rename1 ‘a1 + LENGTH g1 = LENGTH R’
+      >> qexistsl_tac [‘LENGTH h1 + 1 + a1’, ‘g1’] >> rpt conj_tac
+      >- simp[]
+      >- (rpt strip_tac >> ‘a1 + i < LENGTH h3’ by simp[]
+          >> simp[EL_APPEND2, EL_CONS, PRE_SUB1])
+      >- simp[]
+      >- (‘FILTER (on_fd fd) (trans (both (handler c) (server lfd)) h3) =
+           FILTER (on_fd fd) (trans (server lfd) R)’
+            by simp[filter_both_other, Abbr ‘R’]
+          >> simp[])
+      >- (rpt strip_tac
+          >> qpat_x_assum ‘∀m. LENGTH h1 + 1 ≤ m ⇒ _’
+               (qspec_then ‘LENGTH h1 + 1 + a1 + j’ mp_tac)
+          >> simp[nreads_both, views_TAKE, nreads_handler_other])
+      >> rpt strip_tac >> Cases_on ‘m ≤ LENGTH h1’
+      >- (qpat_x_assum ‘∀m. m ≤ LENGTH h1 ⇒ _’ (qspec_then ‘m’ mp_tac)
+          >> impl_tac >- simp[] >> strip_tac
+          >> qpat_x_assum ‘MEM fd (accepted (trans _ (TAKE _ _)))’ mp_tac
+          >> ASM_REWRITE_TAC[MEM])
+      >> qpat_x_assum ‘∀m. LENGTH h1 + 1 ≤ m ⇒ _’ (qspec_then ‘m’ mp_tac)
+      >> impl_tac >- simp[] >> strip_tac
+      >> ‘MEM fd (accepted (trans (server lfd) (TAKE (m − LENGTH h1 − 1) R)))’
+           by (qpat_x_assum ‘MEM fd (accepted (trans _ (TAKE m _)))’ mp_tac
+               >> simp[accepted_both, views_TAKE, Abbr ‘R’])
+      >> qpat_x_assum ‘∀m. m ≤ LENGTH R ∧ _ ⇒ _’ (qspec_then ‘m − LENGTH h1 − 1’ mp_tac)
+      >> simp[])
+  (* no new connection: the server starts again *)
+  >> ‘after_accept lfd r = server lfd’ by (Cases_on ‘r’ >> gvs[after_accept_def])
+  >> ‘∀tr. accepted ((Accept lfd, SOME r) :: tr) = accepted tr’ by (Cases_on ‘r’ >> gvs[])
+  >> qpat_x_assum ‘∀y. LENGTH y < _ ⇒ _’ (qspec_then ‘h3’ mp_tac)
+  >> impl_tac >- simp[]
+  >> impl_tac
+  >- (qpat_x_assum ‘fresh _’ mp_tac >> qpat_x_assum ‘MEM fd _’ mp_tac
+      >> qpat_x_assum ‘prompt (after_accept _ _) _’ mp_tac >> simp[fresh_def])
+  >> strip_tac
+  >> rename1 ‘a1 + LENGTH g1 = LENGTH h3’
+  >> qexistsl_tac [‘LENGTH h1 + 1 + a1’, ‘g1’] >> rpt conj_tac
+  >- simp[]
+  >- (rpt strip_tac >> simp[EL_APPEND2, EL_CONS, PRE_SUB1])
+  >- simp[]
+  >- simp[]
+  >- (rpt strip_tac
+      >> qpat_x_assum ‘∀m. LENGTH h1 + 1 ≤ m ⇒ _’
+           (qspec_then ‘LENGTH h1 + 1 + a1 + j’ mp_tac)
+      >> simp[])
+  >> rpt strip_tac >> Cases_on ‘m ≤ LENGTH h1’
+  >- (qpat_x_assum ‘∀m. m ≤ LENGTH h1 ⇒ _’ (qspec_then ‘m’ mp_tac)
+      >> impl_tac >- simp[] >> strip_tac
+      >> qpat_x_assum ‘MEM fd (accepted (trans _ (TAKE _ _)))’ mp_tac
+      >> ASM_REWRITE_TAC[MEM])
+  >> qpat_x_assum ‘∀m. LENGTH h1 + 1 ≤ m ⇒ _’ (qspec_then ‘m’ mp_tac)
+  >> impl_tac >- simp[] >> strip_tac
+  >> qpat_x_assum ‘∀m. m ≤ LENGTH h3 ∧ _ ⇒ _’ (qspec_then ‘m − LENGTH h1 − 1’ mp_tac)
+  >> gvs[]
+QED

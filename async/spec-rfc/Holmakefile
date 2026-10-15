@@ -1,0 +1,7 @@
+# An independent RFC 9112 request-framing reference (rfc9112Framing, trusted
+# surface: every clause cites the RFC) and its agreement with HttpSpecBodies
+# (rfcAgree, rfcAgreeValid).  From spec review 2; see README.md.
+INCLUDES = ../ffi-spike ../spec
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

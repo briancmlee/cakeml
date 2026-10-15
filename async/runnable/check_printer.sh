@@ -12,7 +12,7 @@ sed 's/^open preamble mlstringSyntax fromSexpTheory/open preamble mlstringSyntax
 cat > "$TMP/check.sml" <<SML
 load "asyncEchoMainTheory";
 use "$TMP/astToSexprLib.sml";
-val (ds, ty) = listSyntax.dest_list (rhs (concl asyncEchoMainTheory.echo_prog_def));
+val (ds, ty) = listSyntax.dest_list (rhs (concl asyncEchoMainTheory.echo_prog_eq));
 val n = length (fst (listSyntax.dest_list (rhs (concl basisProgTheory.basis_def))));
 val _ = astToSexprLib.write_ast_to_file "$TMP/current.sexp"
           (listSyntax.mk_list (List.drop (ds, n), ty));

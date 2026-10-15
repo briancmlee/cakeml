@@ -1,0 +1,11 @@
+# The echo server's whole-program semantics (divergence, over the socket
+# FFI part), the input to CakeML's compiler correctness theorem.
+# compile/ (not built by default) holds the in-logic compilation and the
+# machine-code theorem, which need the compiler backend proofs and
+# cv_translator (see design/22-machine-code.md).
+INCLUDES = ../model ../cf-spike ../cf-actions ../cf-reactive ../ffi-spike \
+           ../m3-assembly ../m4-server ../m4-common ../spec ../m4-safety \
+           ../runnable
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

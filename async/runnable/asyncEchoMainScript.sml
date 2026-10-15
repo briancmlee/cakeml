@@ -22,7 +22,7 @@
 *)
 Theory asyncEchoMain
 Ancestors
-  asyncM4SockServer basisProg
+  asyncM4SockServer basisProg ffiSpikeDivMain
 Libs
   preamble basis ml_progLib basisFunctionsLib sexpV3479Lib
 
@@ -32,21 +32,28 @@ Quote add_cakeml:
   fun main u = run_i ([3], server 3);
 End
 
-val echo_st = get_ml_prog_state ();
+(* The program's declarations (basis to main), as the Decls theorem of
+   the translation state has them *)
+val echo_decs_tm =
+  get_ml_prog_state () |> ml_progLib.get_thm
+  |> REWRITE_RULE [ml_progTheory.ML_code_def, ml_progTheory.ML_code_env_def]
+  |> concl |> strip_comb |> snd |> (fn args => List.nth (args, 2));
 
-(* main () *)
-val main_call =
-  “Dlet NoLocs (Pcon NONE []) (App Opapp [Var (Short «main»); Con NONE []])”;
-
-(* The whole program, and its declarations after the basis *)
-val echo_prog =
-  echo_st |> remove_snocs |> ml_progLib.get_prog
-  |> (fn p => listSyntax.mk_append (p, listSyntax.mk_list ([main_call], type_of main_call)))
-  |> (rhs o concl o REWRITE_CONV [listTheory.APPEND]);
-
-Definition echo_prog_def:
-  echo_prog = ^echo_prog
+Definition echo_decs_def:
+  echo_decs = ^echo_decs_tm
 End
+
+(* The whole program: the declarations, then main () *)
+Definition echo_prog_def:
+  echo_prog = SNOC (main_call «main») echo_decs
+End
+
+(* The whole program as an explicit list of declarations *)
+Theorem echo_prog_eq =
+  REWRITE_CONV [echo_prog_def, echo_decs_def, main_call_def,
+                listTheory.SNOC_APPEND, listTheory.APPEND] “echo_prog”;
+
+val echo_prog = echo_prog_eq |> concl |> rhs;
 
 val basis_decls =
   basisProgTheory.basis_def |> concl |> rhs |> listSyntax.dest_list |> fst;

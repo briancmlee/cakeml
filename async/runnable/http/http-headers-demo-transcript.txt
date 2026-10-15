@@ -28,10 +28,17 @@ Content-Length: 42
 
 Hello from a verified CakeML HTTP server!
 
+$ curl -s -i -A <a 165-character User-Agent> -H <two long headers> http://127.0.0.1:7840/about    # timed
+HTTP/1.0 200 OK
+Content-Length: 57
+
+HttpSpec subset: GET <path> HTTP/1.0, then a blank line.
+  (answered in 0.000648 s)
+
 $ three concurrent curls (/, /about, /index.html), in order of completion
   / -> HTTP/1.0 200 OK
-  /index.html -> HTTP/1.0 200 OK
   /about -> HTTP/1.0 200 OK
+  /index.html -> HTTP/1.0 200 OK
 
 $ printf 'GET /about HTTP/1.1\r\nHost: x\r\n\r\nGET / HTTP/1.0\r\n\r\n' | nc -w 1 127.0.0.1 7840    # pipelined, with and without headers
 HTTP/1.0 200 OK

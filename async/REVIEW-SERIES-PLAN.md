@@ -165,27 +165,34 @@ statements only.
   specs.
 - **From:** l2-blocking (#21), m4-blocking (#27), ffiSpikeSocketSelect.
 
-### 9. `review/09-http`: HTTP (≈3,900 lines; 30 min)
+### 9. `review/09-http`: HTTP, `http_spec_h 3w demo_files http_prog_h` (≈6,350 lines; 40 min)
 - **Claims:**
   - a header-tolerant parser, proved against the spec's own printer;
   - a generic accept/fork skeleton, verified once;
-  - the whole HTTP program meets the safety half of `http_spec_h`.
+  - the whole HTTP program meets HttpSpecHeaders in full: it runs
+    forever, is safe, and answers every complete request.
 - **Own:**
-  1. the parser against the printer (`asyncHttpParseH`);
-  2. `server_with_isolates`;
-  3. the model server's safety (`asyncHttpServerH`);
-  4. `sserver_with_spec`;
-  5. `http_prog_h_safe` (headline, in `http_spec_h`'s form).
+  1. `http_prog_h_spec : http_spec_h 3w demo_files http_prog_h` (headline,
+     `headline/asyncHttpSpecH`); `http_prog_h_safe` is its safety half;
+  2. the parser against the printer (`asyncHttpParseH`);
+  3. `server_with_isolates` and `sserver_with_spec` (the skeleton, once);
+  4. `hmachine_live` (the handler as a machine answers every complete
+     request);
+  5. `http_live_h_rounds` (`http_live_h` of the loop's trace).
 - **Skip:**
   - `gen_*` (the generic no-misuse argument), the depth specs, and the
     translation plumbing;
+  - the generic socket-level accept progress (`asyncSWSock`, the
+    `server_with` analogue of the echo program's `conn_accepted`) and the
+    drain lemmas;
   - the strict-subset files (`asyncHttpParse`, `asyncHttpServer`,
     `asyncHttpSafe`, `asyncHttpSock*`, `asyncHttpMain`,
     `asyncHttpSemantics`, `headline/asyncHeadline`). The header-tolerant
     proofs build on them, but they are not for review.
 - **From:** http-model (#20), http-impl/asyncHttpImplProg (#22),
-  http-safety (#26), http-headers, m4-server/asyncM4ServerProg (code
-  reused by the translation).
+  http-safety (#26), http-headers, http-liveness (http-liveness-h and
+  asyncSWProgress), m4-server/asyncM4ServerProg (code reused by the
+  translation).
 
 ### 10. `review/10-runnable`: it runs (no HOL to review; 15 min)
 - **Claims:** both servers compile with the release compiler and run, and
@@ -205,7 +212,7 @@ statements only.
 - HANDOFF notes, worker conventions and heap measurements stay on the
   spike branches.
 
-**Total:** ≈27,600 lines of HOL; about 6 hours of reading at the listed
+**Total:** ≈30,000 lines of HOL; about 6.5 hours of reading at the listed
 depth.
 
 ## Dropped (superseded scaffolding; still on the spike branches)
@@ -226,9 +233,8 @@ lemmas), `asyncM4ServerProg` (the HTTP translation reuses its code).
 
 ## In-flight work: where each lands
 
-- **HTTP liveness** (m4-server is proving full header-tolerant safety ∧
-  liveness): added to PR 9's layer. PR 9's headline then becomes
-  `http_spec_h 3w … http_prog_h`.
+- **HTTP liveness**: folded in. PR 9's headline is
+  `http_prog_h_spec : http_spec_h 3w demo_files http_prog_h`.
 - **header-tolerant HttpSpec**: adopted (your decision). It is PR 1's HTTP
   spec. The strict HttpSpec's statement and results are archived; its
   file stays as shared vocabulary.

@@ -1,4 +1,4 @@
-# 24: A header-tolerant HttpSpec (DRAFT, for your decision)
+# 24: A header-tolerant HttpSpec (DRAFT, for your decision): fully proved
 
 `spec/HttpSpecScript.sml` is unchanged. This note goes with two new files.
 
@@ -28,7 +28,64 @@ cheats:
 | `broken_never_answers_h` | never answering violates liveness |
 | `ideal_h_trace_safe_and_live` | non-vacuity: a fair world with one client sending a request with a header exists, and the ideal trace is safe and live |
 
-## What meeting it would take (estimate; not done)
+## Status: both HttpSpec options are now fully proved (branch `spike/http-headers`)
+
+The proofs meet the variant: the whole header-tolerant HTTP program
+diverges, with a trace satisfying `http_safe_h`. There are no cheats, and
+`Holmake -j1` in `async/http-headers/` is green. The original HttpSpec
+program and its theorems are **untouched**. This is a separate program
+and a separate set of theories, so you can keep either option, or both.
+
+```
+(* MAIN *)
+http_semantics_prog_headers:
+  start_world s0 ⇒
+  semantics_prog (init_state (socket_only_ffi s0)) init_env http_prog_h
+    (Diverge (http_trace_h s0)) ∧
+  http_safe_h demo_files (http_trace_h s0)
+
+(* MAIN, in HttpSpecHeaders' own world *)
+http_prog_h_safe:
+  ∀sk. server_world 3w sk ⇒
+       ∃io. semantics_prog (init_state (socket_ffi sk)) init_env http_prog_h
+              (Diverge io) ∧
+            http_safe_h demo_files io
+```
+
+| theory (`async/http-headers/`) | contents |
+|---|---|
+| `asyncHttpParseH` | **new**: the header-tolerant parser `parse_hrequest` (request line with HTTP/1.0 or 1.1, then `parse_headers` up to the blank line), proved against `print_hrequest`: `parse_hprint`, `parse_hcomplete`, `parse_hextend`, `parse_all_hrequests`, `parse_all_h_mono`; helpers `parse_headers_print` / `parse_headers_done`; EVAL check on curl's real request |
+| `asyncHttpServerH` | `asyncHttpServer` with `parse_hrequest` and `handle files (hpath req)`: `http_handler_serves_h`, `http_server_safety_h`, `http_server_safety_hrequests` |
+| `asyncHttpSafeH` | `http_server_h_uses_accepted`, `http_comp_safe_h` (the trace bridge, with `hrequests`/`hresponses`/`no_full_hrequest`) |
+| `asyncHttpSockModelH` | `shttp_handler_h_unfold` |
+| `asyncHttpSockProgH` | the parser translated into CakeML; `http_handler_h`, `http_server_h` (reusing `sserver_with`) |
+| `asyncHttpSockSpecH` | `shttp_handler_h_spec`, `shttp_server_h_spec` (reusing `sserver_with_spec`) |
+| `asyncHttpMainH`, `asyncHttpSemanticsH` | `main`, `http_prog_h`, the export, `main_spec`, `http_semantics_headers`, `http_semantics_prog_headers` |
+| `asyncHeadlineH` | `http_prog_h_safe` |
+
+**How the work divided:**
+- **New:** only the parser and its proofs, `asyncHttpParseH` (≈470
+  lines).
+- **Copied:** everything else is the http-safety pipeline with `_h`
+  names. The generic pieces are reused unchanged: the server skeleton and
+  its spec, the no-misuse argument (`asyncRunOkGen`), the event loop, and
+  the trusted socket FFI.
+
+**The two options are alternatives, not refinements.**
+- The header-tolerant server answers e.g. `GET / HTTP/1.1\r\n\r\n`.
+- Strict HttpSpec counts that as "rest", so it requires that request
+  *not* to be answered.
+- So neither server satisfies the other's spec, and each satisfies its
+  own.
+
+**Runnable:** `make demo` in `async/http-headers` writes
+`http-headers-demo-transcript.txt`. It shows plain `curl` (HTTP/1.1, with
+its default headers, plus a custom header and a custom User-Agent),
+HTTP/1.0 with headers, concurrent clients, and pipelined requests with
+and without headers. A malformed header line is rejected.
+
+## The original estimate (kept for reference)
+
 
 The structure of the proofs is unchanged. Only the request grammar
 changes.

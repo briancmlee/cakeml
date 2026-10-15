@@ -1,0 +1,8 @@
+# The HTTP server against the header-tolerant spec (spec/HttpSpecHeaders):
+# parser, model, CakeML, trace bridge, whole program (design/24-http-headers.md).
+INCLUDES = ../model ../cf-spike ../cf-actions ../cf-reactive ../ffi-spike \
+           ../m3-assembly ../m4-server ../m4-common ../spec ../m4-safety \
+           ../runnable ../machine-code ../http-model ../http-impl ../http-safety ../headline
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

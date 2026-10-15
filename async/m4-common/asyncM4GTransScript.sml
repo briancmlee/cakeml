@@ -62,6 +62,29 @@ Proof
   imp_res_tac sock_acts_events >> simp[]
 QED
 
+(* No misuse in the first n rounds *)
+Definition gok_upto_def:
+  gok_upto ifds m s0 n ⇔
+    ∀i. i < n ⇒ sock_acts (gstate ifds m s0 i) (gacts ifds m s0 i) ≠ NONE
+End
+
+Theorem grun_ok_gok_upto:
+  grun_ok ifds m s0 ⇒ gok_upto ifds m s0 n
+Proof
+  simp[grun_ok_def, gok_upto_def]
+QED
+
+Theorem gok_upto_sock_acts:
+  gok_upto ifds m s0 n ∧ i < n ⇒
+  ∃evs s'. sock_acts (gstate ifds m s0 i) (gacts ifds m s0 i) =
+           SOME (gres ifds m s0 i, evs, s')
+Proof
+  rw[gok_upto_def, gres_def, sock_acts_tot_def] >>
+  first_x_assum (qspec_then ‘i’ mp_tac) >> simp[] >>
+  Cases_on ‘sock_acts (gstate ifds m s0 i) (gacts ifds m s0 i)’ >> simp[] >>
+  PairCases_on ‘x’ >> simp[]
+QED
+
 (* ------------------------------------------------------------------------
    1 = 2: the model's transcript
    ------------------------------------------------------------------------ *)
@@ -95,9 +118,10 @@ QED
 
 (* MAIN: the model's transcript on the history the socket world generates
    is the performed pairs of the first n rounds (with their responses),
-   followed by round n's actions (whose responses have not arrived yet) *)
-Theorem trans_ghist:
-  grun_ok ifds m s0 ⇒
+   followed by round n's actions (whose responses have not arrived yet).
+   Needs only that the first n rounds had no misuse. *)
+Theorem trans_ghist_upto:
+  gok_upto ifds m s0 n ⇒
   trans m (ghist ifds m s0 n) =
     MAP (λ(a, r). (a, SOME r)) (gperf ifds m s0 n) ++
     MAP (λa. (a, NONE)) (gacts ifds m s0 n)
@@ -109,11 +133,22 @@ Proof
         AP_TERM_TAC >> simp[GENLIST_FUN_EQ] >> rpt strip_tac >>
         simp[round_trans_def, ghist_TAKE, responses_at_def, results_EL_ghist,
              GSYM gacts_def] >>
-        irule zipr_ZIP >> simp[LENGTH_gres]) >>
+        irule zipr_ZIP >>
+        drule_all gok_upto_sock_acts >> strip_tac >>
+        imp_res_tac sock_acts_events >> simp[]) >>
   ‘round_trans m (ghist ifds m s0 n) n = MAP (λa. (a, NONE)) (gacts ifds m s0 n)’
     by simp[round_trans_def, responses_at_def, GSYM gacts_def, zipr_NIL,
             TAKE_LENGTH_ID_rwt] >>
   simp[trans_def, GENLIST, SNOC_APPEND]
+QED
+
+Theorem trans_ghist:
+  grun_ok ifds m s0 ⇒
+  trans m (ghist ifds m s0 n) =
+    MAP (λ(a, r). (a, SOME r)) (gperf ifds m s0 n) ++
+    MAP (λa. (a, NONE)) (gacts ifds m s0 n)
+Proof
+  metis_tac[grun_ok_gok_upto, trans_ghist_upto]
 QED
 
 (* ------------------------------------------------------------------------

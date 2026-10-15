@@ -30,6 +30,17 @@
   - PR #3 (https://github.com/briancmlee/cakeml/pull/3) is open with base
     `spike/async-semantics`. Per the coordinator: stop here and wait; no
     new milestones.
+- **M2 branch `spike/async-m2`** (stacked on `spike/async-level2`; its PR
+  has base `spike/async-level2`): `asyncSchedScript.sml` (the scheduler
+  step function; `run_tasks`, `run_views_world`, `sched_log_all`,
+  `all_result`) and `asyncSched2Script.sml` (`blocked_sound`,
+  `no_busy_waiting`, `ready_task_polled`). Design note
+  `design/06-scheduler.md`. Recorded assumption: a fixed pool, no dynamic
+  spawn (06-scheduler.md §4).
+  - `design/REVIEW-GUIDE.md` (on `spike/async-level2`, PR #3): a proposed
+    headline list and open decisions; MAIN markings unchanged pending the
+    user.
+  - Next if time remains: the idle loop at Level 2 (design note §12).
 - **Conventions (from the coordinator):**
   - Never kill processes you did not start. No `pkill`/`killall` or any
     pattern-based kill: other workers' Holmake and `hol lsp` processes share

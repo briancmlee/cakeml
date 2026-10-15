@@ -85,3 +85,12 @@ Final list: the end of `07-socket-model.md` (11 items). Summary:
   "checking for 3m (finished proofs here took ≤1s)" hint for a looping
   metis, were the two most useful features.
 - Holmake: ~5 s fixed overhead per run; full socket build ~30–60 s.
+
+## Report (final)
+- PR: https://github.com/briancmlee/cakeml/pull/11 (base `spike/ffi-integration`).
+- MAIN theorems: `Socket_{poll,accept,read,write}_spec`, `ticks_ready`,
+  `sched_wf_preserved`, `hello_world_sched_wf`,
+  `socket_whole_prog_spec_semantics`, `socket_whole_prog_div_spec_semantics`,
+  `call_main_thm_div`, `echo_example_semantics`, `serve_semantics`.
+- Gap: no instance of the composed world's diverging theorem (cfDiv needs
+  a single-part world); see 07-socket-model.md §6.

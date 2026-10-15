@@ -46,6 +46,18 @@ val r = translate crlf_def;
 val r = translate colon_sp_def;
 val r = translate sp_http10_def;
 val r = translate sp_http11_def;
+val r = translate stringTheory.isUpper_def;
+val r = translate stringTheory.toLower_def;
+
+(* toLower's CHR (ORD c + 32) is applied only to upper-case letters *)
+Triviality tolower_side_proof:
+  tolower_side c ⇔ T
+Proof
+  simp[fetch "-" "tolower_side_def", stringTheory.isUpper_def]
+QED
+
+val _ = tolower_side_proof |> update_precondition;
+val r = translate body_header_def;
 val r = translate_no_ind (parse_headers_def |> REWRITE_RULE [GSYM mllistTheory.drop_def]);
 
 (* The translator's induction obligation for parse_headers *)

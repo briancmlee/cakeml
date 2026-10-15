@@ -70,6 +70,121 @@ QED
 
 val _ = update_precondition tolower_side_thm;
 
+(* ------------------------------------------------------------------------
+   Linear-time splitting for the translation.  split_at and split_path
+   (asyncHttpParseH, asyncHttpParse) compute their recursive call twice
+   (FST and SND of it), so evaluating them takes time exponential in the
+   distance to the separator: a 33-character header value already takes
+   2^33 steps.  The proofs are unaffected (they are about values), but the
+   program must not use them.  split_at2, split_path2 and parse_headers2
+   share the recursive call; they are proved equal to the originals, and
+   parse_brequest is translated through them (bline2), so every theorem
+   about parse_brequest is unchanged.
+   ------------------------------------------------------------------------ *)
+
+Definition split_at2_def:
+  split_at2 c [] = ([], []) ∧
+  split_at2 c (d :: cs) =
+    if d = c then ([], d :: cs)
+    else case split_at2 c cs of (p, u) => (d :: p, u)
+End
+
+Theorem split_at2_eq[local]:
+  ∀s. split_at2 c s = split_at c s
+Proof
+  Induct >> rw[split_at2_def, split_at_def] >>
+  Cases_on ‘split_at c s’ >> simp[]
+QED
+
+Definition split_path2_def:
+  split_path2 [] = ([], []) ∧
+  split_path2 (c :: cs) =
+    if c = #" " then ([], c :: cs)
+    else case split_path2 cs of (p, u) => (c :: p, u)
+End
+
+Theorem split_path2_eq[local]:
+  ∀s. split_path2 s = split_path s
+Proof
+  Induct >> rw[split_path2_def, split_path_def] >>
+  Cases_on ‘split_path s’ >> simp[]
+QED
+
+Theorem split_at2_LENGTH[local]:
+  ∀s. LENGTH (SND (split_at2 c s)) ≤ LENGTH s
+Proof
+  Induct >> rw[split_at2_def] >> Cases_on ‘split_at2 c s’ >> fs[]
+QED
+
+Theorem split_at2_SND_LENGTH[local]:
+  split_at2 c s = (p, u) ⇒ LENGTH u ≤ LENGTH s
+Proof
+  metis_tac[split_at2_LENGTH, SND]
+QED
+
+Definition parse_headers2_def:
+  parse_headers2 s =
+    if crlf ≼ s then HDone [] (DROP 2 s)
+    else if s ≼ crlf then HMore
+    else
+      case split_at2 #":" s of
+        (n, u) =>
+          if EXISTS (λc. c = #" " ∨ c = #"\r" ∨ c = #"\n") n then HBad
+          else if u = [] then HMore
+          else if n = [] then HBad
+          else if ¬(colon_sp ≼ u) then (if u ≼ colon_sp then HMore else HBad)
+          else
+            case split_at2 #"\r" (DROP 2 u) of
+              (v, w) =>
+                if EXISTS (λc. c = #"\n") v then HBad
+                else if w = [] then HMore
+                else if ¬(crlf ≼ w) then (if w ≼ crlf then HMore else HBad)
+                else
+                  case parse_headers2 (DROP 2 w) of
+                    HDone hs r => HDone ((n, v) :: hs) r
+                  | HMore => HMore
+                  | HBad => HBad
+Termination
+  WF_REL_TAC ‘measure LENGTH’ >> rw[] >>
+  imp_res_tac split_at2_SND_LENGTH >>
+  gvs[IS_PREFIX_APPEND, colon_sp_def]
+End
+
+Theorem parse_headers2_eq[local]:
+  ∀s. parse_headers2 s = parse_headers s
+Proof
+  recInduct parse_headers2_ind >> rw[] >>
+  ONCE_REWRITE_TAC[parse_headers2_def, parse_headers_def] >>
+  simp[split_at2_eq] >>
+  Cases_on ‘split_at #":" s’ >> simp[] >>
+  Cases_on ‘split_at #"\r" (DROP 2 r)’ >> simp[] >>
+  rw[] >> gvs[split_at2_eq]
+QED
+
+Definition bline2_def:
+  bline2 m t =
+    case split_path2 t of
+      (p, u) =>
+        if EXISTS (λc. c = #"\r" ∨ c = #"\n") p then BInvalid
+        else if u = [] then BIncomplete
+        else if p = [] then BInvalid
+        else if sp_http10 ≼ u then bfinish m p "1.0" (parse_headers2 (DROP 11 u))
+        else if sp_http11 ≼ u then bfinish m p "1.1" (parse_headers2 (DROP 11 u))
+        else if u ≼ sp_http10 ∨ u ≼ sp_http11 then BIncomplete
+        else BInvalid
+End
+
+Theorem bline2_eq[local]:
+  bline2 m t = bline m t
+Proof
+  simp[bline2_def, bline_def, split_path2_eq, parse_headers2_eq] >>
+  Cases_on ‘split_path t’ >> simp[]
+QED
+
+(* parse_brequest, through bline2 *)
+Theorem parse_brequest_lin[local] =
+  parse_brequest_def |> REWRITE_RULE [GSYM bline2_eq];
+
 val r = translate is_cl_def;
 val r = translate is_te_def;
 val r = translate post_sp_def;
@@ -95,8 +210,24 @@ val r = translate (bbody_def |> REWRITE_RULE [toString_num_to_str,
                                                GSYM mllistTheory.take_def,
                                                GSYM mllistTheory.drop_def]);
 val r = translate bfinish_def;
-val r = translate (bline_def |> REWRITE_RULE [GSYM mllistTheory.drop_def]);
-val r = translate (parse_brequest_def |> REWRITE_RULE [GSYM mllistTheory.drop_def]);
+val r = translate split_at2_def;
+val r = translate split_path2_def;
+val r = translate_no_ind (parse_headers2_def |> REWRITE_RULE [GSYM mllistTheory.drop_def]);
+
+Triviality parse_headers2_ind_proof:
+  parse_headers2_ind
+Proof
+  once_rewrite_tac [fetch "-" "parse_headers2_ind_def"] >>
+  rpt gen_tac >> rpt (disch_then strip_assume_tac) >>
+  match_mp_tac (latest_ind ()) >> rpt strip_tac >>
+  last_x_assum match_mp_tac >> rpt strip_tac >>
+  gvs[FORALL_PROD, mllistTheory.drop_def]
+QED
+
+val _ = parse_headers2_ind_proof |> update_precondition;
+
+val r = translate (bline2_def |> REWRITE_RULE [GSYM mllistTheory.drop_def]);
+val r = translate (parse_brequest_lin |> REWRITE_RULE [GSYM mllistTheory.drop_def]);
 val r = translate brespond_def;
 
 Quote add_cakeml:

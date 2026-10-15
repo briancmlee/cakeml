@@ -16,9 +16,9 @@ In every fair world with one listening socket, the program:
 Companion results:
 - a blocking (`select`) version of the program (a refinement) that idles
   at 0% CPU;
-- an HTTP server (tolerating request headers) meeting a short trusted
-  HTTP specification in full, safety and liveness:
-  `⊢ http_spec_h 3w demo_files http_prog_h`;
+- an HTTP server (GET and POST, with headers and Content-Length bodies)
+  meeting a short trusted HTTP specification in full, safety and
+  liveness: `⊢ http_spec_b 3w demo_files http_prog_b`;
 - both servers compile and run.
 
 **How to read it.** The work is split into 11 stacked PRs, `[review 1/11]`
@@ -28,7 +28,7 @@ description lists; skip all proofs. The layers:
 
 | PR | layer | read | time |
 |---|---|---|---|
-| 1 | **the trusted surface**: socket world, fairness, EchoSpec, HttpSpecHeaders, why they bite | all of `spec/EchoSpecScript.sml`, `spec/HttpSpecHeadersScript.sml`, and the listed model definitions | 30–45 min |
+| 1 | **the trusted surface**: socket world, fairness, EchoSpec, HttpSpecBodies, why they bite | all of `spec/EchoSpecScript.sml`, `spec/HttpSpecBodiesScript.sml`, and the listed model definitions | 30–45 min |
 | 2 | the async model: monad laws, `both`, `choose` | 5 statements | 45 min |
 | 3 | recursion, Level 2, the scheduler: no busy-waiting | 5 | 45 min |
 | 4 | the echo server in the model: safety, closed-loop liveness | 5 | 40 min |
@@ -36,7 +36,7 @@ description lists; skip all proofs. The layers:
 | 6 | sockets in CakeML, divergence, the event loop | 5 | 40 min |
 | 7 | **the echo program: `echo_spec 3w echo_prog`** | 5 | 40 min |
 | 8 | the blocking refinement | 4 | 30 min |
-| 9 | **HTTP: `http_spec_h 3w demo_files http_prog_h`** | 5 | 40 min |
+| 9 | **HTTP: `http_spec_b 3w demo_files http_prog_b`** | 5 | 40 min |
 | 10 | it runs (`socket_ffi.c` is the C trust item) | 1 file | 15 min |
 | 11 | README and design notes | as wanted | 15 min |
 

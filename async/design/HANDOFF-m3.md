@@ -28,23 +28,11 @@ Kept current at every commit. Read with the coordinator's brief and
 ## Status
 
 - DONE (task 1, app level): Holmake green, no cheats.
-- IN PROGRESS (tasks 2+3, uncommitted in the worktree, paused for a
-  usage limit):
-  - `async/m3-assembly/asyncM3ExampleModelScript.sml` (pure): `ready3`,
-    `accept3 = bind (wait ready3) (λu. emit (Accept 3w))`, `wf_accept3`,
-    listener persistence (`is_listener_tick`, `is_listener_sock_accept`),
-    `srun_ok_accept3` (MAIN). Not yet checked (hol-lsp diagnostics were
-    running).
-  - `async/m3-assembly/asyncM3ExampleScript.sml`: CakeML `has3`, `ready3`,
-    `accept3`, `main`; specs `has3_spec`, `ready3_spec` (written, not yet
-    checked), `accept3_spec` (cheat placeholder).
-  - Next: finish accept3_spec (xapp Async_emit_spec with SACT (Accept 3w)
-    (Conv accept_stamp [3])); main_spec (xlet wait via Async_wait_spec +
-    ready3_spec, bind via Async_bind_spec + accept3_spec, list [3], then
-    xapp run_spec with srun_ok_accept3, wf_accept3, accept3_def); then the
-    whole-program theorem following ffiSpikeSocketDiv's serve_semantics
-    (Decls_th, call_main_thm_div, sonly_init_heap, limited_parts_sonly);
-    13-m3-assembly.md; PR (base spike/cf-reactive).
+- DONE (tasks 2+3): `asyncM3ExampleModelScript.sml` (`accept3`,
+  `srun_ok_accept3`) and `asyncM3ExampleScript.sml` (`main_spec`,
+  `m3_semantics` (MAIN: the whole program diverges with the round-by-round
+  socket trace), `m3_trace_actions` (MAIN)). Holmake green, no cheats.
+- TODO: 13-m3-assembly.md; PR (base spike/cf-reactive).
 
 ## Assumptions made (so far)
 
@@ -62,6 +50,10 @@ Kept current at every commit. Read with the coordinator's brief and
 5. The library code is declared a second time in the socket program
    (module Async), because the two translation chains are separate.
    Its specs are replayed with the same proofs.
+6. The example computation is `accept3` (wait until listener 3 is ready,
+   then accept), chosen so that `srun_ok` is provable from "3 is a
+   listener" alone. The echo handler needs reasoning about responses
+   over the run (see 13-m3-assembly.md).
 
 ## Tool feedback
 

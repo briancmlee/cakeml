@@ -12,7 +12,9 @@ Kept current at every push. Worker state: ~/.cache/moonshot/STATE.md; log ~/.cac
 `cd async/spec && ~/.cache/orchestrator/holslot timeout 3000 arch -arm64 /bin/zsh -lc '~/HOL/bin/Holmake -j1 ChatSpecBiteTheory.uo'`
 
 ## Status
-- M1: ChatSpec + bites: GREEN (Holmake), no cheats.
+- M1: ChatSpec + bites: GREEN (Holmake), no cheats. PR #66.
+- M2: asyncWithTap (generic tap handler), asyncChatSW (copy of KV server_with_k, uses_accepted fixed), asyncChatModel, asyncChatSafe: GREEN. MAIN: chat_server_safe.
+- M3 drafts (unchecked, not committed): asyncWithTapStep, asyncChatSockModel, asyncChatProg, asyncChatSpec.
 
 ## Tool feedback
 - holslot queue: the M1 build waited ~15 min for a slot (7–8 waiters); hol-lsp can't check a theory until its ancestors are Holmade in the same worktree.

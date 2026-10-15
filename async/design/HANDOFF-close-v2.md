@@ -23,19 +23,32 @@ Kept current at every push. Write-up: `25-echospec2.md`.
     EchoSpec2's `socket2_ffi`, `limited_parts`, `parts_ok`, initial heap).
   - `async/runnable/socket_ffi.c`: `ffisock_close` (plain close(2)) and its
     mapping row (unused by v1).
-- Next branches (stacked): handle-layer loop; simulation and
-  `echo_spec2 3w <prog>`.
+- Branch `spike/close-v2-handles` (from `spike/close-v2-world`): the
+  handle-layer loop, `async/close-v2-loop/`:
+  - `asyncHLModel`: the model (`hstate` table handle ↦ fd, `hdl`/`hdln`
+    handles skipping the listener's number, `hdo` with auto-close on EOF,
+    `hacts`, `hpoll` (`hpoll_fds`, `hready`), `hrounds`, `hround_events`,
+    `hrun_ok`);
+  - `asyncHLProg`: the CakeML code (`hdo`, `hperform`, `step_h`, `run_h`;
+    table helpers translated);
+  - `asyncHLLoop`: `hdo_spec`, `hperform_spec`, `step_h_spec`, `run_h_spec`;
+  - `asyncHLMain`: `main = run_h (3, [3], ([], 0), server 3)`, `echo2_prog`,
+    `echo2_semantics_prog` (EchoSpec2's world, under `echo2_run_ok`).
+- Next branch: the simulation, discharging `echo2_run_ok`, and
+  `echo_spec2 3w echo2_prog`.
 
 ## How to build
 
     timeout 900 arch -arm64 /bin/zsh -lc "cd async/spec && ~/HOL/bin/Holmake -j2"
     timeout 3000 arch -arm64 /bin/zsh -lc "cd async/socket-v2-cf && ~/HOL/bin/Holmake -j2"
+    timeout 3000 arch -arm64 /bin/zsh -lc "cd async/close-v2-loop && ~/HOL/bin/Holmake -j2"
 
 ## Status
 
 - DONE: EchoSpec2 statement, bite and non-vacuity (no cheats).
 - DONE: the v2 world's CF layer (25 §4 step 1), no cheats.
-- NEXT: the handle layer (25 §4 step 2), then the simulation.
+- DONE: the handle layer (25 §4 step 2): `run_h_spec`, `echo2_semantics_prog`.
+- NEXT: the simulation (25 §4 step 3).
 
 ## Assumptions made (spec decisions, flagged for review in 25 §2)
 
@@ -53,6 +66,13 @@ Kept current at every push. Write-up: `25-echospec2.md`.
 - `ep_events`' numerals defaulted to `int`; annotate `(j:num) (k:num)`.
 - Writing HOL through Python string edits: use raw strings (r'''...'''),
   or `\\` (cfLib's THEN) silently becomes `\`.
+
+- CF: when xapp_spec with a Socket spec mixes up the pre/post state
+  variables, prove the instance first (‘app p f [..] P Q’ by (irule spec ..))
+  and xapp_spec that (version 1's pattern).
+- The translator turns MEM into IN (untranslatable): use a recursive `nmem`.
+- Theorem names like `tlookup_def` can be ambiguous with base theories:
+  qualify (`asyncHLProgTheory.tlookup_def`).
 
 ## Tool feedback
 

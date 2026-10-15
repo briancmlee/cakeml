@@ -447,7 +447,6 @@ Proof
   >> simp[outcome_component_equality] >> gvs[first_done_def]
 QED
 
-(* MAIN: monad law, associativity *)
 (* Where bind (bind m f) g and bind m (λx. bind (f x) g) hand over to g:
    at the same point, with g shown the same snapshots *)
 Theorem bind_assoc_view:
@@ -499,6 +498,7 @@ Proof
   >> simp[]
 QED
 
+(* MAIN: monad law, associativity *)
 Theorem bind_assoc:
   wf m ⇒ bind (bind m f) g = bind m (λx. bind (f x) g)
 Proof

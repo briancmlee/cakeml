@@ -350,6 +350,20 @@ Proof
   >> simp[]
 QED
 
+(* If m never touches c on R, it does not on any prefix of R *)
+Theorem untouched_TAKE:
+  wf m ∧ ¬EXISTS (on_fd c) (trans m R) ⇒ FILTER (on_fd c) (trans m (TAKE j R)) = []
+Proof
+  rw[FILTER_EQ_NIL, EVERY_MEM] >> strip_tac >>
+  ‘MEM (FST x) (m (TAKE j R)).actions’ by metis_tac[MAP_FST_trans, MEM_MAP] >>
+  ‘(m (TAKE j R)).actions ≼ (m R).actions’
+    by (irule wf_actions_grow >> simp[IS_PREFIX_APPEND] >> metis_tac[TAKE_DROP]) >>
+  ‘MEM (FST x) (m R).actions’ by metis_tac[IS_PREFIX_APPEND, MEM_APPEND] >>
+  ‘MEM (FST x) (MAP FST (trans m R))’ by metis_tac[MAP_FST_trans] >>
+  gvs[MEM_MAP, EXISTS_MEM] >> first_x_assum drule >>
+  PairCases_on ‘x’ >> PairCases_on ‘y’ >> gvs[on_fd_def]
+QED
+
 (* MAIN: inside the server, each accepted connection fd is served by its own
    handler, running on a view g of the server's history from the round a in
    which fd was accepted: g has the same ready sets, the world answers the
@@ -362,6 +376,9 @@ Theorem sw_handler_view:
             (∀i. i < LENGTH g ⇒ (EL i g).ready = (EL (a + i) h).ready) ∧
             prompt (hf fd) g ∧
             FILTER (on_fd fd) (trans (server_with hf lfd) h) = trans (hf fd) g ∧
+            (∀j. j ≤ LENGTH g ⇒
+                 FILTER (on_fd fd) (trans (server_with hf lfd) (TAKE (a + j) h)) =
+                 trans (hf fd) (TAKE j g)) ∧
             (∀j. j ≤ LENGTH g ⇒
                  nreads fd (server_with hf lfd (TAKE (a + j) h)).actions =
                  nreads fd (hf fd (TAKE j g)).actions) ∧
@@ -427,6 +444,15 @@ Proof
           >- (rpt strip_tac
               >> qpat_x_assum ‘∀m. LENGTH h1 + 1 ≤ m ⇒ _’
                    (qspec_then ‘LENGTH h1 + 1 + j’ mp_tac)
+              >> simp[] >> strip_tac
+              >> ‘TAKE j L = left_view (hf c) (server_with hf lfd) (TAKE j h3)’
+                   by simp[Abbr ‘L’, views_TAKE]
+              >> pop_assum SUBST1_TAC >> irule sw_filter_both_own >> simp[]
+              >> simp[views_TAKE] >> irule untouched_TAKE
+              >> gs[hok_wf_server_with, Abbr ‘R’])
+          >- (rpt strip_tac
+              >> qpat_x_assum ‘∀m. LENGTH h1 + 1 ≤ m ⇒ _’
+                   (qspec_then ‘LENGTH h1 + 1 + j’ mp_tac)
               >> simp[sw_nreads_both, views_TAKE]
               >> strip_tac >> irule nreads_sw_untouched >> fs[])
           >> rpt strip_tac >> spose_not_then assume_tac
@@ -448,6 +474,14 @@ Proof
       >- (‘FILTER (on_fd fd) (trans (both (hf c) (server_with hf lfd)) h3) =
            FILTER (on_fd fd) (trans (server_with hf lfd) R)’
             by simp[sw_filter_both_other, Abbr ‘R’]
+          >> simp[])
+      >- (rpt strip_tac
+          >> qpat_x_assum ‘∀m. LENGTH h1 + 1 ≤ m ⇒ _’
+               (qspec_then ‘LENGTH h1 + 1 + a1 + j’ mp_tac)
+          >> simp[] >> strip_tac
+          >> ‘FILTER (on_fd fd) (trans (both (hf c) (server_with hf lfd)) (TAKE (a1 + j) h3)) =
+              FILTER (on_fd fd) (trans (server_with hf lfd) (TAKE (a1 + j) R))’
+               by simp[sw_filter_both_other, Abbr ‘R’, views_TAKE]
           >> simp[])
       >- (rpt strip_tac
           >> qpat_x_assum ‘∀m. LENGTH h1 + 1 ≤ m ⇒ _’
@@ -480,6 +514,10 @@ Proof
   >- (rpt strip_tac >> simp[EL_APPEND2, EL_CONS, PRE_SUB1])
   >- simp[]
   >- simp[]
+  >- (rpt strip_tac
+      >> qpat_x_assum ‘∀m. LENGTH h1 + 1 ≤ m ⇒ _’
+           (qspec_then ‘LENGTH h1 + 1 + a1 + j’ mp_tac)
+      >> simp[])
   >- (rpt strip_tac
       >> qpat_x_assum ‘∀m. LENGTH h1 + 1 ≤ m ⇒ _’
            (qspec_then ‘LENGTH h1 + 1 + a1 + j’ mp_tac)

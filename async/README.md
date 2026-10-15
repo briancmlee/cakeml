@@ -151,6 +151,12 @@ Hello from a verified CakeML HTTP server!
 
 - **This HTTP subset has no request bodies.** Requests with
   Content-Length or Transfer-Encoding are not answered.
+- **Proofs establish values, not running time.** An exponential-time
+  parser passed all proofs until a long header exposed it: the translated
+  code of a recursive split made its recursive call twice per character,
+  so a 165-character User-Agent got no answer in 10 s. It was fixed with
+  proved-equal linear definitions (`split_at2`, `split_path2`), and now
+  takes 1.5 ms. The parsers' definitions and theorems are unchanged.
 - **No `close`.** The socket model has no `close`, so finished
   connections are never closed and a long-running server leaks fds. A v2
   with `close` and fd reuse is in progress.

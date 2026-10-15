@@ -193,6 +193,10 @@ statements only.
   4. `hmachine_live` (the handler as a machine answers every complete
      request);
   5. `http_live_h_rounds` (`http_live_h` of the loop's trace).
+- **Read if you want** (optional, not in the core five): the HTTP server
+  is quiet at Level 2, as layer 4 proves for echo
+  (`servers/http-quiet`): `erase_http_server2_h`, `wf2_http_server2_h`,
+  `http_server_no_busy_waiting`.
 - **Skip:**
   - `gen_*` (the generic no-misuse argument), the depth specs, and the
     translation plumbing;
@@ -260,6 +264,7 @@ lemmas), `asyncM4ServerProg` (the HTTP translation reuses its code).
   (spec and bite) and PR 9 (the program and its proofs).
 - **`brun_two_outcomes`** (#49): folded into PR 8.
 - **no idle wait in the trusted C** (#50): folded into PR 10.
+- **HTTP quiet** (#53): folded into PR 9 as an optional statement group.
 - **close / fd reuse (close-v2)**: a new PR 12 (`review/12-close-v2`) on
   top. It holds EchoSpec2 (spec first), the v2 world and the handle layer,
   and touches nothing below it.

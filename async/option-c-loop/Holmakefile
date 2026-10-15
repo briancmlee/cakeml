@@ -18,13 +18,15 @@ INCLUDES = ../cakeml/approx \
            ../programs/http-b \
            ../programs/http-h \
            ../quiet/echo \
+           ../quiet/ffi \
            ../servers/echo \
            ../servers/http \
            ../servers/http-quiet \
            ../servers/relabel \
            ../spec \
            ../world/composed \
-           ../world/sockets
+           ../world/sockets \
+           $(CAKEMLDIR)/semantics
 ifdef POLY
 HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
 endif

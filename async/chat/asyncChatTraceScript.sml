@@ -492,3 +492,41 @@ Proof
   >> TRY (qpat_x_assum ‘TSg _ _ _ _ = _’ SUBST1_TAC) >>
   simp[IS_PREFIX_APPEND] >> qexists_tac ‘DROP k tt1 ++ tt2’ >> simp[]
 QED
+
+(* The bridge for liveness: what a finite prefix of the trace owes d is
+   what a prefix of the model transcript at the next round boundary owes *)
+Theorem chat_owed_rounds:
+  s0.listeners = [(n2w lfdn, [])] ∧ s0.conns = [] ∧
+  FLAT (GENLIST (grounds_events ifds (srelabel (chat_server lfdn)) s0) n) ≼ evs ∧
+  evs ≼ FLAT (GENLIST (grounds_events ifds (srelabel (chat_server lfdn)) s0) (SUC n)) ⇒
+  ∃U. U ≼ TSg (chat_server lfdn) ifds s0 (SUC n) ∧
+      owed d evs = bytes (owed_m (w2n d) U)
+Proof
+  strip_tac >>
+  assume_tac (Q.INST [‘lfd’ |-> ‘lfdn’] chat_server_uses_ok) >>
+  qabbrev_tac ‘m = chat_server lfdn’ >>
+  drule_all gen_grun_ok >> disch_then (qspec_then ‘ifds’ assume_tac) >>
+  drule_all gen_sinv >>
+  disch_then (qspecl_then [‘ifds’, ‘SUC n’] strip_assume_tac) >>
+  drule gen_trans_split >> strip_tac >>
+  ONCE_REWRITE_TAC[GSYM owed_FILTER] >>
+  ‘FILTER np evs ≼ MAP aev (SPg m ifds s0 (SUC n))’
+    by (drule_then (qspec_then ‘SUC n’ (SUBST1_TAC o SYM)) FILTER_rounds >>
+        irule FILTER_prefix >> first_assum ACCEPT_TAC) >>
+  drule prefix_MAP_TAKE >>
+  qabbrev_tac ‘k = LENGTH (FILTER np evs)’ >> disch_then SUBST1_TAC >>
+  gvs[TREL_LIST_REL] >>
+  drule (Q.GEN ‘i’ LIST_REL_TAKE_DROP) >>
+  disch_then (qspec_then ‘k’ strip_assume_tac) >>
+  ‘EVERY pok (TAKE k (SPg m ifds s0 (SUC n)))’
+    by (irule EVERY_TAKE >> simp[EVERY_pok_gperf]) >>
+  ‘fds_bdd (TSg m ifds s0 (SUC n))’ by metis_tac[gen_fds_bounded] >>
+  ‘fds_bdd (TAKE k tt1)’
+    by (rpt strip_tac >> qpat_x_assum ‘fds_bdd (TSg _ _ _ _)’ irule >>
+        qpat_x_assum ‘TSg _ _ _ _ = _’ SUBST1_TAC >> simp[EXISTS_APPEND] >>
+        disj1_tac >> metis_tac[TAKE_DROP, EXISTS_APPEND]) >>
+  qexists_tac ‘TAKE k tt1’ >>
+  drule_all owed_owed_m >> disch_then (qspec_then ‘d’ SUBST1_TAC) >>
+  qpat_x_assum ‘TSg _ _ _ _ = _’ SUBST1_TAC >>
+  simp[IS_PREFIX_APPEND] >> qexists_tac ‘DROP k tt1 ++ tt2’ >> simp[]
+QED

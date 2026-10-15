@@ -208,7 +208,7 @@ Definition fds_ok_def:
         (∀l fd. p = (Accept l, SOME (Accepted fd)) ⇒ fd < dimword (:64))
 End
 
-Theorem fds_ok_APPEND[local]:
+Theorem fds_ok_APPEND:
   fds_ok (U ++ V) ⇔ fds_ok U ∧ fds_ok V
 Proof
   simp[fds_ok_def] >> metis_tac[]
@@ -376,27 +376,27 @@ Definition fits_log_def:
             a = Lines (DROP i (lg k))
 End
 
-Theorem mono_log_shift[local]:
+Theorem mono_log_shift:
   mono_log lg ⇒ mono_log (λk. lg (k + n))
 Proof
   rw[mono_log_def]
 QED
 
-Theorem fits_log_APPEND[local]:
+Theorem fits_log_APPEND:
   fits_log fd lg (l1 ++ l2) ⇒ fits_log fd (λk. lg (k + LENGTH l1)) l2
 Proof
   rw[fits_log_def] >>
   first_x_assum (qspecl_then [‘k + LENGTH l1’, ‘i’] mp_tac) >> simp[EL_APPEND2]
 QED
 
-Theorem fits_log_CONS[local]:
+Theorem fits_log_CONS:
   fits_log fd lg (e :: tr) ⇒ fits_log fd (λk. lg (k + 1)) tr
 Proof
   rw[fits_log_def] >>
   first_x_assum (qspecl_then [‘SUC k’, ‘i’] mp_tac) >> simp[ADD1]
 QED
 
-Theorem wr_of_simps[local]:
+Theorem wr_of_simps:
   wr_of fd [] = "" ∧
   wr_of fd (l1 ++ l2) = wr_of fd l1 ++ wr_of fd l2 ∧
   wr_of fd ((Kv q, r) :: tr) = wr_of fd tr ∧
@@ -408,13 +408,13 @@ Proof
   simp[wr_of_def, untag_def, written_def] >> rw[]
 QED
 
-Theorem wr_of_CONS[local]:
+Theorem wr_of_CONS:
   wr_of fd (e :: tr) = wr_of fd [e] ++ wr_of fd tr
 Proof
   simp[GSYM wr_of_simps]
 QED
 
-Theorem DROP_grow[local]:
+Theorem DROP_grow:
   s = DROP i x ∧ x ≼ y ∧ i ≤ LENGTH x ⇒ s ++ DROP (i + LENGTH s) y = DROP i y
 Proof
   rw[IS_PREFIX_APPEND] >> simp[DROP_APPEND] >>
@@ -422,7 +422,7 @@ Proof
   simp[DROP_LENGTH_TOO_LONG, DROP_LENGTH_APPEND]
 QED
 
-Theorem DROP_prefix[local]:
+Theorem DROP_prefix:
   x ≼ y ⇒ DROP n x ≼ DROP n y
 Proof
   rw[IS_PREFIX_APPEND] >> simp[DROP_APPEND] >>
@@ -531,13 +531,13 @@ QED
    3. Gluing
    ------------------------------------------------------------------------ *)
 
-Theorem untag_mono[local]:
+Theorem untag_mono:
   x ≼ y ⇒ untag x ≼ untag y
 Proof
   rw[IS_PREFIX_APPEND] >> simp[]
 QED
 
-Theorem log_at[local]:
+Theorem log_at:
   fds_ok (untag TR) ⇒
   (tap_fold chat_tap chat_delta empty_store TR).log = lines_done (untag TR)
 Proof
@@ -551,19 +551,19 @@ Definition with_state_def:
             (LENGTH TR)
 End
 
-Theorem MAP_FST_FILTER_FST[local]:
+Theorem MAP_FST_FILTER_FST:
   ∀l. MAP FST (FILTER (P ∘ FST) l) = FILTER P (MAP FST l)
 Proof
   Induct >> rw[]
 QED
 
-Theorem MAP_FST_with_state[local]:
+Theorem MAP_FST_with_state:
   MAP FST (with_state TR) = TR
 Proof
   simp[with_state_def, MAP_GENLIST, combinTheory.o_DEF, LIST_EQ_REWRITE]
 QED
 
-Theorem TAKE_with_state[local]:
+Theorem TAKE_with_state:
   TAKE n (with_state TR) = with_state (TAKE n TR)
 Proof
   Cases_on ‘n ≤ LENGTH TR’
@@ -573,7 +573,7 @@ Proof
   >> simp[TAKE_LENGTH_TOO_LONG, with_state_def]
 QED
 
-Theorem MEM_with_state[local]:
+Theorem MEM_with_state:
   MEM (e, st) (with_state TR) ⇔
   ∃p. p < LENGTH TR ∧ e = EL p TR ∧
       st = tap_fold chat_tap chat_delta empty_store (TAKE p TR)
@@ -582,13 +582,13 @@ Proof
 QED
 
 (* The logs along with_state only grow *)
-Theorem fds_ok_prefix[local]:
+Theorem fds_ok_prefix:
   fds_ok U ∧ U' ≼ U ⇒ fds_ok U'
 Proof
   rw[fds_ok_def, IS_PREFIX_APPEND] >> metis_tac[MEM_APPEND]
 QED
 
-Theorem fds_ok_TAKE[local]:
+Theorem fds_ok_TAKE:
   fds_ok (untag TR) ⇒ fds_ok (untag (TAKE n TR))
 Proof
   strip_tac >> irule fds_ok_prefix >> qexists ‘untag TR’ >> simp[] >>
@@ -597,7 +597,7 @@ Proof
   simp[]
 QED
 
-Theorem with_state_sorted[local]:
+Theorem with_state_sorted:
   fds_ok (untag TR) ⇒
   SORTED (λx y. (SND x).log ≼ (SND y).log) (with_state TR)
 Proof
@@ -614,7 +614,7 @@ Proof
   simp[untag_def]
 QED
 
-Theorem untag_prefix[local]:
+Theorem untag_prefix:
   ∀TR U. U ≼ untag TR ⇒ ∃TR'. TR' ≼ TR ∧ untag TR' = U
 Proof
   Induct >- (rw[untag_def] >> qexists ‘[]’ >> simp[untag_def]) >>
@@ -640,7 +640,7 @@ Definition wq_def:
     (∃s. FST p = Sock (Write fd s)) ∨ (∃q. FST p = Kv (fd, q))
 End
 
-Theorem wr_of_FILTER_wq[local]:
+Theorem wr_of_FILTER_wq:
   ∀tr. wr_of fd (FILTER (wq fd) tr) = wr_of fd tr
 Proof
   Induct >> simp[wr_of_simps] >> PairCases >> Cases_on ‘h0’ >>
@@ -649,7 +649,7 @@ Proof
   TRY (PairCases_on ‘q’) >> gvs[wr_of_simps]
 QED
 
-Theorem reader_entries[local]:
+Theorem reader_entries:
   ∀hh. EVERY (λp. FST p = Sock (Read fd)) (trans (reader fd) hh)
 Proof
   gen_tac >> measureInduct_on ‘LENGTH hh’ >>
@@ -668,7 +668,7 @@ Proof
   every_case_tac >> simp[]
 QED
 
-Theorem wloop_entries[local]:
+Theorem wloop_entries:
   ∀hh i. EVERY (wq fd) (trans (wloop (fd, i)) hh)
 Proof
   gen_tac >> measureInduct_on ‘LENGTH hh’ >> gen_tac >>
@@ -687,7 +687,7 @@ Proof
   simp[]
 QED
 
-Theorem writer_entries[local]:
+Theorem writer_entries:
   EVERY (wq fd) (trans (writer fd) hh)
 Proof
   simp[writer_def] >>
@@ -722,13 +722,13 @@ Proof
 QED
 
 (* The writer's part of a handler's transcript *)
-Theorem writer_filter[local]:
+Theorem writer_filter:
   FILTER (wq fd) (trans (writer fd) hh) = trans (writer fd) hh
 Proof
   simp[FILTER_EQ_ID, writer_entries]
 QED
 
-Theorem chat_handler_writer[local]:
+Theorem chat_handler_writer:
   ∃(R : (event, (canswer, response) kres) snapshot list).
     FILTER (wq fd) (trans (chat_handler fd) L) = trans (writer fd) R
 Proof
@@ -746,7 +746,7 @@ Proof
   rw[IS_PREFIX_APPEND] >> simp[FILTER_APPEND]
 QED
 
-Theorem prefix_TAKE_LENGTH[local]:
+Theorem prefix_TAKE_LENGTH:
   x ≼ y ⇒ x = TAKE (LENGTH x) y
 Proof
   rw[IS_PREFIX_APPEND] >> simp[TAKE_LENGTH_APPEND]
@@ -762,14 +762,14 @@ Proof
   simp[accepted_def]
 QED
 
-Theorem acc_of_accepted[local]:
+Theorem acc_of_accepted:
   ∀U. EXISTS (acc_of d) U ⇒ MEM d (accepted U)
 Proof
   Induct >> rw[] >> ONCE_REWRITE_TAC[accepted_APPEND] >> gvs[acc_of_def] >>
   simp[accepted_def]
 QED
 
-Theorem SPLITP_acc_of[local]:
+Theorem SPLITP_acc_of:
   ALL_DISTINCT (accepted (U1 ++ U2 ++ U3)) ∧ U2 ≠ [] ∧ acc_of d (HD U2) ⇒
   SPLITP (acc_of d) (U1 ++ U2 ++ U3) = (U1, U2 ++ U3)
 Proof
@@ -785,7 +785,7 @@ Proof
   simp[SPLITP_APPEND, rich_listTheory.SPLITP]
 QED
 
-Theorem writer_HD[local]:
+Theorem writer_HD:
   trans (writer fd) R ≠ [] ⇒ FST (HD (trans (writer fd) R)) = Kv (fd, Start)
 Proof
   simp[writer_def] >>
@@ -795,7 +795,7 @@ Proof
   simp[wf_emit, settled_emit] >> strip_tac >> simp[trans_emit]
 QED
 
-Theorem MEM_accepted_acc[local]:
+Theorem MEM_accepted_acc:
   MEM d (accepted U) ⇔ ∃l. MEM (Accept l, SOME (Accepted d)) U
 Proof
   simp[accepted_def, MEM_FLAT, MEM_MAP, PULL_EXISTS] >> eq_tac >> rw[]
@@ -810,7 +810,7 @@ Proof
   simp[IS_PREFIX_EQ_TAKE'] >> metis_tac[]
 QED
 
-Theorem with_state_FILTER_pos[local]:
+Theorem with_state_FILTER_pos:
   TR' ≼ TR ∧ k < LENGTH (FILTER P TR') ⇒
   ∃p. p < LENGTH TR' ∧
       EL k (FILTER (P ∘ FST) (with_state TR)) =

@@ -71,4 +71,9 @@ Rationale: the chat's global order is defined by I/O (the order of reads). A tap
 
 - M1: spec + bites: DONE (PR #66).
 - M2: model + model-level safety: DONE (`chat_server_safe`, asyncChatSafe; with_tap metatheory asyncWithTap).
-- M3: CakeML + CF + whole-program safety: next (drafts in asyncWithTapStep, asyncChatSockModel, asyncChatProg, asyncChatSpec).
+- M3: CakeML + CF + whole-program safety: DONE (`chat_prog_safe`, PR #75). M5 demo + write-up: PR #76.
+- M4 liveness (spike/chat-live): accept (clause 1) and delivery (clause 3) DONE for the loop's trace; reads (clause 2) in progress.
+  D12: delivery via a new generic library obligation, handler_push_live (output owed = f(answers received)), and
+  server_v_live_every (for every round N0, out of the answers by N0 is eventually written). Rationale: request/response
+  obligations (handler_live_v/va) cannot express push output; this one is reusable for any pub/sub server.
+  D13: writer progress by counting (≥ (n-1)/2 answered Fetches in n prompt rounds), not by round positions.

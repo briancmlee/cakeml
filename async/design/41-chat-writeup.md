@@ -22,7 +22,19 @@ Bites (ChatSpecBite, 35 proofs) show that the statement rejects eight plausible 
 
 A non-vacuity witness shows that the statement can be satisfied.
 
-## The theorem (async/chat/asyncChatHeadline)
+## The theorem (async/chat/asyncChatLiveHeadline)
+
+```
+chat_prog_spec:  chat_spec 3w chat_prog
+```
+
+That is, in every fair world with one listener 3w, the program diverges, and its trace is
+`chat_safe` (safety, M3) and `chat_live` (liveness, M4). Liveness has three clauses:
+- every connection that arrives is accepted;
+- every complete line a client sends is read;
+- whatever a client is owed is eventually written to it.
+
+The safety half alone (async/chat/asyncChatHeadline):
 
 ```
 chat_prog_safe:
@@ -32,7 +44,7 @@ chat_prog_safe:
 ```
 
 The program diverges in every world with one listener 3w, and its trace is `chat_safe`.
-`chat_prog` is the program compiled in `make`. Liveness (`chat_live`) is not proved yet (M4).
+`chat_prog` is the program compiled in `make`.
 
 ## How (the one idea)
 
@@ -72,7 +84,25 @@ Interactively: `CAKE_ECHO_PORT=7860 build/chat_server &`, then `nc 127.0.0.1 786
 | M1 spec + bites | 133 + 450 | all new |
 | M2 model safety | with_tap 388 (generic, reusable), server skeleton 385 (copied from KV), model 285, safety 1079 | the library gave the transcript/isolation lemmas |
 | M3 CakeML + CF + bridge + headline | ≈2,040 | the library gave the M4 loop, run_i_spec, gen_grun_ok, gen_fresh, the trace prefixes, and the whole-program assembly shape |
+| M4 liveness | ≈2,650 (2,576 in asyncChatLive* + asyncServerVPushLive, ≈80 in Trace/Safe) | see below |
 | M5 demo | Makefile + 110-line Python | the trusted socket FFI from runnable/ |
+
+M4 split:
+- **The library gave, for free:**
+  - accept progress (`chat_conn_accepted`, from `m_conn_accepted`);
+  - the per-connection view and its answers (`view_wrap_ans`, `conn_answers`);
+  - the socket environment for reads (`m_view_henv`);
+  - the round/trace plumbing (`gen_*`, `rounds_LPREFIX`).
+- **Generic, written here for the library (184 lines):** `handler_push_live` / `server_v_live_every`.
+  This is push-output liveness, ∀N0. ∃N. out(answers at N0) is written by N. The library's
+  `server_v_live_a`/`_ans` cannot state it.
+- **Chat-specific (about 2,200 lines):**
+  - delivery, about 1,370 lines: writer counting, telescoping, and `chat_cover`, which says the hub's
+    answers to a writer cover what its client is owed;
+  - reads, about 680 lines: the reader's progress inside `both reader writer`;
+  - accept-world lemma, 122 lines;
+  - vocabulary/instances, 180 lines;
+  - headline, 39 lines (it went through first try).
 
 Where the time went:
 - waiting for build slots (M1);
@@ -86,10 +116,8 @@ The single largest proof-engineering sink was `dimword(:64)` against its numeral
 
 ## Limitations (honest)
 
-- **Liveness is not proved yet.** The library's `server_v_live`/`server_v_live_a` fit only
-  per-connection output (`out D`, which depends on the connection's own data).
-  A chat client's output depends on other clients' lines. Accept progress and read progress
-  should come from the library; delivery is bespoke. See TRAJECTORY for the analysis and a suggested library change.
+- Liveness assumes the fair socket world of EchoSpec (`sched_wf`): every arrival is eventually
+  delivered, and the scheduler polls every round.
 - The log grows forever: there is no garbage collection of delivered lines, and no notion of leaving
   (the v1 socket world has no close).
 - The writer polls every round, so it spins while idle. The FFI's idle back-off bounds the CPU cost.

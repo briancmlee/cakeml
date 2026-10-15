@@ -1,2 +1,6 @@
+# Only present in sparse experiment worktrees, where it points
+# [projects.cakeml] at the shared, prebuilt base checkout.
+# In a full checkout async/ is simply part of the CakeML project.
+# See design/shared-base-build.md.
 /holproject.toml
 holproject.local.toml

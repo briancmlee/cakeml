@@ -1,0 +1,16 @@
+# NOT BUILT YET (design/22-machine-code.md): needs, in the CakeML base,
+# compiler/backend/proofs (backendProof), compiler/backend/arm8/proofs
+# (arm8_configProof), semantics/proofs (semanticsProps) and cv_translator
+# (cake_compile_heap).  On release v3479's regression machine these took
+# about 1h20m wall-clock with a 10 GB peak (compiler proofs), and 3-4 GB for
+# cv_translator and an in-logic compiled program.  The scripts follow the
+# base's examples/compilation/x64 (echoCompile, proofs/echoProof), for arm8
+# and a diverging program; they have not been run.
+INCLUDES = .. ../../model ../../cf-spike ../../cf-actions ../../cf-reactive \
+           ../../ffi-spike ../../m3-assembly ../../m4-server ../../m4-common \
+           ../../spec ../../m4-safety ../../runnable \
+           $(CAKEMLDIR)/cv_translator $(CAKEMLDIR)/compiler/backend/proofs \
+           $(CAKEMLDIR)/compiler/backend/arm8/proofs $(CAKEMLDIR)/semantics/proofs
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/cv_translator/cake_compile_heap
+endif

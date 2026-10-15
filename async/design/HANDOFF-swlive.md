@@ -46,7 +46,9 @@ Kept current at every commit.
     inner (wrap_ok_id); (4) sv_uses_ok, uses_ok_wrap, accepts_progress_wrap,
     view_wrap; (5) server_v_live, and server_with_live_from_v (the old
     statement, for idV and the identity wrapper).
-  NEXT: sockV + server_with_k = server_v sockV + wrap_ok sockV (with_store δ s0)
+  DONE (branch spike/kv-wrap, PR #73): async/kv-live/asyncServerVKv: sockV,
+  wrap_ok_with_store, with_store_v_live (asyncWithStore definitions only).
+  NEXT (was: sockV +) server_with_k = server_v sockV + wrap_ok sockV (with_store δ s0)
   (inner_hist δ s0), on the KV base (spike/http-kv-impl, once its
   asyncWithStoreStep is fixed by stacked-pr-continuation); then kv_live_rounds.
 

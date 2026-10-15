@@ -51,7 +51,9 @@ statements only.
      it reuses HttpSpec's paths, files and response printer);
   5. bite and non-vacuity: `broken_*`, `server_world_exists`,
      `ideal_trace_safe_and_live`, `plain_requests`, `curl_request`,
-     `broken_*_h`.
+     `broken_*_h`, and `body_headers_invalid` /
+     `broken_answers_body_request` (the subset has no request bodies:
+     `valid_header` rejects Content-Length and Transfer-Encoding).
 - **Skip:** the proofs of the bite lemmas, and the fairness lemmas
   (`ticks_*`, `*_shape`). Of `HttpSpec`, read only the vocabulary
   (`valid_path`, `handle`, `print_response`). Its strict request subset
@@ -150,20 +152,30 @@ statements only.
   machine-code/asyncEchoSemantics (#24), m4-liveness (#30),
   m4-echospec, m4-echospec-live.
 
-### 8. `review/08-blocking`: the blocking refinement (≈3,630 lines; 30 min)
-- **Claims:** an event loop that sleeps in `select` is equivalent to
-  polling (Level 2). The blocking echo program is safe, and live whenever
-  the polling one is, or it blocks forever only when the polling program
-  would never act again.
+### 8. `review/08-blocking`: the blocking refinement (≈5,640 lines; 35 min)
+- **Claims:**
+  - an event loop that sleeps in `select` is equivalent to polling
+    (Level 2);
+  - the blocking echo program selects only on the fds the server waits
+    on (the listener and live connections), so it idles at 0% CPU, also
+    after clients disconnect;
+  - it is safe, and live whenever the polling one is; it can block
+    forever only when the polling program would never act again.
 - **Own:**
   1. `sock_select_polls` (the model of select; trusted with socket_ffi.c);
   2. `blocking_trace_same_actions` (blocking ≡ polling at Level 2);
-  3. `run_b_two_outcomes`;
-  4. `echo_blocking_spec` (the companion theorem, directly under the
-     headline).
-- **Skip:** the `brounds`/`bgrounds` invariants and the replayed Level 2
-  specs.
-- **From:** l2-blocking (#21), m4-blocking (#27), ffiSpikeSocketSelect.
+  3. `sel_covers` and the select-set loop's two outcomes
+     (`asyncM4BlkSelWorld`, `asyncM4LiveLoop`);
+  4. `echo_live_spec` (the companion theorem, directly under the headline).
+- **Skip:**
+  - the `brounds`/`bgrounds` invariants and the replayed Level 2 specs;
+  - `echo_blocking_spec` (the first version, which selects on the whole
+    interest list and spins after a disconnect; it is kept because the
+    live-fd version builds on it).
+- **From:** l2-blocking (#21), m4-blocking (#27), m4-blocking-live (#46;
+  its `asyncM4LiveWorld` is renamed `asyncM4BlkSelWorld` here, because
+  the liveness proof already has a theory of that name),
+  ffiSpikeSocketSelect.
 
 ### 9. `review/09-http`: HTTP, `http_spec_h 3w demo_files http_prog_h` (≈6,350 lines; 40 min)
 - **Claims:**
@@ -238,7 +250,9 @@ lemmas), `asyncM4ServerProg` (the HTTP translation reuses its code).
 - **header-tolerant HttpSpec**: adopted (your decision). It is PR 1's HTTP
   spec. The strict HttpSpec's statement and results are archived; its
   file stays as shared vocabulary.
-- **blocking fix** (m4-blocking, in progress): replaces PR 8's files.
+- **blocking fix**: folded in (`echo_live_spec`, PR 8).
+- **no request bodies** (HttpSpecHeaders, user-approved): folded into PR 1
+  (spec and bite) and PR 9 (the program and its proofs).
 - **close / fd reuse (close-v2)**: a new PR 12 (`review/12-close-v2`) on
   top. It holds EchoSpec2 (spec first), the v2 world and the handle layer,
   and touches nothing below it.

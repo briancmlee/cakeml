@@ -14,7 +14,8 @@ In every fair world with one listening socket, the program:
 - eventually writes back everything every client sends.
 
 Companion results:
-- a blocking (`select`) version of the program (a refinement);
+- a blocking (`select`) version of the program (a refinement) that idles
+  at 0% CPU;
 - an HTTP server (tolerating request headers) meeting a short trusted
   HTTP specification in full, safety and liveness:
   `⊢ http_spec_h 3w demo_files http_prog_h`;

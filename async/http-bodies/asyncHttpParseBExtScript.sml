@@ -28,13 +28,44 @@ Proof
   rw[bbody_def, AllCaseEqs()] >> gvs[]
 QED
 
-(* Complete header lines stay complete, with the same lines *)
-Theorem parse_headers_done_ext:
-  parse_headers s = HDone hs r ⇒ parse_headers (s ++ t) = HDone hs (r ++ t)
+(* Bad header lines stay bad however they are extended *)
+Theorem parse_bheaders_bad_ext:
+  ∀s t. parse_bheaders s = HBad ⇒ parse_bheaders (s ++ t) = HBad
 Proof
-  strip_tac >> drule parse_headers_done >> strip_tac >> gvs[] >>
+  recInduct parse_bheaders_ind >> rpt gen_tac >> strip_tac >> gen_tac >>
+  simp[Once parse_bheaders_def] >>
+  qabbrev_tac ‘n = FST (split_at #":" s)’ >>
+  qabbrev_tac ‘u = SND (split_at #":" s)’ >>
+  qabbrev_tac ‘v = FST (split_at #"\r" (DROP 2 u))’ >>
+  qabbrev_tac ‘w = SND (split_at #"\r" (DROP 2 u))’ >>
+  ‘split_at #":" (s ++ t) =
+   if u = [] then (n ++ FST (split_at #":" t), SND (split_at #":" t))
+   else (n, u ++ t)’ by simp[Abbr ‘n’, Abbr ‘u’, split_at_append] >>
+  ‘split_at #"\r" (DROP 2 u ++ t) =
+   if w = [] then (v ++ FST (split_at #"\r" t), SND (split_at #"\r" t))
+   else (v, w ++ t)’ by simp[Abbr ‘v’, Abbr ‘w’, split_at_append] >>
+  rw[AllCaseEqs()] >>
+  ‘¬(crlf ≼ s ++ t) ∧ ¬(s ++ t ≼ crlf)’ by metis_tac[prefix_diverge] >>
+  simp[Once parse_bheaders_def] >>
+  TRY (qpat_x_assum ‘parse_bheaders (DROP 2 w) = HBad’ assume_tac >>
+       first_x_assum (qspecl_then [‘n’, ‘u’, ‘v’, ‘w’] mp_tac) >>
+       impl_tac >- fs[markerTheory.Abbrev_def] >>
+       disch_then (qspec_then ‘t’ mp_tac) >> simp[] >> strip_tac) >>
+  TRY (qpat_x_assum ‘colon_sp ≼ u’ assume_tac >>
+       drule_then (qspec_then ‘t’ strip_assume_tac) (CONJUNCT1 colon_sp_crlf_prefix)) >>
+  TRY (qpat_x_assum ‘crlf ≼ w’ assume_tac >>
+       drule_then (qspec_then ‘t’ strip_assume_tac) (CONJUNCT2 colon_sp_crlf_prefix)) >>
+  Cases_on ‘u = []’ >> Cases_on ‘w = []’ >> simp[EXISTS_APPEND] >>
+  metis_tac[prefix_diverge]
+QED
+
+(* Complete header lines stay complete, with the same lines *)
+Theorem parse_bheaders_done_ext:
+  parse_bheaders s = HDone hs r ⇒ parse_bheaders (s ++ t) = HDone hs (r ++ t)
+Proof
+  strip_tac >> drule parse_bheaders_done >> strip_tac >> gvs[] >>
   REWRITE_TAC[GSYM APPEND_ASSOC] >>
-  simp[parse_headers_print |> REWRITE_RULE [GSYM APPEND_ASSOC]]
+  simp[parse_bheaders_print |> REWRITE_RULE [GSYM APPEND_ASSOC]]
 QED
 
 Theorem bfinish_invalid_ext:
@@ -71,8 +102,8 @@ Proof
          by metis_tac[prefix_diverge]) >>
   Cases_on ‘u = []’ >> fs[EXISTS_APPEND] >>
   qpat_x_assum ‘bfinish _ _ _ _ = BInvalid’ mp_tac >>
-  Cases_on ‘parse_headers (DROP 11 u)’ >> simp[bfinish_def] >>
-  imp_res_tac parse_headers_bad_ext >> imp_res_tac parse_headers_done_ext >>
+  Cases_on ‘parse_bheaders (DROP 11 u)’ >> simp[bfinish_def] >>
+  imp_res_tac parse_bheaders_bad_ext >> imp_res_tac parse_bheaders_done_ext >>
   simp[bbody_invalid_ext]
 QED
 

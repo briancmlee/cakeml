@@ -75,6 +75,7 @@ Definition parse_headers_def:
         if EXISTS (λc. c = #" " ∨ c = #"\r" ∨ c = #"\n") n then HBad
         else if u = [] then HMore
         else if n = [] then HBad
+        else if body_header n then HBad
         else if ¬(colon_sp ≼ u) then (if u ≼ colon_sp then HMore else HBad)
         else
           let v = FST (split_at #"\r" (DROP 2 u));
@@ -186,7 +187,7 @@ QED
 (* One header line, then the rest *)
 Theorem parse_headers_line[local]:
   n ≠ [] ∧ EVERY (λc. c ≠ #":" ∧ c ≠ #" " ∧ c ≠ #"\r" ∧ c ≠ #"\n") n ∧
-  EVERY (λc. c ≠ #"\r" ∧ c ≠ #"\n") v ⇒
+  ¬body_header n ∧ EVERY (λc. c ≠ #"\r" ∧ c ≠ #"\n") v ⇒
   parse_headers (n ++ #":" :: #" " :: (v ++ #"\r" :: #"\n" :: Y)) =
   case parse_headers Y of
     HDone hs r => HDone ((n, v) :: hs) r

@@ -29,9 +29,9 @@ Content-Length: 42
 Hello from a verified CakeML HTTP server!
 
 $ three concurrent curls (/, /about, /index.html), in order of completion
+  / -> HTTP/1.0 200 OK
   /index.html -> HTTP/1.0 200 OK
   /about -> HTTP/1.0 200 OK
-  / -> HTTP/1.0 200 OK
 
 $ printf 'GET /about HTTP/1.1\r\nHost: x\r\n\r\nGET / HTTP/1.0\r\n\r\n' | nc -w 1 127.0.0.1 7840    # pipelined, with and without headers
 HTTP/1.0 200 OK
@@ -45,3 +45,7 @@ Hello from a verified CakeML HTTP server!
 
 $ printf 'GET / HTTP/1.1\r\nno colon here\r\n\r\n' | nc -w 1 127.0.0.1 7840    # malformed header line
   (no response: the parser reports HInvalid and the handler stops)
+
+$ printf 'GET / HTTP/1.1\r\nHost: x\r\nContent-Length: 5\r\n\r\nhello' | nc -w 1 127.0.0.1 7840    # a body-framing header
+  (no response: the subset has no request bodies, so Content-Length and
+   Transfer-Encoding make a request invalid; the handler stops)

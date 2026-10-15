@@ -16,12 +16,17 @@ Kept current at every commit. Read with the coordinator's brief and
     `RW`, `wrounds`/`whist`/`wround_event`, `wtrace_actions_rounds` (MAIN).
   - `asyncCfReactLoopScript.sml`: CakeML `fill`, `read_bytes`, `step`, `run`;
     `fill_spec`, `read_bytes_spec`, `step_spec` (MAIN), `run_spec` (MAIN).
+  - `asyncCfChooseModelScript.sml`, `asyncCfChooseScript.sml`: `choose`.
 - Docs: this file; `async/design/10-cf-reactive.md` (to be written at the end).
 
 ## Status
 
 - DONE (task 1, reactive world): Holmake green, no cheats.
-- TODO: task 2, `choose`; then 10-cf-reactive.md; PR.
+- DONE (task 2, choose): `asyncCfChooseModelScript.sml` (one-poll lemmas,
+  incl. `suspended_choose`, from the model's `views_split`/`par_log_split`)
+  and `asyncCfChooseScript.sml` (CakeML `choose`, `choose_spec_n`,
+  `choose_spec` MAIN). Holmake green, no cheats.
+- TODO: 10-cf-reactive.md; PR.
 
 ## Assumptions made (so far)
 
@@ -37,6 +42,16 @@ Kept current at every commit. Read with the coordinator's brief and
    CakeML code is fixed and the world is a parameter.
 
 ## Tool feedback
+
+- **Seeing goals inside SML tactic functions**: goalState timed out
+  ("walker timed out (>10000ms)") on long proofs, and errors inside
+  `FIRST`/tactic functions are reported at the theorem line. A useful
+  trick: `(fn (g as (asl, gw)) => FAIL_TAC (term_to_string gw) g)` puts the
+  goal into the diagnostics message.
+- Conditional rewrites whose condition mentions a variable that appears
+  only in the hypothesis and the RHS (e.g. `(m1 []).result = SOME x ⇒
+  choose m1 m2 = ... x ...`) are never used by `simp`. Stating a
+  specialised version on `finished A x` fixed it.
 
 - `W` (W combinator) again: a renaming regex also hit `W8ARRAY`.
 - `xif` leaves `∃b. BOOL b bv ∧ ...` even when `BOOL T bv` is an

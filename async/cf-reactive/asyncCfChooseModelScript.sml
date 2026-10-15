@@ -212,3 +212,35 @@ Proof
               suspended_suspended, DROP_LENGTH_APPEND2] >>
   every_case_tac >> gvs[] >> simp[DROP_LENGTH_APPEND2, ADD1]
 QED
+
+(* The same three cases, stated for a side that is literally `finished`
+   (the form the CF proof sees), so they can be used as rewrites. *)
+Theorem choose_finished_left:
+  choose (finished A x) m2 = finished A (INL (x, m2))
+Proof
+  rw[FUN_EQ_THM] >> ONCE_REWRITE_TAC[choose_def] >>
+  ONCE_REWRITE_TAC[first_prefix_def] >>
+  simp[either_done_def, finished_def, log_before_def, new_actions_NIL,
+       log_of_def]
+QED
+
+Theorem choose_finished_right_quiet:
+  (m1 []).result = NONE ∧ (m1 []).actions = [] ⇒
+  choose m1 (finished B y) = finished B (INR (m1, y))
+Proof
+  strip_tac >>
+  mp_tac (Q.INST [‘m2’ |-> ‘finished B y’] choose_right_done_quiet) >>
+  simp[finished_def]
+QED
+
+Theorem choose_finished_right_waits:
+  (m1 []).result = NONE ∧ (m1 []).actions ≠ [] ⇒
+  (choose m1 (finished B y) []).actions = (m1 []).actions ++ B ∧
+  (choose m1 (finished B y) []).result = NONE ∧
+  suspended (choose m1 (finished B y)) [w] =
+    finished [] (INR (suspended m1 [take_snap (LENGTH (m1 []).actions) w], y))
+Proof
+  strip_tac >>
+  mp_tac (Q.INST [‘m2’ |-> ‘finished B y’] choose_right_done_waits) >>
+  simp[finished_def]
+QED

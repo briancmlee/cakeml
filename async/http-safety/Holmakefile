@@ -1,0 +1,9 @@
+# HttpSpec's http_safe for the whole HTTP program (design/23-http-safety.md):
+# the generic no-misuse argument, the HTTP server in the socket vocabulary
+# (model, CakeML, CF), the trace bridge to http_safe, and main.
+INCLUDES = ../model ../cf-spike ../cf-actions ../cf-reactive ../ffi-spike \
+           ../m3-assembly ../m4-server ../m4-common ../spec ../m4-safety \
+           ../runnable ../machine-code ../http-model ../http-impl
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

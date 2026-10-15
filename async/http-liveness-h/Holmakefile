@@ -1,0 +1,10 @@
+# Liveness of the header-tolerant HTTP server (spec/HttpSpecHeaders): the
+# per-connection machine, machine-level liveness with bounded reads, and the
+# socket-level assembly into http_spec_h (design/26-http-liveness-h.md).
+INCLUDES = ../model ../cf-spike ../cf-actions ../cf-reactive ../ffi-spike \
+           ../m3-assembly ../m4-server ../m4-common ../spec ../m4-safety \
+           ../runnable ../machine-code ../http-model ../http-impl ../http-safety \
+           ../headline ../http-headers ../m4-liveness ../http-liveness
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

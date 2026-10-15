@@ -44,34 +44,31 @@ the statement is much longer: liveness then needs "line x delivered to d"
 relative to G. It also has to be checked against G in every bite. D1 is
 strictly stronger, and the implementation below meets it.
 
-## 3. Implementation plan (model level)
+## 3. Implementation (model level)
 
-- The hub is `with_store` (KV's generic effect handler, `asyncWithStore`),
-  instantiated with the **chat log** as its store:
-  `Publish ls` appends lines, `Join` answers the current length, `Fetch i`
-  answers `DROP i log`.
-- `chat_server lfd = with_store chat_delta [] (server_with_k chat_handler lfd)`.
-- `chat_handler fd = both (reader fd "") (writer fd)`:
-  - **reader**: `readable fd; Read fd`. In the round the data arrives, it
-    `Publish`es the newly complete lines (one action with the list), then
-    loops.
-  - **writer**: `Join`, then forever `Fetch i`. If there are new lines, it
-    `Write`s them all and advances `i`.
-- **Why the order comes out right** (the proof's spine):
-  1. **Shift.** A reader publishes, in round i+1, exactly the lines its
-     reads completed in round i. `both` keeps left-then-right order within
-     a round for both reads and publishes. So the hub log after round i+1
-     is exactly `relayed` of the trace up to round i.
-  2. **Join.** The accept loop is the rightmost fiber, so `Accept` is the
-     last action of its round. The new handler `Join`s in the next round,
-     after all older handlers' publishes of that round. So the join index is
-     exactly the number of lines completed before the accept event.
-  3. **Writer.** What it writes is a prefix of `DROP join log` ≼ `owed`.
-- Liveness: a reader reads within a bounded number of rounds of data being
-  readable (as echo does). Publishing takes 1 round. A writer fetches every
-  other round, so it delivers within a bounded number of rounds. Reuse
-  `server_with_live` / `henv` for the reading part where possible.
+**Pivot (D9).** The first plan had readers `Publish` lines to a `with_store` log. That needs a *round-shift* lemma: reads in round n are published in round n+1, in the same fiber order, through `both` and `server_with`'s dynamic spawn tree. This is KV's "timestamped bridge" (design/30 §4.3) in another form. The library's transcript lemmas are flat, not per round, so it would have been a large new proof.
+
+**Decision D9: sequence at the I/O boundary.** A new generic effect handler, `with_tap σ δ s0 m` (asyncWithTap), generalizes `with_store`:
+- it answers m's queries with δ, as `with_store` does;
+- it also **observes** m's socket (action, response) pairs, in order, through the tap σ.
+
+The store at any position of m's transcript is a fold over the transcript up to that position (`tap_answers`). `with_store` is the special case σ = K.
+
+Rationale: the chat's global order is defined by I/O (the order of reads). A tap sees exactly that order, so the hub's log equals `relayed` by construction. Neither a shift lemma nor a fiber-order lemma is needed.
+
+- The hub's store: `log` (complete lines, in order), `bufs` (each connection's partial line), `joins` (the log length at each accept). Keys are 64-bit words, as the socket world's fds are. Then the socket-level tap is the model tap read through `srelabel`, exactly (`chat_tap_s_sfa`, D10).
+- `chat_server lfd = with_tap chat_tap chat_delta empty_store (cserver_with chat_handler lfd)`.
+- `chat_handler fd = both (reader fd) (writer fd)`:
+  - **reader**: `readable fd; Read fd`, forever, until EOF. The data goes to the tap, not to the reader.
+  - **writer**: `Start` (where did I join?), then forever `Fetch i`. If there are new lines, `Write` them all and advance `i`. If the connection has not joined, the answer is `NotJoined` and the writer stops: safe by construction.
+- **Safety proof** (asyncChatSafe), in three parts:
+  1. `tap_inv`: the hub describes the transcript. Pure list induction.
+  2. `writer_written`: with any growing log oracle, the writer writes a prefix of the log from its join position. Local to the handler.
+  3. Gluing: `cserver_with_isolates` (copied from KV's `server_with_k`), `tap_answers`, and the monotone positions. No round reasoning anywhere.
+- `cserver_with` is a renamed copy of KV's `server_with_k` (D11). KV's file is WIP: one proof fails, so it can't be a dependency yet. Reconcile later.
 
 ## 4. Status
 
-- M1: spec + bites (this note's §1–2): in progress.
+- M1: spec + bites: DONE (PR #66).
+- M2: model + model-level safety: DONE (`chat_server_safe`, asyncChatSafe; with_tap metatheory asyncWithTap).
+- M3: CakeML + CF + whole-program safety: next (drafts in asyncWithTapStep, asyncChatSockModel, asyncChatProg, asyncChatSpec).

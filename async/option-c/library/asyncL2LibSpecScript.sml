@@ -288,3 +288,126 @@ Proof
   rpt strip_tac >> irule app_COMPI_of_approx >> simp[] >>
   metis_tac[map2_specI_n]
 QED
+
+(* ------------------------------------------------------------------------
+   both2
+   ------------------------------------------------------------------------ *)
+
+Theorem EVSET_APPEND[local]:
+  LIST_TYPE EV l1 v1 ∧ LIST_TYPE EV l2 v2 ∧ LIST_TYPE EV (l1 ++ l2) v ⇒
+  EVSET EV (LIST_TO_SET l1 ∪ LIST_TO_SET l2) v
+Proof
+  rw[EVSET_def] >> qexists_tac ‘l1 ++ l2’ >> simp[]
+QED
+
+(* The common start of both2_specI_n: take the pairs apart, compute
+   acts1 @ acts2, and split on whether each side is Done. *)
+val both2_prelude =
+  rpt strip_tac >>
+  qpat_assum ‘COMPI _ _ _ _ _ c1 _’
+    (strip_assume_tac o REWRITE_RULE[COMPI_def, POLL_RESULT2_def]) >>
+  qpat_assum ‘COMPI _ _ _ _ _ c2 _’
+    (strip_assume_tac o REWRITE_RULE[COMPI_def, POLL_RESULT2_def]) >>
+  gvs[] >>
+  xcf_with_def both2_v_def >> xmatch >> xmatch >>
+  xlet ‘POSTv av. &LIST_TYPE ACT ((c1.run []).actions ++ (c2.run []).actions) av’
+  >- (xapp >> xsimpl >> metis_tac[]) >>
+  qpat_x_assum ‘STEPI _ _ _ _ _ c1 _’ mp_tac >> simp[Once STEPI_cases] >>
+  qpat_x_assum ‘STEPI _ _ _ _ _ c2 _’ mp_tac >> simp[Once STEPI_cases] >>
+  rw[] >>
+  (xlet_auto >- (xcon >> xsimpl));
+
+(* Both sides Done: both2 returns (acts, Done2 (x, y)) *)
+val both2_done_tac =
+  xmatch >> xcons >>
+  simp[POLL_RESULT2_def, both2_def] >>
+  gvs[both_finished_finished, finished_def] >>
+  Cases_on ‘n’ >> simp[STEPIn_def] >>
+  irule_at Any EQ_REFL >> simp[PAIR_TYPE_def];
+
+(* Otherwise: both2 returns (acts, Pending2 (es1 @ es2) k).  The closure k
+   polls each side with its share of the results and continues with both2
+   (by the induction hypothesis, when there is one). *)
+fun both2_pending_tac (n_is_suc : bool) =
+  xmatch >> xfun ‘k’ >>
+  xlet ‘POSTv i2. &EVSET EV (waiting_on c2 []) i2’
+  >- (xapp_spec interest_specI >> first_assum (irule_at Any)) >>
+  xlet ‘POSTv i1. &EVSET EV (waiting_on c1 []) i1’
+  >- (xapp_spec interest_specI >> first_assum (irule_at Any)) >>
+  qpat_x_assum ‘EVSET _ (waiting_on c1 _) _’
+    (strip_assume_tac o REWRITE_RULE[EVSET_def]) >>
+  qpat_x_assum ‘EVSET _ (waiting_on c2 _) _’
+    (strip_assume_tac o REWRITE_RULE[EVSET_def]) >>
+  rename1 ‘LIST_TYPE EV l1 i1’ >> rename1 ‘LIST_TYPE EV l2 i2’ >>
+  xlet ‘POSTv ev. &LIST_TYPE EV (l1 ++ l2) ev’
+  >- (xapp >> xsimpl >> metis_tac[]) >>
+  xcons >>
+  simp[POLL_RESULT2_def, both2_NIL] >>
+  TRY (conj_tac >- gvs[]) >> TRY (gvs[] >> NO_TAC) >>
+  (if not n_is_suc then ALL_TAC else
+  simp[STEPIn_def] >>
+  conj_tac
+  >- (simp[both2_def, both_NIL_poll] >> gvs[finished_def] >>
+      every_case_tac >> gvs[]) >>
+  conj_tac
+  >- (simp[both2_NIL] >> metis_tac[EVSET_APPEND]) >>
+  rpt strip_tac >> simp[returns_def] >>
+  simp[suspended2_both2] >>
+  qpat_x_assum ‘curried _ _ k ∧ _’ (irule o CONJUNCT2) >>
+  gvs[SNAPSHOT_def] >> xmatch >>
+  qabbrev_tac ‘kk = LENGTH (c1.run []).actions’ >>
+  xlet ‘POSTv nv. &NUM kk nv’
+  >- (xapp_spec (INST_TYPE [alpha |-> “:'act”] ListProgTheory.length_v_thm) >>
+      xsimpl >> simp[Abbr ‘kk’] >> metis_tac[]) >>
+  xlet ‘POSTv tv. &LIST_TYPE R (TAKE kk w.results) tv’
+  >- (xapp_spec (INST_TYPE [alpha |-> “:'r”] ListProgTheory.take_v_thm) >>
+      xsimpl >> simp[mllistTheory.take_def] >> metis_tac[]) >>
+  xlet ‘POSTv w1. &(w1 = Conv NONE [rv; nv; tv])’ >- (xcon >> xsimpl) >>
+  xlet ‘POSTv c1'. &COMPI p ACT A EV (SNAPSHOT READY R)
+                        (suspended2 c1 [take_snap kk w]) c1'’
+  >- (xapp_spec poll2_specI >> simp[SNAPSHOT_def, take_snap_def] >>
+      metis_tac[]) >>
+  xlet ‘POSTv dv. &LIST_TYPE R (DROP kk w.results) dv’
+  >- (xapp_spec (INST_TYPE [alpha |-> “:'r”] ListProgTheory.drop_v_thm) >>
+      xsimpl >> simp[mllistTheory.drop_def] >> metis_tac[]) >>
+  xlet ‘POSTv w2. &(w2 = Conv NONE [rv; nv; dv])’ >- (xcon >> xsimpl) >>
+  xlet ‘POSTv c2'. &COMPI p ACT B EV (SNAPSHOT READY R)
+                        (suspended2 c2 [skip_snap kk w]) c2'’
+  >- (xapp_spec poll2_specI >> simp[SNAPSHOT_def, skip_snap_def] >>
+      metis_tac[]) >>
+  first_x_assum (qspecl_then [‘suspended2 c1 [take_snap kk w]’,
+                              ‘suspended2 c2 [skip_snap kk w]’, ‘c1'’, ‘c2'’]
+                   mp_tac) >>
+  simp[wf_suspended, suspended2_run] >> strip_tac >> xapp >>
+  xsimpl >> gvs[markerTheory.Abbrev_def, finished_def]);
+
+Theorem both2_specI_n:
+  ∀n c1 c2 cv1 cv2.
+    wf c1.run ∧ wf c2.run ∧
+    COMPI p ACT A EV (SNAPSHOT READY (R : 'r -> v -> bool)) c1 cv1 ∧
+    COMPI p ACT B EV (SNAPSHOT READY R) c2 cv2 ⇒
+    app (p:'ffi ffi_proj) both2_v [cv1; cv2] emp
+      (POSTv v. &POLL_RESULT2 (ACT : 'act -> v -> bool)
+                  (STEPIn p ACT (PAIR_TYPE A B) EV (SNAPSHOT READY R) n)
+                  (both2 c1 c2) v)
+Proof
+  Induct
+  >- (both2_prelude >> FIRST [both2_done_tac, both2_pending_tac false])
+  >- (both2_prelude >> FIRST [both2_done_tac, both2_pending_tac true])
+QED
+
+(* MAIN: both2 c1 c2 implements the model's both2 c1 c2: each round the
+   left side's actions then the right side's, each side its own results,
+   the pair of results once both have finished, and while not, the
+   declared events of the unfinished sides (in some order). *)
+Theorem both2_specI:
+  wf c1.run ∧ wf c2.run ∧
+  COMPI p ACT A EV (SNAPSHOT READY (R : 'r -> v -> bool)) c1 cv1 ∧
+  COMPI p ACT B EV (SNAPSHOT READY R) c2 cv2 ⇒
+  app (p:'ffi ffi_proj) both2_v [cv1; cv2] emp
+    (POSTv v. &COMPI p (ACT : 'act -> v -> bool) (PAIR_TYPE A B) EV
+                (SNAPSHOT READY R) (both2 c1 c2) v)
+Proof
+  rpt strip_tac >> irule app_COMPI_of_approx >> simp[] >>
+  metis_tac[both2_specI_n]
+QED

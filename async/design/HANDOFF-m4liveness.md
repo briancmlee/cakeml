@@ -35,6 +35,8 @@ m4-safety, runnable, machine-code, m4-echospec get built via INCLUDES.)
 
 See 19 §6.
 
-## Next (queued by the coordinator)
+## Next
 
-EchoSpec2 (close + fd reuse, per-episode), spec first, as its own PR.
+- PR #30 (base spike/async-closed-loop) is open for review.
+- EchoSpec2 (close + fd reuse, per-episode) has been handed to a separate
+  session ("close-v2"); not started here.

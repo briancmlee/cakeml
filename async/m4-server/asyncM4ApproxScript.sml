@@ -145,8 +145,9 @@ QED
 Theorem STEPAd_prepend:
   STEPAd p ACT RES WORLD n g sv ⇒ STEPAd p ACT RES WORLD n (prepend A g) sv
 Proof
-  Cases_on ‘n’ >> simp[STEPAd_def] >> rw[] >>
-  simp[prepend_finished, suspended_prepend, SF SFY_ss]
+  Cases_on ‘n’ >> simp[Once STEPAd_def] >> rw[] >>
+  gs[prepend_finished, STEPAd_finished] >>
+  simp[STEPAd_def, suspended_prepend]
 QED
 
 (* ------------------------------------------------------------------------
@@ -177,17 +178,13 @@ Theorem skip_spec_d:
     (POSTv v. &STEPAd p ACT RES (SNAPSHOT READY R) n (skipping k g) v)
 Proof
   rpt strip_tac >> xcf_with_def skip_v_def >>
-  Cases_on ‘n’ >>
-  qpat_x_assum ‘STEPAd _ _ _ _ _ _ sv’ mp_tac >> simp[STEPAd_def] >> rw[]
-  >~ [‘DoneV’]
-  >- (xmatch >> xvar >> xsimpl >> simp[STEPAd_Done, skipping_finished] >>
-      metis_tac[])
-  >~ [‘DoneV’]
-  >- (xmatch >> xvar >> xsimpl >> simp[STEPAd_Done, skipping_finished] >>
-      metis_tac[])
-  >- (xmatch >> xfun ‘k2’ >> xcon >> xsimpl >> simp[STEPAd_def])
+  qpat_x_assum ‘STEPAd _ _ _ _ _ _ sv’ mp_tac >>
+  Cases_on ‘n’ >> simp[STEPAd_def] >> strip_tac >> gvs[]
+  >- (xmatch >> xvar >> xsimpl >> simp[skipping_finished] >> metis_tac[])
+  >- (xmatch >> xfun ‘k2’ >> xcon >> xsimpl)
+  >- (xmatch >> xvar >> xsimpl >> simp[skipping_finished] >> metis_tac[])
   >- (xmatch >> xfun ‘k2’ >> xcon >> xsimpl >>
-      simp[STEPAd_def, suspended_skipping] >>
+      simp[suspended_skipping] >>
       rpt strip_tac >> simp[returns_def] >>
       qpat_x_assum ‘curried _ _ k2 ∧ _’ (irule o CONJUNCT2) >>
       gvs[SNAPSHOT_def] >> xmatch >>
@@ -274,8 +271,8 @@ Proof
       simp[wf_suspended, GSYM COMPd_def] >>
       impl_tac
       >- (rpt strip_tac >> irule returns_mono >>
-          first_x_assum (irule_at Any) >> simp[] >> rpt strip_tac >>
-          irule COMPd_SUC_IMP >> simp[]) >>
+          qpat_x_assum ‘∀x xv. A x xv ⇒ _’ (drule_then (irule_at Any)) >>
+          rpt strip_tac >> irule COMPd_SUC_IMP >> simp[]) >>
       strip_tac >> xapp)
 QED
 
@@ -320,7 +317,10 @@ Proof
   qpat_x_assum ‘curried _ _ k2 ∧ _’ (irule o CONJUNCT2) >>
   xlet ‘POSTv r. &COMPd p ACT A (SNAPSHOT READY R) n (suspended m [w]) r’
   >- (first_x_assum drule >> rw[returns_def, GSYM COMPd_def] >> xapp) >>
-  xapp_spec bind_spec_d >> simp[wf_suspended] >> metis_tac[]
+  ‘app p bind_v [r; gv] emp
+     (POSTv v. &COMPd p ACT B (SNAPSHOT READY R) n (bind (suspended m [w]) g) v)’
+    by (irule bind_spec_d >> simp[wf_suspended] >> metis_tac[]) >>
+  gvs[COMPd_def] >> qpat_x_assum ‘app _ bind_v _ _ _’ xapp_spec >> xsimpl
 QED
 
 (* ------------------------------------------------------------------------
@@ -348,9 +348,8 @@ val both_prelude =
 val both_done_tac =
   qmatch_goalsub_rename_tac ‘both (finished A1 x1) (finished A2 x2)’ >>
   xmatch >> xcons >>
-  simp[COMPd_def, POLL_RESULT_def, both_finished_finished] >>
-  gvs[finished_def] >>
-  simp[STEPAd_Done] >> irule_at Any EQ_REFL >> simp[PAIR_TYPE_def];
+  simp[COMPd_def, POLL_RESULT_def, both_finished_finished, STEPAd_Done] >>
+  irule_at Any EQ_REFL >> gvs[finished_def, PAIR_TYPE_def];
 
 (* The two sides M1 and M2 of both, read off the goal *)
 fun both_sides w =
@@ -366,11 +365,10 @@ fun both_pending_tac (n_is_suc : bool) (g as (_, w)) =
   let val (M1, M2) = both_sides w in
   (xmatch >> xfun ‘k’ >> xcons >>
   simp[COMPd_def, POLL_RESULT_def, both_NIL_poll] >>
-  simp[STEPAd_def] >>
-  conj_tac >- simp[both_NIL_poll, finished_def] >>
+  asm_simp_tac (srw_ss()) [STEPAd_def, both_NIL_poll, finished_def] >>
   (if not n_is_suc then ALL_TAC else
-  simp[suspended_both, GSYM COMPd_def] >>
-  rpt strip_tac >> simp[returns_def] >>
+  simp[suspended_both] >>
+  rpt strip_tac >> simp[returns_def, GSYM COMPd_def] >>
   qpat_x_assum ‘curried _ _ k ∧ _’ (irule o CONJUNCT2) >>
   gvs[SNAPSHOT_def] >> xmatch >>
   qabbrev_tac ‘kk = LENGTH (^M1 []).actions’ >>

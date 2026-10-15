@@ -103,14 +103,14 @@ Theorem readable_spec:
   app (p:'ffi ffi_proj) readable_v [fdv] emp
     (POSTv v. &COMP p ACT UNIT_TYPE (SNAPSHOT EVENTS R) (readable fd) v)
 Proof
-  rpt strip_tac >> xcf_with_def readable_v_def >> xfun ‘f’ >>
+  rpt strip_tac >> xcf_with_def (fetch "-" "readable_v_def") >> xfun ‘f’ >>
   simp[readable_def] >> xapp_spec wait_spec >> simp[returns_def] >>
   rpt strip_tac >>
   qpat_x_assum ‘curried _ _ f ∧ _’ (irule o CONJUNCT2) >>
   gvs[SNAPSHOT_def, EVENTS_def] >> xmatch >>
   xlet ‘POSTv bv. &BOOL (has_readable fd es) bv’
   >- (xapp >> xsimpl >> metis_tac[]) >>
-  xif >> xcon >> xsimpl >>
+  xif >> rpt (xlet_auto >- (xcon >> xsimpl)) >> xcon >> xsimpl >>
   gvs[has_readable_MEM, std_preludeTheory.OPTION_TYPE_def]
 QED
 
@@ -122,13 +122,21 @@ Theorem map_spec_d:
     (POSTv v. &COMPd p (ACT : 'act -> v -> bool) B
                 (SNAPSHOT READY (R : 'r -> v -> bool)) n (map f m) v)
 Proof
-  rpt strip_tac >> xcf_with_def map_v_def >> xfun ‘g’ >>
-  simp[map_as_bind] >> xapp_spec bind_spec_d >> simp[] >>
-  first_x_assum (irule_at Any) >> simp[returns_def] >> rpt strip_tac >>
-  qpat_x_assum ‘curried _ _ g ∧ _’ (irule o CONJUNCT2) >>
-  xlet ‘POSTv yv. &B (f x) yv’
-  >- (first_x_assum drule >> rw[returns_def] >> xapp) >>
-  irule app_weaken >> irule_at Any return_spec >> first_x_assum (irule_at Any) >>
-  rw[cfHeapsBaseTheory.SEP_IMPPOST_def, set_sepTheory.SEP_IMP_def,
-     POSTv_cond, COMP_IMP_COMPd]
+  rpt strip_tac >> xcf_with_def (fetch "-" "map_v_def") >> xfun ‘g’ >>
+  ‘∀x xv. A x xv ⇒
+     returns p g [xv] (COMPd p ACT B (SNAPSHOT READY R) n (return (f x)))’
+    by (rpt strip_tac >> simp[returns_def] >>
+        qpat_x_assum ‘curried _ _ g ∧ _’ (irule o CONJUNCT2) >>
+        xlet ‘POSTv yv. &B (f x) yv’
+        >- (first_x_assum drule >> rw[returns_def] >> xapp) >>
+        ‘app p return_v [yv] emp
+           (POSTv v. &COMP p ACT B (SNAPSHOT READY R) (return (f x)) v)’
+          by (irule return_spec >> simp[]) >>
+        qpat_x_assum ‘app _ return_v _ _ _’ xapp_spec >> xsimpl >>
+        simp[COMP_IMP_COMPd]) >>
+  ‘app p bind_v [mv; g] emp
+     (POSTv v. &COMPd p ACT B (SNAPSHOT READY R) n
+                 (bind m (λx. return (f x))) v)’
+    by (irule bind_spec_d >> simp[] >> metis_tac[]) >>
+  simp[map_as_bind] >> qpat_x_assum ‘app _ bind_v _ _ _’ xapp_spec >> xsimpl
 QED

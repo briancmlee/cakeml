@@ -1,16 +1,25 @@
-# Option C §2.3 (design/33): the loop that selects on the declared interest.
-INCLUDES = ../cakeml/library \
+# Option C §2.3–2.5 (design/33): the loop that selects on the declared
+# interest, and the HTTP-bodies program on it.
+INCLUDES = ../cakeml/approx \
+           ../cakeml/library \
            ../loop/blocking \
            ../loop/polling \
            ../model/core \
            ../model/level2 \
+           ../model/sched \
            ../pk/http-proto \
+           ../pk/http-proto-inst \
            ../pk/library-liveness \
            ../pk/option-c-proto \
            ../programs/echo \
            ../programs/echo-blocking \
+           ../programs/http \
+           ../programs/http-b \
+           ../programs/http-h \
            ../servers/echo \
+           ../servers/http \
            ../servers/relabel \
+           ../spec \
            ../world/composed \
            ../world/sockets
 ifdef POLY

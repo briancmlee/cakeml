@@ -768,3 +768,101 @@ Proof
       >> simp[])
   >> simp[]
 QED
+
+(* A pending connection c, with pre ahead of it in the queue: after a round
+   it has been handed out, or it has no more connections ahead of it (fewer,
+   if the server accepted) *)
+Theorem round_queue:
+  closed_loop (server lfd) (start_world lfd sch) n = (h, w, perf) ∧
+  closed_loop (server lfd) (start_world lfd sch) (n + 1) = (h', w', perf') ∧
+  w.listeners = [(lfd, pre ++ c :: post)] ⇒
+  MEM c (accepted (sperf perf')) ∨
+  ∃pre' post'. w'.listeners = [(lfd, pre' ++ c :: post')] ∧
+               LENGTH pre' ≤ LENGTH pre ∧
+               (MEM (Accept lfd) (new_actions (log_of (server lfd)) h) ⇒
+                LENGTH pre' < LENGTH pre)
+Proof
+  strip_tac >> drule_all round_listener >> strip_tac
+  >> qpat_x_assum ‘_ = d ++ q'’ (strip_assume_tac o REWRITE_RULE[APPEND_EQ_APPEND])
+  >> gvs[]
+  >- (disj2_tac >> qexistsl_tac [‘l’, ‘post ++ x’] >> simp[]
+      >> strip_tac >> gvs[] >> Cases_on ‘d’ >> gvs[])
+  >> Cases_on ‘l’ >> gvs[]
+  >> disj2_tac >> qexistsl_tac [‘[]’, ‘post ++ x’] >> simp[]
+  >> strip_tac >> gvs[] >> Cases_on ‘pre’ >> gvs[]
+QED
+
+(* Connections handed out stay handed out *)
+Theorem accepted_later:
+  closed_loop (server lfd) (start_world lfd sch) m = (h, w, perf) ∧
+  closed_loop (server lfd) (start_world lfd sch) N = (h', w', perf') ∧
+  m ≤ N ∧ MEM c (accepted (sperf perf)) ⇒
+  MEM c (accepted (sperf perf'))
+Proof
+  strip_tac
+  >> qspecl_then [‘server lfd’, ‘start_world lfd sch’, ‘m’, ‘N − m’, ‘h’, ‘w’, ‘perf’,
+                  ‘h'’, ‘w'’, ‘perf'’] mp_tac (Q.GENL [‘m’, ‘w0’, ‘n’] closed_loop_prefix)
+  >> simp[] >> metis_tac[MEM_accepted_prefix]
+QED
+
+Theorem queue_later:
+  ∀d h' w' perf'.
+    closed_loop (server lfd) (start_world lfd sch) n = (h, w, perf) ∧
+    w.listeners = [(lfd, pre ++ c :: post)] ∧
+    closed_loop (server lfd) (start_world lfd sch) (n + d) = (h', w', perf') ⇒
+    MEM c (accepted (sperf perf')) ∨
+    ∃pre' post'. w'.listeners = [(lfd, pre' ++ c :: post')] ∧ LENGTH pre' ≤ LENGTH pre
+Proof
+  Induct >- (rw[] >> gvs[] >> metis_tac[LESS_EQ_REFL])
+  >> rpt strip_tac
+  >> Cases_on ‘closed_loop (server lfd) (start_world lfd sch) (n + d)’
+  >> PairCases_on ‘r’
+  >> qpat_x_assum ‘∀h' w' perf'. _’ (qspecl_then [‘q’, ‘r0’, ‘r1’] mp_tac)
+  >> simp[] >> strip_tac
+  >- (disj1_tac
+      >> qspecl_then [‘n + d’, ‘q’, ‘r0’, ‘r1’, ‘n + SUC d’, ‘h'’, ‘w'’, ‘perf'’] mp_tac
+           (Q.GENL [‘m’, ‘h’, ‘w’, ‘perf’, ‘N’, ‘h'’, ‘w'’, ‘perf'’] accepted_later)
+      >> simp[])
+  >> qspecl_then [‘n + d’, ‘q’, ‘r0’, ‘r1’, ‘h'’, ‘w'’, ‘perf'’, ‘pre'’, ‘post'’] mp_tac
+       (Q.GENL [‘n’, ‘h’, ‘w’, ‘perf’, ‘h'’, ‘w'’, ‘perf'’, ‘pre’, ‘post’] round_queue)
+  >> gvs[ADD1] >> strip_tac >> simp[] >> metis_tac[LESS_EQ_TRANS]
+QED
+
+(* MAIN: pending connections are accepted.  A connection with p connections
+   ahead of it in the listener's queue is handed out within 3 (p + 1)
+   rounds. *)
+Theorem queue_progress:
+  ∀p n h w perf pre post.
+    closed_loop (server lfd) (start_world lfd sch) n = (h, w, perf) ∧
+    w.listeners = [(lfd, pre ++ c :: post)] ∧ LENGTH pre ≤ p ⇒
+    ∀N hN wN pN.
+      n + 3 * (p + 1) ≤ N ∧
+      closed_loop (server lfd) (start_world lfd sch) N = (hN, wN, pN) ⇒
+      MEM c (accepted (sperf pN))
+Proof
+  completeInduct_on ‘p’ >> rpt strip_tac
+  (* the server accepts in some round n + i, i ≤ 2 *)
+  >> qspecl_then [‘n’, ‘h’, ‘w’, ‘perf’, ‘pre ++ c :: post’] mp_tac
+       (Q.GENL [‘n’, ‘h’, ‘w’, ‘perf’, ‘q’] accept_soon)
+  >> simp[] >> strip_tac
+  (* until then, c does not lose its place *)
+  >> qspecl_then [‘i’, ‘hi’, ‘wi’, ‘pi’] mp_tac queue_later
+  >> impl_tac >- simp[] >> strip_tac
+  >- (qspecl_then [‘n + i’, ‘hi’, ‘wi’, ‘pi’, ‘N’, ‘hN’, ‘wN’, ‘pN’] mp_tac
+        (Q.GENL [‘m’, ‘h’, ‘w’, ‘perf’, ‘N’, ‘h'’, ‘w'’, ‘perf'’] accepted_later)
+      >> simp[])
+  (* in round n + i it gets handed out, or moves up the queue *)
+  >> Cases_on ‘closed_loop (server lfd) (start_world lfd sch) (n + i + 1)’
+  >> PairCases_on ‘r’ >> rename1 ‘_ = (hj, wj, pj)’
+  >> qspecl_then [‘n + i’, ‘hi’, ‘wi’, ‘pi’, ‘hj’, ‘wj’, ‘pj’, ‘pre'’, ‘post'’] mp_tac
+       (Q.GENL [‘n’, ‘h’, ‘w’, ‘perf’, ‘h'’, ‘w'’, ‘perf'’, ‘pre’, ‘post’] round_queue)
+  >> simp[] >> strip_tac
+  >- (qspecl_then [‘n + i + 1’, ‘hj’, ‘wj’, ‘pj’, ‘N’, ‘hN’, ‘wN’, ‘pN’] mp_tac
+        (Q.GENL [‘m’, ‘h’, ‘w’, ‘perf’, ‘N’, ‘h'’, ‘w'’, ‘perf'’] accepted_later)
+      >> simp[])
+  (* then by induction, with fewer connections ahead of it *)
+  >> first_x_assum (qspec_then ‘p − 1’ mp_tac) >> simp[]
+  >> disch_then (qspecl_then [‘n + i + 1’, ‘hj’, ‘wj’, ‘pj’, ‘pre''’, ‘post''’] mp_tac)
+  >> impl_tac >- simp[]
+  >> disch_then (qspecl_then [‘N’, ‘hN’, ‘wN’, ‘pN’] mp_tac) >> simp[]
+QED

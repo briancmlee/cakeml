@@ -36,7 +36,7 @@
 Theory QuietSpec
 Ancestors
   semantics ffi llist ml_prog ffiSpikeSocketFFI ffiSpikeSocketFair
-  EchoSpec HttpSpec HttpSpecHeaders
+  EchoSpec HttpSpec HttpSpecHeaders HttpSpecBodies
 Libs
   preamble
 
@@ -124,8 +124,7 @@ Definition echo_quiet_def:
              (arrivals_finite sk ⇒ ∃io. asleep b io)
 End
 
-(* THE HTTP STATEMENT: the same, with HttpSpecHeaders' http_safe_h and
-   http_live_h *)
+(* The same for HttpSpecHeaders (the header-tolerant stepping stone) *)
 Definition http_quiet_def:
   http_quiet lfd files (prog : dec list) ⇔
     ∀sk. server_world lfd sk ⇒
@@ -135,5 +134,19 @@ Definition http_quiet_def:
               (∃io. asleep b io ∧
                     http_safe_h files (fromList io) ∧
                     http_live_h files sk (fromList io))) ∧
+             (arrivals_finite sk ⇒ ∃io. asleep b io)
+End
+
+(* THE HTTP STATEMENT for the headline HTTP spec (HttpSpecBodies): the
+   same, with http_safe_b and http_live_b *)
+Definition http_quiet_b_def:
+  http_quiet_b lfd files (prog : dec list) ⇔
+    ∀sk. server_world lfd sk ⇒
+         ∃b. semantics_prog (init_state (select_ffi sk)) init_env prog b ∧
+             ((∃io. b = Diverge io ∧
+                    http_safe_b files io ∧ http_live_b files sk io) ∨
+              (∃io. asleep b io ∧
+                    http_safe_b files (fromList io) ∧
+                    http_live_b files sk (fromList io))) ∧
              (arrivals_finite sk ⇒ ∃io. asleep b io)
 End

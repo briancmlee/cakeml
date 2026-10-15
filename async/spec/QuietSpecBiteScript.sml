@@ -11,13 +11,14 @@
     forever.
   - broken_sleeps_early: a program that goes to sleep before echoing what
     arrived fails, in particular one that blocks in select at once.
-  - ideal_quiet / ideal_quiet_h: an ideal sleeping run meets every clause
-    of the statement in a quiet world.
+  - ideal_quiet / ideal_quiet_h / ideal_quiet_b: an ideal sleeping run
+    meets every clause of the statement in a quiet world.
 *)
 Theory QuietSpecBite
 Ancestors
   QuietSpec EchoSpec EchoSpecBite HttpSpec HttpSpecBite HttpSpecHeaders
-  HttpSpecHeadersBite ffiSpikeSocketFFI ffiSpikeSocketFair llist
+  HttpSpecHeadersBite HttpSpecBodies HttpSpecBodiesBite
+  ffiSpikeSocketFFI ffiSpikeSocketFair llist
 Libs
   preamble
 
@@ -108,6 +109,17 @@ Proof
   first_x_assum drule >> rw[] >> simp[asleep_def]
 QED
 
+Theorem broken_runs_forever_b:
+  server_world lfd sk ∧ arrivals_finite sk ∧
+  (∀b. semantics_prog (init_state (select_ffi sk)) init_env prog b ⇒
+       ∃io. b = Diverge io) ⇒
+  ¬http_quiet_b lfd files prog
+Proof
+  rw[http_quiet_b_def] >> qexists_tac ‘sk’ >> rw[] >>
+  Cases_on ‘semantics_prog (init_state (select_ffi sk)) init_env prog b’ >> simp[] >>
+  first_x_assum drule >> rw[] >> simp[asleep_def]
+QED
+
 (* The worlds of the two spinning servers are quiet: running forever there
    fails the statement *)
 Theorem spin_worlds_quiet:
@@ -168,3 +180,23 @@ Proof
     by (irule arrivals_finite_one_step >> simp[one_client_def]) >>
   simp[asleep_def] >> assume_tac ideal_h_trace_safe_and_live >> fs[]
 QED
+
+(* NON-VACUITY (HTTP bodies, the headline): a run that reads a POST /echo
+   with a body, answers it, and sleeps in select meets every clause of
+   http_quiet_b in a quiet world *)
+Theorem ideal_quiet_b:
+  let b = Terminate (FFI_outcome (Final_event (ExtCall «sock_select») conf []
+                                   FFI_diverged)) ideal_b in
+  server_world 3w (one_client (brequests [rp])) ∧
+  arrivals_finite (one_client (brequests [rp])) ∧
+  ((∃io. b = Diverge io ∧ http_safe_b site io ∧
+         http_live_b site (one_client (brequests [rp])) io) ∨
+   (∃io. asleep b io ∧ http_safe_b site (fromList io) ∧
+         http_live_b site (one_client (brequests [rp])) (fromList io))) ∧
+  (arrivals_finite (one_client (brequests [rp])) ⇒ ∃io. asleep b io)
+Proof
+  ‘arrivals_finite (one_client (brequests [rp]))’
+    by (irule arrivals_finite_one_step >> simp[one_client_def]) >>
+  simp[asleep_def] >> assume_tac ideal_b_trace_safe_and_live >> fs[]
+QED
+

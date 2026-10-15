@@ -1,4 +1,4 @@
-# Review series plan: the async I/O work as 11 layered PRs
+# Review series plan: the async I/O work as 12 layered PRs
 
 **Purpose.** About 30 stacked spike PRs record the order things were
 *discovered*. This series presents the same results in the order they
@@ -7,7 +7,7 @@ layer that proves it. Every PR is one coherent layer that builds on its
 own (`Holmake -j2` green, no cheats). You read the definitions and the ≤ 5
 statements each PR lists, and never the proofs.
 
-**What it is made of.** Branches `review/01-…` to `review/11-…`, each
+**What it is made of.** Branches `review/01-…` to `review/12-…`, each
 stacked on the previous one; `review/01` starts from `async-io`.
 - Files are moved into one layout (below). Theory names and statement
   text are unchanged.
@@ -32,6 +32,8 @@ async/
   headline/             the final theorems, in the specs' own terms (PRs 7, 9)
   runnable/             socket_ffi.c (TRUSTED), export, Makefiles, demos (PR 10)
   design/               notes, reading guide (PR 11)
+  spec-v2/, world/sockets-v2(-cf)/, loop/handles/, programs/echo-v2/
+                        close and fd reuse: TRUSTED EchoSpec2 and v2 world, then its proof (PR 12)
 ```
 
 ## The series
@@ -242,6 +244,30 @@ statements only.
 - HANDOFF notes, worker conventions and heap measurements stay on the
   spike branches.
 
+### 12. `review/12-close-v2`: close and fd reuse (45 min)
+- **Claims:** `echo2_prog_spec : ⊢ echo_spec2 3w echo2_prog`. In a socket
+  world with `close` where accept returns the lowest free fd, the echo
+  program is safe and live per accepted connection (*episode*), even when
+  fd numbers are reused, and closes every connection whose EOF it read.
+- **Read (TRUSTED):** `spec-v2/EchoSpec2Script.sml` (`echo_spec2`,
+  `echo_safe2`, `echo_live2`, `echo_closes2`, episodes) and
+  `world/sockets-v2/socketV2FFIScript.sml` (`sock_close2`,
+  `lowest_free`), `socketV2FairScript.sml` (`sched_wf2`).
+- **Statements:**
+  1. `echo2_prog_spec` (headline/asyncHLEchoSpec2);
+  2. `broken_leaks_across_reuse` and `v1_misses_leak` (spec-v2/EchoSpec2Bite:
+     the new clause bites, and EchoSpec alone would miss the leak);
+  3. `broken_never_closes` (the closing clause bites);
+  4. `ideal2_trace_spec` and `server_world2_exists` (non-vacuity, with reuse);
+  5. `hrun_sim` (programs/echo-v2/asyncHLSimRun: round by round the handle
+     loop has the version-1 loop's history, which is how the v1 proofs are
+     reused unchanged).
+- **Skip:** the CF layer of the v2 socket module (`world/sockets-v2-cf`),
+  the handle loop's proofs, and the simulation lemmas (`asyncHLSim*`,
+  `asyncHLEpisodes`, `asyncHLEof`).
+- **From:** echospec2 (spec), close-v2-sim (#63, fbe3f0a71). Design note 25.
+  It touches nothing below it; the C side's `sock_close` is in PR 10.
+
 **Total:** ≈30,000 lines of HOL; about 6.5 hours of reading at the listed
 depth.
 
@@ -277,9 +303,10 @@ lemmas), `asyncM4ServerProg` (the HTTP translation reuses its code).
 - **HTTP bodies** (#55, user-approved): HttpSpecBodies is PR 1's HTTP spec
   (a labelled SPEC CHANGE commit), and `http_prog_b_spec` is PR 9's
   headline. The header-tolerant pipeline stays as a stepping stone.
-- **close / fd reuse (close-v2)**: a new PR 12 (`review/12-close-v2`) on
-  top. It holds EchoSpec2 (spec first), the v2 world and the handle layer,
-  and touches nothing below it.
+- **close / fd reuse (close-v2, #63)**: folded in as PR 12
+  (`review/12-close-v2`) on top: EchoSpec2 (spec first), the v2 world, the
+  handle layer and `echo2_prog_spec`. Below it, only `socket_ffi.c` (PR 10)
+  gains `sock_close`.
 
 Mechanics of folding in: a late result is committed on the layer's
 branch, then merged forward up the stack (`review/N` into `N+1`, …). That

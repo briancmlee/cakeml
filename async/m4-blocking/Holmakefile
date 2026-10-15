@@ -1,0 +1,8 @@
+# M4 blocking: the dynamic-interest event loop with a blocking select,
+# against the socket model.  Reuses the model, the CF layers, the socket
+# model, M3's loop, M4's shared pieces and the final specs (read only).
+INCLUDES = ../model ../cf-spike ../cf-actions ../cf-reactive ../ffi-spike \
+           ../m3-assembly ../m4-server ../m4-common ../spec
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

@@ -541,3 +541,82 @@ Proof
   >> impl_tac >- simp[] >> strip_tac
   >> metis_tac[IS_PREFIX_TRANS, read_prefix]
 QED
+
+(* ------------------------------------------------------------------------
+   The listener's queue
+   ------------------------------------------------------------------------ *)
+
+(* Performing an action: an accept on the listener takes the connection at
+   the front of its queue, and hands it out; nothing else changes the queue
+   or which connections exist *)
+Theorem perform_listener:
+  w.listeners = [(lfd, q)] ∧ perform a w = (r, w') ⇒
+  (∀c. ALOOKUP w'.conns c = NONE ⇔ ALOOKUP w.conns c = NONE) ∧
+  ∃d q'. w'.listeners = [(lfd, q')] ∧ q = d ++ q' ∧
+         accepted [(a, SOME r)] = d ∧ (a = Accept lfd ∧ q ≠ [] ⇒ d ≠ []) ∧
+         (a ≠ Accept lfd ⇒ d = [])
+Proof
+  Cases_on ‘a’ >> simp[perform_def] >> strip_tac
+  >> gvs[AllCaseEqs(), AFUPDKEY_ALOOKUP, AFUPDKEY_def] >> rw[]
+  >> gvs[AllCaseEqs()]
+QED
+
+Theorem accepted_sperf_CONS[local]:
+  accepted (sperf ((a, r) :: l)) = accepted [(a, SOME r)] ++ accepted (sperf l)
+Proof
+  ‘(a, r) :: l = [(a, r)] ++ l’ by simp[] >> pop_assum SUBST1_TAC
+  >> REWRITE_TAC[sperf_APPEND, accepted_APPEND]
+QED
+
+Theorem perform_all_listener:
+  ∀acts w rs w' q.
+    w.listeners = [(lfd, q)] ∧ perform_all acts w = (rs, w') ⇒
+    (∀c. ALOOKUP w'.conns c = NONE ⇔ ALOOKUP w.conns c = NONE) ∧
+    ∃d q'. w'.listeners = [(lfd, q')] ∧ q = d ++ q' ∧
+           accepted (sperf (ZIP (acts, rs))) = d ∧
+           (MEM (Accept lfd) acts ∧ q ≠ [] ⇒ d ≠ []) ∧
+           (¬MEM (Accept lfd) acts ⇒ d = [])
+Proof
+  Induct >> simp[perform_all_def] >> rpt gen_tac
+  >> pairarg_tac >> simp[] >> pairarg_tac >> simp[] >> strip_tac >> gvs[]
+  >> drule_all perform_listener >> strip_tac
+  >> first_x_assum drule_all >> strip_tac
+  >> simp[accepted_sperf_CONS] >> rw[] >> gvs[] >> metis_tac[]
+QED
+
+Theorem deliver1_listener:
+  w.listeners = [(lfd, q)] ⇒
+  ∃x. (deliver1 w a).listeners = [(lfd, q ++ x)] ∧
+      ∀c. ALOOKUP (deliver1 w a).conns c ≠ NONE ⇒ ALOOKUP w.conns c ≠ NONE ∨ MEM c x
+Proof
+  Cases_on ‘a’ >> simp[deliver1_def] >> strip_tac
+  >- (rw[] >> gvs[is_listener_def, AllCaseEqs()]
+      >> qexists_tac ‘[n0]’ >> simp[AFUPDKEY_def] >> metis_tac[])
+  >> rw[AFUPDKEY_ALOOKUP] >> gvs[AllCaseEqs()]
+QED
+
+Theorem deliver_listener:
+  ∀as w q.
+    w.listeners = [(lfd, q)] ⇒
+    ∃x. (FOLDL deliver1 w as).listeners = [(lfd, q ++ x)] ∧
+        ∀c. ALOOKUP (FOLDL deliver1 w as).conns c ≠ NONE ⇒
+            ALOOKUP w.conns c ≠ NONE ∨ MEM c x
+Proof
+  Induct >> simp[]
+  >> rpt strip_tac >> drule deliver1_listener
+  >> disch_then (qspec_then ‘h’ strip_assume_tac)
+  >> first_x_assum drule >> strip_tac
+  >> qexists_tac ‘x ++ x'’ >> simp[] >> metis_tac[MEM_APPEND]
+QED
+
+(* Time passing: new connections join the back of the queue; they are the
+   only new connections *)
+Theorem tick_listener:
+  w.listeners = [(lfd, q)] ⇒
+  ∃x. (tick w).listeners = [(lfd, q ++ x)] ∧
+      ∀c. ALOOKUP (tick w).conns c ≠ NONE ⇒ ALOOKUP w.conns c ≠ NONE ∨ MEM c x
+Proof
+  rw[tick_def] >> CASE_TAC >> simp[deliver_def]
+  >> qspecl_then [‘x’, ‘w with sched := THE (LTL w.sched)’, ‘q’] mp_tac deliver_listener
+  >> simp[] >> metis_tac[]
+QED

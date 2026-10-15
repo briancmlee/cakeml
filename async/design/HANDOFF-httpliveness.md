@@ -24,20 +24,20 @@ Kept current at every commit.
 
 ## Status
 
-- DONE: machine-level liveness `hmachine_live` (the machine answers every
-  complete request in D within 2K + 2 rounds, under four environment
-  hypotheses: readability, read-everything, EOF).
-- NEXT: `asyncHttpLiveness` (closed loop): instantiate
-  `hf = λfd. http_handler files (fd, "")`, use `sw_handler_view` to move the
-  machine's facts to the world, discharge the four hypotheses from the
-  world facts, and state: on an accepted connection with received data D
-  at round n, by round n + 2·|parse_all D| + O(1), the responses to D
-  are a prefix of what was written.
+- DONE (model level), write-up `25-http-liveness.md`:
+  `closed_loop_http_accepted` / `closed_loop_http_requests`
+  (asyncHttpLiveness). On an accepted connection, the responses to the K
+  complete requests that have arrived by round n are written by round
+  n + 2K + 3. Machine-level `hmachine_live` (asyncHttpDrain). Holmake
+  green, no cheats.
+- NOT DONE: pending connections (queue bound, as 09's
+  `closed_loop_liveness`); connection to the CakeML HTTP program. See 25 §3.
 
 ## Assumptions made
 
-1. The machine-level theorem takes the environment facts as hypotheses;
-   the closed-loop file discharges them from the world model.
+See 25 §4. In addition: the machine-level theorem takes the environment
+facts as hypotheses, and the closed-loop file discharges them from the
+world model.
 
 ## Tool feedback
 
@@ -53,3 +53,13 @@ Kept current at every commit.
 - `qspecl_then` quantifier order surprises; `I`, `T`, `K` are constants;
   `outcome`/`response`/`action` type names clash between HttpSpec and
   semantics.
+- `Q.INST` on a polymorphic theorem fails with "No consistent parse";
+  use `Q.GEN … |> Q.ISPEC …` for the polymorphic variable, then
+  `Q.SPECL`. `Q.INST [‘M’ |-> ‘n + 2 * K + 2’]` needs a `: num`
+  annotation (and `K` is the combinator constant).
+- `drule_all` picks the first matching assumption; with several
+  `closed_loop … = …` assumptions it often picks the wrong round. Explicit
+  instantiation, or a wrapper lemma, avoids it.
+- hol-lsp `goalState` was the most useful tool for finding looping
+  tactics; `metis_tac` with many arithmetic-shaped assumptions
+  (`a + j + 1` vs `a + (j + 1)`) loops.

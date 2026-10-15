@@ -197,3 +197,303 @@ Proof
   ‘hj = TAKE (a + j) hM’ by metis_tac[sw_prefix, DECIDE “j ≤ LENGTH g ∧ LENGTH g + a = M ⇒ a + j ≤ M”] >>
   gvs[]
 QED
+
+(* ------------------------------------------------------------------------
+   The HTTP server in the closed loop
+   ------------------------------------------------------------------------ *)
+
+Theorem hok_http:
+  hok (λfd. http_handler files (fd, ""))
+Proof
+  simp[hok_def, wf_http_handler, settled_http_handler, http_handler_serves]
+QED
+
+(* The closed-loop facts used below, for the HTTP server *)
+Theorem http_consistent[local]:
+  closed_loop (http_server files lfd) (start_world lfd sch) k = (h, w, p) ∧
+  ALOOKUP w.conns c = SOME cn ⇒
+  cn.received = FLAT (read c (sperf p)) ++ cn.incoming ∧
+  cn.outgoing = FLAT (written c (sperf p))
+Proof
+  rw[http_server_def] >> drule_at (Pos last) sw_consistent >>
+  simp[hok_http, consistent_def] >> metis_tac[]
+QED
+
+Theorem http_prefix[local]:
+  closed_loop (http_server files lfd) (start_world lfd sch) k = (h, w, p) ∧
+  closed_loop (http_server files lfd) (start_world lfd sch) N = (h', w', p') ∧ k ≤ N ⇒
+  p ≼ p'
+Proof
+  rw[http_server_def] >> metis_tac[sw_prefix]
+QED
+
+Theorem http_received_later[local]:
+  closed_loop (http_server files lfd) (start_world lfd sch) n = (h, w, perf) ∧
+  ALOOKUP w.conns c = SOME cn ∧ n ≤ k ∧
+  closed_loop (http_server files lfd) (start_world lfd sch) k = (h', w', p') ⇒
+  ∃cn'. ALOOKUP w'.conns c = SOME cn' ∧ cn.received ≼ cn'.received
+Proof
+  rw[http_server_def] >> ‘k = n + (k − n)’ by simp[] >> pop_assum SUBST_ALL_TAC >>
+  metis_tac[sw_received_later, hok_http]
+QED
+
+Theorem http_outgoing_later[local]:
+  closed_loop (http_server files lfd) (start_world lfd sch) k = (h, w, p) ∧
+  closed_loop (http_server files lfd) (start_world lfd sch) N = (h', w', p') ∧ k ≤ N ∧
+  ALOOKUP w.conns c = SOME cn ∧ ALOOKUP w'.conns c = SOME cn' ⇒
+  cn.outgoing ≼ cn'.outgoing
+Proof
+  rw[http_server_def] >> metis_tac[sw_outgoing_later, hok_http]
+QED
+
+Theorem http_round_read[local]:
+  closed_loop (http_server files lfd) (start_world lfd sch) k = (h, w, p) ∧
+  closed_loop (http_server files lfd) (start_world lfd sch) (k + 1) = (h', w', p') ∧
+  ALOOKUP w.conns c = SOME cn ∧
+  MEM (Read c) (new_actions (log_of (http_server files lfd)) h) ⇒
+  cn.received = FLAT (read c (sperf p'))
+Proof
+  rw[http_server_def] >> metis_tac[sw_round_conn, hok_http]
+QED
+
+Theorem http_eof[local]:
+  closed_loop (http_server files lfd) (start_world lfd sch) k = (h, w, p) ∧
+  MEM (Read c, Eof) p ⇒
+  ∃cn. ALOOKUP w.conns c = SOME cn ∧ cn.incoming = ""
+Proof
+  rw[http_server_def] >> metis_tac[sw_eof, hok_http]
+QED
+
+(* A closed-loop lemma about round k, instantiated to the HTTP handler and
+   round a + j *)
+fun AT_j th =
+  Q.GENL [‘hf’, ‘k’, ‘h’, ‘w’, ‘p’] th
+  |> Q.ISPEC ‘λfd. http_handler files (fd, "")’
+  |> Q.SPECL [‘a + j’, ‘hj’, ‘wj’, ‘pj’];
+
+(* The handler of an accepted connection c, in the closed loop: it runs on
+   g from round a; after j snapshots (round a + j), what it has read is
+   what the world performed; an action of its still unanswered is one of
+   the server's new actions; an answered one was performed; and what it
+   has written is what the world holds after round a + j. *)
+Theorem http_view:
+  closed_loop (http_server files lfd) (start_world lfd sch) n = (h, w, perf) ∧
+  MEM c (accepted (sperf perf)) ∧ n ≤ M ∧
+  closed_loop (http_server files lfd) (start_world lfd sch) M = (hM, wM, pM) ⇒
+  ∃a g. a ≤ n ∧ LENGTH g + a = M ∧ prompt (hcomp files c (HA "")) g ∧
+    (∀i. i < LENGTH g ⇒ (EL i g).ready = (EL (a + i) hM).ready) ∧
+    ∀j hj wj pj.
+      j ≤ LENGTH g ∧
+      closed_loop (http_server files lfd) (start_world lfd sch) (a + j) = (hj, wj, pj) ⇒
+      Rj files c g j = FLAT (read c (sperf pj)) ∧
+      (∀x. MEM (x, NONE) (trans (hcomp files c (HA "")) (TAKE j g)) ⇒
+           MEM x (new_actions (log_of (http_server files lfd)) hj)) ∧
+      (∀x r. MEM (x, SOME r) (trans (hcomp files c (HA "")) (TAKE j g)) ⇒
+             MEM (x, r) pj) ∧
+      ∀hj' wj' pj'.
+        closed_loop (http_server files lfd) (start_world lfd sch) (a + j + 1) =
+          (hj', wj', pj') ⇒
+        Wj files c g j = written c (sperf pj')
+Proof
+  simp[http_server_def] >> strip_tac >>
+  assume_tac (Q.GEN ‘files’ hok_http) >>
+  pop_assum (qspec_then ‘files’ assume_tac) >>
+  drule_all sw_closed_loop_view >> strip_tac >>
+  qexists_tac ‘a’ >> qexists_tac ‘g’ >> gvs[hcomp_def] >>
+  rpt gen_tac >> strip_tac >>
+  first_x_assum (drule_all_then (assume_tac o SYM)) >>
+  rpt conj_tac
+  >- (asm_rewrite_tac[read_FILTER] >> AP_TERM_TAC >> mp_tac (AT_j sw_trans_read) >> gs[])
+  >- (asm_rewrite_tac[MEM_FILTER] >> rpt strip_tac >>
+      mp_tac (AT_j sw_trans_none) >> gs[])
+  >- (asm_rewrite_tac[MEM_FILTER] >> rpt strip_tac >>
+      mp_tac (AT_j sw_trans_some) >> gs[])
+  >> rpt strip_tac >> asm_rewrite_tac[written_FILTER] >>
+  mp_tac (Q.GENL [‘hf’, ‘k’, ‘h’, ‘w’, ‘p’, ‘h'’, ‘w'’, ‘p'’] sw_trans_written
+         |> Q.ISPEC ‘λfd. http_handler files (fd, "")’
+         |> Q.SPECL [‘a + j’, ‘hj’, ‘wj’, ‘pj’, ‘hj'’, ‘wj'’, ‘pj'’]) >>
+  gs[]
+QED
+
+Theorem FLAT_prefix[local]:
+  l1 ≼ l2 ⇒ FLAT l1 ≼ FLAT l2
+Proof
+  rw[IS_PREFIX_APPEND] >> simp[]
+QED
+
+(* closed_loop_snapshot, for the HTTP server *)
+Theorem http_snapshot[local]:
+  closed_loop (http_server files lfd) (start_world lfd sch) M = (hM, wM, pM) ∧ k < M ∧
+  closed_loop (http_server files lfd) (start_world lfd sch) (k + 1) = (h1, w1, p1) ⇒
+  (EL k hM).ready = set (MAP Readable (ready_fds w1))
+Proof
+  strip_tac >>
+  irule (Q.GENL [‘m’, ‘w0’] closed_loop_snapshot
+         |> Q.ISPECL [‘http_server files lfd’, ‘start_world lfd sch’]) >>
+  metis_tac[]
+QED
+
+(* MAIN: liveness of the HTTP server on an accepted connection.  If by round
+   n the connection c has been accepted and the data D = cn.received has
+   arrived on it, then by every round N ≥ n + 2K + 3, where K is the number
+   of complete requests at the front of D, the responses to those requests
+   have been written to c. *)
+Theorem closed_loop_http_accepted:
+  closed_loop (http_server files lfd) (start_world lfd sch) n = (h, w, perf) ∧
+  ALOOKUP w.conns c = SOME cn ∧ MEM c (accepted (sperf perf)) ∧
+  n + 2 * LENGTH (parse_all cn.received) + 3 ≤ N ∧
+  closed_loop (http_server files lfd) (start_world lfd sch) N = (hN, wN, pN) ⇒
+  ∃cnN. ALOOKUP wN.conns c = SOME cnN ∧
+        FLAT (responses_to files cn.received) ≼ cnN.outgoing
+Proof
+  strip_tac >>
+  qabbrev_tac ‘NK = LENGTH (parse_all cn.received)’ >>
+  ‘∃hM wM pM. closed_loop (http_server files lfd) (start_world lfd sch)
+                (n + 2 * NK + 2) = (hM, wM, pM)’ by metis_tac[pair_CASES] >>
+  (* c's handler runs on g, from round a ≤ n *)
+  mp_tac (Q.INST [‘M’ |-> ‘n + 2 * NK + 2 : num’] http_view) >>
+  impl_tac >- simp[] >> strip_tac >>
+  (* from round n on, c has received D, and what it has received is what
+     the handler has read, then the unread data *)
+  ‘∀j hj wj pj.
+     n ≤ a + j ∧ j ≤ LENGTH g ∧
+     closed_loop (http_server files lfd) (start_world lfd sch) (a + j) = (hj, wj, pj) ⇒
+     ∃cnj. ALOOKUP wj.conns c = SOME cnj ∧ cn.received ≼ cnj.received ∧
+           cnj.received = Rj files c g j ++ cnj.incoming’
+    by (rpt strip_tac >>
+        mp_tac (Q.INST [‘k’ |-> ‘a + j : num’, ‘h'’ |-> ‘hj’, ‘w'’ |-> ‘wj’, ‘p'’ |-> ‘pj’]
+                  http_received_later) >>
+        impl_tac >- simp[] >> strip_tac >>
+        mp_tac (Q.INST [‘k’ |-> ‘a + j : num’, ‘h’ |-> ‘hj’, ‘w’ |-> ‘wj’, ‘p’ |-> ‘pj’,
+                        ‘cn’ |-> ‘cn'’] http_consistent) >>
+        impl_tac >- simp[] >> strip_tac >>
+        qpat_assum ‘∀j hj wj pj. _ ⇒ Rj _ _ _ _ = _ ∧ _’
+          (qspecl_then [‘j’, ‘hj’, ‘wj’, ‘pj’] mp_tac) >>
+        impl_tac >- simp[] >> strip_tac >>
+        qexists_tac ‘cn'’ >> gvs[]) >>
+  qabbrev_tac ‘j0 = n − a’ >>
+  mp_tac (Q.INST [‘fd’ |-> ‘c’, ‘D’ |-> ‘cn.received’] hmachine_live) >>
+  impl_tac
+  >- (rpt conj_tac
+      >- first_assum ACCEPT_TAC
+      >- fs[Abbr ‘j0’, Abbr ‘NK’]
+      (* what has been read by round n is a prefix of D *)
+      >- (qpat_assum ‘∀j hj wj pj. _ ⇒ ∃cnj. _’
+            (qspecl_then [‘j0’, ‘h’, ‘w’, ‘perf’] mp_tac) >>
+          impl_tac >- fs[Abbr ‘j0’] >> strip_tac >> gvs[] >>
+          simp[IS_PREFIX_APPEND] >> metis_tac[])
+      (* waiting while c is not readable: everything has been read *)
+      >- (rpt strip_tac >>
+          ‘∃h1 w1 p1. closed_loop (http_server files lfd) (start_world lfd sch)
+                        (a + j + 1) = (h1, w1, p1)’ by metis_tac[pair_CASES] >>
+          qpat_assum ‘∀j hj wj pj. _ ⇒ ∃cnj. _’
+            (qspecl_then [‘j + 1’, ‘h1’, ‘w1’, ‘p1’] mp_tac) >>
+          impl_tac >- fs[Abbr ‘j0’] >> strip_tac >>
+          ‘(EL j g).ready = set (MAP Readable (ready_fds w1))’
+            by (‘(EL j g).ready = (EL (a + j) hM).ready’ by gs[] >>
+                pop_assum SUBST1_TAC >>
+                mp_tac (Q.INST [‘M’ |-> ‘n + 2 * NK + 2 : num’, ‘k’ |-> ‘a + j : num’]
+                          http_snapshot) >>
+                gs[]) >>
+          ‘cnj.incoming = ""’
+            by (CCONTR_TAC >>
+                mp_tac (Q.INST [‘w’ |-> ‘w1’, ‘cn’ |-> ‘cnj’] incoming_ready) >>
+                gs[]) >>
+          ‘Rj files c g (j + 1) = Rj files c g j’
+            by (drule_all Rj_Wj_SUC >> gs[ADD1]) >>
+          gs[])
+      (* after a read: everything has been read *)
+      >- (rpt strip_tac >>
+          ‘∃hj wj pj. closed_loop (http_server files lfd) (start_world lfd sch)
+                        (a + j) = (hj, wj, pj)’ by metis_tac[pair_CASES] >>
+          ‘∃h1 w1 p1. closed_loop (http_server files lfd) (start_world lfd sch)
+                        (a + j + 1) = (h1, w1, p1)’ by metis_tac[pair_CASES] >>
+          qpat_assum ‘∀j hj wj pj. _ ⇒ ∃cnj. _’
+            (qspecl_then [‘j’, ‘hj’, ‘wj’, ‘pj’] mp_tac) >>
+          impl_tac >- fs[Abbr ‘j0’] >> strip_tac >>
+          ‘j ≤ LENGTH g’ by simp[] >>
+          drule_all hmachine_reading >> strip_tac >>
+          qpat_assum ‘∀j hj wj pj. _ ⇒ Rj _ _ _ _ = _ ∧ _’
+            (qspecl_then [‘j’, ‘hj’, ‘wj’, ‘pj’] mp_tac) >>
+          impl_tac >- gs[] >> strip_tac >>
+          qpat_assum ‘∀j hj wj pj. _ ⇒ Rj _ _ _ _ = _ ∧ _’
+            (qspecl_then [‘j + 1’, ‘h1’, ‘w1’, ‘p1’] mp_tac) >>
+          impl_tac >- gs[] >> strip_tac >>
+          ‘MEM (Read c) (new_actions (log_of (http_server files lfd)) hj)’
+            by metis_tac[] >>
+          mp_tac (Q.INST [‘k’ |-> ‘a + j : num’, ‘h’ |-> ‘hj’, ‘w’ |-> ‘wj’, ‘p’ |-> ‘pj’,
+                          ‘h'’ |-> ‘h1’, ‘w'’ |-> ‘w1’, ‘p'’ |-> ‘p1’, ‘cn’ |-> ‘cnj’]
+                    http_round_read) >>
+          impl_tac >- gs[] >> strip_tac >>
+          qpat_x_assum ‘Rj _ _ _ (j + 1) = _’ (fn th => REWRITE_TAC [ADD1, th]) >>
+          metis_tac[])
+      (* stopped at end-of-file: everything has been read *)
+      >> rpt strip_tac >>
+      ‘∃hj wj pj. closed_loop (http_server files lfd) (start_world lfd sch)
+                    (a + j) = (hj, wj, pj)’ by metis_tac[pair_CASES] >>
+      qpat_assum ‘∀j hj wj pj. _ ⇒ ∃cnj. _’
+        (qspecl_then [‘j’, ‘hj’, ‘wj’, ‘pj’] mp_tac) >>
+      impl_tac >- fs[Abbr ‘j0’] >> strip_tac >>
+      ‘parse_request b ≠ Invalid’ by gs[] >>
+      drule_all hmachine_eof >> strip_tac >>
+      qpat_assum ‘∀j hj wj pj. _ ⇒ Rj _ _ _ _ = _ ∧ _’
+        (qspecl_then [‘j’, ‘hj’, ‘wj’, ‘pj’] mp_tac) >>
+      impl_tac >- gs[] >> strip_tac >>
+      ‘MEM (Read c, Eof) pj’ by metis_tac[] >>
+      mp_tac (Q.INST [‘k’ |-> ‘a + j : num’, ‘h’ |-> ‘hj’, ‘w’ |-> ‘wj’, ‘p’ |-> ‘pj’] http_eof) >>
+      impl_tac >- gs[] >> strip_tac >>
+      ‘cnj = cn'’ by gs[] >> pop_assum SUBST_ALL_TAC >>
+      qpat_x_assum ‘cn'.received = _’ mp_tac >>
+      qpat_x_assum ‘cn'.incoming = _’ (fn th => REWRITE_TAC [th, APPEND_NIL]) >>
+      strip_tac >> metis_tac[]) >>
+  (* the responses are written by round a + j + 1 ≤ N, and stay written *)
+  strip_tac >>
+  ‘j ≤ LENGTH g ∧ a + j + 1 ≤ N’ by fs[Abbr ‘j0’, Abbr ‘NK’] >>
+  ‘∃hj wj pj. closed_loop (http_server files lfd) (start_world lfd sch)
+                (a + j) = (hj, wj, pj)’ by metis_tac[pair_CASES] >>
+  ‘∃h1 w1 p1. closed_loop (http_server files lfd) (start_world lfd sch)
+                (a + j + 1) = (h1, w1, p1)’ by metis_tac[pair_CASES] >>
+  qpat_assum ‘∀j hj wj pj. _ ⇒ Rj _ _ _ _ = _ ∧ _’
+    (qspecl_then [‘j’, ‘hj’, ‘wj’, ‘pj’] mp_tac) >>
+  impl_tac >- gs[] >> strip_tac >>
+  ‘Wj files c g j = written c (sperf p1)’ by metis_tac[] >>
+  (* c at round N holds what the server has written to it *)
+  mp_tac (Q.INST [‘k’ |-> ‘N’, ‘h'’ |-> ‘hN’, ‘w'’ |-> ‘wN’, ‘p'’ |-> ‘pN’]
+            http_received_later) >>
+  impl_tac
+  >- (rpt conj_tac >> TRY (first_assum ACCEPT_TAC) >>
+      qpat_x_assum ‘n + 2 * NK + 3 ≤ N’ mp_tac >> simp[]) >>
+  strip_tac >> qexists_tac ‘cn'’ >> simp[] >>
+  mp_tac (Q.INST [‘k’ |-> ‘N’, ‘h’ |-> ‘hN’, ‘w’ |-> ‘wN’, ‘p’ |-> ‘pN’, ‘cn’ |-> ‘cn'’]
+            http_consistent) >>
+  impl_tac >- (conj_tac >> first_assum ACCEPT_TAC) >> strip_tac >>
+  ‘p1 ≼ pN’ by metis_tac[http_prefix] >>
+  qpat_x_assum ‘cn'.outgoing = _’ SUBST1_TAC >> irule IS_PREFIX_TRANS >>
+  qexists_tac ‘FLAT (written c (sperf p1))’ >> conj_tac
+  >- (irule FLAT_prefix >> qpat_x_assum ‘p1 ≼ pN’ mp_tac >>
+      rw[IS_PREFIX_APPEND] >> simp[]) >>
+  irule FLAT_prefix >>
+  qpat_x_assum ‘Wj _ _ _ _ = written _ _’ (fn th =>
+    qpat_x_assum ‘_ ≼ Wj _ _ _ _’ (ACCEPT_TAC o REWRITE_RULE [th]))
+QED
+
+(* MAIN: the same, in terms of requests (as in HttpSpec): if the data that
+   has arrived on c by round n is the requests rs (valid, complete) followed
+   by anything, then by round n + 2K + 3 the responses to rs have been
+   written to c. *)
+Theorem closed_loop_http_requests:
+  closed_loop (http_server files lfd) (start_world lfd sch) n = (h, w, perf) ∧
+  ALOOKUP w.conns c = SOME cn ∧ MEM c (accepted (sperf perf)) ∧
+  cn.received = FLAT (MAP print_request rs) ++ rest ∧ EVERY valid_request rs ∧
+  n + 2 * LENGTH (parse_all cn.received) + 3 ≤ N ∧
+  closed_loop (http_server files lfd) (start_world lfd sch) N = (hN, wN, pN) ⇒
+  ∃cnN. ALOOKUP wN.conns c = SOME cnN ∧
+        FLAT (MAP (print_response o handle files) rs) ≼ cnN.outgoing
+Proof
+  strip_tac >> drule_all closed_loop_http_accepted >> strip_tac >>
+  qexists_tac ‘cnN’ >> simp[] >>
+  ‘parse_all cn.received = rs ++ parse_all rest’
+    by (qpat_x_assum ‘cn.received = _’ SUBST1_TAC >> simp[parse_all_print]) >>
+  irule IS_PREFIX_TRANS >> first_assum (irule_at Any) >>
+  asm_rewrite_tac[MAP_APPEND, FLAT_APPEND] >> simp[]
+QED

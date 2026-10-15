@@ -47,10 +47,30 @@ val _ = translation_extends "asyncM4SockServer"
 val _ = register_type “:HttpSpec$request”;
 val _ = register_type “:asyncHttpParse$parse_result”;
 
-val r = translate split_path_def;
+(* split_path, as defined, makes its recursive call twice per level,
+   (c :: FST (split_path cs), SND (split_path cs)), so the code the
+   translator generates from it runs in exponential time in the path's
+   length.  split_path2 shares the call; it is EQUAL to split_path
+   (split_path2_eq), and the parser is translated through it.  The parser's
+   definitions and every theorem about them are unchanged. *)
+Definition split_path2_def:
+  split_path2 [] = ([], []) ∧
+  split_path2 (c :: cs) =
+    if c = #" " then ([], c :: cs)
+    else let (p, u) = split_path2 cs in (c :: p, u)
+End
+
+Theorem split_path2_eq:
+  ∀cs. split_path2 cs = split_path cs
+Proof
+  Induct >> rw[split_path2_def, split_path_def] >> pairarg_tac >> gvs[]
+QED
+
+val r = translate split_path2_def;
 val r = translate get_sp_def;
 val r = translate after_path_def;
-val r = translate (parse_request_def |> REWRITE_RULE [GSYM mllistTheory.drop_def]);
+val r = translate (parse_request_def
+                   |> REWRITE_RULE [GSYM split_path2_eq, GSYM mllistTheory.drop_def]);
 val r = translate respond_def;
 
 Quote add_cakeml:

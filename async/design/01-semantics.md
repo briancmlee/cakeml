@@ -841,15 +841,16 @@ All files build with `Holmake` in `async/model`, with no `cheat`.
    Note that dropping a loser can lose data that was already read (§4).
    This conjecture is about well-definedness, not about safety.
 
-2. The idle-deadline loop at Level 2 (quiet, so a scheduler could block
-   on `Readable fd` and the deadline's timer event). Not a conjecture
-   about correctness, just work not done. It needs four things:
-   - `wf` of the generalised `choose_with`;
-   - quietness of suspended Level 2 losers;
-   - a Level 2 version of `choose_results`;
-   - a Level 2 split recursion rule.
+2. (Done on branch `spike/async-idle2`.) The idle-deadline loop at Level 2
+   is in `asyncIdle2Script.sml`:
+   - `wf2_idle2`, `quiet_idle2`;
+   - with `wf_choose_with`, `wf2_suspended2`, `wf2_choose2`,
+     `choose2_results` and `guarded2_bind2_split`.
 
-   About 150–200 lines, mostly mirroring the Level 1 proofs.
+   At Level 2 the deadline waits for a reported `Timer t` event rather than
+   comparing the snapshot's time, so the loop erases to a Level 1 loop of
+   the same shape with that timer. That Level 1 loop is not stated
+   separately.
 
 `quiet_choose2` and Level 2 recursion, conjectures in the first version of
 this note, are now proved (`quiet_choose2`, `asyncLoop2`, `asyncEcho2`).

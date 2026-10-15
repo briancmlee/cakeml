@@ -12,6 +12,12 @@ scheduler they run on, against a model of the outside world.
   decisions and alternatives, the recursion rule, the world model, the
   refinement plan, the proposed main theorems, the risks and the open
   questions. Start here.
+- `design/08-echo-server.md`: the concurrent echo server in the model, and
+  its safety theorem.
+- `design/06-scheduler.md`: milestone M2, the scheduler and the
+  no-busy-waiting theorem.
+- `design/REVIEW-GUIDE.md`: a proposed short list of headline theorems,
+  open decisions, and a reading order.
 - `design/HANDOFF.md`: working notes for whoever continues the work
   (status, conventions, gotchas).
 - `model/`: the HOL4 model. It depends only on HOL4, not on CakeML.
@@ -27,6 +33,13 @@ scheduler they run on, against a model of the outside world.
 | `asyncLevel2Script.sml` | Level 2: declared interest, erasure to Level 1, "no progress without a ready event" |
 | `asyncLoop2Script.sml` | recursion at Level 2 |
 | `asyncEcho2Script.sml` | the echo loop at Level 2: it erases to the Level 1 loop and is quiet |
+| `asyncIdle2Script.sml` | the idle-deadline loop at Level 2: quiet, so a scheduler may block until the fd is readable or the timer fires |
+| `asyncTranscriptScript.sml` | transcripts: each action paired with its response, and how they compose |
+| `asyncServerScript.sml` | the concurrent echo server (a handler per connection, alongside the rest of the server) |
+| `asyncServerSafetyScript.sml` | M4's core property: every client gets back exactly its own data, in order |
+| `asyncServer2Script.sml` | the echo server at Level 2: quiet, so a blocking scheduler may run it |
+| `asyncSchedScript.sml` | M2: the scheduler as a pure step function; tasks never lost; composition with the M1 semantics |
+| `asyncSched2Script.sml` | M2: no busy-waiting: a scheduler that blocks through idle rounds behaves like one that polls every round |
 
 In one sentence: a computation is a function from the history of world
 snapshots it has been polled with to its action log and (optional) result.

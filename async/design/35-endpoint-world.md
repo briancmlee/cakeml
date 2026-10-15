@@ -325,7 +325,27 @@ Not claimed:
 - liveness with feedback under backpressure, which needs its own
   induction per application (report §B-6).
 
+**Revision (`endpointBuffer`).** The draft `buf_rel` is too weak. It
+relates each outside prefix to *some* inside prefix, independently, so it
+loses the common instant a relay works at. At each instant t of the joint
+run, per front episode:
+- what U has read is a prefix of what the proxy read outside;
+- what the proxy wrote outside is a prefix of what U wrote.
+
+A per-connection safety predicate survives relaying if it is closed under
+reading more and writing less (`relay_closed`). Then U's safety at every
+instant gives the system's (`relay_safety`, proved).
+- Echo's predicate is relay-closed (`echo_relay_closed`, proved).
+- HTTP's is a claim (`http_relay_closed_claim`): it needs request parsing to
+  be monotone.
+- KV's remains the precedes-widening claim.
+
+`buffer_closed` also cannot give the outside world `ticks_forever` from
+the relay facts alone. The system's clock is the proxy's, so that part
+needs the proxy's own `ticks_forever`.
+
 Questions for you:
-- (a) is `buf_rel`'s per-episode prefix form the relay relation you want?
+- (a) is the instant-by-instant relay relation above the one you want
+  (replacing the draft `buf_rel`)?
 - (b) should `sys_spec` quantify the process worlds existentially (as
   drafted: "the system can be run") or universally over wired worlds?

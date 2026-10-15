@@ -1,0 +1,37 @@
+# Handoff: the final top-level specifications (spike/final-spec)
+
+Kept current at every commit.
+
+## Where things are
+
+- Worktree `~/Programming/cakeml-worktrees/cf-actions`, branch
+  `spike/final-spec`, from `spike/m3-assembly` (ebe04b885). PR base:
+  `spike/m3-assembly`.
+- New work: `async/spec/` (Holmakefile INCLUDES ../ffi-spike; basis heap).
+  - `EchoSpecScript.sml` (155 lines, TRUSTED SURFACE, no proofs): the
+    sockets-only oracle, `server_world`, per-connection projections of raw
+    I/O events (`bytes_read_from`, `bytes_written_to`), `sent_upto`,
+    `echo_safe`, `echo_live`, `echo_spec lfd prog` (the statement).
+  - `EchoSpecBiteScript.sml` (proved): broken servers violate the spec
+    (swap clients, drop/duplicate a byte, write before reading, never
+    echo); non-vacuity (`server_world_exists`, `ideal_trace_safe_and_live`).
+- Docs: this file; `async/design/16-final-spec.md` (to be written).
+
+## Status
+
+- DONE: EchoSpec + bite; Holmake green, no cheats.
+- TODO: HttpSpec (+ bite, non-vacuity), 16-final-spec.md, PR.
+
+## Assumptions made (so far)
+
+1. The trusted world is the socket worker's model (`ffiSpikeSocketFFI`) and
+   fairness predicate (`sched_wf`), imported. The sockets-only oracle is
+   restated in EchoSpec (10 lines) rather than imported from
+   `ffiSpikeSocketDiv`, so that the spec does not depend on a translator
+   theory.
+2. The statement is at CakeML's source level (`semantics_prog ... (Diverge
+   io)`). Lifting to machine code is CakeML's compiler theorem (trust base).
+3. Initial world: exactly one listener `lfd` with an empty queue, no
+   connections, and `sched_wf`.
+4. Liveness: `sent_upto c n sk ≼ bytes_written_to c evs` for some finite
+   prefix `evs` of the trace, for every `c` and `n`.

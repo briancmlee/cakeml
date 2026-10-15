@@ -1,5 +1,7 @@
 # HANDOFF: blocking loop selecting on the live connections (spike/m4-blocking-live)
 
+PR: https://github.com/briancmlee/cakeml/pull/46
+
 The write-up is `async/design/24-blocking-runnable.md` §6 (the fix) and
 §3 (the numbers).
 

@@ -1,0 +1,7 @@
+# The HTTP server in CakeML: translations of the pure HTTP functions, the
+# generic server_with skeleton and the HTTP handler/server with CF specs
+# against the model (../http-model), reusing m4-server's machinery.
+INCLUDES = ../model ../cf-spike ../cf-actions ../m4-server ../http-model ../spec ../ffi-spike
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

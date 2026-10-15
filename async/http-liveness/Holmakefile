@@ -1,0 +1,7 @@
+# HTTP liveness in the model (closed loop), on the HTTP model server
+# (../http-model) and the echo closed-loop development (../model).  The basis
+# heap is used because HttpSpec sits on CakeML's semantics.
+INCLUDES = ../model ../spec ../ffi-spike ../http-model ../cf-spike ../cf-actions
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

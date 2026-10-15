@@ -1,0 +1,14 @@
+# Option C §2.3 (design/33): the loop that selects on the declared interest.
+INCLUDES = ../loop/polling \
+           ../model/core \
+           ../model/level2 \
+           ../pk/http-proto \
+           ../pk/library-liveness \
+           ../pk/option-c-proto \
+           ../programs/echo \
+           ../programs/echo-blocking \
+           ../servers/echo \
+           ../servers/relabel
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

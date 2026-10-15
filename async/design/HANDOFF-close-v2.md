@@ -34,8 +34,21 @@ Kept current at every push. Write-up: `25-echospec2.md`.
   - `asyncHLLoop`: `hdo_spec`, `hperform_spec`, `step_h_spec`, `run_h_spec`;
   - `asyncHLMain`: `main = run_h (3, [3], ([], 0), server 3)`, `echo2_prog`,
     `echo2_semantics_prog` (EchoSpec2's world, under `echo2_run_ok`).
-- Next branch: the simulation, discharging `echo2_run_ok`, and
-  `echo_spec2 3w echo2_prog`.
+- Branch `spike/close-v2-sim` (from `spike/close-v2-handles`), the
+  simulation, `async/close-v2-sim/` (WIP, no PR yet):
+  - `asyncHLFair`, `asyncHLSimWorld` (relation `hsim`, `deliver_sim`),
+    `asyncHLSimTick` (`tick_sim`, `v1of_sched_wf`);
+  - `asyncHLSimOps` (`hdo_sim_*`, `hacts_sim`), `asyncHLSimPoll` (`hpoll_sim`);
+  - `asyncHLSimRun`: `hrun_sim`, `hrun_ok_echo` (discharges `echo2_run_ok`);
+  - `asyncHLEof`: `echo_sock_eof_last` (the v1 run never acts on a
+    connection after reading its EOF: no write is lost by auto-close);
+  - `asyncHLEpisodes`: `rn_evs` (rename fds to episode handles),
+    `ep_read_rn`/`ep_written_rn`, monotonicity, `ep_eof_closes`;
+  - `asyncHLSimEvents` (`hdo_events`, `hacts_events`), `asyncHLSimTrace`
+    (`hrun_events`, `hround_events_eof_then_close`);
+  - `asyncHLEchoSpec2Script.sml.wip` (not built): the final assembly
+    (`echo2_safe`, `echo2_live`, `echo2_closes`, `echo2_prog_spec`), draft
+    with failing proofs; rename to `...Script.sml` to work on it.
 
 ## How to build
 
@@ -48,7 +61,9 @@ Kept current at every push. Write-up: `25-echospec2.md`.
 - DONE: EchoSpec2 statement, bite and non-vacuity (no cheats).
 - DONE: the v2 world's CF layer (25 §4 step 1), no cheats.
 - DONE: the handle layer (25 §4 step 2): `run_h_spec`, `echo2_semantics_prog`.
-- NEXT: the simulation (25 §4 step 3).
+- IN PROGRESS: the simulation (25 §4 step 3). Everything up to
+  `hrun_events` is proved and builds; NEXT: fix the final assembly
+  (`asyncHLEchoSpec2Script.sml.wip`), then PR.
 
 ## Assumptions made (spec decisions, flagged for review in 25 §2)
 
@@ -71,6 +86,10 @@ Kept current at every push. Write-up: `25-echospec2.md`.
   variables, prove the instance first (‘app p f [..] P Q’ by (irule spec ..))
   and xapp_spec that (version 1's pattern).
 - The translator turns MEM into IN (untranslatable): use a recursive `nmem`.
+- Constructor clashes in the simulation: qualify `asyncServer$Read`/`Eof`
+  vs `asyncM3World$Read` and the socket schedule's `Eof`.
+- Fresh numeric variables in definitions default to `rat`: annotate.
+- `s2n` is a constant; `EI`/`EM` are overloaded in m4-liveness.
 - Theorem names like `tlookup_def` can be ambiguous with base theories:
   qualify (`asyncHLProgTheory.tlookup_def`).
 

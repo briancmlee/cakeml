@@ -188,7 +188,7 @@ Proof
   rw[hsim0_def] >> gvs[]
 QED
 
-Theorem hdl_neq[local]:
+Theorem hdl_neq:
   j1 < k ∧ j2 < k ∧ k < dimword (:64) ∧ j1 ≠ j2 ⇒ hdl lfd j1 ≠ hdl lfd j2
 Proof
   rpt strip_tac >>

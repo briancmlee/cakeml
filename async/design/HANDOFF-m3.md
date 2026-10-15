@@ -28,8 +28,23 @@ Kept current at every commit. Read with the coordinator's brief and
 ## Status
 
 - DONE (task 1, app level): Holmake green, no cheats.
-- TODO: task 2 (whole program, call_main_thm_div in the sockets-only
-  world), task 3 (a concrete example), 13-m3-assembly.md, PR.
+- IN PROGRESS (tasks 2+3, uncommitted in the worktree, paused for a
+  usage limit):
+  - `async/m3-assembly/asyncM3ExampleModelScript.sml` (pure): `ready3`,
+    `accept3 = bind (wait ready3) (λu. emit (Accept 3w))`, `wf_accept3`,
+    listener persistence (`is_listener_tick`, `is_listener_sock_accept`),
+    `srun_ok_accept3` (MAIN). Not yet checked (hol-lsp diagnostics were
+    running).
+  - `async/m3-assembly/asyncM3ExampleScript.sml`: CakeML `has3`, `ready3`,
+    `accept3`, `main`; specs `has3_spec`, `ready3_spec` (written, not yet
+    checked), `accept3_spec` (cheat placeholder).
+  - Next: finish accept3_spec (xapp Async_emit_spec with SACT (Accept 3w)
+    (Conv accept_stamp [3])); main_spec (xlet wait via Async_wait_spec +
+    ready3_spec, bind via Async_bind_spec + accept3_spec, list [3], then
+    xapp run_spec with srun_ok_accept3, wf_accept3, accept3_def); then the
+    whole-program theorem following ffiSpikeSocketDiv's serve_semantics
+    (Decls_th, call_main_thm_div, sonly_init_heap, limited_parts_sonly);
+    13-m3-assembly.md; PR (base spike/cf-reactive).
 
 ## Assumptions made (so far)
 

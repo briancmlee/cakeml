@@ -77,14 +77,14 @@ End
    Arrivals
    ------------------------------------------------------------------------ *)
 
-Theorem LIST_REL_LUPDATE_chan[local]:
+Theorem LIST_REL_LUPDATE_chan:
   LIST_REL chan_rel l1 l2 ∧ j < LENGTH l1 ∧ chan_rel (f (EL j l1)) (g (EL j l2)) ⇒
   LIST_REL chan_rel (LUPDATE (f (EL j l1)) j l1) (LUPDATE (g (EL j l2)) j l2)
 Proof
   rw[LIST_REL_EL_EQN, EL_LUPDATE] >> rw[]
 QED
 
-Theorem ep_inv_upd_chan[local]:
+Theorem ep_inv_upd_chan:
   (∀c. (g c).shut = c.shut) ⇒ (ep_inv q (upd_chan j g w) ⇔ ep_inv q w)
 Proof
   rw[ep_inv_def, upd_chan_def, EL_LUPDATE] >>
@@ -93,7 +93,7 @@ Proof
   metis_tac[]
 QED
 
-Theorem ep_inv_LUPDATE[local]:
+Theorem ep_inv_LUPDATE:
   c.shut = (EL j w.chans).shut ⇒
   (ep_inv q (w with chans := LUPDATE c j w.chans) ⇔ ep_inv q w)
 Proof
@@ -102,7 +102,7 @@ Proof
   simp[ep_inv_def]
 QED
 
-Theorem LIST_REL_chan_LUPDATE[local]:
+Theorem LIST_REL_chan_LUPDATE:
   LIST_REL chan_rel l1 l2 ∧ chan_rel x y ⇒
   LIST_REL chan_rel (LUPDATE x j l1) (LUPDATE y j l2)
 Proof
@@ -142,7 +142,7 @@ QED
    Time
    ------------------------------------------------------------------------ *)
 
-Theorem ep_deliver_fields[local]:
+Theorem ep_deliver_fields:
   ∀es w. (FOLDL ep_deliver w es).calls = w.calls ∧
          (FOLDL ep_deliver w es).takes = w.takes ∧
          (FOLDL ep_deliver w es).env = w.env ∧
@@ -153,19 +153,19 @@ Proof
   every_case_tac >> simp[] >> pairarg_tac >> simp[]
 QED
 
-Theorem deliver2_future[local]:
+Theorem deliver2_future:
   ∀xs s. (FOLDL deliver2 s xs).future = s.future
 Proof
   Induct >> simp[] >> Cases >> rw[deliver2_def, update_client_def]
 QED
 
-Theorem core_all_up[local]:
+Theorem core_all_up:
   core lfd a sk w ⇒ EVERY (λc. c.status = Up) w.chans
 Proof
   rw[core_def, EVERY_EL, LIST_REL_EL_EQN] >> res_tac >> fs[chan_rel_def]
 QED
 
-Theorem settle_id[local]:
+Theorem settle_id:
   EVERY (λc. c.status = Up) w.chans ⇒ settle w = w
 Proof
   rw[settle_def, endpointWorldTheory.eworld_component_equality, LIST_EQ_REWRITE, EL_MAPi] >>
@@ -232,7 +232,7 @@ Proof
   simp[v2rel_def, no_backpressure_def]
 QED
 
-Theorem core_ready[local]:
+Theorem core_ready:
   core lfd a sk w ⇒ (is_ready2 sk fd ⇔ ep_readable w fd)
 Proof
   rw[core_def, is_ready2_def, ep_readable_def, client_of_def, ep_chan_of_def] >>
@@ -241,31 +241,31 @@ Proof
   every_case_tac >> gvs[LIST_REL_EL_EQN] >> res_tac >> gvs[chan_rel_def]
 QED
 
-Theorem core_chan_of[local]:
+Theorem core_chan_of:
   core lfd a sk w ⇒ client_of sk f = ep_chan_of w f
 Proof
   rw[core_def, client_of_def, ep_chan_of_def] >> imp_res_tac LIST_REL_LENGTH >> simp[]
 QED
 
-Theorem ALOOKUP_MEM_SND[local]:
+Theorem ALOOKUP_MEM_SND:
   ALOOKUP l f = SOME j ⇒ MEM j (MAP SND l)
 Proof
   rw[] >> imp_res_tac ALOOKUP_MEM >> simp[MEM_MAP] >> metis_tac[SND]
 QED
 
-Theorem ALL_DISTINCT_MAP_FILTER[local]:
+Theorem ALL_DISTINCT_MAP_FILTER:
   ∀l. ALL_DISTINCT (MAP g l) ⇒ ALL_DISTINCT (MAP g (FILTER P l))
 Proof
   Induct >> rw[] >> fs[MEM_MAP, MEM_FILTER] >> metis_tac[]
 QED
 
-Theorem MEM_SND_UNIQUE[local]:
+Theorem MEM_SND_UNIQUE:
   ∀l. ALL_DISTINCT (MAP SND l) ∧ MEM (x, j) l ∧ MEM (y, j) l ⇒ x = y
 Proof
   Induct >> rw[] >> gvs[MEM_MAP] >> metis_tac[SND]
 QED
 
-Theorem ADELKEY_SND[local]:
+Theorem ADELKEY_SND:
   ALL_DISTINCT (MAP SND l) ∧ ALOOKUP l f = SOME j ⇒
   ¬MEM j (MAP SND (ADELKEY f l)) ∧ ALL_DISTINCT (MAP SND (ADELKEY f l)) ∧
   ∀k. MEM k (MAP SND (ADELKEY f l)) ⇒ MEM k (MAP SND l)
@@ -276,7 +276,7 @@ Proof
   metis_tac[]
 QED
 
-Theorem v2rel_poll[local]:
+Theorem v2rel_poll:
   v2rel lfd a sk w ⇒
   (v2_call «sock_poll» conf bytes sk = NONE ∧ ep_call «sock_poll» conf bytes w = NONE) ∨
   ∃b sk' w'. v2_call «sock_poll» conf bytes sk = SOME (b, sk') ∧
@@ -289,7 +289,7 @@ Proof
   drule core_ready >> simp[]
 QED
 
-Theorem v2rel_accept[local]:
+Theorem v2rel_accept:
   v2rel lfd a sk w ⇒
   (v2_call «sock_accept» conf bytes sk = NONE ∧ ep_call «sock_accept» conf bytes w = NONE) ∨
   ∃b sk' w'. v2_call «sock_accept» conf bytes sk = SOME (b, sk') ∧
@@ -309,7 +309,7 @@ Proof
   qpat_x_assum ‘∀j. j = h ∨ _ ⇒ _’ (qspec_then ‘h’ mp_tac) >> simp[]
 QED
 
-Theorem v2rel_read[local]:
+Theorem v2rel_read:
   v2rel lfd a sk w ⇒
   (v2_call «sock_read» conf bytes sk = NONE ∧ ep_call «sock_read» conf bytes w = NONE) ∨
   ∃b sk' w'. v2_call «sock_read» conf bytes sk = SOME (b, sk') ∧
@@ -331,7 +331,7 @@ Proof
   irule LIST_REL_chan_LUPDATE >> simp[chan_rel_def]
 QED
 
-Theorem v2rel_write[local]:
+Theorem v2rel_write:
   v2rel lfd a sk w ⇒
   (v2_call «sock_write» conf bytes sk = NONE ∧ ep_call «sock_write» conf bytes w = NONE) ∨
   ∃b sk' w'. v2_call «sock_write» conf bytes sk = SOME (b, sk') ∧
@@ -354,7 +354,7 @@ Proof
   irule LIST_REL_chan_LUPDATE >> simp[chan_rel_def]
 QED
 
-Theorem v2rel_close[local]:
+Theorem v2rel_close:
   v2rel lfd a sk w ⇒
   (v2_call «sock_close» conf bytes sk = NONE ∧ ep_call «sock_close» conf bytes w = NONE) ∨
   ∃b sk' w'. v2_call «sock_close» conf bytes sk = SOME (b, sk') ∧
@@ -413,7 +413,7 @@ QED
    The relies: an arrival makes sense in related states alike
    ------------------------------------------------------------------------ *)
 
-Theorem core_arrival_ok[local]:
+Theorem core_arrival_ok:
   core lfd a sk w ∧ ar_rel lfd a e x ⇒ (arrival_ok2 sk x ⇔ ep_arrival_ok w e)
 Proof
   rw[core_def, ar_rel_def] >> imp_res_tac LIST_REL_LENGTH >>
@@ -449,13 +449,13 @@ Definition v2shape_def:
     (MAP FST s.listening, s.reserved, MAP (λcn. cn.peer_closed) s.clients, s.future)
 End
 
-Theorem MAP_FST_AFUPDKEY[local]:
+Theorem MAP_FST_AFUPDKEY:
   ∀l. MAP FST (AFUPDKEY k f l) = MAP FST l
 Proof
   Induct >> simp[AFUPDKEY_def, FORALL_PROD] >> rw[]
 QED
 
-Theorem v2shape_deliver[local]:
+Theorem v2shape_deliver:
   v2shape s1 = v2shape s2 ⇒ v2shape (deliver2 s1 x) = v2shape (deliver2 s2 x)
 Proof
   rw[v2shape_def] >>
@@ -470,7 +470,7 @@ Proof
   qpat_x_assum ‘MAP _ s1.clients = _’ (mp_tac o Q.AP_TERM ‘EL x’) >> simp[EL_MAP]
 QED
 
-Theorem v2shape_tick[local]:
+Theorem v2shape_tick:
   v2shape s1 = v2shape s2 ⇒ v2shape (tick2 s1) = v2shape (tick2 s2)
 Proof
   ‘∀xs s1 s2. v2shape s1 = v2shape s2 ⇒ v2shape (FOLDL deliver2 s1 xs) = v2shape (FOLDL deliver2 s2 xs)’
@@ -480,7 +480,7 @@ Proof
   first_x_assum irule >> fs[v2shape_def]
 QED
 
-Theorem v2shape_step_ok2[local]:
+Theorem v2shape_step_ok2:
   ∀xs s1 s2. v2shape s1 = v2shape s2 ⇒ (step_ok2 s1 xs ⇔ step_ok2 s2 xs)
 Proof
   Induct >> simp[step_ok2_def] >> rpt strip_tac >>
@@ -494,7 +494,7 @@ Proof
   metis_tac[v2shape_deliver]
 QED
 
-Theorem v2_call_shape[local]:
+Theorem v2_call_shape:
   v2_call n conf bytes sk = SOME (b, sk') ⇒ v2shape sk' = v2shape sk ∨ sk' = tick2 sk
 Proof
   rw[v2_call_def, socket2_fn_def, AllCaseEqs()] >>
@@ -505,13 +505,13 @@ Proof
   TRY (disj1_tac >> rw[LIST_EQ_REWRITE, EL_MAP, EL_LUPDATE] >> rw[] >> NO_TAC)
 QED
 
-Theorem ticks2_SUC'[local]:
+Theorem ticks2_SUC':
   ∀n s. ticks2 (SUC n) s = tick2 (ticks2 n s)
 Proof
   Induct >> fs[ticks2_def]
 QED
 
-Theorem ep_ffi_fn_env[local]:
+Theorem ep_ffi_fn_env:
   ep_ffi_fn n conf bytes w = SOME (b, w') ⇒ w'.env = w.env
 Proof
   rw[ep_ffi_fn_def, ep_call_def, AllCaseEqs()] >>
@@ -551,7 +551,7 @@ Definition tr_def:
   tr lfd a (Eof2 j) = PEof j
 End
 
-Theorem al_rel_tr[local]:
+Theorem al_rel_tr:
   ∀xs. al_rel lfd a (MAP (tr lfd a) xs) xs ∧ no_drain (MAP (tr lfd a) xs)
 Proof
   Induct >> simp[Once al_rel_cases, no_drain_def] >> fs[no_drain_def] >>
@@ -567,14 +567,14 @@ Definition untr_def:
   untr lfd a (Drain j :: es) = untr lfd a es
 End
 
-Theorem al_rel_untr[local]:
+Theorem al_rel_untr:
   ∀es. al_rel lfd a es (untr lfd a es)
 Proof
   Induct >> simp[Once al_rel_cases, untr_def] >>
   Cases >> rw[untr_def, ar_rel_def] >> metis_tac[]
 QED
 
-Theorem next_step2_fut[local]:
+Theorem next_step2_fut:
   next_step2 s = fut_step s.future 0
 Proof
   simp[next_step2_def, fut_step_def, LNTH]
@@ -619,7 +619,7 @@ Proof
   simp[al_rel_tr] >> qexists_tac ‘sk'’ >> fs[next_step2_fut]
 QED
 
-Theorem v2_after_polls[local]:
+Theorem v2_after_polls:
   ∀k w sk. v2rel lfd a sk w ⇒
            ∃wk. ep_after w (REPLICATE k («sock_poll», [], [])) = SOME wk ∧
                 v2rel lfd a (ticks2 k sk) wk

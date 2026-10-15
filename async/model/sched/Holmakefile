@@ -1,0 +1,3 @@
+# Generated from the review-series layout (see REVIEW-SERIES-PLAN.md).
+INCLUDES = ../core \
+           ../level2

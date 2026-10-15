@@ -1,0 +1,2 @@
+# Built against the prebuilt shared base (async/design/shared-base-build.md).
+INCLUDES = ../model

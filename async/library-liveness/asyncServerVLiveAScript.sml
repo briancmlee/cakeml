@@ -31,11 +31,14 @@ Ancestors
 Libs
   preamble
 
-(* The answers to queries in a transcript, in order *)
+(* The answers to queries in a transcript, in order: one entry per
+   answered query (an action that is not a socket action, with a response
+   x), the entry being V.kans x.  So each query a handler emitted, once
+   answered, has exactly one slot *)
 Definition kanswers_def:
   kanswers (V : ('act, 'k, 'q, 'res) vocab) (tr : ('act # 'res option) list) =
     FLAT (MAP (λ(a, r). case r of
-                          SOME x => (case V.kans x of SOME k => [k] | NONE => [])
+                          SOME x => if V.sact a = NONE then [V.kans x] else []
                         | NONE => []) tr)
 End
 
@@ -44,7 +47,7 @@ End
    received *)
 Definition handler_live_va_def:
   handler_live_va (V : ('act, 'k, 'q, 'res) vocab) (hf : num -> ('act, 'res, 'z) vmach)
-                  (out : string -> 'k list -> string list) B ⇔
+                  (out : string -> 'k option list -> string list) B ⇔
     ∀fd g j0 D.
       prompt (hf fd) g ∧ henv_t fd (λq. sproj V (trans (hf fd) q)) g j0 D ∧
       j0 + B D ≤ LENGTH g ⇒

@@ -515,3 +515,49 @@ Proof
   qexists_tac ‘j’ >> conj_tac >- first_assum ACCEPT_TAC >>
   irule stopped_invalid >> metis_tac[]
 QED
+
+(* ------------------------------------------------------------------------
+   Reading and end-of-file in the machine's transcript
+   ------------------------------------------------------------------------ *)
+
+(* In state HB the handler has a read of fd outstanding *)
+Theorem hmachine_reading:
+  prompt (hcomp files fd (HA "")) g ∧ j ≤ LENGTH g ∧ Sj files fd g j = HB b ⇒
+  MEM (Read fd, NONE) (trans (hcomp files fd (HA "")) (TAKE j g))
+Proof
+  strip_tac >> drule_all hmachine_trans_TAKE >> disch_then SUBST1_TAC >>
+  simp[MEM_FLAT, MEM_GENLIST, PULL_EXISTS] >> qexists_tac ‘j’ >>
+  simp[hacts_def, zipr_def]
+QED
+
+(* The handler stops on a buffer that is not invalid only after reading
+   end-of-file *)
+Theorem hmachine_stopped_eof:
+  ∀j b. j ≤ LENGTH g ∧ Sj files fd g j = HD b ∧ parse_hrequest b ≠ HInvalid ⇒
+        ∃i b'. i < j ∧ Sj files fd g i = HB b' ∧ oHD (EL i g).results = SOME Eof
+Proof
+  Induct >- simp[hrun_def] >>
+  rpt strip_tac >>
+  ‘j < LENGTH g’ by simp[] >>
+  qpat_x_assum ‘Sj _ _ _ (SUC j) = _’ mp_tac >>
+  drule_then (qspecl_then [‘files’, ‘fd’] SUBST1_TAC) Sj_SUC >>
+  Cases_on ‘Sj files fd g j’ >> simp[hstep_def]
+  >- (every_case_tac >> simp[] >> strip_tac >> gvs[])
+  >- (every_case_tac >> simp[] >> strip_tac >> gvs[] >>
+      qexists_tac ‘j’ >> simp[])
+  >> strip_tac >> gvs[] >>
+  metis_tac[DECIDE “i < j ⇒ i < SUC j”]
+QED
+
+(* So its transcript has the read that returned end-of-file *)
+Theorem hmachine_eof:
+  prompt (hcomp files fd (HA "")) g ∧ j ≤ LENGTH g ∧
+  Sj files fd g j = HD b ∧ parse_hrequest b ≠ HInvalid ⇒
+  MEM (Read fd, SOME Eof) (trans (hcomp files fd (HA "")) (TAKE j g))
+Proof
+  strip_tac >> drule_all hmachine_stopped_eof >> strip_tac >>
+  drule_all hmachine_trans_TAKE >> disch_then SUBST1_TAC >>
+  simp[MEM_FLAT, MEM_GENLIST, PULL_EXISTS] >> qexists_tac ‘i’ >>
+  simp[hacts_def, zipr_def]
+QED
+

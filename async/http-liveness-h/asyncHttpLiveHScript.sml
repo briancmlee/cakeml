@@ -167,3 +167,150 @@ Proof
   impl_tac >- simp[uses_ok_http_h] >> strip_tac >>
   simp[bytes_def] >> metis_tac[]
 QED
+
+(* ------------------------------------------------------------------------
+   Liveness on an accepted connection
+   ------------------------------------------------------------------------ *)
+
+(* MAIN: on a connection c handed out by round n, the responses to the
+   complete requests in any prefix D of what was sent on c by round n are
+   eventually written to c *)
+Theorem http_accepted_live_h:
+  s0.listeners = [(n2w lfdn, [])] ∧ s0.conns = [] ∧ lfdn < dimword (:64) ∧
+  sched_wf s0 ∧ MEM c (wacc (HP files lfdn s0 n)) ∧
+  bytes D ≼ sent_upto c n s0 ⇒
+  ∃N. bytes (FLAT (responses_to_h files D)) ≼
+      bytes_written_to c (FLAT (GENLIST (HEV files lfdn s0) N))
+Proof
+  strip_tac >>
+  ‘grun_ok (EI lfdn) (srelabel (http_server_h files lfdn)) s0’
+    by metis_tac[grun_ok_http_h] >>
+  qabbrev_tac ‘B = (LENGTH D + 2) * (LENGTH (parse_all_h D) + 3)’ >>
+  mp_tac (Q.INST [‘M’ |-> ‘n + B : num’] http_h_view) >> impl_tac >- simp[] >>
+  strip_tac >>
+  qabbrev_tac ‘fd = w2n (c : word64)’ >>
+  ‘n2w fd = c’ by simp[Abbr ‘fd’] >>
+  qabbrev_tac ‘j0 = n − a’ >>
+  (* what was sent on c, round by round, against what the handler read *)
+  ‘∀j. j ≤ LENGTH g ⇒
+       ∃inc. sent_upto c (a + j) s0 = bytes (Rj files fd g j) ++ inc ∧
+             (∀cn. ALOOKUP (HG files lfdn s0 (a + j)).conns c = SOME cn ⇒
+                   inc = cn.incoming) ∧
+             (ALOOKUP (HG files lfdn s0 (a + j)).conns c = NONE ⇒ inc = [])’
+    by (rpt strip_tac >>
+        mp_tac (Q.GEN ‘m’ sent_split |> Q.ISPEC ‘srelabel (http_server_h files lfdn)’
+                |> Q.INST [‘ifds’ |-> ‘EI lfdn’, ‘k’ |-> ‘a + j : num’]) >>
+        simp[] >> metis_tac[]) >>
+  (* from round n on, D has been sent *)
+  ‘∀j. j0 ≤ j ⇒ bytes D ≼ sent_upto c (a + j) s0’
+    by (rpt strip_tac >> irule IS_PREFIX_TRANS >> qexists_tac ‘sent_upto c n s0’ >>
+        simp[] >> ‘a + j = n + (a + j − n)’ by simp[Abbr ‘j0’] >>
+        pop_assum SUBST1_TAC >> simp[sent_upto_prefix]) >>
+  (* the machine-level theorem *)
+  mp_tac hmachine_live_p >>
+  impl_tac
+  >- (rpt conj_tac
+      >- first_assum ACCEPT_TAC
+      (* what has been read and D are comparable *)
+      >- (rpt strip_tac >> REWRITE_TAC[GSYM bytes_prefix] >>
+          first_x_assum (qspec_then ‘j’ mp_tac) >> impl_tac >- simp[] >> strip_tac >>
+          first_x_assum (qspec_then ‘j’ mp_tac) >> impl_tac >- simp[] >> strip_tac >>
+          metis_tac[prefixes_is_prefix_total, IS_PREFIX_APPEND3, IS_PREFIX_TRANS])
+      (* not reported readable: nothing unread, so D has been read *)
+      >- (rpt strip_tac >>
+          ‘a + j < n + B ∧ j + 1 ≤ LENGTH g ∧ j0 ≤ j + 1 ∧ j < LENGTH g’ by fs[] >>
+          ‘Rj files fd g (j + 1) = Rj files fd g j’
+            by (drule_all Rj_Wj_SUC >> fs[ADD1]) >>
+          ‘MEM c (wacc (HP files lfdn s0 (a + j)))’
+            by (irule wacc_mono >> qexists_tac ‘n’ >> fs[Abbr ‘j0’]) >>
+          ‘MEM c (EI lfdn (ghist (EI lfdn) (srelabel (HM files lfdn)) s0 (a + j)))’
+            by (irule interest_accepted >> simp[]) >>
+          ‘¬is_ready (HG files lfdn s0 (a + (j + 1))) c’
+            by (strip_tac >> qpat_x_assum ‘Readable fd ∉ _’ mp_tac >>
+                qpat_x_assum ‘∀i. i < LENGTH g ⇒ _’ (qspec_then ‘j’ mp_tac) >>
+                impl_tac >- simp[] >> disch_then SUBST1_TAC >>
+                simp[EL_MAP, snap_map_def, sfe_def, ready_EL_ghist, MEM_FILTER] >>
+                qexists_tac ‘c’ >> fs[Abbr ‘fd’, ADD1]) >>
+          qpat_x_assum ‘∀j. j ≤ LENGTH g ⇒ ∃inc. _’ (qspec_then ‘j + 1’ mp_tac) >>
+          impl_tac >- simp[] >> strip_tac >>
+          ‘inc = []’
+            by (Cases_on ‘ALOOKUP (HG files lfdn s0 (a + (j + 1))).conns c’ >> fs[] >>
+                fs[is_ready_def] >> gvs[]) >>
+          qpat_x_assum ‘∀j. j0 ≤ j ⇒ bytes D ≼ _’ (qspec_then ‘j + 1’ mp_tac) >>
+          impl_tac >- simp[] >>
+          qpat_x_assum ‘sent_upto _ _ _ = _’ SUBST1_TAC >>
+          qpat_x_assum ‘Rj _ _ _ (j + 1) = _’ SUBST1_TAC >>
+          qpat_x_assum ‘inc = []’ SUBST1_TAC >>
+          REWRITE_TAC[APPEND_NIL, bytes_prefix])
+      (* a read, with D not all read: there was unread data, so it reads some *)
+      >- (rpt strip_tac >> disj2_tac >>
+          ‘j ≤ LENGTH g ∧ j + 1 ≤ LENGTH g ∧ j0 ≤ j’ by fs[] >>
+          drule_all hmachine_reading >> strip_tac >>
+          qpat_assum ‘∀j. j ≤ LENGTH g ⇒ FILTER _ _ = _ ∧ _’ (qspec_then ‘j’ mp_tac) >>
+          impl_tac >- simp[] >> strip_tac >>
+          ‘MEM (Read fd, NONE) (TSg (HM files lfdn) (EI lfdn) s0 (a + j))’
+            by (qpat_x_assum ‘FILTER _ _ = _’ (fn th =>
+                  qpat_x_assum ‘MEM _ (trans _ _)’ (mp_tac o REWRITE_RULE [GSYM th])) >>
+                simp[MEM_FILTER]) >>
+          ‘reads_c c (HA_ files lfdn s0 (a + j))’
+            by (qpat_x_assum ‘n2w fd = c’ (SUBST1_TAC o SYM) >>
+                irule TSg_read_none >> metis_tac[uses_ok_http_h]) >>
+          qpat_assum ‘∀j. j ≤ LENGTH g ⇒ ∃inc. _’ (qspec_then ‘j’ mp_tac) >>
+          impl_tac >- simp[] >> strip_tac >>
+          ‘inc ≠ []’
+            by (strip_tac >> qpat_x_assum ‘¬(D ≼ _)’ mp_tac >>
+                REWRITE_TAC[GSYM bytes_prefix] >>
+                qpat_x_assum ‘∀j. j0 ≤ j ⇒ bytes D ≼ _’ (qspec_then ‘j’ mp_tac) >>
+                impl_tac >- simp[] >>
+                qpat_x_assum ‘sent_upto _ _ _ = _’ SUBST1_TAC >>
+                qpat_x_assum ‘inc = []’ SUBST1_TAC >>
+                REWRITE_TAC[APPEND_NIL] >> metis_tac[]) >>
+          ‘∃cn. ALOOKUP (HG files lfdn s0 (a + j)).conns c = SOME cn ∧ cn.incoming ≠ []’
+            by (Cases_on ‘ALOOKUP (HG files lfdn s0 (a + j)).conns c’ >- fs[] >>
+                qpat_x_assum ‘∀cn. _ ⇒ inc = _’ (qspec_then ‘x’ mp_tac) >> simp[] >>
+                strip_tac >> fs[]) >>
+          drule grun_ok_sock_acts >>
+          disch_then (qspec_then ‘a + j’ strip_assume_tac) >>
+          drule_all sock_acts_read_nonempty >> strip_tac >>
+          qpat_assum ‘∀j. j ≤ LENGTH g ⇒ FILTER _ _ = _ ∧ _’ (qspec_then ‘j + 1’ mp_tac) >>
+          impl_tac >- simp[] >> strip_tac >>
+          ‘STRLEN (Rj files fd g j) = LENGTH (pread_all c (HP files lfdn s0 (a + j))) ∧
+           STRLEN (Rj files fd g (SUC j)) =
+             LENGTH (pread_all c (HP files lfdn s0 (a + j + 1)))’
+            by metis_tac[LENGTH_bytes, ADD1, ADD_ASSOC] >>
+          simp[GSYM ADD1, gperf_SUC] >>
+          Cases_on ‘pread_all c (ZIP (gacts (EI lfdn) (srelabel (HM files lfdn)) s0 (a + j),
+                                      gres (EI lfdn) (srelabel (HM files lfdn)) s0 (a + j)))’ >>
+          fs[])
+      (* stopped at end-of-file: nothing unread, so D has been read *)
+      >> rpt strip_tac >>
+      ‘parse_hrequest b ≠ HInvalid’ by simp[] >>
+      drule_all hmachine_eof >> strip_tac >>
+      qpat_assum ‘∀j. j ≤ LENGTH g ⇒ FILTER _ _ = _ ∧ _’ (qspec_then ‘j’ mp_tac) >>
+      impl_tac >- simp[] >> strip_tac >>
+      ‘MEM (Read fd, SOME Eof) (TSg (HM files lfdn) (EI lfdn) s0 (a + j))’
+        by (qpat_x_assum ‘FILTER _ _ = _’ (fn th =>
+              qpat_x_assum ‘MEM _ (trans _ _)’ (mp_tac o REWRITE_RULE [GSYM th])) >>
+            simp[MEM_FILTER]) >>
+      ‘∃k. MEM (Read c k, Got (SOME [])) (HP files lfdn s0 (a + j))’
+        by (qpat_x_assum ‘n2w fd = c’ (SUBST1_TAC o SYM) >>
+            irule TSg_eof >> metis_tac[uses_ok_http_h]) >>
+      ‘∃cn. ALOOKUP (HG files lfdn s0 (a + j)).conns c = SOME cn ∧ cn.incoming = []’
+        by metis_tac[grounds_eof] >>
+      qpat_assum ‘∀j. j ≤ LENGTH g ⇒ ∃inc. _’ (qspec_then ‘j’ mp_tac) >>
+      impl_tac >- simp[] >> strip_tac >>
+      ‘inc = []’ by metis_tac[] >>
+      qpat_x_assum ‘∀j. j0 ≤ j ⇒ bytes D ≼ _’ (qspec_then ‘j’ mp_tac) >>
+      impl_tac >- simp[] >>
+      qpat_x_assum ‘sent_upto _ _ _ = _’ SUBST1_TAC >>
+      qpat_x_assum ‘inc = []’ SUBST1_TAC >>
+      REWRITE_TAC[APPEND_NIL, bytes_prefix]) >>
+  disch_then (qspecl_then [‘LENGTH D’, ‘j0’] mp_tac) >>
+  impl_tac >- (simp[Abbr ‘j0’, Abbr ‘B’]) >>
+  strip_tac >>
+  qexists_tac ‘SUC (a + j')’ >>
+  first_x_assum (qspec_then ‘j'’ mp_tac) >> simp[] >> strip_tac >>
+  ‘FLAT (responses_to_h files D) ≼ FLAT (Wj files fd g j')’
+    by (rw[IS_PREFIX_APPEND] >> fs[IS_PREFIX_APPEND] >> simp[FLAT_APPEND] >> metis_tac[]) >>
+  metis_tac[bytes_prefix]
+QED

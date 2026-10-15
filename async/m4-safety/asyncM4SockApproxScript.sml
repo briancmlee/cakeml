@@ -14,12 +14,12 @@
 Theory asyncM4SockApprox
 Ancestors
   asyncCore asyncLevel1 asyncChoose asyncCfActModel asyncCfActBothModel
-  asyncCfActProg asyncCfActSpec asyncM4Approx asyncM3Prog asyncM3Loop
+  asyncCfActProg asyncCfActSpec asyncM4Approx asyncM3Prog asyncM3Loop asyncM4Loop
   ml_translator ListProg
 Libs
   preamble basis ml_translatorLib cfTacticsLib ml_progLib basisFunctionsLib
 
-val _ = translation_extends "asyncM3Loop"
+val _ = translation_extends "asyncM4Loop"
 
 Quote add_cakeml:
   fun async_both c1 c2 =

@@ -1,0 +1,21 @@
+# Generated from the review-series layout (see REVIEW-SERIES-PLAN.md).
+INCLUDES = ../../cakeml/approx \
+           ../../cakeml/library \
+           ../../loop/blocking \
+           ../../loop/polling \
+           ../../model/core \
+           ../../model/level2 \
+           ../../model/sched \
+           ../../programs/echo \
+           ../../programs/echo-blocking \
+           ../../servers/echo \
+           ../../servers/relabel \
+           ../../spec \
+           ../../world/clock \
+           ../../world/composed \
+           ../../world/sockets \
+           $(CAKEMLDIR)/semantics
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif
+EXTRA_CLEANS = echo_blocking.sexp

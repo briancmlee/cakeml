@@ -1,0 +1,7 @@
+# Indicative only: Apple M1 Pro, macOS 26.6.2, loopback, Python 3.11 threaded client (demo_clients.py bench)
+CakeML (verified): 1 clients x 5000 lines of 64 B: 17,161 lines/s, round trip median 49 us, p99 140 us, max 6,422 us
+Python asyncio   : 1 clients x 5000 lines of 64 B: 28,220 lines/s, round trip median 34 us, p99 54 us, max 154 us
+CakeML (verified): 10 clients x 1000 lines of 64 B: 32,204 lines/s, round trip median 289 us, p99 646 us, max 2,107 us
+Python asyncio   : 10 clients x 1000 lines of 64 B: 52,900 lines/s, round trip median 166 us, p99 488 us, max 2,438 us
+CakeML (verified): 50 clients x 200 lines of 64 B: 35,175 lines/s, round trip median 1,332 us, p99 4,343 us, max 15,692 us
+Python asyncio   : 50 clients x 200 lines of 64 B: 51,610 lines/s, round trip median 830 us, p99 2,773 us, max 4,934 us

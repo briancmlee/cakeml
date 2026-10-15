@@ -1,6 +1,9 @@
 # 25. The blocking loop without `blk_live` (`asyncL2BlkStuck`)
 
-Status: proved, no cheats. It is additive: a new theory,
+Status: proved, no cheats. **`brun_two_outcomes` is the l2-blocking
+headline** (approved by the user). It replaces `brun_spec`, which is now
+its outcome-(a) special case, under the extra assumption `blk_live`.
+Note 14 has been updated to match. It is additive: a new theory,
 `async/l2-blocking/asyncL2BlkStuckScript.sml`, stacked on #21
 (`spike/l2-blocking`). No existing l2-blocking file changes.
 
@@ -49,9 +52,9 @@ rounds is just finite unfolding, so plain `app` induction suffices.
 
 ## What it doesn't do
 
-- It doesn't change `brun_spec` or the write-up in note 14. `blk_live`
-  stays in #21 as the hypothesis of the diverging case. Whether the
-  headline should become `brun_two_outcomes` is a user decision.
+- `brun_spec` itself is unchanged and is still proved in
+  `asyncL2BlkLoop`. It is the outcome-(a) case, and `brun_two_outcomes`
+  uses it.
 - `bstep_spec_ev` copies #21's `bstep_spec`, generalised to any `evs`
   history (#21 fixes it to `[]`). Folding that into #21 would remove
   the copy, but it would rewrite #21, so I left it alone.

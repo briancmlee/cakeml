@@ -18,7 +18,12 @@ blocking `select` on those events. Otherwise it performs the round's
 actions and polls, as before.
 
 What is proved, end to end:
-- **The loop (CF):** it diverges, with an exact I/O trace (`brun_spec`).
+- **The loop (CF), headline `brun_two_outcomes`** (in `asyncL2BlkStuck`,
+  note 25), with no liveness assumption. Either (a) the loop diverges
+  with an exact I/O trace (`brun_spec`, the case `blk_live` of §3a), or
+  (b) in some first round no awaited byte ever comes, and the program
+  ends in an FFI divergence of `select` after a finite trace whose
+  actions are all the polling loop would ever perform.
 - **The rounds it skipped are irrelevant:** the computation's history
   under the blocking loop is exactly the model's `blocked` subsequence of
   the polling loop's history over the same input
@@ -141,7 +146,21 @@ Main statements:
 
 (* MAIN *) bstep_spec:      one iteration = bstep_world c ws (block or poll)
 
-(* MAIN *) brun_spec:
+(* HEADLINE, asyncL2BlkStuck (note 25) *) brun_two_outcomes:
+  limited_parts io2_names p ∧ wf c.run ∧
+  COMP2 p WORD A WORD (SNAPSHOT BREADY1 WORD) c cv ⇒
+  (blk_live c ws ∧
+   app p brun_v [cv] (IOS2 ws [])
+     (POSTd io. io = LFLATTEN (LGENLIST (λi. fromList (bround_events c ws i)) NONE))) ∨
+  (∃n kept full pos.
+     bfree c ws n ∧ brounds c ws n = (kept, full, pos) ∧ bstuck c ws kept pos ∧
+     app p brun_v [cv] (IOS2 ws [])
+       (POSTf nm. λcf b.
+          &(nm = «select» ∧ cf = SET_TO_LIST (c.interest kept) ∧ b = [0w]) *
+          IOS2 (sdrop pos ws) (FLAT (GENLIST (bround_events c ws) n)) *
+          SEP_EXISTS bv. W8ARRAY bv [0w]))
+
+(* outcome (a), the special case blk_live *) brun_spec:
   limited_parts io2_names p ∧ wf c.run ∧ blk_live c ws ∧
   COMP2 p WORD A WORD (SNAPSHOT BREADY1 WORD) c cv ⇒
   app p brun_v [cv] (IOS2 ws [])
@@ -158,7 +177,9 @@ Main statements:
 ```
 
 Read together:
-- The blocking loop never terminates.
+- If `blk_live` holds, the blocking loop never terminates. Otherwise it
+  stops, sleeping in `select` forever, at the first stuck round
+  (outcome (b) of `brun_two_outcomes`).
 - Its trace is one `select` event per idle stretch and the usual
   act/ready events otherwise.
 - The actions it performs are exactly those that cf-actions' polling
@@ -215,12 +236,11 @@ theorem. Either:
   a finite trace, and that trace's actions are all the actions the
   polling loop would ever perform.
 
-The second case needs CF's `POSTf` (FFI-divergence postcondition) for
-the loop body and a variant of cfDiv's loop rule that allows an
-FFI-divergence exit. That keeps `blk_live` out of the trusted surface
-entirely. Estimate: 1–2 days (a POSTf loop rule, ~200–300 lines in
-cfDiv's style, plus the "no more actions" model lemma, which follows
-from `quiet`).
+**Done** (note 25, `asyncL2BlkStuck`): this is `brun_two_outcomes`,
+now the headline. `blk_live` is no longer an assumption of any headline
+theorem. It only names which outcome happens. No new cfDiv loop rule
+was needed: a finite number of rounds followed by a diverging `select`
+is plain `app` induction.
 
 ## 4. A blocking select in the socket model (`ffiSpikeSocketSelect`)
 
@@ -282,10 +302,11 @@ assumption it returns.
    cf-actions.
 3. **`select`'s config records the declared bytes**, so the trace shows
    what was waited on.
-4. **One named assumption, `blk_live`** (§3a): whenever the loop blocks,
-   a declared byte eventually comes. It does not follow from `sched_wf`.
-   It can be removed with a two-outcome theorem (§3a), which I recommend
-   before it reaches the final echo theorem.
+4. **`blk_live`** (§3a): whenever the loop blocks, a declared byte
+   eventually comes. It does not follow from `sched_wf`. It used to be
+   `brun_spec`'s assumption. The headline is now `brun_two_outcomes`
+   (note 25, approved by the user), where `blk_live` only picks the
+   outcome.
 5. **`quiet c`** (the model's Level 2 well-formedness) is assumed for
    the comparison with polling. It holds for all Level 2 combinators.
 6. **`wait_on e q`** takes a CakeML `q` that already checks `e ∈ ready`,

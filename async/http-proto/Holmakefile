@@ -1,0 +1,7 @@
+# The generic framed-request-protocol interface (design/32-modular-parsing.md):
+# proto, proto_ok (P1-P4), the lemmas derived from it once, and the generic
+# spec vocabulary.  Instances live in ../http-proto-inst.
+INCLUDES = ../ffi-spike ../spec
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

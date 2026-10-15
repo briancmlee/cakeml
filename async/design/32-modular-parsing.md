@@ -1,8 +1,9 @@
-# 32: Modular parsing: audit and design (PROPOSAL, nothing refactored)
+# 32: Modular parsing: audit, design and progress
 
-**Status:** this is the audit and the design only. No theory has been
-changed, and the refactor waits for your OK. Branch
-`spike/modular-parsing`, from `spike/http-bodies`.
+**Status:** you approved the design (refined scope). **Phase 1 is done**
+(§4): the interface, its derived lemmas, and `proto_ok` for all three
+existing parsers. Phase 2 has not started. Branch `spike/modular-parsing`,
+from `spike/http-bodies`.
 
 **Your requirement** (from the review of #55):
 - whether a part of a request parses should be mostly independent of the
@@ -140,14 +141,18 @@ Definition proto_ok_def:
   proto_ok P ⇔
     (∀r rest. P.valid r ⇒ P.parse (P.print r ++ rest) = PComplete r rest) ∧     (* P1 *)
     (∀s r rest. P.parse s = PComplete r rest ⇒ P.valid r ∧ s = P.print r ++ rest) ∧ (* P2 *)
-    (∀s t. P.parse s = PInvalid ⇒ P.parse (s ++ t) = PInvalid) ∧               (* P3 *)
+    (∀s t r rest. P.parse s = PInvalid ∧ P.valid r ⇒ s ++ t ≠ P.print r ++ rest) ∧ (* P3 *)
     (∀r. P.valid r ⇒ P.print r ≠ [])                                          (* P4 *)
 End
 ```
 
-- **P3 form.** The obligation is the *extension* form. It is what the
-  `_h`/`_b` proofs actually establish, and it implies the
-  "never-a-prefix" form the Drain uses.
+- **P3 form.** The obligation is the *never-a-prefix* form: no extension
+  of an invalid buffer is a printed valid request followed by anything.
+  It is what every Drain uses and what all three parsers prove
+  (`parse_invalid`, `parse_hinvalid`, `parse_binvalid`). The stronger
+  *extension* form ("`PInvalid` stays `PInvalid`") is proved for `_h` and
+  `_b` but not for strict, and nothing needs it. (The proposal first said
+  extension form; Phase 1 corrected it, §4.)
 - **Response function.** It is a separate parameter, `resp : 'r ->
   string`. The safety and liveness theorems are proved for every `resp`.
 
@@ -350,6 +355,7 @@ on it, and it could be added later without touching the generic pipeline.
 | 2 | generic server and safety (Server, Safe, SockModel); `…_via_proto` re-derivations | ~450 lines | 1 day |
 | 3 | generic liveness (Machine, Drain, Live) | ~1,400 lines, mostly a parametric port | 1.5–2 days |
 | 4 | generic CakeML handler and CF spec, generic whole-program theorem; a `_b` program re-derived through them (a new program value; the existing one is untouched) | ~600 lines | 1.5–2 days (risk: translator and polymorphic datatype, CF with higher-order arguments) |
+| 3b | **cause of actions** (for async-spike's Level 2 / option C): the generic handler emits new actions in round j only if round j−1's snapshot had its fd Readable or a Data response, proved once for `proto_handler` (§2.9) | ~300–500 lines | 1 day |
 | optional | a shared linear-time splitting library used by all instances' translations | ~150 lines | 0.5 day |
 | KV | bounded-`ans` obligation (§2.3); KV's global part is note 30's | +~200 lines | +1 day |
 
@@ -375,10 +381,34 @@ proof, the spec equality, the translation, `main`) instead of ~2,500.
    theorem.
 5. **Builds:** every Holmake through `holslot`, `-j1`; one hol-lsp.
 
+### 2.9 Later deliverable: the cause-of-actions lemma (requested by async-spike)
+
+Quiescence for HTTP (option C, Level 2 declared interest, on top of this
+pipeline) needs, per handler: "the handler emits new actions in round j
+only if round j−1's snapshot had its fd Readable or a Data response".
+Today that would be one proof per drain machine. In the generic pipeline
+it is one proof, about `proto_handler P resp`:
+
+- **Why no new interface fact is needed:** the handler's emissions in a
+  round depend only on its buffer. It writes the responses to the
+  complete requests at the front (`proto_all`), then either stops
+  (`PInvalid`) or waits for readability (`PIncomplete`). The buffer
+  changes only when a read returns Data. So between two Data events the
+  handler is either stopped or waiting on its fd, and emits nothing new.
+  That uses only the handler's structure and P2 (a complete parse
+  consumes bytes), not the grammar.
+- **Statement shape:** it will mirror async-spike's echo version, the
+  same round indexing and snapshot predicate, so that one quiescence
+  argument serves both. That version is being proved now and I have asked
+  for its exact statement.
+- **Where:** after Phase 3 (it reuses the generic machine's rounds), and
+  kept friendly to a Level 2 server (`server_with2`, #53).
+
 ## 3. Assumptions made
 
-1. The interface obligations are P1–P4 in the *extension* form of P3,
-   because that is what every existing parser proves.
+1. The interface obligations are P1–P4 with P3 in the *never-a-prefix*
+   form, because that is what every existing parser proves and what the
+   Drains use (corrected in Phase 1; see §4).
 2. The response is a parameter, not part of the protocol: the same
    framing can serve different servers (files, echo, KV).
 3. KV enters through the answering computation (note 30's option A), not
@@ -386,3 +416,41 @@ proof, the spec equality, the translation, `main`) instead of ~2,500.
 4. Trusted specs stay monolithic and unchanged. The generic structure
    lives below them, connected by equality lemmas.
 5. Per your scoping, grammar components (§2.6) are not part of the plan.
+
+## 4. Progress
+
+### Phase 1: the interface, validated against all three parsers (DONE)
+
+- **`async/http-proto/asyncProtoScript.sml`** (~260 lines, 17 proofs):
+  - `presult`, `proto`, `proto_ok` (P1–P4), with accessors
+    `proto_print`, `proto_complete`, `proto_invalid`, `proto_nonempty`;
+  - derived once: `proto_unique` (the bite lemma), `proto_complete_shorter`,
+    `proto_extend`, `proto_prefix` (a proper prefix of a printed request
+    is `PIncomplete`);
+  - `proto_all` and `proto_all_complete`, `_not_complete`, `_requests`,
+    `_print`, `_printed`, `_mono`, `_prefix`, `_invalid_ext`: every
+    `parse_all_X` lemma the pipelines use;
+  - the generic spec vocabulary: `preqs`, `presps`, `no_full`,
+    `proto_safe`, `proto_live`, `proto_spec`.
+- **`async/http-proto-inst/`**, one theory per parser (~50 lines each):
+  - `proto_ok_strict`, `proto_ok_h`, `proto_ok_b`. Each is P1–P4 from the
+    parser's existing `parse_Xprint`, `parse_Xcomplete` and
+    `parse_Xinvalid`, plus P4 by unfolding the printer;
+  - `http_spec_proto`, `http_spec_h_proto`, `http_spec_b_proto`. Each
+    trusted spec equals `proto_spec` for its protocol, by unfolding:
+    ```
+    http_spec   lfd files prog ⇔ proto_spec P_strict (print_response o handle files) lfd prog
+    http_spec_h lfd files prog ⇔ proto_spec P_h (print_response o handle files o hpath) lfd prog
+    http_spec_b lfd files prog ⇔ proto_spec P_b (print_response o bhandle files) lfd prog
+    ```
+- **One correction to the design:** P3 is the never-a-prefix form, not
+  the extension form (§2.1). The strict parser proves only the former, and
+  the Drains need only the former. This is a *weaker* obligation, so
+  future instances get easier, and no generic lemma needed the stronger
+  one.
+- **Checks:** no cheats; `Holmake -j1` (through holslot) green in both new
+  directories. No existing file was changed.
+
+**Verdict:** the interface fits all three parsers without changes beyond
+the P3 form. Phase 2 (generic server and safety) can build on it.
+

@@ -212,3 +212,123 @@ Proof
       gvs[io2_names_def, IOS2_def, select_event_def] >> xsimpl) >>
   xapp >> xsimpl >> simp[]
 QED
+
+(* ------------------------------------------------------------------------
+   One iteration
+   ------------------------------------------------------------------------ *)
+
+
+(* One round of the blocking loop for c (from c's first poll on) against
+   the stream ws: the snapshot c is polled with, how many bytes are
+   consumed, and the round's I/O events. *)
+Definition bstep_world_def:
+  bstep_world c ws =
+    if blocks c [] then
+      let j = skips (c.interest []) ws 0 in
+        (idle_snap ws j, SUC j,
+         [select_event (SET_TO_LIST (c.interest [])) (ws j)])
+    else
+      (world_snap ws (LENGTH (c.run []).actions), LENGTH (c.run []).actions + 1,
+       round_events_of (c.run []).actions ws)
+End
+
+Theorem SNAPSHOT_world_snap[local]:
+  WORD (ws k) bv ∧ LIST_TYPE WORD (GENLIST ws k) rsv ∧ NUM 0 nv ⇒
+  SNAPSHOT BREADY1 WORD (world_snap ws k) (Conv NONE [bv; nv; rsv])
+Proof
+  simp[SNAPSHOT_def, world_snap_def, BREADY1_def]
+QED
+
+(* MAIN: one iteration of the blocking loop.  If cv implements c, the
+   iteration either blocks in select on c's declared events (when c is
+   waiting with no action to perform) or performs c's first-round actions
+   and reads the ready byte; either way it returns a value implementing c
+   with the round's snapshot delivered, as bstep_world says. *)
+Theorem bstep_spec:
+  limited_parts io2_names p ∧
+  COMP2 p WORD A WORD (SNAPSHOT BREADY1 WORD) c cv ∧
+  (blocks c [] ⇒ ∃j. ws j ∈ c.interest []) ⇒
+  app (p:'ffi ffi_proj) bstep_v [cv] (IOS2 ws [])
+    (POSTv v. &COMP2 p WORD A WORD (SNAPSHOT BREADY1 WORD)
+                 (suspended2 c [FST (bstep_world c ws)]) v *
+              IOS2 (sdrop (FST (SND (bstep_world c ws))) ws)
+                   (SND (SND (bstep_world c ws))))
+Proof
+  rpt strip_tac >>
+  qpat_assum ‘COMP2 _ _ _ _ _ _ _’
+    (strip_assume_tac o REWRITE_RULE[COMP2_def, POLL_RESULT2_def]) >>
+  gvs[] >> xcf_with_def (fetch "-" "bstep_v_def") >> xmatch >>
+  qabbrev_tac ‘k = LENGTH (c.run []).actions’ >>
+  xlet ‘POSTv rsv. &LIST_TYPE WORD (GENLIST ws k) rsv *
+          IOS2 (sdrop k ws) (MAP2 act_event (c.run []).actions (GENLIST ws k))’
+  >- (xapp >> qexistsl [‘emp’, ‘ws’, ‘[]’, ‘(c.run []).actions’] >>
+      simp[Abbr ‘k’] >> xsimpl) >>
+  qpat_x_assum ‘STEPA2 _ _ _ _ _ _ _’ mp_tac >> simp[Once STEPA2_cases] >>
+  strip_tac >> gvs[]
+  >- ((* Done2: never blocks; reads the ready byte *)
+      ‘¬blocks c []’ by gvs[blocks_def, finished_def] >>
+      simp[bstep_world_def] >>
+      xlet ‘POSTv bv. &WORD (ws k) bv * IOS2 (sdrop 1 (sdrop k ws))
+              (MAP2 act_event (c.run []).actions (GENLIST ws k) ++ [ready_event (ws k)])’
+      >- (xmatch >> xlet ‘POSTv u. &UNIT_TYPE () u *
+                            IOS2 (sdrop k ws)
+                              (MAP2 act_event (c.run []).actions (GENLIST ws k))’
+          >- (xcon >> xsimpl) >>
+          xapp >> qexistsl [‘emp’, ‘sdrop k ws’,
+                            ‘MAP2 act_event (c.run []).actions (GENLIST ws k)’] >>
+          ‘sdrop k ws 0 = ws k’ by simp[sdrop_def] >> simp[] >> xsimpl) >>
+      xlet ‘POSTv wv. &SNAPSHOT BREADY1 WORD (world_snap ws k) wv *
+              IOS2 (sdrop 1 (sdrop k ws))
+                (MAP2 act_event (c.run []).actions (GENLIST ws k) ++ [ready_event (ws k)])’
+      >- (xcon >> xsimpl >> irule SNAPSHOT_world_snap >> simp[NUM_def, INT_def]) >>
+      ‘app p poll2_v [Conv NONE [av; Done2V xv]; wv] emp
+         (POSTv v. &COMP2 p WORD A WORD (SNAPSHOT BREADY1 WORD)
+                     (suspended2 c [world_snap ws k]) v)’
+        by (irule poll2_spec >> simp[]) >>
+      qpat_x_assum ‘app _ poll2_v _ _ _’ xapp_spec >> xsimpl >>
+      qunabbrev_tac ‘k’ >>
+      fs[sdrop_sdrop, round_events_of_def, finished_def] >> xsimpl)
+  >- ((* Pending2 *)
+      Cases_on ‘(c.run []).actions = []’
+      >- ((* no action to perform: block in select *)
+          ‘blocks c []’ by gvs[blocks_def, new_actions_NIL, log_of_def] >>
+          qunabbrev_tac ‘k’ >> gvs[LIST_TYPE_def] >> simp[bstep_world_def] >>
+          qabbrev_tac ‘jb = skips (c.interest []) ws 0’ >>
+          xlet ‘POSTv bv. &WORD (ws jb) bv *
+                  IOS2 (sdrop (SUC jb) ws)
+                    [select_event (SET_TO_LIST (c.interest [])) (ws jb)]’
+          >- (xmatch >> xmatch >> xapp >>
+              qexistsl [‘emp’, ‘ws’, ‘[]’, ‘c.interest []’] >>
+              fs[Abbr ‘jb’] >> conj_tac >- metis_tac[] >> xsimpl) >>
+          xlet ‘POSTv wv. &SNAPSHOT BREADY1 WORD (idle_snap ws jb) wv *
+                  IOS2 (sdrop (SUC jb) ws)
+                    [select_event (SET_TO_LIST (c.interest [])) (ws jb)]’
+          >- (xcon >> xsimpl >>
+              simp[SNAPSHOT_def, idle_snap_def, world_snap_def, BREADY1_def,
+                   NUM_def, INT_def, LIST_TYPE_def, sdrop_def]) >>
+          qpat_x_assum ‘COMP2 _ _ _ _ _ c _’ assume_tac >>
+          drule_all poll2_spec >> strip_tac >>
+          qpat_x_assum ‘app _ poll2_v _ _ _’ xapp_spec >> xsimpl)
+      >- ((* actions to perform: poll *)
+          Cases_on ‘(c.run []).actions’ >> gvs[LIST_TYPE_def] >>
+          ‘¬blocks c []’ by gvs[blocks_def, new_actions_NIL, log_of_def] >>
+          simp[bstep_world_def] >>
+          xlet ‘POSTv bv. &WORD (ws k) bv * IOS2 (sdrop 1 (sdrop k ws))
+                  (MAP2 act_event (c.run []).actions (GENLIST ws k) ++ [ready_event (ws k)])’
+          >- (xmatch >> xmatch >>
+              xlet ‘POSTv u. &UNIT_TYPE () u *
+                      IOS2 (sdrop k ws)
+                        (MAP2 act_event (c.run []).actions (GENLIST ws k))’
+              >- (xcon >> xsimpl) >>
+              xapp >> qexistsl [‘emp’, ‘sdrop k ws’,
+                                ‘MAP2 act_event (c.run []).actions (GENLIST ws k)’] >>
+              ‘sdrop k ws 0 = ws k’ by simp[sdrop_def] >> simp[] >> xsimpl) >>
+          xlet ‘POSTv wv. &SNAPSHOT BREADY1 WORD (world_snap ws k) wv *
+                  IOS2 (sdrop 1 (sdrop k ws))
+                    (MAP2 act_event (c.run []).actions (GENLIST ws k) ++ [ready_event (ws k)])’
+          >- (xcon >> xsimpl >> irule SNAPSHOT_world_snap >> simp[NUM_def, INT_def]) >>
+          qpat_x_assum ‘COMP2 _ _ _ _ _ c _’ assume_tac >>
+          drule_all poll2_spec >> strip_tac >>
+          qpat_x_assum ‘app _ poll2_v _ _ _’ xapp_spec >> xsimpl >>
+          simp[sdrop_sdrop, round_events_of_def, Abbr ‘k’] >> xsimpl))
+QED

@@ -50,3 +50,21 @@ waits for the decision.
 - §2.4: main and the QuietSpec bridge (`select_ffi = ssel_ffi` along runs
   that select only on sockets, as asyncEchoBridgeWorld does).
 - §2.5: quiescence for HTTP bodies through the `http_prog_pb` instance.
+
+## Status (2026-10-16, b1b089f2e)
+async/option-c-loop (no cheats; Holmake green):
+- §2.3 the loop: asyncOCFinite, asyncOCSel (qsel), asyncOCLoop / asyncOCRun
+  (step_q / run_q; run_q_two_outcomes).
+- §2.4 the program: asyncOCTransfer (#56's transfer for any protocol),
+  asyncOCMainB (main u = run_q ([3], proto_server2 b_parse bresp_demo 3)),
+  asyncOCSemB (http_q_semantics, http_q_spec).
+- §2.5 quiescence:
+  - asyncOCSleeps: qsel_sleeps (generic Q2);
+  - asyncOCAcc: proto_acc (the server waits only on the listener and
+    accepted fds);
+  - asyncOCTrace: trace_good_q;
+  - asyncOCQuietB: **http_q_quiet_b: PROTO_STABLE P_b resp_b ⇒ http_quiet_b
+    3w demo_files (SNOC (main_call «main») http_q_prog)**.
+- Still open: PROTO_STABLE. This is cf-actions' proto_stable on
+  spike/proto-stable (async/pk/proto-stable), in the agreed shape. When it
+  lands, discharge the hypothesis.

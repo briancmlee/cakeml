@@ -131,10 +131,31 @@ val _ = register_type “:canswer”;
 val r = translate wls2_def;
 val r = translate drop2_def;
 val r = translate buf_of_def;
+Definition tap_read_t_def:
+  tap_read_t (st, fd, s) = tap_read st fd s
+End
+
+Definition tap_accept_t_def:
+  tap_accept_t (st, fd) = tap_accept st fd
+End
+
+Definition delta2_t_def:
+  delta2_t (st, q) = delta2 st q
+End
+
 val r = translate tap_read_def;
 val r = translate tap_accept_def;
 val r = translate delta2_def;
+val r = translate tap_read_t_def;
+val r = translate tap_accept_t_def;
+val r = translate delta2_t_def;
 val r = translate empty_store_def;
+
+(* A monomorphic length, so that the CF proof needs no type instantiation *)
+Definition clen_def:
+  clen (s : string) = LENGTH s
+End
+val r = translate clen_def;
 
 (* ------------------------------------------------------------------------
    with_tap
@@ -201,13 +222,15 @@ Quote add_cakeml:
     case a of
       Read c n =>
         (case r of
-           Got (Some s) => if s = "" then st else tap_read st c (String.explode s)
+           Got (Some s) => if s = "" then st else tap_read_t (st, (c, String.explode s))
          | _ => st)
     | Accept l =>
         (case r of
-           Accepted (Some c) => tap_accept st c
+           Accepted (Some c) => tap_accept_t (st, c)
          | _ => st)
     | _ => st;
+
+  fun delta3 st q = delta2_t (st, q);
 
   fun cserver_with h lfd =
     Async.bind (sreadable lfd) (fn u =>
@@ -228,20 +251,28 @@ Quote add_cakeml:
   fun cwloop fd i =
     Async.bind (Async.emit (Kv (fd, Fetch i))) (fn a =>
       case a of
-        Kvr (Lines s) =>
-          if s = [] then cwloop fd i
-          else Async.bind (Async.emit (Sock (Write fd (String.implode s))))
-                 (fn w => cwloop fd (i + List.length s))
+        Kvr b =>
+          (case b of
+             Lines s =>
+               (case s of
+                  [] => cwloop fd i
+                | c :: cs =>
+                    Async.bind (Async.emit (Sock (Write fd (String.implode s))))
+                      (fn w => cwloop fd (i + clen s)))
+           | _ => Async.return ())
       | _ => Async.return ());
 
   fun cwriter fd =
     Async.bind (Async.emit (Kv (fd, Start))) (fn a =>
       case a of
-        Kvr (Pos j) => cwloop fd j
+        Kvr b =>
+          (case b of
+             Pos j => cwloop fd j
+           | _ => Async.return ())
       | _ => Async.return ());
 
   fun chandler fd = async_map (fn p => ()) (async_both (creader fd) (cwriter fd));
 
   fun chat_server lfd =
-    with_tap chat_tap_s delta2 empty_store (cserver_with chandler lfd);
+    with_tap chat_tap_s delta3 empty_store (cserver_with chandler lfd);
 End

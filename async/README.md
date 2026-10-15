@@ -14,6 +14,9 @@ scheduler they run on, against a model of the outside world.
   questions. Start here.
 - `design/08-echo-server.md`: the concurrent echo server in the model, and
   its safety theorem.
+- `design/09-closed-loop.md`: the echo server in a closed loop with a
+  model of sockets: safety and liveness (every byte that arrives is written
+  back within a bounded number of rounds).
 - `design/06-scheduler.md`: milestone M2, the scheduler and the
   no-busy-waiting theorem.
 - `design/REVIEW-GUIDE.md`: a proposed short list of headline theorems,
@@ -38,6 +41,10 @@ scheduler they run on, against a model of the outside world.
 | `asyncServerScript.sml` | the concurrent echo server (a handler per connection, alongside the rest of the server) |
 | `asyncServerSafetyScript.sml` | M4's core property: every client gets back exactly its own data, in order |
 | `asyncServer2Script.sml` | the echo server at Level 2: quiet, so a blocking scheduler may run it |
+| `asyncWorldScript.sml` | a model of sockets (mirroring the socket model of `spike/socket-model`) and the closed loop: a program and the world running together |
+| `asyncClosedLoopScript.sml` | the closed loop's world invariant; safety in the closed loop |
+| `asyncProgressScript.sml` | progress of the server as a program: a readable connection is read, a readable listener is accepted on, each handler inside the server |
+| `asyncLivenessScript.sml` | liveness in the closed loop: every byte that arrives is written back within n + 3q + 5 rounds |
 | `asyncSchedScript.sml` | M2: the scheduler as a pure step function; tasks never lost; composition with the M1 semantics |
 | `asyncSched2Script.sml` | M2: no busy-waiting: a scheduler that blocks through idle rounds behaves like one that polls every round |
 

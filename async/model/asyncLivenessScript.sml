@@ -5,8 +5,8 @@
   written back to that connection within a bounded number of rounds:
    - closed_loop_echo_accepted: on an accepted connection, everything that
      has arrived by round n is written back by round n + 5;
-   - closed_loop_accepts: a pending connection at position i of the
-     listener's queue is accepted within 3 (i + 1) rounds;
+   - queue_progress: a pending connection with p connections ahead of it
+     in the listener's queue is handed out within 3 (p + 1) rounds;
    - closed_loop_liveness: so on every connection, everything that has
      arrived by round n is written back by round n + 3 q + 5, where q is
      the number of pending connections at round n.
@@ -940,4 +940,53 @@ Proof
   >> qspecl_then [‘M + 5’, ‘h5’, ‘w5’, ‘p5’, ‘N’, ‘hN’, ‘wN’, ‘pN’, ‘cn5’, ‘cn''’] mp_tac
        (Q.GENL [‘m’, ‘h’, ‘w’, ‘perf’, ‘N’, ‘h'’, ‘w'’, ‘perf'’, ‘cn’, ‘cn'’] outgoing_later)
   >> simp[] >> metis_tac[IS_PREFIX_TRANS]
+QED
+
+(* ------------------------------------------------------------------------
+   From the clients' side
+   ------------------------------------------------------------------------ *)
+
+(* An arrival is effective: the world does not drop it.  This mirrors the
+   socket model's arrival_ok (spike/socket-model, ffiSpikeSocketFair), whose
+   sched_wf asks it of every arrival of the schedule. *)
+Definition arrival_ok_def:
+  (arrival_ok w (Connect l c) ⇔
+     is_listener w l ∧ ¬is_listener w c ∧ ¬is_conn w c) ∧
+  (arrival_ok w (Arrive c d) ⇔
+     ∃cn. ALOOKUP w.conns c = SOME cn ∧ ¬cn.peer_closed) ∧
+  (arrival_ok w (Hangup c) ⇔
+     ∃cn. ALOOKUP w.conns c = SOME cn ∧ ¬cn.peer_closed)
+End
+
+(* Data a client sends, if effective, is recorded as received on its
+   connection; closed_loop_liveness then says it is written back *)
+Theorem arrive_received:
+  arrival_ok w (Arrive c d) ⇒
+  ∃cn cn'. ALOOKUP w.conns c = SOME cn ∧
+           ALOOKUP (deliver1 w (Arrive c d)).conns c = SOME cn' ∧
+           cn'.received = cn.received ++ d
+Proof
+  rw[arrival_ok_def, deliver1_def, AFUPDKEY_ALOOKUP] >> simp[]
+QED
+
+(* ------------------------------------------------------------------------
+   Sanity check: two clients, interleaved, in the closed loop
+   ------------------------------------------------------------------------ *)
+
+(* Client 5 connects and sends "hi"; client 6 connects and sends "yo";
+   client 5 sends "!!", then closes its side *)
+Definition two_clients_sched_def:
+  two_clients_sched =
+    fromList [[Connect 0 5; Arrive 5 "hi"]; [Connect 0 6; Arrive 6 "yo"];
+              [Arrive 5 "!!"]; [Hangup 5]]
+End
+
+(* After 9 rounds each client has got back exactly what it sent (fields:
+   fd, received, outgoing, unread) *)
+Theorem example_closed_loop:
+  MAP (λ(c, cn). (c, cn.received, cn.outgoing, cn.incoming))
+      (FST (SND (closed_loop (server 0) (start_world 0 two_clients_sched) 9))).conns =
+  [(6, "yo", "yo", ""); (5, "hi!!", "hi!!", "")]
+Proof
+  EVAL_TAC
 QED

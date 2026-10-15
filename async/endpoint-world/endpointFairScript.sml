@@ -5,8 +5,8 @@
    - ep_sched_ok: in every state the program can reach (by any sequence of
      calls), the environment's next arrivals make sense there (version 2's
      sched_wf2, checked on the actual run, not on the world left alone);
-     this includes the bound that a new channel can always get a free fd
-     (version 1's bound: all fds distinct; version 2's is one stricter);
+     this includes version 2's bound on the number of channels, so a new
+     channel can always get a free fd;
    - takes_ok: the acceptance policy accepts at most what is offered, and
      at least one byte when nothing is in flight;
    - alloc_ok: the kernel gives free fds (version 2).
@@ -25,7 +25,7 @@ Libs
 Definition ep_arrival_ok_def:
   (ep_arrival_ok (w:eworld) (Incoming a) ⇔
      EXISTS (λ(l, a', q). a' = a) w.listening ∧
-     LENGTH w.reserved + LENGTH w.listening + LENGTH w.chans < dimword (:64)) ∧
+     LENGTH w.reserved + LENGTH w.listening + LENGTH w.chans + 1 < dimword (:64)) ∧
   (ep_arrival_ok w (PData j bs) ⇔
      j < LENGTH w.chans ∧ (EL j w.chans).status = Up ∧ ¬(EL j w.chans).peer_eof) ∧
   (ep_arrival_ok w (PEof j) ⇔

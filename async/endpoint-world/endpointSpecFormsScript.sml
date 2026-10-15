@@ -66,6 +66,12 @@ Definition ep_client_world_def:
     w.listening = [] ∧ w.chans = [] ∧ w.open_fds = [] ∧ w.calls = all_calls
 End
 
+(* The simple instance of reactivity: a fixed schedule (the environment
+   ignores the calls) *)
+Definition open_loop_def:
+  open_loop (w:eworld) ⇔ ∀n h1 h2. w.env n h1 = w.env n h2
+End
+
 (* The simple instance of backpressure: none *)
 Definition no_backpressure_def:
   no_backpressure w ⇔ ∀j b n. w.takes j b n = n

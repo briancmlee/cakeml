@@ -105,10 +105,12 @@ Proof
   rw[POLL_RESULT2_def] >> metis_tac[]
 QED
 
-(* EVLIST EV E v: v is a CakeML list whose elements represent exactly the
-   events of the set E *)
+(* EVLIST EV E v: v is the CakeML list of the events of the finite set E,
+   in the canonical order SET_TO_LIST E.  (Canonical so that the blocking
+   loop's select events are a function of the model; the combinators
+   proved here only ever build [] and [e].) *)
 Definition EVLIST_def:
-  EVLIST EV E v ⇔ ∃l. LIST_TYPE EV l v ∧ LIST_TO_SET l = E
+  EVLIST EV E v ⇔ FINITE E ∧ LIST_TYPE EV (SET_TO_LIST E) v
 End
 
 (* STEPA2 p ACT RES EV WORLD c s: the residual s implements the Level 2

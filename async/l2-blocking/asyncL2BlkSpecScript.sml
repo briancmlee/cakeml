@@ -25,7 +25,7 @@ QED
 Theorem EVLIST_NIL[local]:
   EVLIST EV ∅ (Conv (SOME (TypeStamp «[]» 1)) [])
 Proof
-  simp[EVLIST_def] >> qexists_tac ‘[]’ >> simp[]
+  simp[EVLIST_def]
 QED
 
 (* MAIN: return2 x builds a finished computation that has emitted nothing. *)
@@ -97,7 +97,7 @@ Proof
   Induct >> rpt strip_tac >> xcf_with_def wait_on_v_def >>
   xfun ‘k’ >> xcons >>
   simp[POLL_RESULT2_def, wait_on_NIL, STEPA2n_def] >>
-  conj_tac >- (simp[EVLIST_def] >> qexists_tac ‘[e]’ >> simp[LIST_TYPE_def]) >>
+  conj_tac >- simp[EVLIST_def, LIST_TYPE_def] >>
   rpt strip_tac >> simp[returns_def] >>
   qpat_x_assum ‘curried _ _ k ∧ _’ (irule o CONJUNCT2) >>
   xlet ‘POSTv ov. &OPTION_TYPE RES (if e ∈ w.ready then q w else NONE) ov’

@@ -20,6 +20,13 @@ printf 'GET /a HTTP/1.0\r\n\r\n' | curl -s -m 3 -i --data-binary @- http://127.0
 step "head -c 20000 /dev/zero | tr '\\0' x | curl -s --data-binary @- http://127.0.0.1:$PORT/echo | wc -c   # a 20 kB body, many reads"
 head -c 20000 /dev/zero | tr '\0' x | curl -s -m 5 --data-binary @- http://127.0.0.1:$PORT/echo | wc -c
 
+UA="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36 Edg/129.0.0.0 ExtraLongToken"
+step "time curl -s -i -A '<${#UA}-character User-Agent>' -d hello http://127.0.0.1:$PORT/echo   # long header value (linear-time parsing)"
+START=$(python3 -c 'import time; print(time.time())')
+curl -s -m 5 -i -A "$UA" -d hello http://127.0.0.1:$PORT/echo
+END=$(python3 -c 'import time; print(time.time())')
+python3 -c "print('  (took %.3f s)' % ($END - $START))"
+
 step curl -s -i -d ignored http://127.0.0.1:$PORT/other
 curl -s -m 3 -i -d ignored http://127.0.0.1:$PORT/other
 

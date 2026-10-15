@@ -25,6 +25,8 @@ is changed.
 | `endpointV2SimScript.sml` | (proved) `v2_instance_thm`: version-2 worlds are exactly the simple endpoint worlds |
 | `endpointTraceScript.sml` | (proved) prefixes and events of diverging runs; the endpoint views are EchoSpec2's on traces without connects or sends |
 | `endpointEcho2Script.sml` | (proved) `echo_spec2_of_endpoint` |
+| `endpointV2PrefixScript.sml` | (proved) version-2 worlds that agree on a schedule prefix answer alike |
+| `endpointEcho2ConvScript.sml` | (proved) `endpoint_of_echo_spec2`, `echo2_sym_equiv_thm` |
 | `endpointOpenScript.sml` | drafts for the next round (§7): `rg_spec_term`, n-ary open systems, buffer closure |
 | `endpointClientsScript.sml` | a toy HTTP client spec; a proxy spec (two roles, half-close) |
 | `endpointComposeScript.sml` | joint runs of two programs, wired; the projection and composition claims |
@@ -223,12 +225,19 @@ rule.
     clock`, that it reads at every tick, and that accepts are first in,
     first out, so episode j is channel j;
   - then `sym_live` with `ticks_forever` gives `echo_live2`.
-  The converse is **false in one corner**: a schedule that saturates the
-  fd space (about 2^64 clients, all closed) admits no further arrival, so
-  a program may stop polling there and still meet `echo_spec2`, while
-  `ticks_forever` fails. Outside that corner the converse follows from
-  prefix determinism (async-spike's `ffiAgreeUpto`). Proposed: state it
-  with a non-saturation hypothesis.
+  **Completeness check, also proved:** `endpoint_of_echo_spec2`
+  (`endpointEcho2Conv`). A program meeting `echo_spec2` meets the endpoint
+  form in every simple-class world that does not fill the fd space
+  (`nonsat`). Both directions are in `echo2_sym_equiv_thm`.
+  - The hypothesis is needed: once about 2^64 clients have come and all
+    have closed, nothing more can arrive. A program may then stop polling,
+    which `ticks_forever` forbids.
+  - The proof that the program keeps polling: if it stopped after k
+    polls, it would run alike in a world that agrees on the first k steps
+    and then connects a new client sending a byte. That is prefix
+    determinism (`endpointV2Prefix`, built on async-spike's
+    `ffiAgreeUpto`). `echo_spec2` there forces it to accept that client,
+    which takes another poll.
 
 ## 5. The stress test (`~/.cache/stress-designs/REPORT.md`): decisions
 

@@ -25,7 +25,7 @@ Definition fut_agree_def:
   fut_agree k f1 f2 ⇔ ∀i. i < k ⇒ fut_step f1 i = fut_step f2 i
 End
 
-Theorem sbf_fields[local]:
+Theorem sbf_fields:
   sbf s1 s2 ⇒
   s1.listening = s2.listening ∧ s1.clients = s2.clients ∧
   s1.open_fds = s2.open_fds ∧ s1.reserved = s2.reserved ∧ s1.alloc = s2.alloc
@@ -34,7 +34,7 @@ Proof
   fs[socketV2FFITheory.sockets2_component_equality]
 QED
 
-Theorem sbf_eq[local]:
+Theorem sbf_eq:
   sbf s1 s2 ⇔ ∃f. s2 = s1 with future := f
 Proof
   rw[sbf_def, EQ_IMP_THM, socketV2FFITheory.sockets2_component_equality] >> simp[]

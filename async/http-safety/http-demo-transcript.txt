@@ -1,0 +1,35 @@
+
+$ curl -s -m 3 --http1.0 -H Host: -H User-Agent: -H Accept: -i http://127.0.0.1:7830/
+HTTP/1.0 200 OK
+Content-Length: 42
+
+Hello from a verified CakeML HTTP server!
+
+$ curl -s -m 3 --http1.0 -H Host: -H User-Agent: -H Accept: -i http://127.0.0.1:7830/index.html
+HTTP/1.0 200 OK
+Content-Length: 142
+
+<html><body><h1>Verified CakeML</h1><p>Served by http_server, whose socket trace is proved to satisfy HttpSpec's http_safe.</p></body></html>
+
+$ curl -s -m 3 --http1.0 -H Host: -H User-Agent: -H Accept: -i http://127.0.0.1:7830/no-such-file
+HTTP/1.0 404 Not Found
+Content-Length: 0
+
+
+$ three concurrent curls (/, /about, /index.html), outputs in order of completion
+  /about -> HTTP/1.0 200 OK
+  / -> HTTP/1.0 200 OK
+  /index.html -> HTTP/1.0 200 OK
+
+$ printf 'GET /about HTTP/1.0\r\n\r\nGET / HTTP/1.0\r\n\r\n' | nc -w 1 127.0.0.1 7830    # two pipelined requests
+HTTP/1.0 200 OK
+Content-Length: 57
+
+HttpSpec subset: GET <path> HTTP/1.0, then a blank line.
+HTTP/1.0 200 OK
+Content-Length: 42
+
+Hello from a verified CakeML HTTP server!
+
+$ printf 'GET / HTTP/1.0\r\nHost: x\r\n\r\n' | nc -w 1 127.0.0.1 7830    # a header: outside HttpSpec's subset
+  (no response: the parser reports Invalid and the handler stops, 18-http-model.md §7.3)

@@ -314,3 +314,68 @@ Proof
     by (rw[IS_PREFIX_APPEND] >> fs[IS_PREFIX_APPEND] >> simp[FLAT_APPEND] >> metis_tac[]) >>
   metis_tac[bytes_prefix]
 QED
+
+(* ------------------------------------------------------------------------
+   HttpSpecHeaders' liveness
+   ------------------------------------------------------------------------ *)
+
+Theorem print_hrequest_nonempty[local]:
+  print_hrequest r ≠ []
+Proof
+  Cases_on ‘r’ >> simp[print_hrequest_def]
+QED
+
+(* The complete requests in printed requests are those requests *)
+Theorem parse_all_h_printed:
+  EVERY valid_hrequest rs ⇒ parse_all_h (FLAT (MAP print_hrequest rs)) = rs
+Proof
+  strip_tac >>
+  qspecl_then [‘rs’] mp_tac (Q.INST [‘rest’ |-> ‘[]’] parse_all_hrequests) >>
+  simp[] >> disch_then irule >> rpt strip_tac >>
+  ‘print_hrequest r = []’ by (Cases_on ‘print_hrequest r’ >> fs[]) >>
+  fs[print_hrequest_nonempty]
+QED
+
+(* MAIN: the event loop's I/O satisfies HttpSpecHeaders' liveness: the
+   responses to all complete requests a client sends in the first n steps
+   are eventually written on its connection *)
+Theorem http_live_h_rounds:
+  s0.listeners = [(n2w lfdn, [])] ∧ s0.conns = [] ∧ lfdn < dimword (:64) ∧
+  sched_wf s0 ⇒
+  http_live_h files s0
+    (LFLATTEN (LGENLIST (λi. fromList (HEV files lfdn s0 i)) NONE))
+Proof
+  rw[http_live_h_def] >>
+  ‘grun_ok (EI lfdn) (srelabel (http_server_h files lfdn)) s0’
+    by metis_tac[grun_ok_http_h] >>
+  (* no requests: nothing to answer *)
+  Cases_on ‘rs = []’
+  >- (qexists_tac ‘FLAT (GENLIST (HEV files lfdn s0) 0)’ >>
+      simp[rounds_LPREFIX, hresponses_def, bytes_def]) >>
+  (* otherwise something was sent on c, so c is a connection by round n *)
+  ‘sent_upto c n s0 ≠ []’
+    by (Cases_on ‘rs’ >> fs[hrequests_def, bytes_def] >>
+        strip_tac >> fs[print_hrequest_nonempty]) >>
+  ‘is_conn (HG files lfdn s0 n) c’
+    by (drule_all grounds_acct >> disch_then (qspecl_then [‘c’, ‘n’] mp_tac) >>
+        simp[acct_def, is_conn_def] >> CASE_TAC >> simp[]) >>
+  (* it is handed out at some round N0 *)
+  ‘∃N0. MEM c (wacc (HP files lfdn s0 N0))’
+    by (mp_tac (Q.GEN ‘hf’ sw_conn_accepted
+                |> Q.ISPEC ‘λfd. http_handler_h files (fd, "")’) >>
+        simp[GSYM http_server_h_def, hok_http_h, uses_ok_http_h]) >>
+  ‘MEM c (wacc (HP files lfdn s0 (n + N0)))’
+    by (irule wacc_mono >> qexists_tac ‘N0’ >> simp[]) >>
+  ‘bytes (FLAT (MAP print_hrequest rs)) ≼ sent_upto c (n + N0) s0’
+    by (irule IS_PREFIX_TRANS >> qexists_tac ‘sent_upto c n s0’ >>
+        fs[sent_upto_prefix, hrequests_def]) >>
+  (* then everything sent by round n + N0 is answered *)
+  mp_tac (Q.INST [‘D’ |-> ‘FLAT (MAP print_hrequest rs)’, ‘n’ |-> ‘n + N0 : num’]
+            http_accepted_live_h) >>
+  impl_tac >- simp[] >> strip_tac >>
+  qexists_tac ‘FLAT (GENLIST (HEV files lfdn s0) N)’ >> simp[rounds_LPREFIX] >>
+  ‘parse_all_h (FLAT (MAP print_hrequest rs)) = rs’
+    by (irule parse_all_h_printed >> first_assum ACCEPT_TAC) >>
+  qpat_x_assum ‘bytes _ ≼ bytes_written_to _ _’ mp_tac >>
+  asm_rewrite_tac[hresponses_def]
+QED

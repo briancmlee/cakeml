@@ -47,19 +47,26 @@ statements only.
      operations and their byte encodings (`ffiSpikeSocketFFI`);
   2. fairness: `sched_wf` (`ffiSpikeSocketFair`);
   3. `echo_spec` = `server_world` + `echo_safe` + `echo_live` (`EchoSpec`);
-  4. `http_spec_h` (`HttpSpecHeaders`, the HTTP spec: header-tolerant;
-     it reuses HttpSpec's paths, files and response printer);
+  4. `http_spec_b` (`HttpSpecBodies`, the HTTP spec):
+     - requests are GET and POST, with Content-Length bodies (one
+       canonical decimal value; no Transfer-Encoding);
+     - `POST /echo` answers the body.
+     It reuses HttpSpec's paths, files and response printer, and
+     HttpSpecHeaders' header printer.
   5. bite and non-vacuity: `broken_*`, `server_world_exists`,
-     `ideal_trace_safe_and_live`, `plain_requests`, `curl_request`,
-     `broken_*_h`, and `body_headers_invalid` /
-     `broken_answers_body_request` (the subset has no request bodies:
-     `valid_header` rejects Content-Length and Transfer-Encoding).
+     `ideal_trace_safe_and_live`, `print_brequest_unique`,
+     `broken_body_as_request`, `broken_answers_before_body`,
+     `broken_never_answers_b`, `curl_post_request`,
+     `ideal_b_trace_safe_and_live`.
 - **Skip:** the proofs of the bite lemmas, and the fairness lemmas
-  (`ticks_*`, `*_shape`). Of `HttpSpec`, read only the vocabulary
-  (`valid_path`, `handle`, `print_response`). Its strict request subset
-  and `http_spec` are the earlier, archived statement.
+  (`ticks_*`, `*_shape`).
+  - Of `HttpSpec` and `HttpSpecHeaders`, read only the vocabulary
+    (`valid_path`, `handle`, `print_response`, `print_header`).
+  - Their own statements are the earlier stepping stones, archived:
+    `http_spec` (GET only, no headers) and `http_spec_h` (headers, no
+    bodies).
 - **From:** ffi-spike (socket FFI, Fair), spec/ (#18), HttpSpecHeaders
-  (#28, spike/http-headers).
+  (#28, spike/http-headers), HttpSpecBodies (#55, spike/http-bodies).
 
 ### 2. `review/02-model-core`: the async model (≈2,690 lines; 45 min)
 - **Claims:** computations on histories form a lawful monad, and `both`
@@ -179,20 +186,21 @@ statements only.
   the liveness proof already has a theory of that name),
   ffiSpikeSocketSelect.
 
-### 9. `review/09-http`: HTTP, `http_spec_h 3w demo_files http_prog_h` (≈6,350 lines; 40 min)
+### 9. `review/09-http`: HTTP, `http_spec_b 3w demo_files http_prog_b` (≈9,000 lines; 40 min)
 - **Claims:**
-  - a header-tolerant parser, proved against the spec's own printer;
+  - a parser with Content-Length bodies, proved against the spec's own
+    printer;
   - a generic accept/fork skeleton, verified once;
-  - the whole HTTP program meets HttpSpecHeaders in full: it runs
-    forever, is safe, and answers every complete request.
+  - the whole HTTP program meets HttpSpecBodies in full: it runs forever,
+    is safe, and answers every complete request.
 - **Own:**
-  1. `http_prog_h_spec : http_spec_h 3w demo_files http_prog_h` (headline,
-     `headline/asyncHttpSpecH`); `http_prog_h_safe` is its safety half;
-  2. the parser against the printer (`asyncHttpParseH`);
+  1. `http_prog_b_spec : http_spec_b 3w demo_files http_prog_b` (headline,
+     `headline/asyncHttpSpecB`);
+  2. the parser against the printer (`asyncHttpParseB`);
   3. `server_with_isolates` and `sserver_with_spec` (the skeleton, once);
   4. `hmachine_live` (the handler as a machine answers every complete
      request);
-  5. `http_live_h_rounds` (`http_live_h` of the loop's trace).
+  5. `http_live_b_rounds` (`http_live_b` of the loop's trace).
 - **Read if you want** (optional, not in the core five): the HTTP server
   is quiet at Level 2, as layer 4 proves for echo
   (`servers/http-quiet`): `erase_http_server2_h`, `wf2_http_server2_h`,
@@ -203,14 +211,15 @@ statements only.
   - the generic socket-level accept progress (`asyncSWSock`, the
     `server_with` analogue of the echo program's `conn_accepted`) and the
     drain lemmas;
-  - the strict-subset files (`asyncHttpParse`, `asyncHttpServer`,
-    `asyncHttpSafe`, `asyncHttpSock*`, `asyncHttpMain`,
-    `asyncHttpSemantics`, `headline/asyncHeadline`). The header-tolerant
-    proofs build on them, but they are not for review.
+  - the strict-subset and header-tolerant files (`asyncHttp*` without the
+    `B` suffix, and the `*H` files, `programs/http`, `programs/http-h`,
+    `headline/asyncHeadline*`, `asyncHttpSpecH`). The bodies proofs build
+    on them, but they are the archived stepping stones, not for review.
+    `http_prog_h_spec` stays proved.
 - **From:** http-model (#20), http-impl/asyncHttpImplProg (#22),
   http-safety (#26), http-headers, http-liveness (http-liveness-h and
-  asyncSWProgress), m4-server/asyncM4ServerProg (code reused by the
-  translation).
+  asyncSWProgress), http-bodies (#55), m4-server/asyncM4ServerProg (code
+  reused by the translation).
 
 ### 10. `review/10-runnable`: it runs (no HOL to review; 15 min)
 - **Claims:** both servers compile with the release compiler and run, and
@@ -265,6 +274,9 @@ lemmas), `asyncM4ServerProg` (the HTTP translation reuses its code).
 - **`brun_two_outcomes`** (#49): folded into PR 8.
 - **no idle wait in the trusted C** (#50): folded into PR 10.
 - **HTTP quiet** (#53): folded into PR 9 as an optional statement group.
+- **HTTP bodies** (#55, user-approved): HttpSpecBodies is PR 1's HTTP spec
+  (a labelled SPEC CHANGE commit), and `http_prog_b_spec` is PR 9's
+  headline. The header-tolerant pipeline stays as a stepping stone.
 - **close / fd reuse (close-v2)**: a new PR 12 (`review/12-close-v2`) on
   top. It holds EchoSpec2 (spec first), the v2 world and the handle layer,
   and touches nothing below it.

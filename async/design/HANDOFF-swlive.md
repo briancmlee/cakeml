@@ -24,8 +24,10 @@ Kept current at every commit.
 ## Status
 - DONE: server_with_live (and sw_accepted_live, parametric in the interest
   function). Holmake green, no cheats.
-- NEXT: asyncHttpLiveBLib (handler_live for http_handler_b from
-  hmachine_live_p; http_live_b_rounds_via_lib).
+- DONE (branch spike/live-via-lib): asyncHttpLiveBLib: handler_live_http_b
+  (the bridge from hmachine_live_p, ~40 lines) and http_live_b_rounds_via_lib
+  (http_live_b_rounds' statement, from server_with_live).
+- NEXT: with_store_answers (KV); then, if cheap, echo_live_via_lib.
 
 ## Assumptions made
 1. sw_accepted_live is parametric in the interest function (interest_covers);

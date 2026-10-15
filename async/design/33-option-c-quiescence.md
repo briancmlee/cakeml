@@ -218,3 +218,46 @@ nothing else in §2 changes. **Est. +250 lines** on top of §3's total, for
   spin with less work, but it is still a guess: the loop learns about
   finished handlers only if they close. Option C is the principled fix,
   and makes QuietSpec provable without special cases.
+
+## 6. Result (spike/option-c-int, 2026-10-16)
+
+The plan above has been carried out. The only remaining hypothesis is the
+server's stability after the last arrival (PROTO_STABLE, cf-actions'
+proto_stable, in progress).
+
+**The root cause of both spins.** The blocking loops chose their select
+set from the transcript:
+- #27 selected on the whole interest list;
+- #46 and #56 selected on the accepted connections not yet at EOF.
+
+Neither is what the computation waits for. A handler that stopped early
+(invalid request) or finished before EOF leaves an fd in the set; select
+returns at once for it and nobody reads it, so the loop spins.
+
+**The fix: select on the declared interest.** Under option C, the loop
+reads the declared interest from the Level 2 computation itself
+(`interest c`, sorted and deduplicated: `qsel`). So `sel_covers c (qsel c)`
+holds by construction (`sel_covers_qsel`). A finished handler declares
+nothing, so its fd drops out of the select set automatically. There is no
+live-list bookkeeping.
+
+**The chain of results:**
+
+| step | result | where |
+|---|---|---|
+| library | `both2_specI`, `map2_specI`, depth-indexed recursion; event lists in any order (EVSET) | option-c/library, pk/option-c-proto/asyncOC* |
+| server model | `proto_server_v2`, `erase_proto_server_v2` (exactly cf-actions' `server_v`/`proto_handler_v`), `wf2_*` | pk/option-c-proto/asyncProtoV2 |
+| server in CakeML | `sproto_server2_spec` | pk/option-c-proto/asyncOCProtoSpec |
+| loop | `run_q_two_outcomes` (#46's rounds, `lbgrounds (qsel c)`) | option-c-loop/asyncOCRun |
+| program | `http_q_spec`: both outcomes safe; live when sched_wf | option-c-loop/asyncOCSemB |
+| sleeping | `qsel_sleeps` (generic), `hb_sleeps` | asyncOCSleeps, asyncOCQuietB |
+| QuietSpec bridge | `proto_acc`: the server waits only on the listener and accepted fds; `trace_good_q` | asyncOCAcc, asyncOCTrace |
+| headline | `http_q_quiet_b: PROTO_STABLE P_b resp_b ⇒ http_quiet_b 3w demo_files …` | asyncOCQuietB |
+
+**Honest scope:**
+- Everything is generic in the protocol (P, resp); HTTP bodies is the
+  instance proved. KV needs the `Now` event of §4 and is not done.
+- The integration branch takes cf-actions' HttpSpecBodies, which includes
+  H-CHARS (still pending the user's decision).
+- The shipped blocking *echo* is proved quiet separately, without option C
+  (`echo_l_quiet`, #77).

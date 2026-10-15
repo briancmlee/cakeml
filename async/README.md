@@ -151,6 +151,26 @@ hello
   to polling (`loop/blocking-l2`, `brun_two_outcomes`), and the blocking
   echo program refines the polling one (`echo_live_spec`).
 
+## Selecting on what the server waits for (option C)
+
+The blocking loops in layers 8 and 9 choose what to `select` on by watching
+the transcript (the accepted, not-yet-EOF connections). For HTTP that can
+spin: a handler that stops on an invalid request leaves its fd in the set
+(#56).
+
+Option C (design/33) lets the server say what it waits for, and selects on
+exactly that:
+- `run_q` selects on the computation's declared interest;
+- the HTTP-bodies server is the generic Level 2 protocol server, and erases
+  to the verified Level 1 one;
+- `http_q_quiet_b` states that the program meets QuietSpec: safe and live,
+  and it goes to sleep when nothing more arrives. Its one remaining
+  hypothesis is the server's stability after the last arrival, which is
+  being proved.
+
+This is on the integration branch `spike/option-c-int`, not yet in the
+review series.
+
 ## Honest limitations
 
 - **The HTTP subset is small.** It has GET and POST only, and bodies

@@ -38,4 +38,9 @@ step "printf 'POST /echo HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n3\r\nabc\
 printf 'POST /echo HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n3\r\nabc\r\n0\r\n\r\n' | nc -w 1 127.0.0.1 $PORT
 echo "  (no response: Transfer-Encoding makes the request invalid)"
 
+step "printf 'POST /echo HTTP/1.1\r\nContent-Length\t: 19\r\n\r\nGET /a HTTP/1.0\r\n\r\n' | nc -w 1 127.0.0.1 $PORT   # tab before the colon"
+printf 'POST /echo HTTP/1.1\r\nContent-Length\t: 19\r\n\r\nGET /a HTTP/1.0\r\n\r\n' | nc -w 1 127.0.0.1 $PORT
+echo "  (no response: a header name must be an RFC 9110 token, so the request is invalid;"
+echo "   the 19 body bytes are not answered as a second request)"
+
 kill $PID

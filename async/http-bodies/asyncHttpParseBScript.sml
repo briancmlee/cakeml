@@ -35,8 +35,8 @@ End
 (* The header lines, up to and including the blank line.  The bodies
    protocol has its own header-line parser: asyncHttpParseH's parse_headers
    rejects the body-framing headers (spike/http-nobody), which this
-   protocol needs.  parse_bheaders is that parser before the restriction:
-   the character rules of HttpSpecBodies' valid_bheader. *)
+   protocol needs.  parse_bheaders is that parser before the restriction,
+   with HttpSpecBodies' header names: RFC 9110 tokens (tchar). *)
 Theorem split_at_LENGTH_b[local]:
   ∀s. LENGTH (SND (split_at c s)) ≤ LENGTH s
 Proof
@@ -51,7 +51,7 @@ Definition parse_bheaders_def:
       let n = FST (split_at #":" s);
           u = SND (split_at #":" s)
       in
-        if EXISTS (λc. c = #" " ∨ c = #"\r" ∨ c = #"\n") n then HBad
+        if EXISTS (λc. ¬tchar c) n then HBad
         else if u = [] then HMore
         else if n = [] then HBad
         else if ¬(colon_sp ≼ u) then (if u ≼ colon_sp then HMore else HBad)
@@ -179,8 +179,7 @@ QED
    ------------------------------------------------------------------------ *)
 
 Theorem parse_bheaders_line[local]:
-  n ≠ [] ∧ EVERY (λc. c ≠ #":" ∧ c ≠ #" " ∧ c ≠ #"\r" ∧ c ≠ #"\n") n ∧
-  EVERY (λc. c ≠ #"\r" ∧ c ≠ #"\n") v ⇒
+  n ≠ [] ∧ EVERY tchar n ∧ EVERY (λc. c ≠ #"\r" ∧ c ≠ #"\n") v ⇒
   parse_bheaders (n ++ #":" :: #" " :: (v ++ #"\r" :: #"\n" :: Y)) =
   case parse_bheaders Y of
     HDone hs r => HDone ((n, v) :: hs) r
@@ -188,14 +187,16 @@ Theorem parse_bheaders_line[local]:
   | HBad => HBad
 Proof
   strip_tac >>
+  ‘EVERY (λc. c ≠ #":" ∧ c ≠ #" " ∧ c ≠ #"\r" ∧ c ≠ #"\n") n’
+    by (irule EVERY_MONOTONIC >> qexists_tac ‘tchar’ >> simp[] >>
+        metis_tac[tchar_not_sep]) >>
   ‘¬(crlf ≼ n ++ #":" :: #" " :: (v ++ #"\r" :: #"\n" :: Y)) ∧
    ¬(n ++ #":" :: #" " :: (v ++ #"\r" :: #"\n" :: Y) ≼ crlf)’
     by (Cases_on ‘n’ >> gvs[crlf_def]) >>
   ‘split_at #":" (n ++ #":" :: #" " :: (v ++ #"\r" :: #"\n" :: Y)) =
    (n, #":" :: #" " :: (v ++ #"\r" :: #"\n" :: Y))’
     by (irule split_at_char >> fs[EVERY_MEM] >> strip_tac >> res_tac >> fs[]) >>
-  ‘¬EXISTS (λc. c = #" " ∨ c = #"\r" ∨ c = #"\n") n’
-    by (fs[EVERY_MEM, EXISTS_MEM] >> metis_tac[]) >>
+  ‘¬EXISTS (λc. ¬tchar c) n’ by fs[EVERY_MEM, EXISTS_MEM] >>
   ‘split_at #"\r" (v ++ #"\r" :: #"\n" :: Y) = (v, #"\r" :: #"\n" :: Y)’
     by (irule split_at_char >> fs[EVERY_MEM] >> strip_tac >> res_tac >> fs[]) >>
   ‘¬EXISTS (λc. c = #"\n") v’ by (fs[EVERY_MEM, EXISTS_MEM] >> metis_tac[]) >>

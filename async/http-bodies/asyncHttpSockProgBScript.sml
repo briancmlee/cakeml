@@ -93,7 +93,7 @@ Definition parse_bheaders2_def:
     else
       case split_at2 #":" s of
         (n, u) =>
-          if EXISTS (λc. c = #" " ∨ c = #"\r" ∨ c = #"\n") n then HBad
+          if EXISTS (λc. ¬tchar c) n then HBad
           else if u = [] then HMore
           else if n = [] then HBad
           else if ¬(colon_sp ≼ u) then (if u ≼ colon_sp then HMore else HBad)
@@ -149,6 +149,22 @@ QED
 Theorem parse_brequest_lin[local] =
   parse_brequest_def |> REWRITE_RULE [GSYM bline2_eq];
 
+(* Header-name characters (HttpSpecBodies' tchar), with ^ and ` as ORD
+   tests for the translator *)
+Theorem tchar_ord[local]:
+  tchar c ⇔
+    isAlpha c ∨ isDigit c ∨ EXISTS (λd. c = d) "!#$%&'*+-._|~" ∨
+    ORD c = 94 ∨ ORD c = 96
+Proof
+  ‘∀n. n < 256 ⇒ (c = CHR n ⇔ ORD c = n)’
+    by (rw[] >> eq_tac >> rw[ORD_CHR_RWT] >> metis_tac[CHR_ORD]) >>
+  simp[tchar_def]
+QED
+
+val r = translate stringTheory.isLower_def;
+val r = translate stringTheory.isAlpha_def;
+val r = translate stringTheory.isDigit_def;
+val r = translate tchar_ord;
 val r = translate is_cl_def;
 val r = translate is_te_def;
 val r = translate post_sp_def;

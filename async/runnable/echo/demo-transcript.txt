@@ -1,36 +1,36 @@
 [  0.000s] server   echo server: listening on 127.0.0.1:7777
-[  0.000s] alice    connected
-[  0.000s] alice    sent     'hello from alice'
-[  0.000s] bob      connected
-[  0.000s] bob      sent     'bob says hi'
-[  0.000s] carol    connected
-[  0.000s] carol    sent     'carol here'
+[  0.001s] alice    connected
+[  0.001s] alice    sent     'hello from alice'
+[  0.001s] bob      connected
+[  0.001s] bob      sent     'bob says hi'
+[  0.001s] carol    connected
+[  0.001s] carol    sent     'carol here'
 [  0.001s] alice    received 'hello from alice'
 [  0.001s] bob      received 'bob says hi'
 [  0.001s] carol    received 'carol here'
-[  0.110s] bob      sent     'bob: second line'
+[  0.109s] bob      sent     'bob: second line'
 [  0.110s] bob      received 'bob: second line'
-[  0.127s] carol    sent     'carol: ünïcödé bytes ✓'
-[  0.127s] carol    received 'carol: ünïcödé bytes ✓'
-[  0.154s] alice    sent     'alice: line 2'
-[  0.154s] alice    received 'alice: line 2'
-[  0.211s] bob      sent     'bob: third'
-[  0.211s] bob      received 'bob: third'
-[  0.253s] carol    sent     'carol: last'
-[  0.253s] carol    received 'carol: last'
+[  0.131s] carol    sent     'carol: ünïcödé bytes ✓'
+[  0.131s] carol    received 'carol: ünïcödé bytes ✓'
+[  0.161s] alice    sent     'alice: line 2'
+[  0.161s] alice    received 'alice: line 2'
+[  0.214s] bob      sent     'bob: third'
+[  0.214s] bob      received 'bob: third'
+[  0.252s] carol    sent     'carol: last'
+[  0.252s] carol    received 'carol: last'
 [  0.314s] alice    sent     'alice: line 3'
 [  0.314s] alice    received 'alice: line 3'
 [  0.321s] bob      sent     'bob: fourth'
 [  0.321s] bob      received 'bob: fourth'
-[  0.375s] carol    closed
-[  0.430s] bob      closed
+[  0.377s] carol    closed
+[  0.429s] bob      closed
 [  0.465s] alice    closed
-[  0.465s] dave     connected
-[  0.465s] dave     sent     'dave arrives after the others left'
-[  0.465s] dave     received 'dave arrives after the others left'
-[  0.465s] dave     closed
-[  0.466s] server   terminated (the server loop runs forever; stopped with SIGTERM)
-[  0.466s] check    carol: received exactly its own lines: True
-[  0.466s] check    bob: received exactly its own lines: True
-[  0.466s] check    alice: received exactly its own lines: True
-[  0.466s] check    dave: received exactly its own lines: True
+[  0.466s] dave     connected
+[  0.466s] dave     sent     'dave arrives after the others left'
+[  0.466s] dave     received 'dave arrives after the others left'
+[  0.466s] dave     closed
+[  0.504s] server   terminated (the server loop runs forever; stopped with SIGTERM)
+[  0.504s] check    carol: received exactly its own lines: True
+[  0.504s] check    bob: received exactly its own lines: True
+[  0.504s] check    alice: received exactly its own lines: True
+[  0.504s] check    dave: received exactly its own lines: True

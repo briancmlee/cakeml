@@ -1,0 +1,8 @@
+# The whole of EchoSpec for the verified echo program: safety
+# (m4-echospec, from m4-safety) and liveness (m4-liveness).
+INCLUDES = ../model ../cf-spike ../cf-actions ../cf-reactive ../ffi-spike \
+           ../m3-assembly ../m4-server ../m4-common ../spec ../m4-safety \
+           ../runnable ../machine-code ../m4-echospec ../m4-liveness
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

@@ -1,0 +1,4 @@
+# Reuses the CakeML heap (built in the base, see holproject.local.toml).
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/misc/cakeml-heap
+endif

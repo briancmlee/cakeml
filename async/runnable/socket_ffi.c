@@ -16,6 +16,8 @@
   | sock_write  | ffi_sock_write   | fd (8) ++ data        | unused                         |
   | sock_select | ffi_sock_select  | k fds, 8 bytes each   | empty (length 0)               |
   |             | (asyncM4BlkLoop) |                       |                                |
+  | sock_close  | ffi_sock_close2  | connection fd (8)     | unused                         |
+  |             | (socketV2FFI)    |                       |                                |
 
   sock_select is used only by the blocking echo program
   (async/m4-blocking, run_b).  The model's ffi_sock_select lets rounds of
@@ -26,6 +28,13 @@
   nothing.  The sock_poll that follows reports the ready set.  With no fd
   ready ever (or an empty list) this blocks forever, which is the model's
   divergence.  TRUST ITEM: this function behaves as ffi_sock_select.
+
+  sock_close is only used by the version-2 programs (EchoSpec2, the world
+  of async/world/sockets-v2/socketV2FFIScript.sml, review PR 12), whose
+  four other calls have the same encodings.  In that world the kernel gives an accepted
+  connection the lowest free fd, as POSIX accept does; with fds 0, 1, 2
+  open and the listener on 3, this is the model's lowest_free with
+  reserved = [0; 1; 2], as long as the program opens no other fds.
 
   fds are 8-byte big-endian numbers (fd_bytes).  The model's readiness
   (is_ready): a listener with a pending connection, or a connection with
@@ -52,8 +61,10 @@
      waits (poll with timeout 0).  A program that polls in a loop
      therefore busy-polls while it is idle; the blocking program sleeps
      in sock_select instead.
-   - closing: the model has no close, so fds are never closed.  A closed
-     connection stays ready (EOF) and stays in the loop's interest list.
+   - closing: the version-1 model has no close, so version-1 programs
+     never close fds; a closed connection stays ready (EOF) and stays in
+     the loop's interest list.  Version-2 programs close a connection with
+     sock_close (a plain close(2)) and the fd may then be reused.
 */
 #include <arpa/inet.h>
 #include <errno.h>
@@ -192,4 +203,11 @@ void ffisock_select(unsigned char *c, long clen, unsigned char *a, long alen) {
       if (pfds[i].revents & POLLNVAL) { errno = EBADF; die("sock_select: not an fd"); }
     return;
   }
+}
+
+/* ffi_sock_close2: close the connection fd in c[0..8); the model fails
+   on anything but an open connection, and so does close(2) on a non-fd */
+void ffisock_close(unsigned char *c, long clen, unsigned char *a, long alen) {
+  if (clen != 8) { errno = EINVAL; die("sock_close: lengths"); }
+  if (close((int)get_fd(c)) < 0 && errno != EINTR) die("sock_close");
 }

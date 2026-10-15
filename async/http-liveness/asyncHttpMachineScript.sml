@@ -202,3 +202,78 @@ Proof
       Cases_on ‘h’ >> simp[hafter_def, hcomp_def])
   >> simp[return_finished, suspended_finished_one]
 QED
+
+(* ------------------------------------------------------------------------
+   Iterating: the state after a history, and the actions round by round
+   ------------------------------------------------------------------------ *)
+
+(* MAIN: after a history in which every round's action is answered, the
+   computation is the machine's state *)
+Theorem hrun_suspended:
+  ∀g st.
+    (∀j. j < LENGTH g ∧ hacts files fd (hrun files fd st (TAKE j g)) ≠ [] ⇒
+         (EL j g).results ≠ []) ⇒
+    suspended (hcomp files fd st) g = hcomp files fd (hrun files fd st g)
+Proof
+  Induct_on ‘g’ using SNOC_INDUCT >- simp[hrun_def] >>
+  rpt strip_tac >> simp[SNOC_APPEND, hrun_SNOC] >>
+  ‘suspended (hcomp files fd st) (g ++ [x]) =
+   suspended (suspended (hcomp files fd st) g) [x]’
+    by simp[suspended_suspended_one, wf_hcomp] >>
+  pop_assum SUBST1_TAC >>
+  ‘suspended (hcomp files fd st) g = hcomp files fd (hrun files fd st g)’
+    by (first_x_assum irule >> rpt strip_tac >>
+        first_x_assum (qspec_then ‘j’ mp_tac) >>
+        simp[SNOC_APPEND, TAKE_APPEND1, EL_APPEND1]) >>
+  pop_assum SUBST1_TAC >> irule suspended_hcomp >> strip_tac >>
+  first_x_assum (qspec_then ‘LENGTH g’ mp_tac) >>
+  simp[SNOC_APPEND, TAKE_LENGTH_APPEND, EL_APPEND2]
+QED
+
+(* With a prompt world, every round's action is answered *)
+Theorem hmachine_answered:
+  prompt (hcomp files fd st) g ⇒
+  ∀j. j < LENGTH g ⇒
+      LENGTH (hacts files fd (hrun files fd st (TAKE j g))) ≤ LENGTH (EL j g).results
+Proof
+  strip_tac >> completeInduct_on ‘j’ >> strip_tac >>
+  ‘hacts files fd (hrun files fd st (TAKE j g)) =
+   new_actions (log_of (hcomp files fd st)) (TAKE j g)’
+    by (‘hrun files fd st (TAKE j g) = hrun files fd st (TAKE j g)’ by simp[] >>
+        simp[GSYM hcomp_NIL_actions, GSYM suspended_first_poll, wf_hcomp] >>
+        AP_TERM_TAC >> AP_THM_TAC >> CONV_TAC SYM_CONV >> irule hrun_suspended >>
+        rpt strip_tac >> ‘j' < j’ by gvs[LENGTH_TAKE] >>
+        gvs[TAKE_TAKE, EL_TAKE] >>
+        first_x_assum (qspec_then ‘j'’ mp_tac) >> simp[] >>
+        Cases_on ‘hacts files fd (hrun files fd st (TAKE j' g))’ >> gvs[]) >>
+  gvs[prompt_def] >> first_x_assum drule >> simp[responses_at_def]
+QED
+
+(* MAIN: with a prompt world, the actions of each round are the machine's *)
+Theorem hmachine_new_actions:
+  prompt (hcomp files fd st) g ∧ j ≤ LENGTH g ⇒
+  new_actions (log_of (hcomp files fd st)) (TAKE j g) =
+  hacts files fd (hrun files fd st (TAKE j g))
+Proof
+  strip_tac >>
+  simp[GSYM hcomp_NIL_actions, GSYM suspended_first_poll, wf_hcomp] >>
+  AP_TERM_TAC >> AP_THM_TAC >> irule hrun_suspended >>
+  rpt strip_tac >> gvs[LENGTH_TAKE_EQ, TAKE_TAKE_MIN, EL_TAKE] >>
+  drule hmachine_answered >> disch_then (qspec_then ‘j'’ mp_tac) >>
+  simp[MIN_DEF] >> gvs[MIN_DEF] >>
+  Cases_on ‘(EL j' g).results’ >> simp[] >>
+  Cases_on ‘hacts files fd (hrun files fd st (TAKE j' g))’ >> gvs[]
+QED
+
+(* MAIN: with a prompt world, the transcript is the machine's: each round's
+   actions paired with the next snapshot's responses *)
+Theorem hmachine_trans:
+  prompt (hcomp files fd st) g ⇒
+  trans (hcomp files fd st) g =
+  FLAT (GENLIST (λj. zipr (hacts files fd (hrun files fd st (TAKE j g)))
+                          (responses_at g j)) (SUC (LENGTH g)))
+Proof
+  strip_tac >> simp[trans_def] >> AP_TERM_TAC >>
+  simp[GENLIST_FUN_EQ, round_trans_def] >> rpt strip_tac >>
+  AP_THM_TAC >> AP_TERM_TAC >> irule hmachine_new_actions >> simp[]
+QED

@@ -13,11 +13,14 @@ INCLUDES = ../cakeml/approx \
            ../pk/option-c-proto \
            ../programs/echo \
            ../programs/echo-blocking \
+           ../programs/echo-live \
            ../programs/http \
            ../programs/http-b \
            ../programs/http-h \
+           ../quiet/echo \
            ../servers/echo \
            ../servers/http \
+           ../servers/http-quiet \
            ../servers/relabel \
            ../spec \
            ../world/composed \

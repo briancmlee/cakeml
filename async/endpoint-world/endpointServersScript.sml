@@ -126,7 +126,14 @@ Definition ep_echo2_guar_def:
     sym_live (λx y. x ≼ y) w io ∧ ticks_forever w io ∧ echo_closes2 io
 End
 
-(* CLAIM: for version 2's calls, the simple symmetric form is EchoSpec2's *)
+(* CLAIM: for version 2's calls, the simple symmetric form is EchoSpec2's.
+   The direction ⇐ (endpoint form ⇒ echo_spec2) is PROVED
+   (endpointEcho2's echo_spec2_of_endpoint).  The direction ⇒ is false in
+   one corner: a schedule that saturates the fd space (about 2^64 clients,
+   all closed) admits no further arrival, so a program may stop polling
+   there, which violates ticks_forever.  Outside it, the direction follows
+   from prefix determinism (to be restated with a non-saturation
+   hypothesis) *)
 Definition echo2_sym_equiv_def:
   echo2_sym_equiv ⇔
     ∀lfd a prog. echo_spec2 lfd prog ⇔

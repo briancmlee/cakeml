@@ -23,6 +23,8 @@ is changed.
 | `endpointSemanticsScript.sml` | (proved) CakeML evaluation and `semantics_prog` depend on the FFI only through its answers |
 | `endpointInstancesScript.sml` | `same_answers_semantics` (proved); `not_v1_instance` (proved: the version-1 claim is false); version-1 fd-discipline claims (draft) |
 | `endpointV2SimScript.sml` | (proved) `v2_instance_thm`: version-2 worlds are exactly the simple endpoint worlds |
+| `endpointTraceScript.sml` | (proved) prefixes and events of diverging runs; the endpoint views are EchoSpec2's on traces without connects or sends |
+| `endpointEcho2Script.sml` | (proved) `echo_spec2_of_endpoint` |
 | `endpointOpenScript.sml` | drafts for the next round (§7): `rg_spec_term`, n-ary open systems, buffer closure |
 | `endpointClientsScript.sml` | a toy HTTP client spec; a proxy spec (two roles, half-close) |
 | `endpointComposeScript.sml` | joint runs of two programs, wired; the projection and composition claims |
@@ -212,15 +214,21 @@ rule.
   also requires `ticks_forever w io` (the program keeps polling). Bite,
   proved: `never_polls_bite` (a run in which no time passes violates every
   endpoint server guarantee).
-- **`echo2_sym_equiv`** (in progress). Restated over the simple class with
-  `open_loop`. Two proof requirements:
-  - the endpoint world built from a version-2 schedule must deliver a
-    `Drain` for every live channel at each tick, or `reads_fair` never
-    holds and liveness is vacuous;
-  - the direction "endpoint spec ⇒ `echo_spec2`" needs prefix
-    determinism (worlds that agree on the answers to a prefix of calls
-    give the same trace up to there). It is shared with QuietSpec's
-    bridge.
+- **`echo2_sym_equiv`: the useful direction is proved.** `echo_spec2_of_endpoint`
+  (`endpointEcho2`): a program meeting the endpoint form of EchoSpec2 in the
+  simple class meets the unamended `echo_spec2`. The proof:
+  - builds, from a version-2 world, the endpoint world with the same
+    schedule plus a `Drain` for every live channel at each tick;
+  - shows along any trace that channel c's peer has sent `sent2_upto c
+    clock`, that it reads at every tick, and that accepts are first in,
+    first out, so episode j is channel j;
+  - then `sym_live` with `ticks_forever` gives `echo_live2`.
+  The converse is **false in one corner**: a schedule that saturates the
+  fd space (about 2^64 clients, all closed) admits no further arrival, so
+  a program may stop polling there and still meet `echo_spec2`, while
+  `ticks_forever` fails. Outside that corner the converse follows from
+  prefix determinism (async-spike's `ffiAgreeUpto`). Proposed: state it
+  with a non-saturation hypothesis.
 
 ## 5. The stress test (`~/.cache/stress-designs/REPORT.md`): decisions
 

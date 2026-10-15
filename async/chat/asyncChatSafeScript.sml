@@ -396,7 +396,7 @@ Proof
   first_x_assum (qspecl_then [‘SUC k’, ‘i’] mp_tac) >> simp[ADD1]
 QED
 
-Theorem wr_of_simps[local]:
+Theorem wr_of_simps:
   wr_of fd [] = "" ∧
   wr_of fd (l1 ++ l2) = wr_of fd l1 ++ wr_of fd l2 ∧
   wr_of fd ((Kv q, r) :: tr) = wr_of fd tr ∧
@@ -408,7 +408,7 @@ Proof
   simp[wr_of_def, untag_def, written_def] >> rw[]
 QED
 
-Theorem wr_of_CONS[local]:
+Theorem wr_of_CONS:
   wr_of fd (e :: tr) = wr_of fd [e] ++ wr_of fd tr
 Proof
   simp[GSYM wr_of_simps]
@@ -640,7 +640,7 @@ Definition wq_def:
     (∃s. FST p = Sock (Write fd s)) ∨ (∃q. FST p = Kv (fd, q))
 End
 
-Theorem wr_of_FILTER_wq[local]:
+Theorem wr_of_FILTER_wq:
   ∀tr. wr_of fd (FILTER (wq fd) tr) = wr_of fd tr
 Proof
   Induct >> simp[wr_of_simps] >> PairCases >> Cases_on ‘h0’ >>
@@ -649,7 +649,7 @@ Proof
   TRY (PairCases_on ‘q’) >> gvs[wr_of_simps]
 QED
 
-Theorem reader_entries[local]:
+Theorem reader_entries:
   ∀hh. EVERY (λp. FST p = Sock (Read fd)) (trans (reader fd) hh)
 Proof
   gen_tac >> measureInduct_on ‘LENGTH hh’ >>
@@ -668,7 +668,7 @@ Proof
   every_case_tac >> simp[]
 QED
 
-Theorem wloop_entries[local]:
+Theorem wloop_entries:
   ∀hh i. EVERY (wq fd) (trans (wloop (fd, i)) hh)
 Proof
   gen_tac >> measureInduct_on ‘LENGTH hh’ >> gen_tac >>
@@ -687,7 +687,7 @@ Proof
   simp[]
 QED
 
-Theorem writer_entries[local]:
+Theorem writer_entries:
   EVERY (wq fd) (trans (writer fd) hh)
 Proof
   simp[writer_def] >>
@@ -722,13 +722,13 @@ Proof
 QED
 
 (* The writer's part of a handler's transcript *)
-Theorem writer_filter[local]:
+Theorem writer_filter:
   FILTER (wq fd) (trans (writer fd) hh) = trans (writer fd) hh
 Proof
   simp[FILTER_EQ_ID, writer_entries]
 QED
 
-Theorem chat_handler_writer[local]:
+Theorem chat_handler_writer:
   ∃(R : (event, (canswer, response) kres) snapshot list).
     FILTER (wq fd) (trans (chat_handler fd) L) = trans (writer fd) R
 Proof

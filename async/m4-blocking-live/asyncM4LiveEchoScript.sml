@@ -212,7 +212,7 @@ Definition sel_echo_def:
   sel_echo lfd h = live_of [n2w lfd] (trans (srelabel (server lfd)) h)
 End
 
-Theorem secho_run[simp]:
+Theorem secho_run:
   (secho lfd).run = srelabel (server lfd)
 Proof
   simp[secho_def]
@@ -240,7 +240,7 @@ QED
 Theorem wf_secho:
   wf (secho lfd).run
 Proof
-  simp[wf_echo]
+  simp[wf_echo, secho_run]
 QED
 
 Theorem occ_MEM:

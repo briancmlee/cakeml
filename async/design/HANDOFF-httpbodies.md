@@ -32,7 +32,7 @@ Kept current at every commit.
 
 ## Assumptions made
 
-See 28 §3.
+See 28 §6.
 
 ## Tool feedback
 

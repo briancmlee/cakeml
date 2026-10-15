@@ -200,7 +200,7 @@ The transcript shows:
 - a request following a body on the same connection, answered;
 - `Transfer-Encoding: chunked` rejected (no response).
 
-## 3. Assumptions made
+## 6. Assumptions made
 
 1. **The Content-Length value must be canonical decimal** (as
    `num_to_dec_string` prints it: no leading zeros, no whitespace).

@@ -30,8 +30,11 @@ Kept current at every commit.
   complete requests that have arrived by round n are written by round
   n + 2K + 3. Machine-level `hmachine_live` (asyncHttpDrain). Holmake
   green, no cheats.
-- NOT DONE: pending connections (queue bound, as 09's
-  `closed_loop_liveness`); connection to the CakeML HTTP program. See 25 §3.
+- DONE: pending connections, `closed_loop_http_liveness` (bound
+  n + 3q + 2K + 3), via asyncSWQueue.
+- NEXT (coordinator): link to the CakeML program, target
+  `http_prog_spec : ⊢ http_spec 3w http_prog` (original HttpSpec),
+  mirroring spike/m4-liveness's echo route.
 
 ## Assumptions made
 

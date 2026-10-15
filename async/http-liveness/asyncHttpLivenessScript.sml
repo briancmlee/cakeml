@@ -22,7 +22,7 @@ Ancestors
   pair list rich_list arithmetic option pred_set string alist
   asyncCore asyncLevel1 asyncLoop asyncTranscript asyncServer asyncServerSafety
   asyncProgress asyncWorld asyncClosedLoop asyncLiveness asyncServerWith
-  asyncSWProgress asyncSWClosedLoop HttpSpec asyncHttpParse asyncHttpServer
+  asyncSWProgress asyncSWClosedLoop asyncSWQueue HttpSpec asyncHttpParse asyncHttpServer
   asyncHttpMachine asyncHttpDrain
 Libs
   BasicProvers
@@ -523,4 +523,37 @@ Proof
     by (qpat_x_assum ‘cn.received = _’ SUBST1_TAC >> simp[parse_all_print]) >>
   irule IS_PREFIX_TRANS >> first_assum (irule_at Any) >>
   asm_rewrite_tac[MAP_APPEND, FLAT_APPEND] >> simp[]
+QED
+
+
+(* MAIN: liveness of the HTTP server in the closed loop, for every known
+   connection.  If by round n the data D = cn.received has arrived on c,
+   and q connections are pending on the listener, then by every round
+   N ≥ n + 3 q + 2K + 3, where K is the number of complete requests at the
+   front of D, the responses to those requests have been written to c.
+   (A known connection is handed out by round n + 3 q, sw_handed_out_by.)
+   No assumption is needed beyond the world model. *)
+Theorem closed_loop_http_liveness:
+  closed_loop (http_server files lfd) (start_world lfd sch) n = (h, w, perf) ∧
+  ALOOKUP w.conns c = SOME cn ∧ w.listeners = [(lfd, q)] ∧
+  n + 3 * LENGTH q + 2 * LENGTH (parse_all cn.received) + 3 ≤ N ∧
+  closed_loop (http_server files lfd) (start_world lfd sch) N = (hN, wN, pN) ⇒
+  ∃cnN. ALOOKUP wN.conns c = SOME cnN ∧
+        FLAT (responses_to files cn.received) ≼ cnN.outgoing
+Proof
+  strip_tac >>
+  (* c is handed out by some round M ≤ n + 3 q *)
+  ‘∃M hM wM pM. n ≤ M ∧ M ≤ n + 3 * LENGTH q ∧
+     closed_loop (http_server files lfd) (start_world lfd sch) M = (hM, wM, pM) ∧
+     MEM c (accepted (sperf pM))’
+    by (fs[http_server_def] >> irule sw_handed_out_by >> simp[hok_http] >>
+        metis_tac[]) >>
+  (* what had arrived by round n had arrived by round M *)
+  mp_tac (Q.INST [‘k’ |-> ‘M’, ‘h'’ |-> ‘hM’, ‘w'’ |-> ‘wM’, ‘p'’ |-> ‘pM’]
+            http_received_later) >>
+  impl_tac >- gs[] >> strip_tac >>
+  (* and is answered by round M + 2K + 3 ≤ N *)
+  mp_tac (Q.INST [‘n’ |-> ‘M’, ‘h’ |-> ‘hM’, ‘w’ |-> ‘wM’, ‘perf’ |-> ‘pM’,
+                  ‘cn’ |-> ‘cn'’, ‘D’ |-> ‘cn.received’] closed_loop_http_upto) >>
+  impl_tac >- gs[] >> simp[]
 QED

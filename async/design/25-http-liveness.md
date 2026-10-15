@@ -43,6 +43,27 @@ Theorem closed_loop_http_requests:
         FLAT (MAP (print_response o handle files) rs) ≼ cnN.outgoing
 ```
 
+For every known connection, including those still pending on the listener
+(`asyncSWQueue` ports 09's queue argument to `server_with`):
+
+```
+(* MAIN *)
+Theorem closed_loop_http_liveness:
+  closed_loop (http_server files lfd) (start_world lfd sch) n = (h, w, perf) ∧
+  ALOOKUP w.conns c = SOME cn ∧ w.listeners = [(lfd, q)] ∧
+  n + 3 * LENGTH q + 2 * LENGTH (parse_all cn.received) + 3 ≤ N ∧
+  closed_loop (http_server files lfd) (start_world lfd sch) N = (hN, wN, pN) ⇒
+  ∃cnN. ALOOKUP wN.conns c = SOME cnN ∧
+        FLAT (responses_to files cn.received) ≼ cnN.outgoing
+```
+
+c is handed out by some round M ≤ n + 3q (`sw_handed_out_by`). By then
+more data may have arrived, so the accepted-connection theorem is proved
+for any prefix D of what has arrived (`closed_loop_http_upto`). That needs
+the machine-level case where D has already been read entirely
+(`hmachine_live_read`: at most one round to finish a read, then K
+rounds).
+
 With 18's safety (`http_server_safety`: what is written is a prefix of
 the responses to what has been read), this means that on an accepted
 connection the server writes exactly the responses to the complete
@@ -57,7 +78,8 @@ requests, eventually all of them, and nothing else.
 | the handler as a three-state machine | `hmachine_trans`, `hmachine_inv` | asyncHttpMachine |
 | **machine-level liveness, given four environment facts** | `hmachine_live` | asyncHttpDrain |
 | the handler's view in the closed loop | `sw_closed_loop_view`, `http_view` | asyncHttpLiveness |
-| **closed-loop liveness** | `closed_loop_http_accepted`, `closed_loop_http_requests` | asyncHttpLiveness |
+| pending connections are handed out (09's queue argument) | `sw_queue_progress`, `sw_handed_out_by` | asyncSWQueue |
+| **closed-loop liveness** | `closed_loop_http_upto`, `closed_loop_http_accepted`, `closed_loop_http_requests`, `closed_loop_http_liveness` | asyncHttpLiveness |
 
 ### 2.1 The handler as a machine (asyncHttpMachine)
 
@@ -123,12 +145,6 @@ after it, so they are there by round n + 2K + 3.
 
 ## 3. Not done
 
-- **Pending connections.** The theorem is about a connection already
-  accepted by round n. For the echo server, 09's `closed_loop_liveness`
-  adds the queue bound (a connection with q ahead of it is accepted within
-  3(q + 1) rounds). The analogue for `server_with` needs
-  `sw_accept_progress` (proved, asyncSWProgress) lifted to the closed loop,
-  as 09 lifts `accept_soon`. That is mechanical but not done here.
 - **The CakeML program.** This is model-level, like 09. Connecting it to
   the verified HTTP program (20, spike/http-impl) follows the M4 echo
   route (17, 19).

@@ -14,9 +14,11 @@ In every fair world with one listening socket, the program:
 - eventually writes back everything every client sends.
 
 Companion results:
-- a blocking (`select`) version of the program (a refinement);
-- an HTTP server (tolerating request headers) meeting the safety half of
-  an HTTP specification;
+- a blocking (`select`) version of the program (a refinement) that idles
+  at 0% CPU;
+- an HTTP server (tolerating request headers) meeting a short trusted
+  HTTP specification in full, safety and liveness:
+  `⊢ http_spec_h 3w demo_files http_prog_h`;
 - both servers compile and run.
 
 **How to read it.** The work is split into 11 stacked PRs, `[review 1/11]`
@@ -34,12 +36,12 @@ description lists; skip all proofs. The layers:
 | 6 | sockets in CakeML, divergence, the event loop | 5 | 40 min |
 | 7 | **the echo program: `echo_spec 3w echo_prog`** | 5 | 40 min |
 | 8 | the blocking refinement | 4 | 30 min |
-| 9 | HTTP | 5 | 30 min |
+| 9 | **HTTP: `http_spec_h 3w demo_files http_prog_h`** | 5 | 40 min |
 | 10 | it runs (`socket_ffi.c` is the C trust item) | 1 file | 15 min |
 | 11 | README and design notes | as wanted | 15 min |
 
 Total: about 6 hours at this depth. For a short review, read PR 1 and the
-first statement of PR 7 (about 1 hour). They contain everything you must
+first statement of PRs 7 and 9 (about 1 hour). They contain everything you must
 trust and the theorem that rests on it.
 
 **What you must trust.**

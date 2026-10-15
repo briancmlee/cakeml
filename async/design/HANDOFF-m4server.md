@@ -20,16 +20,24 @@ Kept current at every commit.
     (`readable`, `map`, `handler`, `server`), `readable_spec`, `map_spec_d`.
   - `asyncM4ServerSpecScript.sml`: `handler_spec_d`, `handler_spec`,
     `server_spec_d`, `server_spec` (MAIN).
+  - `asyncM4ServerUsesScript.sml` (pure): `server_uses_accepted` (MAIN):
+    accepts only on lfd; reads/writes fd only after `Accepted fd`.
+  - `asyncM4RelabelScript.sml` (pure): `relabel`, `wf_relabel`,
+    `trans_relabel` (MAIN): the bridge to M3's socket vocabulary.
+- Write-up: `async/design/15-m4-server.md`.
 
-## Status
+## Status (final report)
 
-- DONE (tasks 1, 2): `asyncM4ServerSpecScript.sml` proves `handler_spec`
-  and `server_spec` (MAIN; COMP against the model's `handler fd` /
-  `server lfd`), via `handler_spec_d` / `server_spec_d` (induction on the
-  depth). Holmake -j2 green in `async/m4-server`, no cheats.
-- Next: task 3 (program-level statement; adapter to M3's `sact`/`sresp`
-  vocabulary; `srun_ok` discharge at the model level, requested by the
-  coordinator), 15-m4-server.md, PR.
+- DONE: tasks 1, 2 (`handler_spec`, `server_spec`), 4 (15-m4-server.md).
+- Task 3: the program-level theorem is stated in 15 §3.5. Proved here
+  (M3-independent): `server_uses_accepted` (the model-level core of
+  discharging M3's `srun_ok`, as the coordinator asked) and
+  `trans_relabel`/`wf_relabel` (vocabulary bridge). The remaining
+  world-side lemmas 1–9 are listed precisely in 15 §3.3–3.4; they need
+  M3's definitions and the socket model.
+- Holmake -j2 green in `async/m4-server`; no cheats (grep).
+- Next steps (M4 step 2): CakeML `relabel` + spec; lemmas 1–9 on top of
+  spike/m3-assembly; assembly with M3's whole-program theorem.
 
 ## Assumptions made (so far)
 
@@ -47,6 +55,13 @@ Kept current at every commit.
     cd async/m4-server && timeout 1800 arch -arm64 /bin/zsh -lc '~/HOL/bin/Holmake -j2'
 
 (builds ../model, ../cf-spike, ../cf-actions as needed; ~3 min clean.)
+
+3. `map` written as `bind c (fn x => return (f x))` (model `map_as_bind`).
+4. Task 3's world-side part is stated, not proved, so as not to depend on
+   M3's branch; `server_uses_accepted` needs no `fresh`.
+5. The WIP commit d85d74145 (not green) is in the pushed history: it was
+   a local checkpoint for the usage-limit pause, and history is not
+   rewritten.
 
 ## Tool feedback
 

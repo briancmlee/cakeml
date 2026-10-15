@@ -1,0 +1,6 @@
+# The header-tolerant HTTP model server at Level 2 (quiet; no busy-waiting).
+INCLUDES = ../../model/core ../../model/level2 ../../model/sched \
+           ../../servers/echo ../../servers/http ../../spec ../../world/sockets
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

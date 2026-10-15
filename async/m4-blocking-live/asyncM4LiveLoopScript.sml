@@ -360,7 +360,7 @@ QED
    blocks forever *)
 Theorem step_l_stuck_spec:
   COMP p SACT A (SNAPSHOT SREADY SRESP) m cv ∧
-  LIST_TYPE NUM (MAP w2n fds) fdsv ∧ LIST_TYPE NUM (MAP w2n live) lv ∧
+  LIST_TYPE NUM (MAP w2n (fds : word64 list)) fdsv ∧ LIST_TYPE NUM (MAP w2n live) lv ∧
   (m []).actions = [] ∧ sock_wait live s = NONE ⇒
   app (p:'ffi ffi_proj) step_l_v [Conv NONE [fdsv; lv; cv]] (SSEL s evs)
     (POSTf n. λc b. &(n = «sock_select» ∧ c = fds_bytes live ∧ b = []) *
@@ -543,4 +543,111 @@ Proof
       xvar >> xsimpl >> metis_tac[])
   >> CONV_TAC (LAND_CONV (ONCE_REWRITE_CONV [LGENLIST_NONE_UNFOLD])) >>
      simp[combinTheory.o_DEF]
+QED
+
+(* MAIN (outcome 2): if the loop blocks forever in select (on the live fds)
+   in round n, the run ends in an FFI divergence of «sock_select», after
+   the events of the first n rounds *)
+Theorem run_l_stuck_spec:
+  wf c.run ∧ quiet c ∧ sel_covers c (lsel l0 c.run) ∧
+  grun_ok (interest fds0) c.run s0 ∧
+  lbgrounds (lsel l0 c.run) fds0 c.run s0 n = SOME (kept, N, s) ∧
+  new_actions (log_of c.run) kept = [] ∧
+  sock_wait (lsel l0 c.run kept) s = NONE ∧
+  LIST_TYPE NUM (MAP w2n fds0) fdsv ∧ LIST_TYPE NUM (MAP w2n l0) lv ∧
+  COMP p SACT A (SNAPSHOT SREADY SRESP) c.run cv ⇒
+  app (p:'ffi ffi_proj) run_l_v [Conv NONE [fdsv; lv; cv]] (SSEL s0 [])
+    (POSTf nm. λcf b.
+       &(nm = «sock_select» ∧ cf = fds_bytes (lsel l0 c.run kept) ∧ b = []) *
+       SSEL s (FLAT (GENLIST (lbround_events (lsel l0 c.run) fds0 c.run s0) n)) *
+       SEP_EXISTS av. W8ARRAY av [])
+Proof
+  strip_tac >>
+  ‘∀j i k1 N1 s1 fdsv lv cv.
+     i + j = n ∧ lbgrounds (lsel l0 c.run) fds0 c.run s0 i = SOME (k1, N1, s1) ∧
+     LIST_TYPE NUM (MAP w2n (interest fds0 k1)) fdsv ∧
+     LIST_TYPE NUM (MAP w2n (lsel l0 c.run k1)) lv ∧
+     COMP p SACT A (SNAPSHOT SREADY SRESP) (suspended c.run k1) cv ⇒
+     app p run_l_v [Conv NONE [fdsv; lv; cv]]
+       (SSEL s1 (FLAT (GENLIST (lbround_events (lsel l0 c.run) fds0 c.run s0) i)))
+       (POSTf nm. λcf b.
+          &(nm = «sock_select» ∧ cf = fds_bytes (lsel l0 c.run kept) ∧ b = []) *
+          SSEL s (FLAT (GENLIST (lbround_events (lsel l0 c.run) fds0 c.run s0) n)) *
+          SEP_EXISTS av. W8ARRAY av [])’
+    suffices_by (disch_then (qspecl_then [‘n’, ‘0’] mp_tac) >>
+                 simp[lbgrounds_def, lsel_NIL]) >>
+  Induct
+  >- ((* round n: select blocks forever *)
+      rpt strip_tac >> ‘i = n’ by simp[] >> pop_assum SUBST_ALL_TAC >>
+      ‘k1 = kept ∧ s1 = s’ by gvs[] >>
+      qpat_x_assum ‘k1 = kept’ SUBST_ALL_TAC >>
+      qpat_x_assum ‘s1 = s’ SUBST_ALL_TAC >>
+      ‘(suspended c.run kept []).actions = []’
+        by (drule suspended_first_poll >> simp[]) >>
+      xcf_with_def (fetch "-" "run_l_v_def") >>
+      xlet ‘POSTf nm. λcf b.
+              &(nm = «sock_select» ∧ cf = fds_bytes (lsel l0 c.run kept) ∧ b = []) *
+              SSEL s (FLAT (GENLIST (lbround_events (lsel l0 c.run) fds0 c.run s0) n)) *
+              SEP_EXISTS av. W8ARRAY av []’
+      >- (xapp_spec step_l_stuck_spec >>
+          rpt conj_tac >> TRY (first_assum ACCEPT_TAC) >>
+          TRY (qexists_tac ‘interest fds0 kept’ >> first_assum ACCEPT_TAC >> NO_TAC) >>
+          qexistsl [‘A’, ‘suspended c.run kept’] >> simp[]) >>
+      xsimpl)
+  >- ((* round i < n returns *)
+      rpt strip_tac >>
+      ‘∃k2 N2 s2. lbgrounds (lsel l0 c.run) fds0 c.run s0 (SUC i) = SOME (k2, N2, s2)’
+        by (irule lbgrounds_SOME_LE >> qexistsl [‘n’, ‘(kept, N, s)’] >> simp[]) >>
+      ‘app p step_l_v [Conv NONE [fdsv'; lv'; cv']]
+         (SSEL s1 (FLAT (GENLIST (lbround_events (lsel l0 c.run) fds0 c.run s0) i)))
+         (POSTv v.
+            &(∃fdsv2 lv2 cv2. v = Conv NONE [fdsv2; lv2; cv2] ∧
+                    LIST_TYPE NUM (MAP w2n (interest fds0 k2)) fdsv2 ∧
+                    LIST_TYPE NUM (MAP w2n (lsel l0 c.run k2)) lv2 ∧
+                    COMP p SACT A (SNAPSHOT SREADY SRESP) (suspended c.run k2) cv2) *
+            SSEL s2 (FLAT (GENLIST (lbround_events (lsel l0 c.run) fds0 c.run s0) i) ++
+                     lbround_events (lsel l0 c.run) fds0 c.run s0 i))’
+        by (irule step_l_lbgrounds >> simp[] >> metis_tac[]) >>
+      xcf_with_def (fetch "-" "run_l_v_def") >>
+      xlet ‘POSTv v.
+              &(∃fdsv2 lv2 cv2. v = Conv NONE [fdsv2; lv2; cv2] ∧
+                      LIST_TYPE NUM (MAP w2n (interest fds0 k2)) fdsv2 ∧
+                      LIST_TYPE NUM (MAP w2n (lsel l0 c.run k2)) lv2 ∧
+                      COMP p SACT A (SNAPSHOT SREADY SRESP) (suspended c.run k2) cv2) *
+              SSEL s2 (FLAT (GENLIST (lbround_events (lsel l0 c.run) fds0 c.run s0) (SUC i)))’
+      >- (qpat_x_assum ‘app _ step_l_v _ _ _’ xapp_spec >>
+          simp[FLAT_GENLIST_SUC] >> xsimpl) >>
+      first_x_assum (qspecl_then [‘SUC i’, ‘k2’, ‘N2’, ‘s2’, ‘fdsv2’, ‘lv2’, ‘cv2’] mp_tac) >>
+      impl_tac >- simp[] >> strip_tac >>
+      qpat_x_assum ‘v = _’ SUBST_ALL_TAC >> xapp)
+QED
+
+(* MAIN: the loop's two outcomes, at the level of the code *)
+Theorem run_l_two_outcomes:
+  limited_parts ssel_names p ∧ wf c.run ∧ quiet c ∧
+  sel_covers c (lsel l0 c.run) ∧ grun_ok (interest fds0) c.run s0 ∧
+  LIST_TYPE NUM (MAP w2n fds0) fdsv ∧ LIST_TYPE NUM (MAP w2n l0) lv ∧
+  COMP p SACT A (SNAPSHOT SREADY SRESP) c.run cv ⇒
+  ((∀n. lbgrounds (lsel l0 c.run) fds0 c.run s0 n ≠ NONE) ∧
+   app (p:'ffi ffi_proj) run_l_v [Conv NONE [fdsv; lv; cv]] (SSEL s0 [])
+     (POSTd io. io = lblock_io (lsel l0 c.run) fds0 c.run s0)) ∨
+  (∃n kept N s.
+     lbgrounds (lsel l0 c.run) fds0 c.run s0 n = SOME (kept, N, s) ∧
+     new_actions (log_of c.run) kept = [] ∧
+     sock_wait (lsel l0 c.run kept) s = NONE ∧
+     app (p:'ffi ffi_proj) run_l_v [Conv NONE [fdsv; lv; cv]] (SSEL s0 [])
+       (POSTf nm. λcf b.
+          &(nm = «sock_select» ∧ cf = fds_bytes (lsel l0 c.run kept) ∧ b = []) *
+          SSEL s (FLAT (GENLIST (lbround_events (lsel l0 c.run) fds0 c.run s0) n)) *
+          SEP_EXISTS av. W8ARRAY av []))
+Proof
+  strip_tac >> Cases_on ‘∀n. lbgrounds (lsel l0 c.run) fds0 c.run s0 n ≠ NONE’
+  >- (disj1_tac >> simp[] >> irule run_l_spec >> simp[] >> metis_tac[])
+  >- (disj2_tac >>
+      ‘∃n kept N s. lbgrounds (lsel l0 c.run) fds0 c.run s0 n = SOME (kept, N, s) ∧
+                    new_actions (log_of c.run) kept = [] ∧
+                    sock_wait (lsel l0 c.run kept) s = NONE’
+        by metis_tac[lbgrounds_two_outcomes] >>
+      qexistsl [‘n’, ‘kept’, ‘N’, ‘s’] >> simp[] >>
+      irule run_l_stuck_spec >> simp[] >> metis_tac[])
 QED

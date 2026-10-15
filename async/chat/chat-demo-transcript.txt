@@ -1,0 +1,19 @@
+   0.581  server: echo server: listening on 127.0.0.1:7860
+   0.588  alice connects
+   0.588  bob connects
+   0.895  alice sends b'hello from alice\n'
+   0.896  bob sends b'hi alice, bob here\n'
+   0.896  bob sends b'half a li'
+   1.206  carol connects
+   1.513  bob sends b'ne, now finished\n'
+   1.513  carol sends b'carol: two\nlines at once\n'
+   2.145  alice received b'hello from alice\nhi alice, bob here\nhalf a line, now finished\ncarol: two\nlines at once\n'
+   2.765  bob received b'hello from alice\nhi alice, bob here\nhalf a line, now finished\ncarol: two\nlines at once\n'
+   3.387  carol received b'half a line, now finished\ncarol: two\nlines at once\n'
+
+  [ok] alice and bob received the same lines, in the same order
+  [ok] they received all 5 lines, their own included
+  [ok] carol received exactly the lines read after she joined
+  [ok] the partial line was relayed only once complete
+
+RESULT: PASS

@@ -127,7 +127,7 @@ Proof
 QED
 
 (* An answered Fetch is a writer entry, and a handler's entries are fd's *)
-Theorem afetch_wq[local]:
+Theorem afetch_wq:
   afetch fd p ⇒ wq fd p
 Proof
   rw[afetch_def, wq_def] >> simp[]

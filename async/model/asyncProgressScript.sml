@@ -1054,3 +1054,120 @@ Proof
   >> qpat_x_assum ‘∀m. m ≤ LENGTH h3 ∧ _ ⇒ _’ (qspec_then ‘m − LENGTH h1 − 1’ mp_tac)
   >> gvs[]
 QED
+
+(* ------------------------------------------------------------------------
+   The listener: the server keeps accepting
+   ------------------------------------------------------------------------ *)
+
+Definition naccepts_def:
+  naccepts lfd acts = count (λa. a = Accept lfd) acts
+End
+
+Theorem naccepts_simps[simp]:
+  naccepts lfd [] = 0 ∧
+  naccepts lfd (a :: as) = (if a = Accept lfd then 1 else 0) + naccepts lfd as
+Proof
+  rw[naccepts_def, count_def]
+QED
+
+(* A fresh server, on a history whose first snapshot has the listener
+   readable, accepts straight away *)
+Theorem server_fresh_accepts:
+  q ≠ [] ∧ Readable lfd ∈ (HD q).ready ∧ 1 ≤ i ⇒
+  1 ≤ naccepts lfd (server lfd (TAKE i q)).actions
+Proof
+  Cases_on ‘q’ >> rw[]
+  >> drule readable_now >> strip_tac
+  >> ‘TAKE i (h::t) = [h] ++ TAKE (i - 1) t’ by (Cases_on ‘i’ >> gvs[])
+  >> drule_then (qspec_then ‘TAKE (i - 1) t’ mp_tac) server_accepts
+  >> simp[] >> strip_tac
+  >> qspecl_then [‘Accept lfd’, ‘after_accept lfd’, ‘TAKE (i - 1) t’] strip_assume_tac
+       (Q.GENL [‘a’, ‘f’, ‘q’] bind_emit_starts)
+  >> simp[]
+QED
+
+(* After an accept, the server runs on a view V of the rest of the history
+   (the right side of both, if a connection was accepted): V has the same
+   ready sets, and the accepts are V's *)
+Theorem after_accept_view:
+  prompt (after_accept lfd r) q ⇒
+  ∃V. LENGTH V = LENGTH q ∧
+      (∀i. i < LENGTH q ⇒ (EL i V).ready = (EL i q).ready) ∧
+      prompt (server lfd) V ∧
+      ∀j. naccepts lfd (after_accept lfd r (TAKE j q)).actions =
+          naccepts lfd (server lfd (TAKE j V)).actions
+Proof
+  Cases_on ‘∃c. r = Accepted c’
+  >- (gvs[after_accept_def] >> strip_tac
+      >> qexists_tac ‘right_view (handler c) (server lfd) q’
+      >> drule prompt_both >> simp[views_ready, map_def] >> rpt strip_tac
+      >> simp[naccepts_def]
+      >> qspecl_then [‘handler c’, ‘server lfd’, ‘λa. a = Accept lfd’, ‘TAKE j q’] mp_tac
+           (Q.GENL [‘m1’, ‘m2’, ‘P’, ‘h’] count_both)
+      >> simp[wf_handler, wf_server, views_TAKE]
+      >> rw[count_def, FILTER_EQ_NIL, EVERY_MEM] >> strip_tac
+      >> drule handler_actions_own >> simp[])
+  >> ‘after_accept lfd r = server lfd’ by (Cases_on ‘r’ >> gvs[after_accept_def])
+  >> rw[] >> qexists_tac ‘q’ >> simp[]
+QED
+
+(* MAIN: progress of the listener.  If the listener is readable in two
+   snapshots in a row (k, k+1), and the world answers promptly, then the
+   server accepts during those rounds.  Two, because one cycle of the
+   server is: wait, accept (one round for the response). *)
+Theorem server_accept_progress:
+  ∀h k. prompt (server lfd) h ∧ k + 2 ≤ LENGTH h ∧
+        (∀j. k ≤ j ∧ j < k + 2 ⇒ Readable lfd ∈ (EL j h).ready) ⇒
+        naccepts lfd (server lfd (TAKE k h)).actions <
+        naccepts lfd (server lfd (TAKE (k + 2) h)).actions
+Proof
+  gen_tac >> measureInduct_on ‘LENGTH h’ >> rpt strip_tac
+  (* the server's first wait ends at the latest in snapshot k *)
+  >> qspecl_then [‘k’, ‘h’, ‘lfd’] mp_tac (Q.GENL [‘j’, ‘h’, ‘fd’] readable_split)
+  >> simp[] >> strip_tac >> gvs[]
+  >> Cases_on ‘LENGTH h1 = k + 1’
+  (* it ends in snapshot k: the first accept is in round k *)
+  >- (‘(server lfd (TAKE k (h1 ++ h2))).actions = []’
+        by simp[TAKE_before, server_waiting_actions]
+      >> simp[TAKE_after] >> drule_then (qspec_then ‘TAKE 1 h2’ SUBST1_TAC) server_accepts
+      >> qspecl_then [‘Accept lfd’, ‘after_accept lfd’, ‘TAKE 1 h2’] strip_assume_tac
+           (Q.GENL [‘a’, ‘f’, ‘q’] bind_emit_starts)
+      >> simp[])
+  (* it ends earlier: the server accepts, the response r arrives in s1, and
+     the server continues on a view V of the rest *)
+  >> ‘LENGTH h1 ≤ k’ by simp[] >> Cases_on ‘h2’ >- gvs[] >> rename1 ‘h1 ++ s1 :: h3’
+  >> ‘h1 ++ s1 :: h3 = h1 ++ [s1] ++ h3’ by simp[] >> pop_assum SUBST_ALL_TAC
+  >> drule_all prompt_accept_answered >> strip_tac
+  >> ‘∀i. LENGTH h1 + 1 ≤ i ⇒
+          naccepts lfd (server lfd (TAKE i (h1 ++ [s1] ++ h3))).actions =
+          1 + naccepts lfd (after_accept lfd r (TAKE (i − LENGTH h1 − 1) h3)).actions’
+       by (rpt strip_tac >> simp[TAKE_after_cons]
+           >> qspecl_then [‘lfd’, ‘h1’, ‘s1’, ‘r’, ‘TAKE (i − (LENGTH h1 + 1)) h3’] mp_tac
+                (Q.GENL [‘lfd’, ‘h1’, ‘s’, ‘r’, ‘q’] server_after_accept)
+           >> simp[])
+  >> ‘naccepts lfd (server lfd (TAKE (LENGTH h1) (h1 ++ [s1] ++ h3))).actions = 1’
+       by (‘TAKE (LENGTH h1) (h1 ++ [s1] ++ h3) = h1 ++ []’ by simp[TAKE_APPEND1]
+           >> pop_assum SUBST1_TAC >> drule server_accepts >> simp[bind_emit_NIL])
+  >> drule_all prompt_after_accept >> strip_tac >> drule after_accept_view >> strip_tac
+  >> Cases_on ‘LENGTH h1 + 1 ≤ k’
+  (* the window starts after the restart: by induction *)
+  >- (qpat_x_assum ‘∀y. LENGTH y < _ ⇒ _’ (qspec_then ‘V’ mp_tac) >> simp[]
+      >> disch_then (qspec_then ‘k − LENGTH h1 − 1’ mp_tac)
+      >> impl_tac
+      >- (conj_tac >- fs[]
+          >> rpt strip_tac >> ‘j < LENGTH h3’ by fs[] >> simp[]
+          >> qpat_x_assum ‘∀j. k ≤ j ∧ _ ⇒ _’ (qspec_then ‘j + LENGTH h1 + 1’ mp_tac)
+          >> simp[EL_APPEND2, EL_CONS, PRE_SUB1])
+      >> ‘k − LENGTH h1 − 1 + 2 = k + 1 − LENGTH h1 ∧
+          k − LENGTH h1 − 1 = k − (LENGTH h1 + 1)’ by simp[]
+      >> simp[])
+  (* the restart is in the window: the restarted server accepts at once *)
+  >> ‘k = LENGTH h1’ by simp[] >> gvs[]
+  >> ‘V ≠ [] ∧ Readable lfd ∈ (HD V).ready’
+       by (Cases_on ‘V’ >> gvs[] >> Cases_on ‘h3’ >> gvs[]
+           >> qpat_x_assum ‘∀j. _ ≤ j ∧ _ ⇒ _’ (qspec_then ‘LENGTH h1 + 1’ mp_tac)
+           >> qpat_x_assum ‘∀i. _ ⇒ _’ (qspec_then ‘0’ mp_tac)
+           >> simp[EL_APPEND2, EL_CONS, PRE_SUB1])
+  >> qspecl_then [‘V’, ‘lfd’, ‘1’] mp_tac (Q.GENL [‘q’, ‘lfd’, ‘i’] server_fresh_accepts)
+  >> simp[]
+QED

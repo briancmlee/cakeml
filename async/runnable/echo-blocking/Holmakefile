@@ -18,4 +18,4 @@ INCLUDES = ../../cakeml/approx \
 ifdef POLY
 HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
 endif
-EXTRA_CLEANS = echo_blocking.sexp
+EXTRA_CLEANS = echo_blocking.sexp echo_live.sexp

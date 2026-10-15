@@ -38,4 +38,9 @@ step "printf 'GET / HTTP/1.1\r\nno colon here\r\n\r\n' | nc -w 1 127.0.0.1 $PORT
 printf 'GET / HTTP/1.1\r\nno colon here\r\n\r\n' | nc -w 1 127.0.0.1 $PORT
 echo "  (no response: the parser reports HInvalid and the handler stops)"
 
+step "printf 'GET / HTTP/1.1\r\nHost: x\r\nContent-Length: 5\r\n\r\nhello' | nc -w 1 127.0.0.1 $PORT    # a body-framing header"
+printf 'GET / HTTP/1.1\r\nHost: x\r\nContent-Length: 5\r\n\r\nhello' | nc -w 1 127.0.0.1 $PORT
+echo "  (no response: the subset has no request bodies, so Content-Length and"
+echo "   Transfer-Encoding make a request invalid; the handler stops)"
+
 kill $PID

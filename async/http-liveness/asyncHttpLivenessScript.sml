@@ -333,21 +333,18 @@ Proof
   metis_tac[]
 QED
 
-(* MAIN: liveness of the HTTP server on an accepted connection.  If by round
-   n the connection c has been accepted and the data D = cn.received has
-   arrived on it, then by every round N ≥ n + 2K + 3, where K is the number
-   of complete requests at the front of D, the responses to those requests
-   have been written to c. *)
-Theorem closed_loop_http_accepted:
+(* Liveness of the HTTP server on an accepted connection, for any prefix D
+   of what has arrived by round n *)
+Theorem closed_loop_http_upto:
   closed_loop (http_server files lfd) (start_world lfd sch) n = (h, w, perf) ∧
   ALOOKUP w.conns c = SOME cn ∧ MEM c (accepted (sperf perf)) ∧
-  n + 2 * LENGTH (parse_all cn.received) + 3 ≤ N ∧
+  D ≼ cn.received ∧ n + 2 * LENGTH (parse_all D) + 3 ≤ N ∧
   closed_loop (http_server files lfd) (start_world lfd sch) N = (hN, wN, pN) ⇒
   ∃cnN. ALOOKUP wN.conns c = SOME cnN ∧
-        FLAT (responses_to files cn.received) ≼ cnN.outgoing
+        FLAT (responses_to files D) ≼ cnN.outgoing
 Proof
   strip_tac >>
-  qabbrev_tac ‘NK = LENGTH (parse_all cn.received)’ >>
+  qabbrev_tac ‘NK = LENGTH (parse_all D)’ >>
   ‘∃hM wM pM. closed_loop (http_server files lfd) (start_world lfd sch)
                 (n + 2 * NK + 2) = (hM, wM, pM)’ by metis_tac[pair_CASES] >>
   (* c's handler runs on g, from round a ≤ n *)
@@ -358,7 +355,7 @@ Proof
   ‘∀j hj wj pj.
      n ≤ a + j ∧ j ≤ LENGTH g ∧
      closed_loop (http_server files lfd) (start_world lfd sch) (a + j) = (hj, wj, pj) ⇒
-     ∃cnj. ALOOKUP wj.conns c = SOME cnj ∧ cn.received ≼ cnj.received ∧
+     ∃cnj. ALOOKUP wj.conns c = SOME cnj ∧ D ≼ cnj.received ∧
            cnj.received = Rj files c g j ++ cnj.incoming’
     by (rpt strip_tac >>
         mp_tac (Q.INST [‘k’ |-> ‘a + j : num’, ‘h'’ |-> ‘hj’, ‘w'’ |-> ‘wj’, ‘p'’ |-> ‘pj’]
@@ -370,18 +367,31 @@ Proof
         qpat_assum ‘∀j hj wj pj. _ ⇒ Rj _ _ _ _ = _ ∧ _’
           (qspecl_then [‘j’, ‘hj’, ‘wj’, ‘pj’] mp_tac) >>
         impl_tac >- simp[] >> strip_tac >>
-        qexists_tac ‘cn'’ >> gvs[]) >>
+        qexists_tac ‘cn'’ >> gvs[] >> metis_tac[IS_PREFIX_TRANS]) >>
   qabbrev_tac ‘j0 = n − a’ >>
-  mp_tac (Q.INST [‘fd’ |-> ‘c’, ‘D’ |-> ‘cn.received’] hmachine_live) >>
+  (* what has been read by round n is a prefix of what has arrived *)
+  ‘Rj files c g j0 ≼ cn.received’
+    by (qpat_assum ‘∀j hj wj pj. _ ⇒ ∃cnj. _’
+          (qspecl_then [‘j0’, ‘h’, ‘w’, ‘perf’] mp_tac) >>
+        impl_tac >- fs[Abbr ‘j0’] >> strip_tac >> gvs[] >>
+        simp[IS_PREFIX_APPEND] >> metis_tac[]) >>
+  ‘∃j. j ≤ j0 + 2 * LENGTH (parse_all D) + 2 ∧
+       responses_to files D ≼ Wj files c g j’
+    by (reverse (Cases_on ‘Rj files c g j0 ≼ D’)
+  (* all of D has been read by round n *)
+  >- (‘D ≼ Rj files c g j0’ by metis_tac[prefixes_is_prefix_total] >>
+      mp_tac (Q.INST [‘fd’ |-> ‘c’] hmachine_live_read) >>
+      impl_tac >- fs[Abbr ‘j0’, Abbr ‘NK’] >> strip_tac >>
+      qexists_tac ‘j’ >> conj_tac
+      >- (qpat_x_assum ‘j ≤ _’ mp_tac >> simp[]) >>
+      first_assum ACCEPT_TAC) >>
+  (* otherwise: the machine-level theorem *)
+  mp_tac (Q.INST [‘fd’ |-> ‘c’] hmachine_live) >>
   impl_tac
   >- (rpt conj_tac
       >- first_assum ACCEPT_TAC
       >- fs[Abbr ‘j0’, Abbr ‘NK’]
-      (* what has been read by round n is a prefix of D *)
-      >- (qpat_assum ‘∀j hj wj pj. _ ⇒ ∃cnj. _’
-            (qspecl_then [‘j0’, ‘h’, ‘w’, ‘perf’] mp_tac) >>
-          impl_tac >- fs[Abbr ‘j0’] >> strip_tac >> gvs[] >>
-          simp[IS_PREFIX_APPEND] >> metis_tac[])
+      >- first_assum ACCEPT_TAC
       (* waiting while c is not readable: everything has been read *)
       >- (rpt strip_tac >>
           ‘∃h1 w1 p1. closed_loop (http_server files lfd) (start_world lfd sch)
@@ -446,8 +456,9 @@ Proof
       qpat_x_assum ‘cn'.received = _’ mp_tac >>
       qpat_x_assum ‘cn'.incoming = _’ (fn th => REWRITE_TAC [th, APPEND_NIL]) >>
       strip_tac >> metis_tac[]) >>
+  disch_then ACCEPT_TAC) >>
+  pop_assum strip_assume_tac >>
   (* the responses are written by round a + j + 1 ≤ N, and stay written *)
-  strip_tac >>
   ‘j ≤ LENGTH g ∧ a + j + 1 ≤ N’ by fs[Abbr ‘j0’, Abbr ‘NK’] >>
   ‘∃hj wj pj. closed_loop (http_server files lfd) (start_world lfd sch)
                 (a + j) = (hj, wj, pj)’ by metis_tac[pair_CASES] >>
@@ -475,6 +486,22 @@ Proof
   irule FLAT_prefix >>
   qpat_x_assum ‘Wj _ _ _ _ = written _ _’ (fn th =>
     qpat_x_assum ‘_ ≼ Wj _ _ _ _’ (ACCEPT_TAC o REWRITE_RULE [th]))
+QED
+
+(* MAIN: liveness of the HTTP server on an accepted connection.  If by round
+   n the connection c has been accepted and the data D = cn.received has
+   arrived on it, then by every round N ≥ n + 2K + 3, where K is the number
+   of complete requests at the front of D, the responses to those requests
+   have been written to c. *)
+Theorem closed_loop_http_accepted:
+  closed_loop (http_server files lfd) (start_world lfd sch) n = (h, w, perf) ∧
+  ALOOKUP w.conns c = SOME cn ∧ MEM c (accepted (sperf perf)) ∧
+  n + 2 * LENGTH (parse_all cn.received) + 3 ≤ N ∧
+  closed_loop (http_server files lfd) (start_world lfd sch) N = (hN, wN, pN) ⇒
+  ∃cnN. ALOOKUP wN.conns c = SOME cnN ∧
+        FLAT (responses_to files cn.received) ≼ cnN.outgoing
+Proof
+  strip_tac >> irule closed_loop_http_upto >> metis_tac[IS_PREFIX_REFL]
 QED
 
 (* MAIN: the same, in terms of requests (as in HttpSpec): if the data that

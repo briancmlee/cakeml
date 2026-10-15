@@ -351,3 +351,32 @@ Proof
     by (irule responses_invalid >> fs[] >> metis_tac[]) >>
   simp[]
 QED
+
+(* What the handler has read only grows *)
+Theorem Rj_SUC_prefix:
+  prompt (hcomp files fd (HA "")) g ∧ j < LENGTH g ⇒
+  Rj files fd g j ≼ Rj files fd g (SUC j)
+Proof
+  strip_tac >> drule_all hmachine_trans_SUC >> simp[] >> strip_tac >> simp[]
+QED
+
+(* If the handler has already read all of D by round j0, it answers D's
+   requests within K + 1 rounds: it finishes a read in progress, then
+   answers the buffered requests *)
+Theorem hmachine_live_read:
+  prompt (hcomp files fd (HA "")) g ∧
+  j0 + LENGTH (parse_all D) + 2 ≤ LENGTH g ∧ D ≼ Rj files fd g j0 ⇒
+  ∃j. j ≤ j0 + LENGTH (parse_all D) + 1 ∧
+      responses_to files D ≼ Wj files fd g j
+Proof
+  strip_tac >> Cases_on ‘∃b. Sj files fd g j0 = HB b’
+  >- (fs[] >>
+      ‘D ≼ Rj files fd g (SUC j0)’
+        by (‘j0 < LENGTH g’ by fs[] >> drule_all Rj_SUC_prefix >>
+            metis_tac[IS_PREFIX_TRANS]) >>
+      mp_tac (Q.INST [‘j1’ |-> ‘j0’, ‘b1’ |-> ‘b’] after_read_live) >>
+      impl_tac >- fs[] >> strip_tac >> qexists_tac ‘j’ >> fs[])
+  >> ‘∀b. Sj files fd g j0 ≠ HB b’ by metis_tac[] >>
+  mp_tac (Q.INST [‘j2’ |-> ‘j0’] drain_after) >>
+  impl_tac >- fs[] >> strip_tac >> qexists_tac ‘j’ >> fs[]
+QED

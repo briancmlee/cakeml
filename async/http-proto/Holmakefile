@@ -1,7 +1,10 @@
-# The generic framed-request-protocol interface (design/32-modular-parsing.md):
-# proto, proto_ok (P1-P4), the lemmas derived from it once, and the generic
-# spec vocabulary.  Instances live in ../http-proto-inst.
-INCLUDES = ../ffi-spike ../spec
+# The generic framed-request-protocol pipeline (design/32-modular-parsing.md):
+# the interface (asyncProto), and everything above the parser proved once
+# against it (asyncProtoServer, asyncProtoSafe, asyncProtoSockModel, ...).
+# Instances live in ../http-proto-inst.
+INCLUDES = ../model ../cf-spike ../cf-actions ../cf-reactive ../ffi-spike \
+           ../m3-assembly ../m4-server ../m4-common ../spec ../m4-safety \
+           ../runnable ../machine-code ../http-model ../http-impl ../http-safety
 ifdef POLY
 HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
 endif

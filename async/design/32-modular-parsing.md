@@ -355,7 +355,6 @@ on it, and it could be added later without touching the generic pipeline.
 | 2 | generic server and safety (Server, Safe, SockModel); `…_via_proto` re-derivations | ~450 lines | 1 day |
 | 3 | generic liveness (Machine, Drain, Live) | ~1,400 lines, mostly a parametric port | 1.5–2 days |
 | 4 | generic CakeML handler and CF spec, generic whole-program theorem; a `_b` program re-derived through them (a new program value; the existing one is untouched) | ~600 lines | 1.5–2 days (risk: translator and polymorphic datatype, CF with higher-order arguments) |
-| 3b | **cause of actions** (for async-spike's Level 2 / option C): the generic handler emits new actions in round j only if round j−1's snapshot had its fd Readable or a Data response, proved once for `proto_handler` (§2.9) | ~300–500 lines | 1 day |
 | optional | a shared linear-time splitting library used by all instances' translations | ~150 lines | 0.5 day |
 | KV | bounded-`ans` obligation (§2.3); KV's global part is note 30's | +~200 lines | +1 day |
 
@@ -381,28 +380,25 @@ proof, the spec equality, the translation, `main`) instead of ~2,500.
    theorem.
 5. **Builds:** every Holmake through `holslot`, `-j1`; one hol-lsp.
 
-### 2.9 Later deliverable: the cause-of-actions lemma (requested by async-spike)
+### 2.9 Liveness: aligned with design/34 (library-carried liveness)
 
-Quiescence for HTTP (option C, Level 2 declared interest, on top of this
-pipeline) needs, per handler: "the handler emits new actions in round j
-only if round j−1's snapshot had its fd Readable or a Data response".
-Today that would be one proof per drain machine. In the generic pipeline
-it is one proof, about `proto_handler P resp`:
-
-- **Why no new interface fact is needed:** the handler's emissions in a
-  round depend only on its buffer. It writes the responses to the
-  complete requests at the front (`proto_all`), then either stops
-  (`PInvalid`) or waits for readability (`PIncomplete`). The buffer
-  changes only when a read returns Data. So between two Data events the
-  handler is either stopped or waiting on its fd, and emits nothing new.
-  That uses only the handler's structure and P2 (a complete parse
-  consumes bytes), not the grammar.
-- **Statement shape:** it will mirror async-spike's echo version, the
-  same round indexing and snapshot predicate, so that one quiescence
-  argument serves both. That version is being proved now and I have asked
-  for its exact statement.
-- **Where:** after Phase 3 (it reuses the generic machine's rounds), and
-  kept friendly to a Level 2 server (`server_with2`, #53).
+design/34 (approved) splits liveness:
+- **The library** (m4-server) owns `henv`, `handler_live` and `sw_live`.
+  `sw_live` turns a per-handler `handler_live` into socket-trace
+  liveness under `server_with` and the loop.
+- **This pipeline** owns `proto_handler_live`:
+  ```
+  proto_ok P ⇒ handler_live (λfd. proto_handler P resp (fd, "")) (λD. MAP resp (proto_all P D)) B_P
+  ```
+  It is proved once by porting asyncHttpMachineH/DrainH generically,
+  plus the `henv` bridge (design/34 §2.6). Generic liveness
+  (`asyncProtoLive`) is then an instance of `sw_live`, not a re-proof
+  of asyncHttpLiveH. Phase 3 changes accordingly. I am coordinating the
+  exact statement with m4-server.
+- **async-spike** owns the cause-of-actions lemma (`hok_cause`, for
+  option C). It consumes `handler_live` as its measure. An earlier
+  version of this note had cause-of-actions as a deliverable here; it
+  has been dropped.
 
 ## 3. Assumptions made
 
@@ -453,4 +449,30 @@ it is one proof, about `proto_handler P resp`:
 
 **Verdict:** the interface fits all three parsers without changes beyond
 the P3 form. Phase 2 (generic server and safety) can build on it.
+
+### Phase 2: the generic server and safety (DONE)
+
+- **`asyncProtoServer`** (10 proofs):
+  - `proto_body`, `proto_handler` (fix), `proto_handler_unfold`, wf and
+    settled, `proto_server`;
+  - `proto_handler_fix`: any `fix b` whose body is `proto_body` *is*
+    `proto_handler`;
+  - `proto_handler_serves` (one connection), `proto_server_safety`, and
+    `proto_server_safety_requests`. All are for every P with `proto_ok P`
+    and every `resp`.
+- **`asyncProtoSafe`**: `proto_server_uses_accepted`, and
+  `proto_comp_safe`, i.e. `proto_safe` for the loop's trace, for any
+  interest function.
+- **`asyncProtoSockModel`**: `sproto_handler_unfold`, the handler in the
+  socket vocabulary, for the CF layer (phase 4).
+- **Re-derivations** (`http-proto-inst/asyncProtoVia{Strict,H,B}`):
+  - `http_handler_X_proto` and `http_server_X_proto`: each existing
+    server *is* `proto_server P_X resp_X`, by `fix` uniqueness;
+  - `http_safe_X_proto` and `http_live_X_proto`: the trusted safety and
+    liveness are `proto_safe` and `proto_live`;
+  - `http_comp_safe_X_via_proto`: the existing `http_comp_safe`,
+    `http_comp_safe_h` and `http_comp_safe_b` statements, verbatim,
+    proved through the generic pipeline in 3 lines each.
+- **Level 2 friendliness:** the handler's body (`proto_body`) is its own
+  definition, so a `server_with2` version can reuse its shape.
 

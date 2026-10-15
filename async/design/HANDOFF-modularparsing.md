@@ -17,11 +17,14 @@ Kept current at every commit.
 
 - DONE Phase 1: interface, derived lemmas, `proto_ok` and the spec
   equality for strict, `_h`, `_b`. P3 corrected to the never-a-prefix form.
-- NEXT Phase 2: generic server and safety (Server, Safe, SockModel) and the
-  `…_via_proto` re-derivations. Keep the server Level-2 friendly
-  (`server_with2`, #53) for async-spike's option C.
-- LATER 3b: the cause-of-actions lemma (§2.9), matching async-spike's
-  echo statement.
+- DONE Phase 2 (branch `spike/proto-server`, stacked on
+  spike/modular-parsing): asyncProtoServer, asyncProtoSafe,
+  asyncProtoSockModel, plus `asyncProtoVia{Strict,H,B}`, which re-derive
+  `http_comp_safe{,_h,_b}` through the generic pipeline.
+- NEXT Phase 3: `proto_handler_live`, discharging design/34's
+  `handler_live` (§2.9). Waiting on m4-server for the exact statement and
+  branch.
+- Not mine any more: cause-of-actions (async-spike's `hok_cause`).
 
 ## Assumptions made
 

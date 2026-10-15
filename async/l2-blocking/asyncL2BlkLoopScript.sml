@@ -332,3 +332,120 @@ Proof
           qpat_x_assum ‘app _ poll2_v _ _ _’ xapp_spec >> xsimpl >>
           simp[sdrop_sdrop, round_events_of_def, Abbr ‘k’] >> xsimpl))
 QED
+
+(* ------------------------------------------------------------------------
+   The loop
+   ------------------------------------------------------------------------ *)
+
+
+Theorem suspended2_NIL[simp]:
+  suspended2 c [] = c
+Proof
+  simp[DB.fetch "asyncLevel2" "comp2_component_equality", suspended2_def,
+       FUN_EQ_THM]
+QED
+
+Theorem suspended2_suspended2_one:
+  wf c.run ⇒ suspended2 (suspended2 c r) [w] = suspended2 c (r ++ [w])
+Proof
+  strip_tac >>
+  gvs[DB.fetch "asyncLevel2" "comp2_component_equality", suspended2_def,
+      suspended_suspended_one, FUN_EQ_THM] >>
+  REWRITE_TAC [GSYM APPEND_ASSOC, APPEND]
+QED
+
+Theorem blocks_suspended2:
+  wf c.run ⇒
+  (blocks (suspended2 c kept) [] ⇔ blocks c kept) ∧
+  (suspended2 c kept).interest [] = c.interest kept ∧
+  ((suspended2 c kept).run []).actions = new_actions (log_of c.run) kept
+Proof
+  strip_tac >>
+  simp[blocks_def, suspended2_def, suspended_first_poll, new_actions_NIL,
+       log_of_def]
+QED
+
+Theorem skips_sdrop[local]:
+  skips E (sdrop pos ws) 0 = skips E ws pos
+Proof
+  simp[skips_def, sdrop_def]
+QED
+
+(* One round of brounds is one bstep_world of the suspended computation
+   on the rest of the stream. *)
+Theorem bstep_world_brounds:
+  wf c.run ∧ brounds c ws i = (kept, full, pos) ⇒
+  FST (brounds c ws (SUC i)) =
+    kept ++ [FST (bstep_world (suspended2 c kept) (sdrop pos ws))] ∧
+  SND (SND (brounds c ws (SUC i))) =
+    pos + FST (SND (bstep_world (suspended2 c kept) (sdrop pos ws))) ∧
+  bround_events c ws i = SND (SND (bstep_world (suspended2 c kept) (sdrop pos ws)))
+Proof
+  strip_tac >> drule blocks_suspended2 >> strip_tac >>
+  simp[brounds_def, bstep_world_def, bround_events_def] >>
+  rw[skips_sdrop, idle_snap_def, sdrop_sdrop, ADD1] >>
+  simp[sdrop_def]
+QED
+
+(* MAIN: the blocking event loop never terminates, and its I/O trace is the
+   concatenation of bround_events c ws i over all rounds i: either one
+   select on c's declared events (when c waits with nothing to perform) or
+   the round's actions and the ready byte.  By trace_actions_brounds, the
+   actions in the trace are c's action log over the kept history, and by
+   blocking_same_actions that is exactly the polling loop's (asyncCfActLoop)
+   action log over the same stream: no busy waiting, same behaviour.
+   Assumptions: wf c.run (every library computation) and blk_live c ws
+   (whenever the loop blocks, a declared byte eventually arrives). *)
+Theorem brun_spec:
+  limited_parts io2_names p ∧ wf c.run ∧ blk_live c ws ∧
+  COMP2 p WORD A WORD (SNAPSHOT BREADY1 WORD) c cv ⇒
+  app (p:'ffi ffi_proj) brun_v [cv] (IOS2 ws [])
+    (POSTd io. io = LFLATTEN (LGENLIST (λi. fromList (bround_events c ws i)) NONE))
+Proof
+  xcf_div_rule IMP_app_POSTd_one_FFI_part_FLATTEN "brun" st >>
+  qexists_tac ‘K emp’ >>
+  qexists_tac ‘λi. if i = 0 then [] else bround_events c ws (i - 1)’ >>
+  qexists_tac ‘λi cv. COMP2 p WORD A WORD (SNAPSHOT BREADY1 WORD)
+                        (suspended2 c (FST (brounds c ws i))) cv’ >>
+  qexists_tac ‘λi. io_state (sdrop (SND (SND (brounds c ws i))) ws)’ >>
+  qexists_tac ‘io2_update’ >>
+  simp[CONJUNCT1 brounds_def] >> rpt conj_tac
+  >- (simp[IOS2_def] >> xsimpl)
+  >- (rpt strip_tac >> simp[GSYM IOS2_def] >>
+      ‘∃kept full pos. brounds c ws i = (kept, full, pos)’
+        by metis_tac[pair_CASES] >>
+      drule_all bstep_world_brounds >> strip_tac >>
+      drule blocks_suspended2 >> strip_tac >>
+      gvs[] >>
+      qabbrev_tac ‘bw = bstep_world (suspended2 c kept) (sdrop pos ws)’ >>
+      ‘app p bstep_v [xv] (IOS2 (sdrop pos ws) [])
+         (POSTv v. &COMP2 p WORD A WORD (SNAPSHOT BREADY1 WORD)
+                      (suspended2 (suspended2 c kept) [FST bw]) v *
+                   IOS2 (sdrop (FST (SND bw)) (sdrop pos ws)) (SND (SND bw)))’
+        by (simp[Abbr ‘bw’] >> irule bstep_spec >> simp[] >>
+            gvs[blk_live_def, sdrop_def] >> rpt strip_tac >>
+            first_x_assum drule >> simp[] >> metis_tac[ADD_COMM]) >>
+      xlet ‘POSTv v. &COMP2 p WORD A WORD (SNAPSHOT BREADY1 WORD)
+                        (suspended2 c (kept ++ [FST bw])) v *
+                      IOS2 (sdrop (pos + FST (SND bw)) ws) (SND (SND bw))’
+      >- (qpat_x_assum ‘app _ bstep_v _ _ _’ xapp_spec >> xsimpl >>
+          simp[suspended2_suspended2_one, sdrop_sdrop] >> xsimpl) >>
+      xvar >> xsimpl >> simp[IOS2_def] >> xsimpl)
+  >- simp[LFLATTEN_LGENLIST_shift]
+QED
+
+(* MAIN (no busy waiting, end to end): after n+1 rounds of the blocking
+   loop, the actions in its trace are exactly the actions in the trace of
+   the polling loop of cf-actions (asyncCfActLoop.run_spec, round_events)
+   after the same stretch of the stream -- LENGTH full + 1 polling rounds,
+   most of which the blocking loop slept through in select. *)
+Theorem blocking_trace_same_actions:
+  wf c.run ∧ quiet c ∧ blk_live c ws ∧ brounds c ws n = (kept, full, pos) ⇒
+  trace_actions (FLAT (GENLIST (bround_events c ws) (SUC n))) =
+  trace_actions (FLAT (GENLIST (round_events c.run ws) (SUC (LENGTH full))))
+Proof
+  strip_tac >>
+  drule_all blocking_same_actions >> strip_tac >>
+  simp[trace_actions_brounds, trace_actions_rounds] >>
+  metis_tac[]
+QED

@@ -43,6 +43,21 @@ Alongside:
 
   Its header-tolerant predecessor is also proved quiet (no busy-waiting
   at Level 2, `servers/http-quiet`).
+- **an echo server that closes and reuses fds** (review PR 12). In a
+  version-2 socket world with `sock_close`, where the kernel hands out the
+  lowest free fd, the program closes each connection after reading its
+  EOF, and meets a per-*connection* specification: safety and liveness per
+  accepted connection (episode), even when its fd number is reused, and
+  every connection whose EOF was read is eventually closed:
+
+  ```
+  (* headline/asyncHLEchoSpec2Script.sml *)
+  Theorem echo2_prog_spec:
+    echo_spec2 3w echo2_prog
+  ```
+
+  No bytes leak across reuse: what one connection sent is never echoed to
+  a later connection on the same fd (`spec-v2/EchoSpec2`, design/25).
 
 **Polling and blocking.** The trusted C (`runnable/socket_ffi.c`) does
 exactly what the model says: `sock_poll` is one `poll(2)` with timeout 0.
@@ -163,9 +178,11 @@ hello
   so a 165-character User-Agent got no answer in 10 s. It was fixed with
   proved-equal linear definitions (`split_at2`, `split_path2`), and now
   takes 1.5 ms. The parsers' definitions and theorems are unchanged.
-- **No `close`.** The socket model has no `close`, so finished
-  connections are never closed and a long-running server leaks fds. A v2
-  with `close` and fd reuse is in progress.
+- **`close` only for echo.** The echo server of PR 12
+  (`echo2_prog_spec`) closes finished connections and reuses their fds.
+  The headline echo program and the HTTP servers use the version-1 socket
+  model, which has no `close`: they never close a connection, and a
+  long-running instance leaks fds.
 - **The machine-code theorem is pending.** The program-level theorem is in
   the form CakeML's compiler correctness theorem consumes, and the
   composition scripts are written (`runnable/machine-code/`). Running them

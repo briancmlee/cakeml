@@ -26,6 +26,23 @@ rules, gotchas) is in ~/.cache/async-spike/STATE.md.
     `(server2 lfdn).interest` is ready. Also `conns_no_listener`,
     `eofr_eofs`, `accs_le_one`, `zero_no_actions`, `zero_interest`.
 
+## Echo: DONE, ⊢ echo_quiet 3w (SNOC (main_call «main») echo_l_prog)
+`async/quiet/echo/asyncEchoQuiet`, `echo_l_quiet` (no cheats). This is the
+shipped blocking echo program (layer 8, #46), proved quiet by the agreed
+shortcut: echo's live list is exactly what the server waits for
+(echo_live_list_covers), so option C's declared-interest loop is not needed
+for echo.
+- Q2 `echo_sleeps` (asyncEchoSleeps): with arrivals_finite the select loop
+  blocks forever. Generic `lbgrounds_sleeps`; `live_inv`, `kept_live`.
+- Select bridge: QuietSpec's select fails on non-sockets, #46's does not.
+  - async/quiet/ffi/ffiAgreeUpto (generic CakeML): `semantics_prog_upto`
+    (same behaviours if the FFI states agree on the calls of each clocked
+    run), `call_FFI_rel_answers`.
+  - asyncEchoBridgeWorld: `oracle_agree`, `answers_agree(_prefix)`.
+  - asyncEchoQuietTrace: `good`, `ok_of_good`, `trace_good` (selects name
+    only the listener and accepted fds).
+- HTTP still needs option C (its live list is not the interest, #56).
+
 ## Plan (design/33 §2.5), echo first
 1. Q1 `echo_stable`: DONE (above).
 2. Q2 (NEXT): a generic loop lemma (stable polling ⇒ the declared-interest

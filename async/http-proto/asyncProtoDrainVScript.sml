@@ -359,3 +359,287 @@ Proof
     by metis_tac[proto_all_prefix, proto_all_print] >>
   imp_res_tac IS_PREFIX_LENGTH >> gvs[]
 QED
+
+(* What the handler has read only grows *)
+Theorem Rq_SUC_prefix:
+  qok V P ansq fin fd g ∧ j < LENGTH g ⇒
+  Rq V P ansq fin fd g j ≼ Rq V P ansq fin fd g (SUC j)
+Proof
+  strip_tac >> ‘prompt (qcomp V P ansq fin fd (QA "")) g ∧ j < LENGTH g’ by simp[] >>
+  drule_all qmachine_trans_SUC >> simp[] >> strip_tac >>
+  simp[sproj_APPEND_v, read_def] >>
+  simp[GSYM read_def, qacts_read_NIL]
+QED
+
+(* After a read at round j1 (state QB) that leaves all of D read, what is
+   owed for D is written within 2K + 2 rounds *)
+Theorem after_read_v:
+  qok V P ansq fin fd g ∧
+  j1 + 2 * LENGTH (proto_all P D) + 2 ≤ LENGTH g ∧
+  Sq V P ansq fin fd g j1 = QB b1 ∧ D ≼ Rq V P ansq fin fd g (SUC j1) ⇒
+  ∃j. j ≤ j1 + 2 * LENGTH (proto_all P D) + 2 ∧
+      OUT P ansq fin D (Kq V P ansq fin fd g j) ≼ Wq V P ansq fin fd g j
+Proof
+  strip_tac >>
+  ‘∀b. Sq V P ansq fin fd g (SUC j1) ≠ QB b’
+    by (‘j1 < LENGTH g’ by simp[] >> simp[Sq_SUC, qstep_def] >>
+        every_case_tac >> simp[]) >>
+  ‘∃j. SUC j1 ≤ j ∧ j ≤ SUC j1 + 2 * LENGTH (proto_all P D) + 1 ∧
+       OUT P ansq fin D (Kq V P ansq fin fd g j) ≼ Wq V P ansq fin fd g j’
+    by (irule drain_after_v >> simp[]) >>
+  qexists_tac ‘j’ >> simp[]
+QED
+
+(* With all of D read by round j0, what is owed for D is written within
+   2K + 2 rounds *)
+Theorem live_read_v:
+  qok V P ansq fin fd g ∧
+  j0 + 2 * LENGTH (proto_all P D) + 2 ≤ LENGTH g ∧
+  D ≼ Rq V P ansq fin fd g j0 ⇒
+  ∃j. j ≤ j0 + 2 * LENGTH (proto_all P D) + 2 ∧
+      OUT P ansq fin D (Kq V P ansq fin fd g j) ≼ Wq V P ansq fin fd g j
+Proof
+  strip_tac >> Cases_on ‘∃b. Sq V P ansq fin fd g j0 = QB b’
+  >- (fs[] >>
+      ‘D ≼ Rq V P ansq fin fd g (SUC j0)’
+        by (‘j0 < LENGTH g’ by simp[] >>
+            metis_tac[Rq_SUC_prefix, IS_PREFIX_TRANS]) >>
+      ‘∃j. j ≤ j0 + 2 * LENGTH (proto_all P D) + 2 ∧
+           OUT P ansq fin D (Kq V P ansq fin fd g j) ≼ Wq V P ansq fin fd g j’
+        by (irule after_read_v >> simp[] >> metis_tac[]) >>
+      qexists_tac ‘j’ >> simp[])
+  >> ‘∃j. j0 ≤ j ∧ j ≤ j0 + 2 * LENGTH (proto_all P D) + 1 ∧
+         OUT P ansq fin D (Kq V P ansq fin fd g j) ≼ Wq V P ansq fin fd g j’
+       by (irule drain_after_v >> simp[] >> metis_tac[]) >>
+  qexists_tac ‘j’ >> simp[]
+QED
+
+(* Stopped (or about to stop) on an invalid buffer: everything owed has
+   been written *)
+Theorem stopped_invalid_v:
+  qok V P ansq fin fd g ∧ j ≤ LENGTH g ∧
+  (Sq V P ansq fin fd g j = QA b ∨ Sq V P ansq fin fd g j = QD b) ∧
+  P.parse b = PInvalid ∧ Rq V P ansq fin fd g j ≼ D ⇒
+  OUT P ansq fin D (Kq V P ansq fin fd g j) ≼ Wq V P ansq fin fd g j
+Proof
+  strip_tac >> drule_all qinv0 >> strip_tac >>
+  gvs[qbuf_def, qlast_def, qpend_def, IS_PREFIX_APPEND] >>
+  REWRITE_TAC[GSYM APPEND_ASSOC] >> qexists_tac ‘[]’ >>
+  ‘proto_all P (FLAT (MAP P.print rs) ++ (b ++ l)) = rs ++ proto_all P (b ++ l)’
+    by (irule proto_all_print >> simp[]) >>
+  ‘proto_all P (b ++ l) = []’ by (irule proto_all_invalid_ext >> simp[]) >>
+  CONV_TAC (DEPTH_CONV BETA_CONV) >> asm_rewrite_tac[APPEND_NIL]
+QED
+
+(* MAIN: liveness of the query machine when a read may return only part
+   of the unread data, given the four environment facts (as
+   pmachine_live_p).  Each cycle (finish a pending query's write, answer
+   at most K buffered requests in at most 2K rounds, wait one round,
+   read) takes at most 2K + 3 rounds and either reads all of D or reads
+   something. *)
+Theorem qmachine_live_p_v:
+  qok V P ansq fin fd g ∧
+  (∀j. j0 ≤ j ∧ j ≤ LENGTH g ⇒
+       Rq V P ansq fin fd g j ≼ D ∨ D ≼ Rq V P ansq fin fd g j) ∧
+  (∀j b. j0 ≤ j ∧ j < LENGTH g ∧ Sq V P ansq fin fd g j = QA b ∧
+         P.parse b = PIncomplete ∧ Readable fd ∉ (EL j g).ready ⇒
+         D ≼ Rq V P ansq fin fd g j) ∧
+  (∀j b. j0 ≤ j ∧ j < LENGTH g ∧ Sq V P ansq fin fd g j = QB b ∧
+         ¬(D ≼ Rq V P ansq fin fd g j) ⇒
+         D ≼ Rq V P ansq fin fd g (SUC j) ∨
+         LENGTH (Rq V P ansq fin fd g j) < LENGTH (Rq V P ansq fin fd g (SUC j))) ∧
+  (∀j b. j0 ≤ j ∧ j ≤ LENGTH g ∧ Sq V P ansq fin fd g j = QD b ∧
+         P.parse b = PIncomplete ⇒ D ≼ Rq V P ansq fin fd g j) ⇒
+  ∀m j. j0 ≤ j ∧ LENGTH D ≤ LENGTH (Rq V P ansq fin fd g j) + m ∧
+        j + (m + 2) * (2 * LENGTH (proto_all P D) + 3) ≤ LENGTH g ⇒
+        ∃j'. j' ≤ LENGTH g ∧
+             OUT P ansq fin D (Kq V P ansq fin fd g j') ≼ Wq V P ansq fin fd g j'
+Proof
+  strip_tac >> completeInduct_on ‘m’ >> rpt strip_tac >>
+  qabbrev_tac ‘NK = LENGTH (proto_all P D)’ >>
+  ‘j + 2 * NK + 3 ≤ LENGTH g’ by (Cases_on ‘m’ >> fs[MULT_CLAUSES]) >>
+  (* finishing: once all of D has been read, by round j1 *)
+  ‘∀j1. j1 ≤ j + 2 * NK + 3 ∧ D ≼ Rq V P ansq fin fd g j1 ⇒
+        ∃j'. j' ≤ LENGTH g ∧
+             OUT P ansq fin D (Kq V P ansq fin fd g j') ≼ Wq V P ansq fin fd g j'’
+    by (rpt strip_tac >>
+        ‘∃j'. j' ≤ j1 + 2 * LENGTH (proto_all P D) + 2 ∧
+              OUT P ansq fin D (Kq V P ansq fin fd g j') ≼ Wq V P ansq fin fd g j'’
+          by (irule live_read_v >> fs[Abbr ‘NK’] >>
+              Cases_on ‘m’ >> fs[MULT_CLAUSES]) >>
+        qexists_tac ‘j'’ >> fs[Abbr ‘NK’] >> Cases_on ‘m’ >> fs[MULT_CLAUSES]) >>
+  Cases_on ‘D ≼ Rq V P ansq fin fd g j’
+  >- (first_x_assum irule >> qexists_tac ‘j’ >> simp[]) >>
+  ‘j ≤ LENGTH g’ by simp[] >>
+  ‘Rq V P ansq fin fd g j ≼ D’ by metis_tac[] >>
+  ‘LENGTH (Rq V P ansq fin fd g j) < LENGTH D’
+    by (CCONTR_TAC >> fs[NOT_LESS] >>
+        ‘LENGTH (Rq V P ansq fin fd g j) = LENGTH D’
+          by (imp_res_tac IS_PREFIX_LENGTH >> simp[]) >>
+        ‘Rq V P ansq fin fd g j = D’ by metis_tac[IS_PREFIX_LENGTH_ANTI] >>
+        fs[]) >>
+  ‘0 < m’ by simp[] >>
+  (* growing: a read at round j2 (state QB), nothing read since j *)
+  ‘∀j2 b2. j ≤ j2 ∧ j2 ≤ j + 2 * NK + 2 ∧ Sq V P ansq fin fd g j2 = QB b2 ∧
+           Rq V P ansq fin fd g j2 = Rq V P ansq fin fd g j ⇒
+           ∃j'. j' ≤ LENGTH g ∧
+                OUT P ansq fin D (Kq V P ansq fin fd g j') ≼ Wq V P ansq fin fd g j'’
+    by (rpt strip_tac >>
+        ‘j2 < LENGTH g’ by simp[] >>
+        qpat_x_assum ‘∀j b. _ ∧ _ ∧ Sq _ _ _ _ _ _ _ = QB _ ∧ _ ⇒ _’
+          (qspecl_then [‘j2’, ‘b2’] mp_tac) >>
+        impl_tac >- simp[] >> strip_tac
+        >- (qpat_x_assum ‘∀j1. _ ⇒ ∃j'. _’ irule >> qexists_tac ‘SUC j2’ >> simp[]) >>
+        qpat_x_assum ‘∀m'. m' < m ⇒ _’ (qspec_then ‘m − 1’ mp_tac) >>
+        impl_tac >- simp[] >>
+        disch_then (qspec_then ‘SUC j2’ mp_tac) >> impl_tac
+        >- (rpt conj_tac >- simp[]
+            >- (qpat_x_assum ‘Rq _ _ _ _ _ _ j2 = _’ (fn th => fs[th]))
+            >> Cases_on ‘m’ >> fs[MULT_CLAUSES, ADD1, Abbr ‘NK’]) >>
+        simp[]) >>
+  (* from a state QA at round j1 ≤ j + 1, nothing read since j *)
+  ‘∀j1 b. j ≤ j1 ∧ j1 ≤ j + 1 ∧ Sq V P ansq fin fd g j1 = QA b ∧
+          Rq V P ansq fin fd g j1 = Rq V P ansq fin fd g j ⇒
+          ∃j'. j' ≤ LENGTH g ∧
+               OUT P ansq fin D (Kq V P ansq fin fd g j') ≼ Wq V P ansq fin fd g j'’
+    by (rpt strip_tac >>
+        ‘j1 ≤ LENGTH g’ by simp[] >>
+        drule_all qinv0 >> strip_tac >> gvs[qbuf_def, qlast_def, qpend_def] >>
+        ‘LENGTH (proto_all P b) ≤ NK’
+          by (‘rs ++ proto_all P b ≼ proto_all P D’
+                by (‘proto_all P (Rq V P ansq fin fd g j) ≼ proto_all P D’
+                      by (irule proto_all_prefix >> simp[]) >>
+                    ‘proto_all P (Rq V P ansq fin fd g j) = rs ++ proto_all P b’
+                      by (qpat_x_assum ‘STRCAT _ b = _’ (SUBST1_TAC o SYM) >>
+                          irule proto_all_print >> simp[]) >>
+                    gvs[]) >>
+              imp_res_tac IS_PREFIX_LENGTH >> fs[Abbr ‘NK’]) >>
+        use_qok qdrain >>
+        disch_then (qspecl_then [‘LENGTH (proto_all P b)’, ‘j1’, ‘b’] mp_tac) >>
+        impl_tac >- simp[] >> strip_tac >>
+        ‘proto_all P b' = []’
+          by (qpat_x_assum ‘LENGTH rq = _’ mp_tac >>
+              qpat_x_assum ‘proto_all P b = _’ (fn th => REWRITE_TAC[th]) >>
+              REWRITE_TAC[LENGTH_APPEND] >> strip_tac >>
+              ‘LENGTH (proto_all P b') = 0’ by decide_tac >>
+              fs[LENGTH_NIL]) >>
+        (* these two would make the simplifier loop *)
+        qpat_x_assum ‘LENGTH rq = _’ kall_tac >>
+        qpat_x_assum ‘proto_all P b = _’ kall_tac >>
+        ‘∀r rest. P.parse b' ≠ PComplete r rest’
+          by (rpt strip_tac >>
+              ‘proto_all P b' = r :: proto_all P rest’
+                by (irule proto_all_complete >> simp[]) >>
+              gvs[]) >>
+        Cases_on ‘P.parse b'’ >> fs[]
+        (* incomplete: wait for readiness, then read *)
+        >- (‘j' < LENGTH g’ by simp[] >>
+            Cases_on ‘Readable fd ∈ (EL j' g).ready’
+            >- (‘Sq V P ansq fin fd g (SUC j') = QB b'’
+                  by simp[Sq_SUC, qstep_def] >>
+                ‘Rq V P ansq fin fd g (SUC j') = Rq V P ansq fin fd g j'’
+                  by (drule_all Rq_Wq_SUC >> simp[]) >>
+                qpat_x_assum ‘∀j2 b2. _ ∧ _ ∧ Sq _ _ _ _ _ _ j2 = QB b2 ∧ Rq _ _ _ _ _ _ j2 = _ ⇒ _’ (qspecl_then [‘SUC j'’, ‘b'’] mp_tac) >>
+                simp[]) >>
+            qpat_x_assum ‘∀j b. _ ∧ _ ∧ _ = QA _ ∧ _ ⇒ _’
+              (qspecl_then [‘j'’, ‘b'’] mp_tac) >> simp[] >> strip_tac >>
+            qpat_x_assum ‘∀j1. _ ⇒ ∃j'. _’ irule >> qexists_tac ‘j'’ >> simp[]) >>
+        (* invalid: everything owed has been written *)
+        qexists_tac ‘j'’ >> simp[] >>
+        irule stopped_invalid_v >> simp[] >> qexists_tac ‘b'’ >> simp[]) >>
+  Cases_on ‘Sq V P ansq fin fd g j’
+  (* about to act on buffer b *)
+  >- (first_x_assum (qspecl_then [‘j’, ‘s’] mp_tac) >> simp[])
+  (* a query's write: one round, then QA *)
+  >- (rename1 ‘QW req rest ko’ >>
+      ‘j < LENGTH g’ by simp[] >>
+      drule_all Rq_Wq_SUC >> strip_tac >>
+      ‘Sq V P ansq fin fd g (SUC j) = QA rest’ by simp[Sq_SUC, qstep_def] >>
+      first_x_assum (qspecl_then [‘SUC j’, ‘rest’] mp_tac) >> simp[])
+  (* reading this round *)
+  >- (qpat_x_assum ‘∀j2 b2. _ ∧ _ ∧ Sq _ _ _ _ _ _ j2 = QB b2 ∧ Rq _ _ _ _ _ _ j2 = _ ⇒ _’ (qspecl_then [‘j’, ‘s’] mp_tac) >> simp[])
+  (* stopped: on end-of-file (all of D read), or on invalid input *)
+  >> rename1 ‘QD b’ >>
+  drule_all qinv0 >> strip_tac >>
+  Cases_on ‘P.parse b’
+  >- (res_tac >> fs[])
+  >- (qpat_x_assum ‘∀j b. _ ∧ _ ∧ _ = QD _ ∧ _ ⇒ _’ (qspecl_then [‘j’, ‘b’] mp_tac) >>
+      simp[])
+  >> qexists_tac ‘j’ >> conj_tac >- simp[] >>
+  irule stopped_invalid_v >> simp[] >> qexists_tac ‘b’ >> simp[]
+QED
+
+(* ------------------------------------------------------------------------
+   Reading and end-of-file in the socket part of the transcript
+   ------------------------------------------------------------------------ *)
+
+Theorem MEM_sproj:
+  ∀tr. MEM (a, r) tr ∧ V.sact a = SOME x ⇒
+       MEM (x, OPTION_BIND r V.sres) (sproj V tr)
+Proof
+  Induct >> simp[] >> Cases >> rw[] >> gvs[] >> CASE_TAC >> simp[]
+QED
+
+Theorem MEM_sproj_rd:
+  ∀tr. vocab_ok V ∧ MEM (V.rd fd, r) tr ⇒
+       MEM (Read fd, OPTION_BIND r V.sres) (sproj V tr)
+Proof
+  Induct >> simp[] >> Cases >> rw[] >> gvs[vocab_ok_def] >> CASE_TAC >> simp[]
+QED
+
+(* In state QB the handler has a read of fd outstanding *)
+Theorem qmachine_reading:
+  qok V P ansq fin fd g ∧ j ≤ LENGTH g ∧ Sq V P ansq fin fd g j = QB b ⇒
+  MEM (Read fd, NONE) (sproj V (Tq V P ansq fin fd g j))
+Proof
+  strip_tac >>
+  ‘prompt (qcomp V P ansq fin fd (QA "")) g ∧ j ≤ LENGTH g’ by simp[] >>
+  drule_all qmachine_trans_TAKE >> disch_then SUBST1_TAC >>
+  ‘MEM (V.rd fd, NONE)
+     (FLAT (GENLIST (λi. zipr (qacts V P ansq fin fd (qrun V P ansq fin fd (QA "") (TAKE i g)))
+                              (if i < j then (EL i g).results else [])) (SUC j)))’
+    by (simp[MEM_FLAT, MEM_GENLIST, PULL_EXISTS] >> qexists_tac ‘j’ >>
+        simp[qacts_def, zipr_def]) >>
+  drule_all MEM_sproj_rd >> simp[]
+QED
+
+(* The handler stops on a buffer that is not invalid only after reading
+   end-of-file *)
+Theorem qmachine_stopped_eof:
+  ∀j b. j ≤ LENGTH g ∧ Sq V P ansq fin fd g j = QD b ∧ P.parse b ≠ PInvalid ⇒
+        ∃i b'. i < j ∧ Sq V P ansq fin fd g i = QB b' ∧
+               OPTION_BIND (oHD (EL i g).results) V.sres = SOME Eof
+Proof
+  Induct >- simp[qrun_def] >>
+  rpt strip_tac >>
+  ‘j < LENGTH g’ by simp[] >>
+  qpat_x_assum ‘Sq _ _ _ _ _ _ (SUC j) = _’ mp_tac >>
+  drule_then (fn th => REWRITE_TAC[th]) Sq_SUC >>
+  Cases_on ‘Sq V P ansq fin fd g j’ >> simp[qstep_def]
+  >- (every_case_tac >> simp[] >> strip_tac >> gvs[])
+  >- (every_case_tac >> simp[] >> strip_tac >> gvs[] >>
+      qexists_tac ‘j’ >> simp[])
+  >> strip_tac >> gvs[] >>
+  metis_tac[DECIDE “i < j ⇒ i < SUC j”]
+QED
+
+(* So the socket part of its transcript has the read that returned
+   end-of-file *)
+Theorem qmachine_eof:
+  qok V P ansq fin fd g ∧ j ≤ LENGTH g ∧
+  Sq V P ansq fin fd g j = QD b ∧ P.parse b ≠ PInvalid ⇒
+  MEM (Read fd, SOME Eof) (sproj V (Tq V P ansq fin fd g j))
+Proof
+  strip_tac >>
+  ‘∃i b'. i < j ∧ Sq V P ansq fin fd g i = QB b' ∧
+          OPTION_BIND (oHD (EL i g).results) V.sres = SOME Eof’
+    by (irule qmachine_stopped_eof >> simp[] >> qexists_tac ‘b’ >> simp[]) >>
+  ‘prompt (qcomp V P ansq fin fd (QA "")) g ∧ j ≤ LENGTH g’ by simp[] >>
+  drule_all qmachine_trans_TAKE >> disch_then SUBST1_TAC >>
+  ‘MEM (V.rd fd, oHD (EL i g).results)
+     (FLAT (GENLIST (λi'. zipr (qacts V P ansq fin fd (qrun V P ansq fin fd (QA "") (TAKE i' g)))
+                               (if i' < j then (EL i' g).results else [])) (SUC j)))’
+    by (simp[MEM_FLAT, MEM_GENLIST, PULL_EXISTS] >> qexists_tac ‘i’ >>
+        simp[qacts_def, zipr_def]) >>
+  drule_all MEM_sproj_rd >> simp[]
+QED

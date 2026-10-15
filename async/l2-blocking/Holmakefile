@@ -1,0 +1,6 @@
+# Level 2 blocking: the HOL model (../model), the CF action layer
+# (../cf-actions, ../cf-spike) and the socket world (../ffi-spike).
+INCLUDES = ../model ../cf-spike ../cf-actions ../ffi-spike
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

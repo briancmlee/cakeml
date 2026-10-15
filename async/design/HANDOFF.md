@@ -40,7 +40,11 @@
   - `design/REVIEW-GUIDE.md` (on `spike/async-level2`, PR #3): a proposed
     headline list and open decisions; MAIN markings unchanged pending the
     user.
-  - Next if time remains: the idle loop at Level 2 (design note §12).
+  - The idle loop at Level 2 is on `spike/async-idle2` (stacked on
+    `spike/async-m2`; its PR has base `spike/async-m2`):
+    `asyncIdle2Script.sml`, with `wf2_idle2`, `quiet_idle2` and
+    `guarded2_bind2_split`, plus EVAL checks of what it waits for.
+  - Nothing else is queued. Wait for the coordinator or the user.
 - **Conventions (from the coordinator):**
   - Never kill processes you did not start. No `pkill`/`killall` or any
     pattern-based kill: other workers' Holmake and `hol lsp` processes share

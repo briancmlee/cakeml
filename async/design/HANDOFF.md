@@ -2,6 +2,27 @@
 
 ## 0. Current status (second agent; newest first; read this first)
 
+- **Branch `spike/async-closed-loop`** (stacked on `spike/async-echo-server`;
+  no PR yet) — M4 closed loop, liveness in pure HOL. State at pause:
+  - committed, green: `asyncWorld` (socket-model mirror, `closed_loop`),
+    `asyncClosedLoop` (`closed_loop_consistent`, `closed_loop_accounting`,
+    MAIN `closed_loop_safety`), `asyncProgress` (MAIN `handler_progress`:
+    readable 3 snapshots in a row ⇒ a read in those rounds unless Eof seen;
+    MAIN `server_handler_view`: each accepted fd's handler runs on a view g
+    of the server history from its accept round a, same ready sets, prompt,
+    transcript = server's filtered to fd, reads counted equal; MAIN
+    `server_accept_progress`: listener readable 2 in a row ⇒ an accept).
+  - uncommitted WIP: `model/asyncLivenessScript.sml` (world-side lemmas:
+    `perform_conn`, `perform_all_conn` proved; `tick_conn` FAILS — next:
+    debug it with the dumped heap). Plan after that: closed-loop lemmas
+    (prefix `h_m = TAKE m h_n`, snapshot ready = ready_fds of w_{j+1},
+    `prompt` and `fresh` along the loop, drain: a performed Read c makes
+    received_m = FLAT read_{m+1}, keep: no Read ⇒ incoming stays non-empty,
+    Eof invariant, echo_next: outgoing_{m+1} = FLAT read_m), then
+    `closed_loop_echo_accepted` (bound n+5), queue/accept lemma
+    (position i accepted within 3(i+1) rounds), `closed_loop_liveness`
+    (bound n + 3|q| + 5), design/09-closed-loop.md, README, PR.
+
 - **Follow-up branch `spike/async-level2`** (stacked on PR #1, which must
   stay stable; PR #2 has base `spike/async-semantics`):
   - done: `quiet_choose2`; Level 2 recursion (`asyncLoop2`: `fix2`,

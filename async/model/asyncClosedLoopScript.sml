@@ -222,13 +222,13 @@ Proof
   >> Induct >> simp[consistent_deliver1]
 QED
 
-Theorem accepted_pending[local]:
+Theorem accepted_pending:
   ∀as. accepted (MAP (λa. (a, NONE)) as) = []
 Proof
   Induct >> simp[] >> Cases >> simp[]
 QED
 
-Theorem read_pending[local]:
+Theorem read_pending:
   ∀as. read c (MAP (λa. (a, NONE)) as) = []
 Proof
   Induct >> simp[] >> Cases >> simp[]

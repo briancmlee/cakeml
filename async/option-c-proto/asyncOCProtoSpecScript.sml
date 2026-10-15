@@ -201,3 +201,153 @@ Proof
   strip_tac >> irule app_COMPI_of_approxd >> simp[] >> gen_tac >>
   metis_tac[sproto_handler2_spec_d]
 QED
+
+(* ------------------------------------------------------------------------
+   The skeleton
+   ------------------------------------------------------------------------ *)
+
+Theorem wf_relabel2_run[local]:
+  wf c.run ⇒ wf (relabel2 fa fe fr ie c).run
+Proof
+  simp[relabel2_def, wf_relabel]
+QED
+
+(* SHANDLER2 p h2 hv: the CakeML value hv implements the Level 2 model
+   handler h2, in the socket vocabulary, on every connection *)
+Definition SHANDLER2_def:
+  SHANDLER2 (p:'ffi ffi_proj) h2 hv ⇔
+    (∀fd. wf2 (h2 fd)) ∧
+    ∀fd fdv. NUM fd fdv ∧ fd < dimword(:64) ⇒
+      app p hv [fdv] emp
+        (POSTv v. &COMPI p SACT UNIT_TYPE SEV SSNAP (srelabel2 (h2 fd)) v)
+End
+
+val sserver2_prelude =
+  rpt strip_tac >> xcf_with_def asyncOCProtoProgTheory.sserver2_v_def >>
+  ‘lfd < dimword(:64)’ by simp[] >>
+  pop_assum (fn th => assume_tac th >>
+    simp_tac std_ss [Once (MATCH_MP sserver_v2_unfold th)]) >>
+  xfun ‘k1’ >>
+  xlet ‘POSTv r. &COMPI p SACT UNIT_TYPE SEV SSNAP
+                   (wait_on (n2w lfd) (λs. SOME ())) r’
+  >- (xapp_spec sreadable2_spec >> simp[]) >>
+  qmatch_goalsub_abbrev_tac ‘bind2 (wait_on _ _) G’;
+
+(* MAIN (helper): the CakeML skeleton implements srelabel2 (server_v2 idV h2
+   lfd) up to any depth n, for any handler with a spec *)
+Theorem sserver2_spec_d:
+  ∀n lfd lfdv.
+    SHANDLER2 p h2 hv ∧ NUM lfd lfdv ∧ lfd < dimword(:64) ⇒
+    app (p:'ffi ffi_proj) sserver2_v [hv; lfdv] emp
+      (POSTv v. &COMPId p SACT UNIT_TYPE SEV SSNAP n
+                  (srelabel2 (server_v2 idVu h2 lfd)) v)
+Proof
+  Induct
+  >- (sserver2_prelude >>
+      ‘app p bind2_v [r; k1] emp
+         (POSTv v. &COMPId p SACT UNIT_TYPE SEV SSNAP 0
+                     (bind2 (wait_on (n2w lfd) (λs. SOME ())) G) v)’
+        by (irule bind2_guarded_spec_0 >> simp[wait_on_running] >>
+            metis_tac[COMPI_IMP_COMPId]) >>
+      qpat_x_assum ‘app _ bind2_v _ _ _’ xapp_spec >> xsimpl) >>
+  sserver2_prelude >>
+  ‘∀fd. wf2 (h2 fd)’ by fs[SHANDLER2_def] >>
+  ‘∀x xv. UNIT_TYPE x xv ⇒
+          returns p k1 [xv] (COMPId p SACT UNIT_TYPE SEV SSNAP n (G x))’
+    by (rpt strip_tac >> simp[returns_def, Abbr ‘G’] >>
+        qpat_x_assum ‘curried _ _ k1 ∧ _’ (irule o CONJUNCT2) >>
+        xfun ‘k2’ >>
+        xlet ‘POSTv av. &SACT (Accept (n2w lfd)) av’
+        >- (xcon >> xsimpl >> gs[SACT_def]) >>
+        xlet ‘POSTv ev. &COMPI p SACT SRESP SEV SSNAP
+                          (emit2 (Accept (n2w lfd))) ev’
+        >- emit_tac “Accept (n2w lfd)” >>
+        qmatch_goalsub_abbrev_tac ‘bind2 (emit2 _) G2’ >>
+        ‘∀res resv. SRESP res resv ⇒
+           returns p k2 [resv] (COMPId p SACT UNIT_TYPE SEV SSNAP n (G2 res))’
+          by (rpt strip_tac >> simp[returns_def, Abbr ‘G2’] >>
+              qpat_x_assum ‘curried _ _ k2 ∧ _’ (irule o CONJUNCT2) >>
+              Cases_on ‘res’ >> gvs[SRESP_def]
+              >~ [‘TypeStamp «Accepted» _’]
+              >- (rename1 ‘OPTION_MAP _ ro’ >> Cases_on ‘ro’ >>
+                  gvs[OPTION_TYPE_def] >> xmatch
+                  >- (xapp >> simp[])
+                  >> rename1 ‘NUM (w2n c) cv’ >>
+                  xlet ‘POSTv sv. &COMPId p SACT UNIT_TYPE SEV SSNAP n
+                                    (srelabel2 (server_v2 idVu h2 lfd)) sv’
+                  >- (xapp >> simp[]) >>
+                  xlet ‘POSTv hv'. &COMPI p SACT UNIT_TYPE SEV SSNAP
+                                     (srelabel2 (h2 (w2n c))) hv'’
+                  >- (‘app p hv [cv] emp
+                         (POSTv v. &COMPI p SACT UNIT_TYPE SEV SSNAP
+                                     (srelabel2 (h2 (w2n c))) v)’
+                        by (gvs[SHANDLER2_def] >> first_x_assum irule >> simp[] >>
+                            qspec_then ‘c’ assume_tac w2n_lt >> fs[]) >>
+                      qpat_x_assum ‘app _ hv _ _ _’ xapp_spec >> xsimpl) >>
+                  ‘app p both2_v [hv'; sv] emp
+                     (POSTv v. &COMPId p SACT (PAIR_TYPE UNIT_TYPE UNIT_TYPE) SEV
+                                 SSNAP n (both2 (srelabel2 (h2 (w2n c)))
+                                                (srelabel2 (server_v2 idVu h2 lfd))) v)’
+                    by (irule both2_spec_d >>
+                        simp[COMPI_IMP_COMPId] >>
+                        ‘wf2 (server_v2 idVu h2 lfd)’ by simp[wf2_server_v2] >>
+                        fs[wf2_def, relabel2_def, wf_relabel]) >>
+                  xlet ‘POSTv bv. &COMPId p SACT (PAIR_TYPE UNIT_TYPE UNIT_TYPE) SEV
+                                    SSNAP n (both2 (srelabel2 (h2 (w2n c)))
+                                                   (srelabel2 (server_v2 idVu h2 lfd))) bv’
+                  >- (qpat_x_assum ‘app _ both2_v _ _ _’ xapp_spec >> xsimpl) >>
+                  xfun ‘f’ >>
+                  ‘app p map2_v [f; bv] emp
+                     (POSTv v. &COMPId p SACT UNIT_TYPE SEV SSNAP n
+                                 (map2 (λp. ()) (both2 (srelabel2 (h2 (w2n c)))
+                                                  (srelabel2 (server_v2 idVu h2 lfd)))) v)’
+                    by (irule map2_spec_d >>
+                        qexists_tac ‘PAIR_TYPE UNIT_TYPE UNIT_TYPE’ >> simp[] >>
+                        rpt strip_tac >> simp[returns_def] >>
+                        qpat_x_assum ‘curried _ _ f ∧ _’ (irule o CONJUNCT2) >>
+                        xcon >> xsimpl) >>
+                  qpat_x_assum ‘app _ map2_v _ _ _’ xapp_spec >> xsimpl) >>
+              xmatch >> xapp >> simp[]) >>
+        ‘app p bind2_v [ev; k2] emp
+           (POSTv v. &COMPId p SACT UNIT_TYPE SEV SSNAP n
+                       (bind2 (emit2 (Accept (n2w lfd))) G2) v)’
+          by (irule bind2_spec_d >> simp[emit2_running] >>
+              qexists_tac ‘SRESP’ >> simp[COMPI_IMP_COMPId] >> metis_tac[]) >>
+        qpat_x_assum ‘app _ bind2_v _ _ _’ xapp_spec >> xsimpl) >>
+  ‘app p bind2_v [r; k1] emp
+     (POSTv v. &COMPId p SACT UNIT_TYPE SEV SSNAP (SUC n)
+                 (bind2 (wait_on (n2w lfd) (λs. SOME ())) G) v)’
+    by (irule bind2_guarded_spec_d >> simp[wait_on_running] >>
+        qexists_tac ‘UNIT_TYPE’ >> simp[COMPI_IMP_COMPId] >> metis_tac[]) >>
+  qpat_x_assum ‘app _ bind2_v _ _ _’ xapp_spec >> xsimpl
+QED
+
+(* MAIN: for any handler value implementing a Level 2 model handler, the
+   CakeML skeleton implements srelabel2 (server_v2 idV h2 lfd) *)
+Theorem sserver2_spec:
+  SHANDLER2 p h2 hv ∧ NUM lfd lfdv ∧ lfd < dimword(:64) ⇒
+  app (p:'ffi ffi_proj) sserver2_v [hv; lfdv] emp
+    (POSTv v. &COMPI p SACT UNIT_TYPE SEV SSNAP (srelabel2 (server_v2 idVu h2 lfd)) v)
+Proof
+  strip_tac >> irule app_COMPI_of_approxd >> simp[] >>
+  metis_tac[sserver2_spec_d]
+QED
+
+(* MAIN: the Level 2 protocol server in CakeML implements the model's
+   (HTTP instance), in the socket vocabulary *)
+Theorem sproto_server2_spec:
+  PROTO_IMPL R P resp parsev respv ∧ NUM lfd lfdv ∧ lfd < dimword(:64) ⇒
+  app (p:'ffi ffi_proj) proto_server2_v [parsev; respv; lfdv] emp
+    (POSTv v. &COMPI p SACT UNIT_TYPE SEV SSNAP
+                (srelabel2 (proto_server_v2 idVu P (K (NONE : unit option))
+                              (λr (k : unit option). resp r) lfd)) v)
+Proof
+  rpt strip_tac >> xcf_with_def asyncOCProtoProgTheory.proto_server2_v_def >>
+  xfun ‘h’ >> simp[proto_server_v2_def] >>
+  xapp_spec sserver2_spec >>
+  simp[SHANDLER2_def, wf2_proto_handler_v2] >> rpt strip_tac >>
+  qpat_x_assum ‘curried _ _ h ∧ _’ (irule o CONJUNCT2) >>
+  xlet ‘POSTv bv. &LIST_TYPE CHAR "" bv’
+  >- (xcon >> xsimpl >> simp[LIST_TYPE_def]) >>
+  xapp_spec sproto_handler2_spec >> simp[] >> metis_tac[]
+QED

@@ -24,12 +24,15 @@ Kept current at every commit.
 - DONE Phase 3a (branch `spike/proto-live`, stacked on
   spike/proto-server): asyncProtoMachine, asyncProtoDrain,
   asyncProtoEnvLive (`proto_env_live`: handler_live with henv spelled out).
-- NEXT Phase 3b: when m4-server pushes `spike/sw-live` (theory
-  asyncSWLive: hread, henv, handler_live, sw_live), merge it and prove
-  `proto_handler_live` by unfolding to `proto_env_live`. Then
-  asyncProtoLive = sw_live instance, giving `proto_live` for the trace.
-  Agreed bound: B D = (LENGTH D + 2) * (LENGTH (proto_all P D) + 3).
-- THEN Phase 4: generic CakeML handler and CF spec (§2.4).
+- DONE Phase 3b (branch `spike/proto-handler-live` = spike/proto-live +
+  merge of m4-server's spike/sw-live): asyncProtoLive (`proto_handler_live`,
+  `proto_live_rounds`) and `asyncProtoLiveVia{Strict,H,B}` (`http_live_X_via_proto`).
+- IN PROGRESS Phase 4 (branch `spike/proto-cakeml`, stacked on
+  spike/proto-live, NOT on proto-handler-live): asyncProtoProg (the generic
+  CakeML handler, higher-order in parse/respond) and asyncProtoSockSpec
+  (`sproto_handler_spec`, `sproto_server_spec`, with hypothesis PROTO_IMPL).
+  Next: an instance (P_b) translated into presult, the generic whole-program
+  theorem, and `http_prog_b_spec`'s twin.
 - Not mine any more: cause-of-actions (async-spike's `hok_cause`).
 
 ## Gotchas (phase 3)

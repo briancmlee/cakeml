@@ -38,7 +38,7 @@ QED
 (*---------------------------------------------------------------------------*)
 (* The marshalling functions invert the FFI's encodings *)
 
-Theorem CHR_o_w2n[local]:
+Theorem CHR_o_w2n:
   CHR o w2n = byte_char
 Proof
   simp [FUN_EQ_THM, byte_char_def]

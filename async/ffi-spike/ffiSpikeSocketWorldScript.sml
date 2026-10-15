@@ -185,14 +185,14 @@ Proof
   \\ metis_tac [socket_name_not_clock_world_name]
 QED
 
-Theorem ALOOKUP_MAP_const[local]:
+Theorem ALOOKUP_MAP_const:
   ∀ns. ALOOKUP (MAP (λn. (n,b)) ns) k = if MEM k ns then SOME b else NONE
 Proof
   Induct \\ rw [] \\ gvs []
 QED
 
 (* Updating the same keys twice: the second update wins. *)
-Theorem FUPDATE_LIST_same_keys[local]:
+Theorem FUPDATE_LIST_same_keys:
   fm |++ MAP (λn. (n,a)) ns |++ MAP (λn. (n,b)) ns =
   fm |++ MAP (λn. (n,b)) ns
 Proof

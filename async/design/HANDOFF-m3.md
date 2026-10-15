@@ -60,3 +60,13 @@ Kept current at every commit. Read with the coordinator's brief and
 - hol-lsp diagnostics/goalState worked well on these mid-size proofs; the
   FAIL_TAC-with-goal trick (HANDOFF-reactive.md) also helps inside `by`
   if `by` is replaced by `sg ... >-` (BasicProvers.by drops the message).
+
+## Final report (2026-10-15)
+
+- **PR:** https://github.com/briancmlee/cakeml/pull/16 (spike/m3-assembly → spike/cf-reactive;
+  merges spike/cfdiv-multipart).
+- Route: direct Socket calls per action in the single socket FFI part.
+- Proved: `strace_actions_rounds`, `step_spec`, `run_spec`, `srun_ok_accept3`,
+  `main_spec`, `m3_semantics` (whole program diverges with the
+  round-by-round socket trace), `m3_trace_actions`. No cheats; Holmake green.
+- Next for the project: the echo handler as the example (13 §3).

@@ -48,14 +48,10 @@
      are blocking, and sock_write loops until everything is sent.  A client
      that never reads can therefore stall the server.
    - time: the model's poll delivers one step of an arbitrary schedule of
-     arrivals.  How long the real poll waits is therefore unobservable in
-     the model.  This file waits only when the program is idle: no socket
-     operation since the last poll and the same ready set for IDLE_ROUNDS
-     polls in a row.  Then it waits (at most IDLE_WAIT_MS) for an fd that
-     was not ready to become ready.  Otherwise the loop would spin.
-     Compiling with -DNO_IDLE_WAIT turns this wait off: sock_poll then
-     never waits, exactly as the model's poll (one round per call).  The
-     blocking program does not need the wait (it sleeps in sock_select).
+     arrivals, and returns at once.  sock_poll does the same: it never
+     waits (poll with timeout 0).  A program that polls in a loop
+     therefore busy-polls while it is idle; the blocking program sleeps
+     in sock_select instead.
    - closing: the model has no close, so fds are never closed.  A closed
      connection stays ready (EOF) and stays in the loop's interest list.
 */
@@ -73,8 +69,6 @@
 #include <unistd.h>
 
 #define LFD 3
-#define IDLE_ROUNDS 2
-#define IDLE_WAIT_MS 50
 #define MAX_FDS 4096
 
 static void die(const char *msg) {
@@ -118,13 +112,6 @@ __attribute__((constructor)) static void make_listener(void) {
   fprintf(stderr, "echo server: listening on 127.0.0.1:%d\n", port);
 }
 
-/* Set by accept/read/write, cleared by poll: did the program do anything
-   since the last poll? */
-static int busy = 1;
-static int idle_polls = 0;
-static unsigned char last_ready[MAX_FDS];
-static long last_n = -1;
-
 /* The ready flags of fds[0..n), without waiting */
 static void ready_now(struct pollfd *pfds, long n, unsigned char *flags) {
   if (poll(pfds, n, 0) < 0 && errno != EINTR) die("poll");
@@ -141,29 +128,11 @@ void ffisock_poll(unsigned char *c, long clen, unsigned char *a, long alen) {
   struct pollfd pfds[MAX_FDS];
   for (long i = 0; i < n; i++) { pfds[i].fd = (int)get_fd(c + 8 * i); pfds[i].events = POLLIN; }
   ready_now(pfds, n, a);
-  int same = (n == last_n) && memcmp(a, last_ready, n) == 0;
-  idle_polls = (!busy && same) ? idle_polls + 1 : 0;
-#ifdef NO_IDLE_WAIT
-  if (0) {
-#else
-  if (idle_polls >= IDLE_ROUNDS) {
-#endif
-    /* idle: wait for one of the fds that are not ready to become ready */
-    struct pollfd wait[MAX_FDS];
-    long m = 0;
-    for (long i = 0; i < n; i++) if (!a[i]) wait[m++] = pfds[i];
-    if (poll(wait, m, IDLE_WAIT_MS) < 0 && errno != EINTR) die("poll");
-    ready_now(pfds, n, a);
-  }
-  memcpy(last_ready, a, n);
-  last_n = n;
-  busy = 0;
 }
 
 /* ffi_sock_accept: a[0] = 1 and a[1..8] = the new fd, or a[0] = 0 */
 void ffisock_accept(unsigned char *c, long clen, unsigned char *a, long alen) {
   if (clen != 8 || alen != 9) { errno = EINVAL; die("sock_accept: lengths"); }
-  busy = 1;
   int fd = accept((int)get_fd(c), NULL, NULL);
   if (fd < 0) {
     if (errno == EBADF || errno == ENOTSOCK || errno == EINVAL) die("sock_accept");
@@ -183,7 +152,6 @@ void ffisock_accept(unsigned char *c, long clen, unsigned char *a, long alen) {
 /* ffi_sock_read: at most alen - 9 bytes */
 void ffisock_read(unsigned char *c, long clen, unsigned char *a, long alen) {
   if (clen != 8 || alen <= 9) { errno = EINVAL; die("sock_read: lengths"); }
-  busy = 1;
   ssize_t r = recv((int)get_fd(c), a + 9, alen - 9, MSG_DONTWAIT);
   if (r > 0) { a[0] = 0; put_be8(a + 1, (uint64_t)r); }
   else if (r == 0) a[0] = 2;                              /* EOF */
@@ -195,7 +163,6 @@ void ffisock_read(unsigned char *c, long clen, unsigned char *a, long alen) {
 /* ffi_sock_write: all of c[8..clen) to the fd in c[0..8) */
 void ffisock_write(unsigned char *c, long clen, unsigned char *a, long alen) {
   if (clen < 8) { errno = EINVAL; die("sock_write: lengths"); }
-  busy = 1;
   int fd = (int)get_fd(c);
   long off = 8;
   while (off < clen) {

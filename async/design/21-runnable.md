@@ -132,6 +132,8 @@ What I did:
       with an emit.
     - The benchmarks show no 50 ms stalls, and an idle server uses ~0%
       CPU.
+    - (Later removed: `sock_poll` no longer waits at all, matching the
+      model; see 24 §4.)
   - *Closing.* The model has no `close`, so fds are never closed. A
     finished connection stays in the interest list (the loop only adds),
     and it stays ready with EOF.
@@ -274,4 +276,4 @@ show the route. For this program it would take:
 4. **The listener is created by C, as fd 3**, so the CakeML program
    matches the model's initial world.
 5. **The C side's idle wait** (§3) is a scheduling choice that is
-   unobservable in the model.
+   unobservable in the model. (Later removed; see 24 §4.)

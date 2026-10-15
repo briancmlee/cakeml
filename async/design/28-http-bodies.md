@@ -84,8 +84,11 @@ The handler's `hok` (it only touches its own fd) is a 5-line port.
 1. **Method.** `"GET "` or `"POST "`: a prefix of either is incomplete,
    anything else is invalid.
 2. **Request line and header lines.** As `parse_hrequest`, reusing
-   `split_path`, the version constants and `parse_headers` (proved in
-   asyncHttpParseH).
+   `split_path`, `split_at` and the version constants. The header lines
+   are parsed by its own `parse_bheaders` (asyncHttpParseB): the H
+   parser's body before spike/http-nobody (#48) made it reject the
+   body-framing headers. It matches `valid_bheader`, so the bodies
+   pipeline does not depend on asyncHttpParseH's `parse_headers`.
 3. **On `HDone hs rest`:**
    - any `Transfer-Encoding`, or two or more `Content-Length` headers →
      invalid;
@@ -165,19 +168,24 @@ exponential in the distance to the separator.
   "eventually", so no theorem is wrong.
 - **Other servers:** the header-tolerant and strict running servers have
   the same problem with long header values, such as browser User-Agents.
-- **Fix (asyncHttpSockProgB):** `split_at2`, `split_path2` and
-  `parse_headers2` share the recursive call. They are proved equal to the
-  originals (`split_at2_eq`, `split_path2_eq`, `parse_headers2_eq`,
-  `bline2_eq`), and `parse_brequest` is translated through them
+- **Fix:** `split_at2` (asyncHttpSockProgH, from spike/http-h-linear)
+  and `split_path2` (asyncHttpSockProg) share the recursive call and are
+  proved equal to the originals (`split_at2_eq`, `split_path2_eq`).
+  asyncHttpSockProgB adds `parse_bheaders2`, the bodies header parser
+  written with `split_at2` (`parse_bheaders2_eq`), and `bline2`
+  (`bline2_eq`), and translates `parse_brequest` through them
   (`parse_brequest_lin`). No theorem about the parser changes; only the
   compiled code becomes linear.
 
-The same translation-only fix applies to the H server (m4-server is
-porting it).
+Originally this branch carried its own `split_at2`/`split_path2`. After
+merging spike/http-h-linear (#54, which includes #48) it reuses the
+ancestors' versions and keeps only the bodies-specific
+`parse_bheaders2`.
 
 **Translator notes:**
-- `toLower` has no basis translation. It is translated here, with its
-  `CHR` side condition discharged.
+- `toLower` has no basis translation. It is translated in
+  asyncHttpSockProgH, with its `CHR` side condition discharged, and
+  reused here.
 - `FOLDL` has no translation, so `dec_fold` is translated through
   `dec_acc`.
 - An unguarded `ORD c - 48` gives a precondition; it is guarded instead.
@@ -215,7 +223,8 @@ The transcript shows:
 5. **Methods are GET and POST only.**
 6. **Own header validity (`valid_bheader`)**: today's character rules,
    decoupled from HttpSpecHeaders' `valid_header` (spike/http-nobody
-   restricts it).
+   restricts it). The parser follows suit: its own `parse_bheaders`
+   (option R1), not asyncHttpParseH's `parse_headers`.
 7. **Copies, not generalization**, as in 24 and 26: the bodies pipeline
    is a `_b` copy with the new parser. The H and strict pipelines stay
    untouched.

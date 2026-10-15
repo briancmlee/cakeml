@@ -1,6 +1,8 @@
 # Generated from the review-series layout (see REVIEW-SERIES-PLAN.md).
-INCLUDES = ../../model/core \
+INCLUDES = ../../cakeml/library \
+           ../../model/core \
            ../../model/level2 \
+           ../closed-loop \
            ../echo \
            ../../spec \
            ../../world/sockets

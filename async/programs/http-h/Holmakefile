@@ -5,7 +5,9 @@ INCLUDES = ../../cakeml/approx \
            ../../model/core \
            ../../model/level2 \
            ../echo \
+           ../echo-live \
            ../http \
+           ../../servers/closed-loop \
            ../../servers/echo \
            ../../servers/http \
            ../../servers/relabel \

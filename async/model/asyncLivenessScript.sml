@@ -866,3 +866,78 @@ Proof
   >> impl_tac >- simp[]
   >> disch_then (qspecl_then [‘N’, ‘hN’, ‘wN’, ‘pN’] mp_tac) >> simp[]
 QED
+
+(* What has been written to a connection only grows *)
+Theorem outgoing_later:
+  closed_loop (server lfd) (start_world lfd sch) m = (h, w, perf) ∧
+  closed_loop (server lfd) (start_world lfd sch) N = (h', w', perf') ∧ m ≤ N ∧
+  ALOOKUP w.conns c = SOME cn ∧ ALOOKUP w'.conns c = SOME cn' ⇒
+  cn.outgoing ≼ cn'.outgoing
+Proof
+  strip_tac
+  >> qspecl_then [‘server lfd’, ‘start_world lfd sch’, ‘m’, ‘N − m’, ‘h’, ‘w’, ‘perf’,
+                  ‘h'’, ‘w'’, ‘perf'’] mp_tac (Q.GENL [‘m’, ‘w0’, ‘n’] closed_loop_prefix)
+  >> simp[] >> strip_tac
+  >> qpat_assum ‘closed_loop _ _ m = _’ (mp_tac o MATCH_MP closed_loop_consistent)
+  >> qpat_assum ‘closed_loop _ _ N = _’ (mp_tac o MATCH_MP closed_loop_consistent)
+  >> simp[consistent_def] >> rpt strip_tac
+  >> res_tac >> simp[]
+  >> qpat_x_assum ‘perf ≼ perf'’ (strip_assume_tac o REWRITE_RULE[IS_PREFIX_APPEND])
+  >> simp[]
+QED
+
+(* Every connection known at round n has been handed out by round n + 3 q *)
+Theorem handed_out_by:
+  closed_loop (server lfd) (start_world lfd sch) n = (h, w, perf) ∧
+  ALOOKUP w.conns c = SOME cn ∧ w.listeners = [(lfd, q)] ⇒
+  ∃M hM wM pM. n ≤ M ∧ M ≤ n + 3 * LENGTH q ∧
+     closed_loop (server lfd) (start_world lfd sch) M = (hM, wM, pM) ∧
+     MEM c (accepted (sperf pM))
+Proof
+  strip_tac
+  >> qpat_assum ‘closed_loop _ _ n = _’ (strip_assume_tac o MATCH_MP conns_known)
+  >> gvs[] >> first_x_assum (qspec_then ‘c’ mp_tac) >> simp[] >> strip_tac
+  (* already handed out *)
+  >- (qexistsl_tac [‘n’, ‘h’, ‘w’, ‘perf’] >> simp[])
+  (* pending, with l1 ahead of it *)
+  >> qpat_x_assum ‘MEM c q’ (strip_assume_tac o REWRITE_RULE[MEM_SPLIT]) >> gvs[]
+  >> Cases_on ‘closed_loop (server lfd) (start_world lfd sch) (n + 3 * (LENGTH l1 + 1))’
+  >> PairCases_on ‘r’ >> rename1 ‘_ = (hM, wM, pM)’
+  >> qexistsl_tac [‘n + 3 * (LENGTH l1 + 1)’, ‘hM’, ‘wM’, ‘pM’] >> simp[]
+  >> qspecl_then [‘LENGTH l1’, ‘n’, ‘h’, ‘w’, ‘perf’, ‘l1’, ‘l2’] mp_tac queue_progress
+  >> impl_tac >- simp[]
+  >> disch_then (qspecl_then [‘n + 3 * (LENGTH l1 + 1)’, ‘hM’, ‘wM’, ‘pM’] mp_tac)
+  >> simp[]
+QED
+
+(* MAIN: liveness of the echo server in the closed loop.  On every
+   connection, everything that has arrived by round n has been written back
+   to it by round n + 3 q + 5, where q is the number of connections pending
+   on the listener at round n.  No assumption is needed beyond the world
+   model itself (see design/09-closed-loop.md). *)
+Theorem closed_loop_liveness:
+  closed_loop (server lfd) (start_world lfd sch) n = (h, w, perf) ∧
+  ALOOKUP w.conns c = SOME cn ∧ w.listeners = [(lfd, q)] ∧
+  n + 3 * LENGTH q + 5 ≤ N ∧
+  closed_loop (server lfd) (start_world lfd sch) N = (hN, wN, pN) ⇒
+  ∃cnN. ALOOKUP wN.conns c = SOME cnN ∧ cn.received ≼ cnN.outgoing
+Proof
+  strip_tac
+  (* c is handed out by some round M ≤ n + 3 q *)
+  >> drule_all handed_out_by >> strip_tac
+  (* what had arrived by round n had arrived by round M *)
+  >> qspecl_then [‘M − n’, ‘hM’, ‘wM’, ‘pM’] mp_tac received_later
+  >> impl_tac >- simp[] >> strip_tac
+  (* and is written back by round M + 5 *)
+  >> Cases_on ‘closed_loop (server lfd) (start_world lfd sch) (M + 5)’
+  >> PairCases_on ‘r’ >> rename1 ‘_ = (h5, w5, p5)’
+  >> qspecl_then [‘M’, ‘hM’, ‘wM’, ‘pM’, ‘cn'’, ‘h5’, ‘w5’, ‘p5’] mp_tac
+       (Q.GENL [‘n’, ‘h’, ‘w’, ‘perf’, ‘cn’, ‘h5’, ‘w5’, ‘p5’] closed_loop_echo_accepted)
+  >> simp[] >> strip_tac
+  (* so by round N *)
+  >> qspecl_then [‘N − n’, ‘hN’, ‘wN’, ‘pN’] mp_tac received_later
+  >> impl_tac >- simp[] >> strip_tac >> qexists_tac ‘cn''’ >> simp[]
+  >> qspecl_then [‘M + 5’, ‘h5’, ‘w5’, ‘p5’, ‘N’, ‘hN’, ‘wN’, ‘pN’, ‘cn5’, ‘cn''’] mp_tac
+       (Q.GENL [‘m’, ‘h’, ‘w’, ‘perf’, ‘N’, ‘h'’, ‘w'’, ‘perf'’, ‘cn’, ‘cn'’] outgoing_later)
+  >> simp[] >> metis_tac[IS_PREFIX_TRANS]
+QED

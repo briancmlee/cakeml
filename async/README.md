@@ -31,6 +31,7 @@ scheduler they run on, against a model of the outside world.
 | `asyncLevel2Script.sml` | Level 2: declared interest, erasure to Level 1, "no progress without a ready event" |
 | `asyncLoop2Script.sml` | recursion at Level 2 |
 | `asyncEcho2Script.sml` | the echo loop at Level 2: it erases to the Level 1 loop and is quiet |
+| `asyncIdle2Script.sml` | the idle-deadline loop at Level 2: quiet, so a scheduler may block until the fd is readable or the timer fires |
 | `asyncSchedScript.sml` | M2: the scheduler as a pure step function; tasks never lost; composition with the M1 semantics |
 | `asyncSched2Script.sml` | M2: no busy-waiting: a scheduler that blocks through idle rounds behaves like one that polls every round |
 

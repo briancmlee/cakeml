@@ -138,7 +138,8 @@ QED
 Theorem sock_do_sched_wf:
   sched_wf s ∧ sock_do s a = SOME (r, s') ⇒ sched_wf s'
 Proof
-  Cases_on ‘a’ >> rw[sock_do_def] >> metis_tac[sched_wf_preserved]
+  Cases_on ‘a’ >> rw[sock_do_def] >> TRY (PairCases_on ‘z’) >> gvs[]
+  >> drule sched_wf_preserved >> rw[] >> res_tac
 QED
 
 Theorem sock_acts_sched_wf:
@@ -159,10 +160,10 @@ Proof
        by (rw[gmid_def, sock_acts_tot_def] >> gvs[grun_ok_def]
            >> first_x_assum (qspec_then ‘n’ mp_tac)
            >> CASE_TAC >> simp[] >> PairCases_on ‘x’ >> simp[]
-           >> metis_tac[sock_acts_sched_wf])
-  >> Induct >> simp[]
-  >- simp[gstate_def, grounds_def]
-  >> simp[gstate_SUC] >> metis_tac[sched_wf_tick]
+           >> drule_all sock_acts_sched_wf >> simp[])
+  >> ‘∀n. sched_wf (gstate ifds m s0 n)’ suffices_by simp[]
+  >> Induct >- simp[gstate_def, grounds_def]
+  >> simp[gstate_SUC] >> irule sched_wf_tick >> simp[]
 QED
 
 (* MAIN: so every arrival delivered in the run is effective (the world

@@ -19,10 +19,13 @@ the code.
 | 9. HTTP | 18-http-model, 20-http-impl, 23-http-safety, 24-http-headers, 25-http-liveness, 26-http-liveness-h, 27-http-nobody |
 | 10. it runs | 21-runnable, 24-blocking-runnable, 22-machine-code §3 |
 
-Two notes share number 25: they were written in parallel. Note 24 §4
-describes the trusted C's 50 ms idle wait in `sock_poll`; it has since
-been removed (21, update), so `socket_ffi.c` does exactly what the model
-says.
+Two notes share number 25: they were written in parallel.
+
+The trusted C's 50 ms idle wait in `sock_poll` (21 §3, 24 §4) has since
+been removed (PR #50), so `socket_ffi.c` does exactly what the model says.
+The version of note 24 here is the one from the live-fd fix (#46), written
+before that removal; 21's "see 24 §4" refers to #50's revision of note 24,
+on `spike/no-idle-wait`.
 
 Not in the series, but kept on the spike branches: the world-as-async
 experiment (note 12, `spike/world-as-async`, `spike/world-async-multi`),

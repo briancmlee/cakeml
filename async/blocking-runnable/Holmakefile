@@ -4,9 +4,9 @@
 # polling program).
 INCLUDES = ../model ../cf-spike ../cf-actions ../cf-reactive ../ffi-spike \
            ../m3-assembly ../m4-server ../m4-common ../spec ../m4-safety \
-           ../m4-blocking ../runnable $(CAKEMLDIR)/semantics
+           ../m4-blocking ../m4-blocking-live ../runnable $(CAKEMLDIR)/semantics
 ifdef POLY
 HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
 endif
 
-EXTRA_CLEANS = echo_blocking.sexp
+EXTRA_CLEANS = echo_blocking.sexp echo_live.sexp

@@ -22,6 +22,7 @@ this file plus the coordinator's original brief.
   - `asyncCfActWorldScript.sml`: pure HOL: the FFI model, the snapshot
     sequence the world provides, and the trace/model link.
   - `asyncCfActLoopScript.sml`: the CakeML event loop and its cfDiv spec.
+  - `asyncCfActBothModelScript.sml`, `asyncCfActBothScript.sml`: `both`.
 - Docs: this file; `async/design/05-cf-actions.md` (to be written).
 
 ## Representation (decided, see the comment at the top of asyncCfActProg)
@@ -51,7 +52,11 @@ Snapshots are CakeML triples `(ready, now, results)` (`SNAPSHOT READY R`).
   the model's log after the world's snapshots), `do_act_spec`,
   `perform_spec`, `get_ready_spec`, `step_spec`, `run_spec` (MAIN: the loop
   diverges with trace `LFLATTEN (LGENLIST (λi. fromList (round_events m ws i)) NONE)`).
-- TODO next: both (step 3, in progress or estimate); 05-cf-actions.md; PR.
+- DONE (step 3, part): `both`. `asyncCfActBothModelScript.sml`
+  (`suspended_both`, from the model's `both_split`; `both_finished_finished`)
+  and `asyncCfActBothScript.sml` (CakeML `both`, `both_spec_n`, `both_spec`).
+- NOT DONE: `choose` (estimated and deferred, see 05-cf-actions.md).
+- TODO next: 05-cf-actions.md; PR.
 
 ## Plan for the event loop (step 4)
 
@@ -83,6 +88,12 @@ by recorded PID; no cheats in commits.
 - `xcf_div` + `xapp` worked in hol-lsp this time (unlike in HANDOFF-cf.md),
   maybe because the step function's spec was used via `xapp_spec` on an
   assumption, or because of the basis heap.
+- Debugging tactics stored in SML `val`s is painful: an error inside
+  `FIRST [t1, t2]` or a tactic function is reported at the theorem's first
+  line, and goalState can't look inside. I inlined the tactic temporarily to
+  step through it. A "goal state at the failing step of a named tactic" view
+  would help.
+- `K` is the K combinator (an `Abbr ‘K’` failed with "Ill-formed quotation").
 - BSD `sed -E` has no `\b`; a rename of `IO` (which clashes with the
   basis's `IO`) silently missed the definition label. Not a HOL issue.
 

@@ -1,7 +1,9 @@
 # Quiescence for the echo server (option C; design/33).
 INCLUDES = ../../model/core ../../model/level2 ../../model/sched \
            ../../servers/echo ../../servers/closed-loop ../../servers/relabel \
-           ../../spec ../../world/sockets ../../programs/echo-blocking
+           ../../spec ../../world/sockets ../../world/clock ../../world/composed \
+           ../../cakeml/library ../../loop/polling \
+           ../../programs/echo ../../programs/echo-live ../../programs/echo-blocking
 ifdef POLY
 HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
 endif

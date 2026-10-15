@@ -28,17 +28,40 @@ module, an async library, an event loop and a concurrent server. It
 compiles and runs (below).
 
 Alongside:
-- **a blocking version** that sleeps in `select`, proved to refine the
-  headline (`echo_blocking_spec`);
-- **an HTTP server** that tolerates request headers. It meets the safety
-  half of a header-tolerant HTTP specification (`http_prog_h_safe`).
+- **a blocking version** that sleeps in `select` on the listener and the
+  live connections only. It is proved to refine the headline
+  (`echo_live_spec`), and it idles at 0.0% CPU;
+- **an HTTP server** that tolerates request headers. It meets a
+  header-tolerant HTTP specification **in full**, safety and liveness:
+
+  ```
+  (* headline/asyncHttpSpecHScript.sml *)
+  Theorem http_prog_h_spec:
+    http_spec_h 3w demo_files http_prog_h
+  ```
+
+**Polling and blocking.** The trusted C (`runnable/socket_ffi.c`) does
+exactly what the model says: `sock_poll` is one `poll(2)` with timeout 0.
+So the polling headline busy-polls while idle, and the verified blocking
+refinement idles at 0.0%:
+
+| server | idle, before any client | light load | idle, after a client left |
+|---|---|---|---|
+| `echo_live` (blocking, `echo_live_spec`) | 0.0% | 0.1% | 0.0% |
+| `echo_polling` (the headline program) | 26.0% | 15.9% | 67.3% |
+
+CPU% is process CPU time over wall time, in 30 s phases, from a background
+session that throttles busy polling (a C busy-polling loop measures
+13–16% there). The blocking row is from
+`runnable/echo-blocking/cpu-results.txt` (#46), and the polling row is
+from `cpu-results-no-idle-wait.txt` (#50, the C as it is now).
 
 ## What you have to trust
 
 | file | what it says |
 |---|---|
 | `spec/EchoSpecScript.sml` | the sockets-only FFI oracle, per-connection projections of raw I/O events, `echo_safe`, `echo_live`, `echo_spec` |
-| `spec/HttpSpecHeadersScript.sml` (with HttpSpec's paths, files and response printer from `spec/HttpSpecScript.sml`) | requests with any headers, `http_safe_h`, `http_live_h`, `http_spec_h` |
+| `spec/HttpSpecHeadersScript.sml` (with HttpSpec's paths, files and response printer from `spec/HttpSpecScript.sml`) | GET requests with any headers except body-framing ones (no request bodies), `http_safe_h`, `http_live_h`, `http_spec_h` |
 | `world/sockets/ffiSpikeSocketFFIScript.sml` | the socket world: listeners, connections, a schedule of future arrivals; the byte-level FFI functions |
 | `world/sockets/ffiSpikeSocketFairScript.sml` | fairness of schedules (`sched_wf`, used by `server_world`) |
 | CakeML | the source semantics (`semantics_prog`) and its I/O events |
@@ -50,7 +73,7 @@ of them appears in the statement.
 
 ## Why you should believe it
 
-- **No cheats.** There are 115 theory files and about 29,000 lines of
+- **No cheats.** There are 129 theory files and about 34,000 lines of
   HOL4. None contains a `cheat`, and each directory builds with `Holmake`
   on top of CakeML's basis.
 - **The spec bites.** `spec/EchoSpecBiteScript.sml` proves that the
@@ -63,6 +86,7 @@ of them appears in the statement.
 
   `spec/HttpSpecHeadersBiteScript.sml` does the same for HTTP. It covers
   letting a header change the response, answering before the blank line,
+  answering a request that carries a body (`broken_answers_body_request`),
   and never answering. It also shows that curl's default request is a
   valid request (`curl_request`).
 - **The spec is not vacuous.** A fair world exists
@@ -94,9 +118,7 @@ Hello from a verified CakeML HTTP server!
 - **Speed.** The echo server reaches 60–70% of the throughput of a
   trivial Python asyncio server (`runnable/echo/bench-results.txt`). This
   is not a careful benchmark.
-- **CPU** (`runnable/echo-blocking/cpu-results.txt`):
-  - the blocking server sleeps (0.0%) while idle and under light load;
-  - a polling server faithful to the model busy-waits.
+- **CPU:** see the table above.
 
 ## The key design idea
 
@@ -119,16 +141,13 @@ Hello from a verified CakeML HTTP server!
 - So a scheduler may block, and it behaves exactly like one that polls
   (`model/sched/asyncSched2`).
 - The same holds for CakeML's event loop: the `select` loop is equivalent
-  to polling (`loop/blocking-l2`), and the blocking echo program refines
-  the polling one (`echo_blocking_spec`).
+  to polling (`loop/blocking-l2`, `brun_two_outcomes`), and the blocking
+  echo program refines the polling one (`echo_live_spec`).
 
 ## Honest limitations
 
-- **HTTP liveness is in progress.** HTTP has the safety half
-  (`http_prog_h_safe`); `http_live_h` is being proved.
-- **The blocking server spins after a client disconnects.** The loop's
-  interest list only grows, and a closed connection stays ready (EOF). A
-  fix that selects only on live connections is in progress.
+- **This HTTP subset has no request bodies.** Requests with
+  Content-Length or Transfer-Encoding are not answered.
 - **No `close`.** The socket model has no `close`, so finished
   connections are never closed and a long-running server leaks fds. A v2
   with `close` and fd reuse is in progress.

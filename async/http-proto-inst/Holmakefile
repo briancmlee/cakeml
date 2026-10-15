@@ -1,0 +1,11 @@
+# The three existing HTTP parsers as instances of the generic protocol
+# interface (../http-proto): proto_ok from their existing lemmas, and each
+# trusted spec as proto_spec by an equality lemma (design/32, phase 1).
+INCLUDES = ../model ../cf-spike ../cf-actions ../cf-reactive ../ffi-spike \
+           ../m3-assembly ../m4-server ../m4-common ../spec ../m4-safety \
+           ../runnable ../machine-code ../http-model ../http-impl ../http-safety \
+           ../headline ../http-headers ../m4-liveness ../http-liveness ../http-liveness-h \
+           ../http-bodies ../http-proto
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

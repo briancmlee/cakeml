@@ -1,10 +1,14 @@
 # 35: The endpoint socket world (SPEC FIRST, for your review)
 
-Status: **statements only; they typecheck, nothing is cheated.** Unproved
-claims are *definitions* of propositions (`v1_instance`, `echo_sym_equiv`,
-`projection`, ...), the way `echo_spec2` was. They are to be proved after
-your review. The theorems proved so far are the specialisation lemmas,
-which are easy.
+Status: **round 2.** Nothing is cheated. Unproved claims are
+*definitions* of propositions (`echo_sym_equiv`, `projection`, ...), the
+way `echo_spec2` was. Proved in round 2 (§4, "Round 2 results"):
+- `same_answers_semantics`;
+- `v2_instance`;
+- the refutation of `v1_instance`;
+- `never_polls_bite`.
+
+Decisions 1–4 are pending. The drafts for decisions 5–6 are in §7.
 
 Branch `spike/endpoint-world`, from `spike/close-v2-sim` merged with
 `spike/http-kv`. Directory `async/endpoint-world/`. No existing file or spec
@@ -16,7 +20,10 @@ is changed.
 | `endpointFairScript.sml` | **trusted**: the rely `ep_rely`, which has no progress conjuncts |
 | `endpointSpecFormsScript.sml` | the `rg_spec` form, world classes, per-episode views of the trace, `reads_fair`, `input_live`; `rg_spec_mono` and `rg_spec_weaken` (proved) |
 | `endpointServersScript.sml` | symmetric forms of EchoSpec, EchoSpec2, HttpSpecBodies and HttpKvSpec; the specialisation corollaries (proved); equivalence claims; the bites (claims) |
-| `endpointInstancesScript.sml` | claims: version-1 and version-2 worlds are endpoint worlds |
+| `endpointSemanticsScript.sml` | (proved) CakeML evaluation and `semantics_prog` depend on the FFI only through its answers |
+| `endpointInstancesScript.sml` | `same_answers_semantics` (proved); `not_v1_instance` (proved: the version-1 claim is false); version-1 fd-discipline claims (draft) |
+| `endpointV2SimScript.sml` | (proved) `v2_instance_thm`: version-2 worlds are exactly the simple endpoint worlds |
+| `endpointOpenScript.sml` | drafts for the next round (§7): `rg_spec_term`, n-ary open systems, buffer closure |
 | `endpointClientsScript.sml` | a toy HTTP client spec; a proxy spec (two roles, half-close) |
 | `endpointComposeScript.sml` | joint runs of two programs, wired; the projection and composition claims |
 
@@ -172,6 +179,49 @@ rule.
      (m, prefix by prefix), not over input/output relations. `kv_safe`
      already speaks of causal order (`precedes`), so it composes this way.
 
+### Round 2 results (2026-10-16)
+
+- **`same_answers_semantics`: proved** (`endpointSemantics`), generically:
+  if two FFI states answer every sequence of calls alike, CakeML's
+  `evaluate` runs alike (`evaluate_ffi_rel`), so a program has the same
+  behaviours (`semantics_prog_same_answers`).
+- **`v2_instance`: proved, both directions** (`endpointV2Sim`). Version 2's
+  server worlds are exactly the endpoint server worlds with version 2's
+  calls, no backpressure and a fixed schedule. Two statement fixes:
+  - `open_loop w` (the environment ignores the calls) is part of the
+    simple class, since a version-2 schedule is fixed;
+  - the rely's bound on new channels is version 2's again (one stricter
+    than "all fds distinct").
+- **`v1_instance`: false, proved** (`not_v1_instance`). In version 1,
+  `Connect l c` makes `c` a connection at once, so a program can poll,
+  read or write `c` before accepting it. In the endpoint world (as in
+  POSIX and version 2) the fd exists only once accepted. Counterexample:
+  a schedule connecting fd 5 with data, then the calls poll, read fd 5.
+  The same program-level gap makes the version-1 equivalences
+  (`echo_sym_equiv`, `http_sym_equiv`, `kv_sym_equiv`) false for programs
+  that touch fds they have not accepted. **[PENDING USER DECISION]**
+  Proposed: restrict them to **fd-disciplined** programs, a trace
+  property (`fd_disciplined lfd io`: every socket event names `lfd` or an
+  fd opened and not yet closed; `v1_disciplined`, `v1_instance_disc`,
+  drafted). Our programs would then be proved disciplined, which turns
+  version 1's idealisation into a theorem about them.
+- **Review-driven fix: `ticks_forever`.** Liveness was vacuous for
+  programs that never let time pass. A program that never polls receives
+  nothing, so `sym_live` held trivially, while the schedule-based
+  version-1 and version-2 specs demand that it echo. Every `ep_*_guar` now
+  also requires `ticks_forever w io` (the program keeps polling). Bite,
+  proved: `never_polls_bite` (a run in which no time passes violates every
+  endpoint server guarantee).
+- **`echo2_sym_equiv`** (in progress). Restated over the simple class with
+  `open_loop`. Two proof requirements:
+  - the endpoint world built from a version-2 schedule must deliver a
+    `Drain` for every live channel at each tick, or `reads_fair` never
+    holds and liveness is vacuous;
+  - the direction "endpoint spec ⇒ `echo_spec2`" needs prefix
+    determinism (worlds that agree on the answers to a prefix of calls
+    give the same trace up to there). It is shared with QuietSpec's
+    bridge.
+
 ## 5. The stress test (`~/.cache/stress-designs/REPORT.md`): decisions
 
 | finding | decision |
@@ -182,8 +232,9 @@ rule.
 | 4. Input liveness | **Adopted** as an additive guarantee (`input_live`) with a bite; the headline specs are unchanged |
 | Half-close (relay) | **Adopted**: `«sock_shutdown»` |
 | 5. Progress relies must be per-guarantee | **Adopted** (§3) |
-| Open n-ary systems with an external io_event view; the buffer-closure lemma (proxy ‖ U meets U's spec, and KV stays linearizable behind a proxy) | **Deferred** (§6) |
-| Terminating clients (`rg_spec_term`), select, clock, timers, scopes | **Deferred**; out of this statement round |
+| Open n-ary systems with an external io_event view; the buffer-closure lemma (proxy ‖ U meets U's spec, and KV stays linearizable behind a proxy) | **Drafted** (§7), after your approval of decision 5 |
+| Terminating clients (`rg_spec_term`) | **Drafted** (§7), after your approval of decision 6 |
+| Select, clock, timers, scopes | **Deferred** |
 
 ## 6. Decisions for you
 
@@ -208,3 +259,56 @@ rule.
    Is that the direction you want?
 6. **[APPROVED 2026-10-16: add the terminating form]** Clients must diverge (`rg_spec` asks for `Diverge`), so a finished client
    idles. A terminating spec form is a small addition if you want one.
+
+## 7. Drafts for the next round (`endpointOpen`; statements, for review)
+
+**Terminating programs** (decision 6). `rg_spec_term cls guar done prog`:
+every run either terminates successfully with a trace meeting `guar`, or
+diverges meeting `guar` and never reaches `done`. So a program that is done
+must stop. `rg_spec` is the case `done = K F` (`rg_spec_term_rg_spec`,
+proved, with `_mono` and `_weaken`). `http_client_term_spec`: the toy
+client exits once it has closed its connection.
+
+**N-ary open systems** (decision 5). A system is a list of processes,
+each a program with at most one listener on an address. An outside world
+`W` plays every address no process owns. `sys_run sys W_lfd W ws link m`:
+
+- each process diverges in its own endpoint world `ws k`;
+- `m` interleaves their events;
+- `link` pairs each connect to an owned address with the owner's accepted
+  episode, and linked episodes are wired exactly as in `endpointCompose`
+  (`flows`, `drains_are_reads`);
+- every other episode is external, and its peer-side state is `W`'s
+  (`peer_view`).
+
+The **external view** `ext_io` is an ordinary `io_event` trace: the
+external episodes' opens, reads, writes and closes, with the x-th
+external episode on fd `n2w x`.
+`sys_spec cls guar sys W_lfd` says that in every outside world of the
+class satisfying the rely, there is a run whose external view meets
+`guar`. So a headline guarantee applies to a system unamended. The closed
+binary joint run is the case with no external episodes.
+
+**Buffer closure.** `buf_rel io io'` says the outside run `io'` relays
+the inside run `io`, episode by episode: writes appear outside no earlier
+than inside and all eventually; reads happen outside no later than
+inside. A guarantee is `buffer_closed` if relaying preserves it.
+Claims:
+- `buffer_closure`: U behind a proxy meeting `proxy_spec` meets U's own
+  buffer-closed guarantee at the proxy's address;
+- `guars_buffer_closed`: echo's, HTTP's and KV's guarantees are buffer
+  closed (for KV: a relay only widens request intervals, so `precedes`
+  outside implies `precedes` inside);
+- `kv_behind_proxy`: a verified KV server behind a verified proxy is still
+  linearizable.
+
+Not claimed:
+- existence of system runs for arbitrary programs (the Kahn fixpoint;
+  report §A-7);
+- liveness with feedback under backpressure, which needs its own
+  induction per application (report §B-6).
+
+Questions for you:
+- (a) is `buf_rel`'s per-episode prefix form the relay relation you want?
+- (b) should `sys_spec` quantify the process worlds existentially (as
+  drafted: "the system can be run") or universally over wired worlds?

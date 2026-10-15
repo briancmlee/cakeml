@@ -85,7 +85,8 @@ End
    ------------------------------------------------------------------------ *)
 
 Definition ep_echo_guar_def:
-  ep_echo_guar w io ⇔ sym_safe echo_safe io ∧ sym_live (λx y. x ≼ y) w io
+  ep_echo_guar w io ⇔
+    sym_safe echo_safe io ∧ sym_live (λx y. x ≼ y) w io ∧ ticks_forever w io
 End
 
 (* THE SPEC: about all endpoint server worlds offering the calls cs, with
@@ -105,11 +106,16 @@ Proof
 QED
 
 (* CLAIM (for review): for version 1's calls, the simple symmetric spec is
-   EchoSpec's headline spec, unamended *)
+   EchoSpec's headline spec, unamended.  NOT TRUE for every program, as
+   stated: version 1's connections are usable before they are accepted
+   (endpointInstances' not_v1_instance), so a program that polls an fd it
+   has not accepted behaves differently in the two worlds.  The version-1
+   claims (echo, http, kv) are to be restricted to fd-disciplined programs
+   (endpointInstances, draft): PENDING USER DECISION *)
 Definition echo_sym_equiv_def:
   echo_sym_equiv ⇔
     ∀lfd a prog. echo_spec lfd prog ⇔
-                 rg_spec (λw. ep_server_world v1_calls lfd a w ∧ no_backpressure w)
+                 rg_spec (λw. ep_server_world v1_calls lfd a w ∧ no_backpressure w ∧ open_loop w)
                    ep_echo_guar prog
 End
 
@@ -117,14 +123,14 @@ End
 Definition ep_echo2_guar_def:
   ep_echo2_guar w io ⇔
     always (λevs. ∀j. ch_sent j evs ≼ ch_read j evs) io ∧
-    sym_live (λx y. x ≼ y) w io ∧ echo_closes2 io
+    sym_live (λx y. x ≼ y) w io ∧ ticks_forever w io ∧ echo_closes2 io
 End
 
 (* CLAIM: for version 2's calls, the simple symmetric form is EchoSpec2's *)
 Definition echo2_sym_equiv_def:
   echo2_sym_equiv ⇔
     ∀lfd a prog. echo_spec2 lfd prog ⇔
-                 rg_spec (λw. ep_server_world v2_calls lfd a w ∧ no_backpressure w)
+                 rg_spec (λw. ep_server_world v2_calls lfd a w ∧ no_backpressure w ∧ open_loop w)
                    ep_echo2_guar prog
 End
 
@@ -136,7 +142,8 @@ Definition ep_http_guar_def:
   ep_http_guar files w io ⇔
     sym_safe (http_safe_b files) io ∧
     sym_live (λx y. ∀rs. EVERY valid_brequest rs ∧ brequests rs ≼ x ⇒
-                         bresponses files rs ≼ y) w io
+                         bresponses files rs ≼ y) w io ∧
+    ticks_forever w io
 End
 
 Definition ep_http_spec_def:
@@ -156,7 +163,7 @@ Definition http_sym_equiv_def:
   http_sym_equiv ⇔
     ∀lfd a files prog.
       http_spec_b lfd files prog ⇔
-      rg_spec (λw. ep_server_world v1_calls lfd a w ∧ no_backpressure w)
+      rg_spec (λw. ep_server_world v1_calls lfd a w ∧ no_backpressure w ∧ open_loop w)
         (ep_http_guar files) prog
 End
 
@@ -168,7 +175,8 @@ Definition ep_kv_guar_def:
   ep_kv_guar w io ⇔
     sym_safe kv_safe io ∧
     sym_live (λx y. ∀rs. EVERY valid_brequest rs ∧ brequests rs ≼ x ⇒
-                         ∃ans. LENGTH ans = LENGTH rs ∧ reply_bytes ans ≼ y) w io
+                         ∃ans. LENGTH ans = LENGTH rs ∧ reply_bytes ans ≼ y) w io ∧
+    ticks_forever w io
 End
 
 Definition ep_kv_spec_def:
@@ -188,7 +196,7 @@ Definition kv_sym_equiv_def:
   kv_sym_equiv ⇔
     ∀lfd a prog.
       kv_spec lfd prog ⇔
-      rg_spec (λw. ep_server_world v1_calls lfd a w ∧ no_backpressure w) ep_kv_guar prog
+      rg_spec (λw. ep_server_world v1_calls lfd a w ∧ no_backpressure w ∧ open_loop w) ep_kv_guar prog
 End
 
 (* ------------------------------------------------------------------------
@@ -220,3 +228,22 @@ Definition input_live_bite_def:
     ∃files w io. ep_server_world all_calls 3w 80 w ∧ ep_rely w ∧
                  ep_http_guar files w io ∧ ¬input_live w io
 End
+
+(* ------------------------------------------------------------------------
+   Bite: a program that never lets time pass meets no server guarantee
+   ------------------------------------------------------------------------ *)
+
+(* MAIN (review-driven fix): liveness is not vacuous for a program that
+   never polls: a run in which no time passes violates every endpoint
+   server guarantee *)
+Theorem never_polls_bite:
+  (∀evs. LPREFIX (fromList evs) io ⇒ (ep_replay w evs).clock = w.clock) ⇒
+  ¬ep_echo_guar w io ∧ ¬ep_echo2_guar w io ∧ ¬ep_http_guar files w io ∧
+  ¬ep_kv_guar w io
+Proof
+  strip_tac >>
+  ‘¬ticks_forever w io’
+    by (rw[ticks_forever_def, eventually_def] >> qexists_tac ‘w.clock + 1’ >>
+        rw[] >> Cases_on ‘LPREFIX (fromList evs) io’ >> res_tac >> simp[]) >>
+  fs[ep_echo_guar_def, ep_echo2_guar_def, ep_http_guar_def, ep_kv_guar_def]
+QED

@@ -206,6 +206,14 @@ Definition reads_fair_def:
           ∃evs'. LPREFIX (fromList evs') io ∧ peer_reads_at w evs c < peer_reads_at w evs' c
 End
 
+(* TIME PASSES: the program keeps letting time pass (it polls for ever).
+   The headline specs state liveness against the schedule, so they demand
+   this; without it a program that never polls would meet every liveness
+   clause vacuously *)
+Definition ticks_forever_def:
+  ticks_forever w io ⇔ ∀n. eventually (λevs. n ≤ (ep_replay w evs).clock) io
+End
+
 (* INPUT LIVENESS: whatever a peer has sent, the program eventually reads
    in that peer's episode, unless it ends the episode *)
 Definition input_live_def:

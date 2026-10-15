@@ -1,0 +1,14 @@
+# The echo program in machine code: in-logic compilation and composition
+# with the compiler's correctness theorem.  NOT built by default: it needs
+# the compiler backend proofs and cv_translator, i.e. a full CakeML build
+# (see design note 22).  Build with Holmake here once those exist.
+INCLUDES = ../../programs/echo ../../cakeml/approx ../../cakeml/library \
+           ../../loop/polling ../../model/core ../../model/level2 \
+           ../../servers/echo ../../servers/relabel ../../spec \
+           ../../world/clock ../../world/composed ../../world/sockets \
+           $(CAKEMLDIR)/semantics \
+           $(CAKEMLDIR)/cv_translator $(CAKEMLDIR)/compiler/backend/proofs \
+           $(CAKEMLDIR)/compiler/backend/arm8/proofs $(CAKEMLDIR)/semantics/proofs
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/cv_translator/cake_compile_heap
+endif

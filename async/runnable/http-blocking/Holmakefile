@@ -1,0 +1,13 @@
+# Export the blocking HTTP program (../../http-blocking) to http_live.sexp.
+INCLUDES = ../../http-blocking ../../programs/echo ../../cakeml/approx \
+           ../../cakeml/library ../../loop/blocking ../../loop/polling \
+           ../../model/core ../../model/level2 ../../model/sched \
+           ../../programs/echo-blocking ../../programs/echo-live \
+           ../../programs/http ../../programs/http-h ../../servers/echo \
+           ../../servers/relabel ../../servers/closed-loop ../../servers/http \
+           ../../servers/http-quiet ../../spec ../../world/clock \
+           ../../world/composed ../../world/sockets $(CAKEMLDIR)/semantics
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif
+EXTRA_CLEANS = http_live.sexp

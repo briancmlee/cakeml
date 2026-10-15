@@ -52,12 +52,17 @@ refinement idles at 0.0%:
 |---|---|---|---|
 | `echo_live` (blocking, `echo_live_spec`) | 0.0% | 0.1% | 0.0% |
 | `echo_polling` (the headline program) | 26.0% | 15.9% | 67.3% |
+| `http_live` (blocking HTTP, `http_blk_spec`) | 0.0% | 0.1% | 0.0% |
+| `http_polling` (the HTTP headline program) | 23.0% | 23.2% | 90.4% |
 
 CPU% is process CPU time over wall time, in 30 s phases, from a background
 session that throttles busy polling (a C busy-polling loop measures
 13–16% there). The blocking row is from
 `runnable/echo-blocking/cpu-results.txt` (#46), and the polling row is
 from `cpu-results-no-idle-wait.txt` (#50, the C as it is now).
+The HTTP rows are from `runnable/http-blocking/cpu-results.txt`. That
+file also has a fourth phase, the caveat below: after an invalid request
+whose client then closes, `http_live` uses 85.4%.
 
 ## What you have to trust
 
@@ -151,6 +156,14 @@ Hello from a verified CakeML HTTP server!
 
 - **This HTTP subset has no request bodies.** Requests with
   Content-Length or Transfer-Encoding are not answered.
+- **After an invalid request whose client then closes or sends more, the
+  blocking HTTP server busy-polls.** One malformed request, or any request
+  with a body, followed by a close, puts the whole server at about one
+  core until it is restarted. Correctness is unaffected; this is a cheap
+  denial of service. The handler stops on an invalid request without ever
+  reading EOF, so its fd stays in the loop's live list, is ready forever,
+  and `select` returns at once. Design note 31 §4 costs the fixes: a
+  draining handler (spec unchanged), or `Close` in the v2 socket world.
 - **Proofs establish values, not running time.** An exponential-time
   parser passed all proofs until a long header exposed it: the translated
   code of a recursive split made its recursive call twice per character,

@@ -1,0 +1,10 @@
+# Option C (design/33 §2.2): the generic protocol handler and server
+# skeleton at Level 2 (declared interest), over an action vocabulary.
+INCLUDES = ../model ../cf-spike ../cf-actions ../cf-reactive ../ffi-spike \
+           ../m3-assembly ../m4-server ../m4-common ../spec ../m4-safety \
+           ../runnable ../machine-code ../http-model ../http-impl ../http-safety \
+           ../m4-liveness ../http-liveness ../library-liveness ../headline \
+           ../http-proto
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

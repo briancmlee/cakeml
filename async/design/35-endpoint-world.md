@@ -336,9 +336,16 @@ A per-connection safety predicate survives relaying if it is closed under
 reading more and writing less (`relay_closed`). Then U's safety at every
 instant gives the system's (`relay_safety`, proved).
 - Echo's predicate is relay-closed (`echo_relay_closed`, proved).
-- HTTP's is a claim (`http_relay_closed_claim`): it needs request parsing to
-  be monotone.
-- KV's remains the precedes-widening claim.
+- HTTP's is relay-closed (`http_relay_closed`, proved in
+  `endpointBufferHttp`). Request parsing is monotone (`parse_mono`) because
+  a printed valid request is never a proper prefix of another
+  (`print_prefix_free`).
+- KV's remains a claim, and it is not cheap. `kv_safe` is not a
+  per-connection predicate: its real-time `precedes` compares event
+  positions across connections. Transferring it needs the relay relation
+  over the joint interleaving at every instant (a relay only widens
+  request intervals). It also needs the order extended by the requests the
+  server behind the proxy has not yet seen.
 
 `buffer_closed` also cannot give the outside world `ticks_forever` from
 the relay facts alone. The system's clock is the proxy's, so that part

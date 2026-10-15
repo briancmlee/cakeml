@@ -2,6 +2,34 @@
 
 ## 0. Current status (second agent; newest first; read this first)
 
+- **Follow-up branch `spike/async-level2`** (stacked on PR #1, which must
+  stay stable; PR #2 has base `spike/async-semantics`):
+  - done: `quiet_choose2`; Level 2 recursion (`asyncLoop2`: `fix2`,
+    `erase_fix2`, `guarded2_bind2`, `wf2_fix2`); `asyncEcho2` (`echo2`,
+    `erase_echo2`, `wf2_echo2`, EVAL checks of its interest); design note
+    §7, §12, §13 updated;
+  - done, from the adversarial review of PR #1
+    (`~/.cache/pr1-review/review.md`):
+    1. relativized closure lemmas (`can_return`; `wf_bind_on`,
+       `settled_bind_on`, `quiet_bind2_on`, `wf2_bind2_on`; `choose_results`,
+       `choose_losers`; `fix_preserves_on`, `wf_fix_on`, `settled_fix_on`);
+    2. the split recursion rule `guarded_bind_split` (plus
+       `choose_at_start`), demonstrated by `asyncIdleScript.sml`, an
+       idle-deadline loop that carries its pending read, proved
+       contractive, wf and settled;
+    3. `status_bind2_right_identity` (status associativity is left as a
+       conjecture, design note §12);
+    4. design note §4 documents that dropping a loser (`pick`) can lose
+       data that was already read. `pick`/`choose` are unchanged: the user
+       decides (§16).
+  - also done (coordinator request): `quiet_fix2`, `wf2_fix2_on`,
+    `quiet_echo2`; `status_bind2_assoc` (via `bind_assoc_view`, factored out
+    of the Level 1 `bind_assoc` proof).
+  - not done: the idle loop at Level 2 (design note §12 lists what it
+    needs; about 150–200 lines).
+  - PR #3 (https://github.com/briancmlee/cakeml/pull/3) is open with base
+    `spike/async-semantics`. Per the coordinator: stop here and wait; no
+    new milestones.
 - **Conventions (from the coordinator):**
   - Never kill processes you did not start. No `pkill`/`killall` or any
     pattern-based kill: other workers' Holmake and `hol lsp` processes share
@@ -590,3 +618,34 @@ whole-program POSTd theorem; basis_ffi ripple effects (design note §15).
 routing; emit waiting for its response; the bind convention; choose's delay,
 stale snapshot and recursion restriction; laws under `wf`; Level 2's quiet
 as deletion; the MAIN list; and what comes next.
+
+
+## 10. Tool feedback (standing section; an upstream tracker collects these)
+
+- 2026-10-15, hol-lsp MCP `diagnostics`: it reported `par_actions_cong` as
+  "checking" for more than 10 minutes while Holmake failed it in under
+  1 s. Cause (found by the coordinator): when one edit touched two
+  proofs, the language server re-checked only the first. Fixed in HOL
+  plus a wrapper workaround; MCP servers started before the fix keep the
+  old code until restarted.
+- `goalState` queued behind `diagnostics` (fixed in the newer wrapper).
+- Holmake inside the CakeML repo scans about 314 directories (about 7 s
+  per run) because of `holproject.toml`. Workaround: copy the scripts to a
+  scratch dir with an empty Holmakefile.
+- A killed `hol` REPL loses its buffered stdout, so a step that hangs looks
+  like an earlier step. Workaround: print markers and flush after each
+  step, or run the tactic as `tac (top_goal())` without the goalstack
+  printer.
+- Recurring HOL gotchas, worth lint warnings or better error messages:
+  - type-variable capture when `MATCH_MP`/`qspecl_then`/`Q.GENL` meets a
+    theorem whose conclusion has free type variables (`GEN_TYVARIFY` fixes
+    it), and facts proved by `by` inside a goal carry fixed type variables;
+  - `K` and `I` can't be used as variable names (combinator constants);
+  - `fs[GSYM LENGTH_NIL]` loops against the `LENGTH_NIL` simp rule;
+  - `SIMP_TAC (srw_ss())` doesn't decide simple arithmetic (use
+    `++ ARITH_ss`);
+  - `irule` can't use a theorem whose conclusion is `∀p. ok p ⇒ P …`
+    against a goal of that shape: `rpt strip_tac` first, then `irule`, then
+    supply the existentials;
+  - with `ho_match_mp_tac`, a premise variable that isn't in the
+    conclusion (`m0`) stays a free variable, not an existential.

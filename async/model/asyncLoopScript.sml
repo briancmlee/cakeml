@@ -136,3 +136,46 @@ Proof
   strip_tac >> irule fix_preserves >> simp[settled_closed]
   >> qexists_tac ‘never’ >> simp[settled_never]
 QED
+
+(* MAIN: settledness of guarded recursive definitions whose parameters
+   satisfy an invariant ok *)
+Theorem settled_fix_on:
+  contractive body ∧
+  (∀r. (∀p. ok p ⇒ settled (r p)) ⇒ ∀p. ok p ⇒ settled (body r p)) ⇒
+  ∀p. ok p ⇒ settled (fix body p)
+Proof
+  rpt strip_tac >> irule fix_preserves_on >> simp[settled_closed]
+  >> conj_tac >- (qexists_tac ‘never’ >> simp[settled_never])
+  >> qexists_tac ‘ok’ >> simp[]
+QED
+
+(* MAIN: the recursion rule, split by result.  A continuation needs to be
+   guarded only for the results m can have before any snapshot has arrived;
+   for every other result it only needs to be non-expansive (m has then
+   used up at least one snapshot).  This covers loops that carry a
+   computation as a parameter, which may already have finished. *)
+Theorem guarded_bind_split:
+  (∀x. nonexpansive (λr. G x r)) ∧
+  (∀x. (m []).result = SOME x ⇒ guarded (λr. G x r)) ⇒
+  guarded (λr. bind m (λx. G x r))
+Proof
+  rw[guarded_def] >> rename1 ‘∀p. agree_below n (r1 p) (r2 p)’
+  >> rw[agree_below_def] >> rename1 ‘LENGTH h < n + 1’
+  >> simp[bind_def] >> CASE_TAC >> simp[]
+  >> rename1 ‘TAKE j h’
+  >> qabbrev_tac ‘x = THE (m (TAKE j h)).result’
+  >> qabbrev_tac
+       ‘v = skip_results (LENGTH (new_actions (log_of m) (TAKE j h))) (DROP j h)’
+  >> ‘G x r1 v = G x r2 v’ suffices_by simp[]
+  >> ‘j ≤ LENGTH h ∧ (m (TAKE j h)).result ≠ NONE’ by fs[first_prefix_SOME]
+  >> ‘LENGTH v = LENGTH h - j’ by simp[Abbr ‘v’]
+  >> Cases_on ‘j = 0’
+  >- (* m finished before any snapshot: the continuation must be guarded *)
+     (‘(m []).result = SOME x’
+        by (gvs[Abbr ‘x’] >> Cases_on ‘(m []).result’ >> gvs[])
+      >> first_x_assum drule >> disch_then (qspecl_then [‘n’, ‘r1’, ‘r2’] mp_tac)
+      >> simp[agree_below_def])
+  (* otherwise it sees a strictly shorter history *)
+  >> ‘agree_below n (G x r1) (G x r2)’ by fs[nonexpansive_def]
+  >> fs[agree_below_def]
+QED

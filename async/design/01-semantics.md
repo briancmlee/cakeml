@@ -228,6 +228,19 @@ Every primitive is settled, and every combinator preserves settledness:
 echo loop. So **for programs built from the library, bind never drops a
 response.**
 
+This includes programs that continue a `choose` loser: a loser is itself
+a computation the program runs. The closure lemmas have relativized
+versions that need the continuation's property only for results that can
+actually occur (`can_return m x`):
+
+- `wf_bind_on`, `settled_bind_on`, `quiet_bind2_on`;
+- for loops whose parameters satisfy an invariant: `wf_fix_on`,
+  `settled_fix_on`, `fix_preserves_on`;
+- `choose_losers`: every loser `choose` returns is a suspended side, so it
+  is well-formed, and settled if that side is.
+
+The idle-deadline loop (§6) uses all of these.
+
 - The only way to emit in a finishing round used to be the losing side of
   an old-style `choose`. The new `choose` (§4) never does that.
 - We kept the `skip_results` in `bind` instead of removing it, because with
@@ -344,12 +357,46 @@ Consequences to be aware of:
 2. **A suspended loser sees a stale snapshot** (old ready set and time) at
    its first poll. Readiness is only a hint (§9) and timers only fire late,
    never early, so this is harmless.
-3. **Recursion through choose's arguments** is not covered by the recursion
-   rule (§6). choose's result contains a computation, which is not a
-   "shorter-history" quantity. Recursion *in choose's continuation* is fine.
-   A loser-dropping variant
-   `pick m1 m2 = map (λr. case r of INL (x,_) => INL x | INR (_,y) => INR y) (choose m1 m2)`
-   would be non-expansive (not yet proved; see §12).
+3. **Recursion and choose.**
+   - Recursion *through choose's arguments* (`r` itself raced inside
+     `choose`) is not covered by the recursion rule (§6). choose's result
+     contains a computation, which is not a "shorter-history" quantity.
+   - Loops that *carry* a pending computation as a parameter and race it
+     in each iteration are covered by the split rule `guarded_bind_split`
+     (§6). The idle-deadline loop is the worked example: proved
+     well-defined, well-formed and settled.
+   - A loser-dropping variant
+     `pick m1 m2 = map (λr. case r of INL (x,_) => INL x | INR (_,y) => INR y) (choose m1 m2)`
+     would be non-expansive (not yet proved; see §12), but see the next
+     point before using it.
+4. **Dropping a loser can lose data that was already read.**
+   `choose_rejoin` ("nothing is lost") is about callers that *continue* the
+   loser.
+
+   Example (found by an adversarial review), with
+   `reader fd = bind (readable fd) (λ_. emit (Read fd))`:
+   - The timer wins in the same round in which the reader emits `Read 0`.
+   - choose waits one round, then returns the reader with `Data "x"`
+     already delivered to it:
+
+     ```
+     choose (reader 0) (timer 5) [snap {Readable 0; Timer 5} []; snap {} [Data "x"]]
+       = <| actions := [Read 0]; result := SOME (INR (<loser holding Data "x">, ())) |>
+     pick (reader 0) (timer 5) [same]
+       = <| actions := [Read 0]; result := SOME (INR ()) |>
+     ```
+   - With `pick` the read has happened on the fd, and "x" is gone.
+
+   So `pick` (and any continuation that ignores a loser) is unsafe for
+   losers that consume input. Dropping is safe when the loser has emitted
+   nothing that consumes input. The idle-deadline loop drops only the
+   *timer* loser and always keeps the pending read.
+
+   Whether `pick` should exist, have a safety lemma (e.g. "drop only if the
+   loser has emitted nothing since its last poll"), or refuse to finish
+   while the loser has requests in flight is a decision for the user (§16).
+   M4 should probably state "no consumed input is discarded" as an
+   explicit property.
 
 ## 5. Well-formedness and the equality notion
 
@@ -441,7 +488,49 @@ snapshot, so a loop cannot spin within one round.
 
 Well-formedness and settledness are preserved by `fix` (`wf_fix`,
 `settled_fix`), so a contractive body that preserves them gives a
-well-formed, settled loop.
+well-formed, settled loop. For loops that carry a computation as a
+parameter, `wf_fix_on` and `settled_fix_on` need the property only for
+parameters satisfying an invariant, e.g. "the pending read is
+well-formed and settled".
+
+**The split rule.** A loop that carries a pending computation and races
+it, `loop pend = bind (choose pend (deadline t)) (…)`, does not fit
+`guarded_bind`: `pend` may already have finished, so `choose` can finish
+before any snapshot. The split rule only asks for guarded continuations
+where they are needed:
+
+```
+(* MAIN *) guarded_bind_split:
+  (∀x. nonexpansive (λr. G x r)) ∧
+  (∀x. (m []).result = SOME x ⇒ guarded (λr. G x r)) ⇒
+  guarded (λr. bind m (λx. G x r))
+```
+
+Results that need a snapshot only reach the continuation on a shorter
+history, so for them non-expansive is enough.
+
+**The idle-deadline loop** (`asyncIdleScript.sml`):
+
+```
+idle_body d fd r (pend, t) =
+  bind (choose pend (deadline t)) (λres.
+    case res of
+      INL (resp, timer) =>                        (* the read won; drop the timer *)
+        (case resp of
+           Data s => bind (emit (Write fd s)) (λw. r (reader fd, t))
+         | WouldBlock => bind (readable fd) (λu. r (reader fd, t))
+         | _ => return ())
+    | INR (pend', u) => r (pend', t + d))          (* deadline passed: keep the read *)
+```
+
+- The timeout branch recurses directly. It is reachable only after a
+  snapshot (`choose_at_start`: a deadline can't pass before one).
+- The read branches are guarded.
+- Proved: `idle_body_contractive`, `idle_unfold`,
+  `wf_idle: wf pend ⇒ wf (idle d fd (pend, t))`, and
+  `settled_idle: wf pend ∧ settled pend ⇒ settled (idle d fd (pend, t))`.
+- An EVAL check shows the data that arrives after a timeout being echoed:
+  the pending read survives the timeout.
 
 **The echo loop is in the model** (`asyncEchoScript.sml`): `echo = fix
 echo_body`, with `echo_body_contractive`, `echo_unfold` (the recursive
@@ -494,8 +583,18 @@ erasure theorems hold by construction:
   `erase_choose2: map (map_loser erase erase) (erase (choose2 c1 c2)) = choose (erase c1) (erase c2)`.
 
 The Level 1 laws transfer up to erasure (`bind2_left_identity`,
-`bind2_right_identity`, `bind2_assoc`). Left identity even holds exactly,
-interest included.
+`bind2_right_identity`, `bind2_assoc`).
+
+- Left identity even holds exactly, interest included.
+- Right identity holds as a `status` equality, which is what a scheduler
+  sees: `status_bind2_right_identity: wf c.run ⇒ status (bind2 c return2) h = status c h`.
+- Associativity holds as a `status` equality too:
+  `status_bind2_assoc: wf c.run ⇒ status (bind2 (bind2 c f) g) h = status (bind2 c (λx. bind2 (f x) g)) h`.
+  It reuses the view argument of `bind_assoc`, factored out as
+  `bind_assoc_view`.
+
+So rewriting a program by the monad laws doesn't change what a scheduler
+sees.
 
 The primitive `wait_on e p` declares interest `{e}` and looks only at
 snapshots where `e` is ready. `emit2` declares no events: it waits only for
@@ -531,7 +630,8 @@ never shows the computation those snapshots at all. Deletion is exactly the
 statement that this is invisible.
 
 Proved: `quiet_return2`, `quiet_wait_on`, `quiet_emit2`, `quiet_map2`,
-`quiet_bind2` and `quiet_both2`. `quiet_choose2` is a conjecture (§12).
+`quiet_bind2`, `quiet_both2` and `quiet_choose2`, so every Level 2
+combinator preserves quietness.
 The general lemma underneath is `first_prefix_delete`: deleting a snapshot
 that never changes whether a property holds delays the first point where
 it holds by one.
@@ -546,6 +646,50 @@ wait_on_always: EVERY (λs. e ∈ s.ready) h ⇒ erase (wait_on e p) h = wait p 
 
 Such a computation is quiet only vacuously (it never blocks), which is the
 honest price of busy-polling.
+
+**Recursion at Level 2** (`asyncLoop2Script.sml`). We pack a Level 2
+computation into one function of the history,
+`pack c = λh. (c.run h, c.interest h)`, which lets us reuse the Level 1
+guarded-recursion machinery (`fix`, `fix_unfold`, `fix_unique`,
+`fix_preserves`) unchanged:
+
+```
+fix2 body2 p = unpack (fix (lift_body body2) p)
+
+(* MAIN *) fix2_unfold:   contractive2 body2 ⇒ fix2 body2 = body2 (fix2 body2)
+(* MAIN *) guarded2_bind2:
+  (c.run []).result = NONE ∧ (∀x. nonexpansive2 (λR. G x R)) ⇒
+  guarded2 (λR. bind2 c (λx. G x R))
+(* MAIN *) erase_fix2:
+  contractive body1 ∧ contractive2 body2 ∧
+  (∀R p. erase (body2 R p) = body1 (λq. erase (R q)) p) ⇒
+  ∀p. erase (fix2 body2 p) = fix body1 p
+(* MAIN *) wf2_fix2:
+  contractive2 body2 ∧ (∀R. (∀p. wf2 (R p)) ⇒ ∀p. wf2 (body2 R p)) ⇒
+  ∀p. wf2 (fix2 body2 p)
+```
+
+The recursion rule is the same as at Level 1. `wf2 c = wf c.run ∧ quiet c`
+is preserved by the fixpoint because it is a "closed" property: it only
+ever looks at finitely many histories at a time.
+
+In particular, **quietness reaches loops**:
+
+- `quiet_fix2`: a guarded body that preserves `wf2` gives a quiet
+  fixpoint;
+- `wf2_fix2_on`: the same, for loops whose parameters satisfy an
+  invariant.
+
+**The echo loop at Level 2** (`asyncEcho2Script.sml`). `echo2` is the echo
+loop written with `wait_on (Readable fd)`, `emit2`, `bind2` and `return2`.
+Proved: `echo2_unfold`, `erase_echo2: erase (echo2 fd) = echo fd`,
+`wf2_echo2: wf2 (echo2 fd)` and `quiet_echo2: quiet (echo2 fd)`. So a
+scheduler may block until `fd` is readable. EVAL checks confirm what it waits for:
+
+- `Waiting {Readable 0}` at first;
+- `Waiting ∅` while its read is in flight (it waits only for the
+  response);
+- `Waiting {Readable 0}` again after echoing.
 
 ## 8. Decisions and rejected alternatives
 
@@ -682,30 +826,33 @@ All files build with `Holmake` in `async/model`, with no `cheat`.
 | `asyncChooseScript.sml` | `resume`, `suspended`, Async-style `choose`, `both_split`, `choose_rejoin`, `wf_choose`, `settled_choose` |
 | `asyncLoopScript.sml` | agreement lemmas, `guarded_bind`, `settled_fix` |
 | `asyncEchoScript.sml` | the echo loop and 10 EVAL sanity theorems |
-| `asyncLevel2Script.sml` | `comp2`, erasure, transferred laws, `quiet`, quiet preservation, `choose2` |
+| `asyncIdleScript.sml` | a loop that carries its pending read across timeouts: the split recursion rule in use; well-formed and settled |
+| `asyncLevel2Script.sml` | `comp2`, erasure, transferred laws, `quiet`, quiet preservation for every combinator including `choose2` |
+| `asyncLoop2Script.sml` | Level 2 recursion: `fix2`, `guarded2_bind2`, `erase_fix2`, `wf2_fix2` |
+| `asyncEcho2Script.sml` | the Level 2 echo loop: `erase echo2 = echo`, `wf2 echo2`, EVAL checks of its interest |
 
 **Conjectures** (not in the scripts):
 
-1. `quiet_choose2: wf c1.run ∧ wf c2.run ∧ quiet c1 ∧ quiet c2 ⇒ quiet (choose2 c1 c2)`.
-   Evidence:
-   - while no side has finished, choose behaves like both, and the proof of
-     `quiet_both2` applies (its lemmas `views_delete`, `par_log_delete` and
-     `side_delete` are generic);
-   - in the waiting round choose has requests in flight, so quiet's
-     hypothesis does not apply;
-   - after the first finishing round, deleting an earlier irrelevant
-     snapshot changes the loser only by deleting the same snapshot from its
-     view, and the losers are then equal as functions by the sides'
-     quietness.
-
-   Estimated at 150 lines of proof.
-2. `pick` (choose that drops the loser) is non-expansive, so recursion
+1. `pick` (choose that drops the loser) is non-expansive, so recursion
    through `pick`'s arguments is allowed. Evidence: the result contains no
    computation, and `choose`'s decision and log only depend on the sides'
    shorter histories (as for `both_agree`).
-3. Level 2 recursion: a `fix2` with `erase (fix2 body2) = fix (erase ∘ body2)`
-   and quietness preserved. The Level 1 machinery should transfer, but
-   `interest` also needs the agreement argument.
+
+   Note that dropping a loser can lose data that was already read (§4).
+   This conjecture is about well-definedness, not about safety.
+
+2. The idle-deadline loop at Level 2 (quiet, so a scheduler could block
+   on `Readable fd` and the deadline's timer event). Not a conjecture
+   about correctness, just work not done. It needs four things:
+   - `wf` of the generalised `choose_with`;
+   - quietness of suspended Level 2 losers;
+   - a Level 2 version of `choose_results`;
+   - a Level 2 split recursion rule.
+
+   About 150–200 lines, mostly mirroring the Level 1 proofs.
+
+`quiet_choose2` and Level 2 recursion, conjectures in the first version of
+this note, are now proved (`quiet_choose2`, `asyncLoop2`, `asyncEcho2`).
 
 ## 13. Proposed MAIN theorems
 
@@ -729,9 +876,23 @@ M1, Level 1 (asyncCore, asyncLevel1, asyncChoose, asyncLoop, asyncEcho):
 
 M1, Level 2 (asyncLevel2): `erase_return2`, `erase_wait_on`, `erase_emit2`,
 `erase_map2`, `erase_bind2`, `erase_both2`, `erase_choose2`,
-`bind2_left_identity` (with right identity and associativity under the same
-comment), `no_progress_without_ready_event`, `quiet_wait_on` (primitives),
-`quiet_map2`, `quiet_bind2`, `quiet_both2`.
+`bind2_left_identity`, `bind2_right_identity`, `bind2_assoc`,
+`no_progress_without_ready_event`, `quiet_wait_on` (primitives),
+`quiet_map2`, `quiet_bind2`, `quiet_both2`, `quiet_choose2`.
+
+M1, Level 2 recursion (asyncLoop2, asyncEcho2): `fix2_unfold`,
+`erase_fix2`, `guarded2_bind2`, `wf2_fix2`, `echo2_unfold`, `erase_echo2`,
+`wf2_echo2`.
+
+Added after the review of PR #1:
+- relativized closure lemmas: `wf_bind_on`, `settled_bind_on`,
+  `quiet_bind2_on`, `wf_fix_on`, `settled_fix_on`;
+- `choose_results` and `choose_losers`;
+- `guarded_bind_split`;
+- the idle loop: `idle_body_contractive`, `idle_unfold`, `wf_idle`,
+  `settled_idle`;
+- `status_bind2_right_identity`, `status_bind2_assoc`;
+- `quiet_fix2`, `wf2_fix2_on`, `quiet_echo2`.
 
 The full statements are in the PR description and in the scripts.
 
@@ -857,8 +1018,9 @@ Paths are relative to the CakeML repository root (upstream master f73189499).
    connect the two, a new kind of bookkeeping (but local to `poll`).
 5. **choose's one-round delay** must be mirrored by the implementation, or
    the refinement must allow finishing early.
-6. **Level 2 is incomplete**: `quiet_choose2` and Level 2 recursion are
-   conjectures (§12).
+6. **Level 2 coverage**: every combinator and recursion are covered, but
+   the M2 theorem that a blocking scheduler is sound (built on `quiet`) is
+   still to be done.
 7. **Fairness assumptions** for sockets (connections eventually accepted,
    data eventually delivered) have no precedent beyond `live_numchars`.
 
@@ -874,7 +1036,12 @@ Paths are relative to the CakeML repository root (upstream master f73189499).
 3. **bind continues in the same round** (§2), with the
    last-round-responses convention justified by `settled` (§3). OK?
 4. **choose** (§4): the one-round delay, the stale snapshot for the loser,
-   and no recursion through choose's arguments (use `pick`). Acceptable?
+   and no recursion through choose's arguments (loops that carry a pending
+   loser are fine, via the split rule). Acceptable?
+   And **pick**: dropping a loser can lose data that was already read.
+   Should `pick` exist at all, have a "drop only if safe" condition, or
+   refuse to finish while the loser has requests in flight? Should M4
+   state "no consumed input is discarded" explicitly?
 5. **Laws need `wf`** for right identity, associativity and `choose_rejoin`;
    the Level 2 laws hold up to erasure. Acceptable as the equality notion?
 6. **Level 2 representation and quiet as deletion** (§7). Is "deleting
@@ -882,5 +1049,4 @@ Paths are relative to the CakeML repository root (upstream master f73189499).
    blocking-scheduler theorem to rest on?
 7. **The MAIN theorem list** (§13): which statements do you want to own,
    reword, or demote to helpers?
-8. **Next step**: finish `quiet_choose2` and Level 2 recursion (an `echo2`
-   with `erase echo2 = echo`), or move on to the M2 scheduler?
+8. **Next step**: move on to the M2 scheduler?

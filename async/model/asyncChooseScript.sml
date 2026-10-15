@@ -847,3 +847,46 @@ Proof
   >> ‘p = h’ by (fs[Abbr ‘p’] >> first_x_assum irule >> fs[first_done_def])
   >> qpat_x_assum ‘Abbrev _’ kall_tac >> gvs[settled_def]
 QED
+
+(* ------------------------------------------------------------------------
+   What choose can return
+   ------------------------------------------------------------------------ *)
+
+(* MAIN: every result of choose is a result of the winning side together
+   with the other side, suspended *)
+Theorem choose_results:
+  (choose m1 m2 h).result = SOME z ⇒
+  (∃x v. z = INL (x, suspended m2 v) ∧ can_return m1 x) ∨
+  (∃y v. z = INR (suspended m1 v, y) ∧ can_return m2 y)
+Proof
+  strip_tac >> pop_assum mp_tac >> simp[choose_def]
+  >> Cases_on ‘first_prefix (either_done m1 m2) h’ >> simp[]
+  >> rename1 ‘_ = SOME n’
+  >> ‘either_done m1 m2 (TAKE n h)’ by fs[first_prefix_SOME]
+  >> Cases_on ‘(m1 (left_view m1 m2 (TAKE n h))).result’ >> simp[]
+  >- (‘∃y. (m2 (right_view m1 m2 (TAKE n h))).result = SOME y’
+        by (gvs[either_done_def]
+            >> Cases_on ‘(m2 (right_view m1 m2 (TAKE n h))).result’ >> gvs[])
+      >> rw[can_return_def] >> metis_tac[])
+  >> rw[can_return_def] >> metis_tac[]
+QED
+
+(* MAIN: the losers choose returns are well-formed and settled if the sides
+   are: continuing with them is as safe as continuing with the sides *)
+Theorem choose_losers:
+  wf m1 ∧ wf m2 ∧ can_return (choose m1 m2) z ⇒
+  (∀x l. z = INL (x, l) ⇒ wf l ∧ (settled m2 ⇒ settled l)) ∧
+  (∀l y. z = INR (l, y) ⇒ wf l ∧ (settled m1 ⇒ settled l))
+Proof
+  rw[can_return_def] >> drule choose_results >> rw[]
+  >> gvs[wf_suspended, settled_suspended]
+QED
+
+(* If m2 needs a snapshot to finish, then before any snapshot choose can
+   only have finished with m1's result *)
+Theorem choose_at_start:
+  (m2 []).result = NONE ∧ (choose m1 m2 []).result = SOME z ⇒ ∃x l. z = INL (x, l)
+Proof
+  rw[choose_def, Once first_prefix_def, either_done_def, AllCaseEqs()] >> gvs[]
+  >> Cases_on ‘(m1 []).result’ >> gvs[]
+QED

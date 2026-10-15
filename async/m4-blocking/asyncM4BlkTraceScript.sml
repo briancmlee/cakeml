@@ -411,3 +411,49 @@ Proof
       irule IS_PREFIX_TRANS >> first_assum (irule_at Any) >>
       simp[FLAT_GENLIST_prefix])
 QED
+
+(* The blocking loop either never blocks forever, or blocks forever in
+   select in some round in which it had nothing to do *)
+Theorem bgrounds_two_outcomes:
+  (∀n. bgrounds fds0 m s0 n ≠ NONE) ∨
+  ∃n kept N s. bgrounds fds0 m s0 n = SOME (kept, N, s) ∧
+               new_actions (log_of m) kept = [] ∧
+               sock_wait (interest fds0 kept) s = NONE
+Proof
+  Cases_on ‘∀n. bgrounds fds0 m s0 n ≠ NONE’ >> simp[] >> gvs[] >>
+  pop_assum mp_tac >> qid_spec_tac ‘n’ >> Induct >- simp[bgrounds_def] >>
+  simp[Once bgrounds_def] >> Cases_on ‘bgrounds fds0 m s0 n’ >> simp[] >>
+  rename1 ‘_ = SOME x’ >> PairCases_on ‘x’ >> simp[] >>
+  rw[] >> every_case_tac >> gvs[] >> TRY (pairarg_tac >> gvs[]) >>
+  metis_tac[]
+QED
+
+(* MAIN: the blocking loop's two outcomes.  Either it runs forever, and
+   its trace is safe and live whenever the polling loop's is; or it blocks
+   forever in select after n rounds, having done all the polling loop
+   would ever do, and the finite trace of those n rounds is safe and live
+   whenever the polling loop's is. *)
+Theorem blocking_echo:
+  wf m ∧ idle_quiet m ⇒
+  ((∀n. bgrounds fds0 m s0 n ≠ NONE) ∧
+   (echo_safe (poll_io fds0 m s0) ⇒ echo_safe (block_io fds0 m s0)) ∧
+   (echo_live sk (poll_io fds0 m s0) ⇒ echo_live sk (block_io fds0 m s0))) ∨
+  (∃n kept N s.
+     bgrounds fds0 m s0 n = SOME (kept, N, s) ∧
+     new_actions (log_of m) kept = [] ∧
+     sock_wait (interest fds0 kept) s = NONE ∧
+     (echo_safe (poll_io fds0 m s0) ⇒
+      echo_safe (fromList (FLAT (GENLIST (bround_events fds0 m s0) n)))) ∧
+     (echo_live sk (poll_io fds0 m s0) ⇒
+      echo_live sk (fromList (FLAT (GENLIST (bround_events fds0 m s0) n)))))
+Proof
+  strip_tac >> Cases_on ‘∀n. bgrounds fds0 m s0 n ≠ NONE’
+  >- (disj1_tac >> simp[] >> drule_all blocking_echo_div >> simp[])
+  >- (disj2_tac >>
+      ‘∃n kept N s. bgrounds fds0 m s0 n = SOME (kept, N, s) ∧
+                    new_actions (log_of m) kept = [] ∧
+                    sock_wait (interest fds0 kept) s = NONE’
+        by metis_tac[bgrounds_two_outcomes] >>
+      qexistsl [‘n’, ‘kept’, ‘N’, ‘s’] >> simp[] >>
+      drule_all blocking_echo_stuck >> simp[])
+QED

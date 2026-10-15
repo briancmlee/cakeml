@@ -52,11 +52,11 @@ Libs
 (* m as a Level 2 computation interested in every event: a snapshot it may
    ignore must have nothing ready and no responses *)
 Definition icomp_def:
-  icomp m = <| run := m; interest := K 𝕌(:word64) |>
+  icomp m = <| run := m; interest := K UNIV |>
 End
 
 Theorem icomp_run[simp]:
-  (icomp m).run = m ∧ (icomp m).interest = K 𝕌(:word64)
+  (icomp m).run = m ∧ (icomp m).interest = K UNIV
 Proof
   simp[icomp_def]
 QED

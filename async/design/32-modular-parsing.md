@@ -497,3 +497,21 @@ the P3 form. Phase 2 (generic server and safety) can build on it.
                             (λD. (LENGTH D + 2) * (LENGTH (proto_all P D) + 3))
   ```
 
+### Phase 3b: liveness through the library (DONE)
+
+Branch `spike/proto-handler-live`, which merges m4-server's
+`spike/sw-live` (asyncServerWithLive: `hread`, `henv`, `handler_live`,
+`server_with_live`).
+- **`asyncProtoLive`**:
+  - `hok_proto`;
+  - `proto_handler_live`: `proto_env_live` with `henv` unfolded (3 lines);
+  - `proto_live_rounds`: `proto_live P resp s0` for the loop's trace, from
+    `server_with_live`. No socket or loop reasoning is re-proved.
+- **`http-proto-inst/asyncProtoLiveVia{Strict,H,B}`**: `http_live_via_proto`,
+  `http_live_h_via_proto` and `http_live_b_via_proto` state the trusted
+  `http_live{,_h,_b}` for the existing servers' traces, through the generic
+  pipeline. Each takes 2 lines.
+- With phase 2's `http_comp_safe_X_via_proto`, both halves of each
+  server's trace-level spec now go through the generic pipeline. What
+  remains per instance is the program-level part (phase 4).
+

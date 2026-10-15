@@ -4,7 +4,8 @@
 # Instances live in ../http-proto-inst.
 INCLUDES = ../model ../cf-spike ../cf-actions ../cf-reactive ../ffi-spike \
            ../m3-assembly ../m4-server ../m4-common ../spec ../m4-safety \
-           ../runnable ../machine-code ../http-model ../http-impl ../http-safety
+           ../runnable ../machine-code ../http-model ../http-impl ../http-safety \
+           ../m4-liveness ../http-liveness ../library-liveness
 ifdef POLY
 HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
 endif

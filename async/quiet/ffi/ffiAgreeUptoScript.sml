@@ -359,3 +359,39 @@ Proof
   qpat_x_assum ‘∀k. (FST _).io_events = _ ∧ _’ (qspec_then ‘k’ mp_tac) >>
   Cases_on ‘evaluate_prog_with_clock (st with ffi := f2) env k prog’ >> gvs[]
 QED
+
+(* ------------------------------------------------------------------------
+   A run's events record its oracle's answers
+   ------------------------------------------------------------------------ *)
+
+Definition answers_of_def:
+  answers_of evs =
+    MAP (λe. case e of IO_event n c bl => (INL (MAP SND bl) : word8 list + ffi_outcome)) evs
+End
+
+Theorem answers_of_APPEND[simp]:
+  answers_of (l1 ++ l2) = answers_of l1 ++ answers_of l2
+Proof
+  simp[answers_of_def]
+QED
+
+(* MAIN: along any run, the events appended are the calls made and the
+   answers the oracle gave; the answers to what follows come from the
+   final state *)
+Theorem call_FFI_rel_answers:
+  ∀f f'. RTC call_FFI_rel f f' ⇒
+         f'.oracle = f.oracle ∧
+         ∃evs. f'.io_events = f.io_events ++ evs ∧
+               ∀cs. ffi_answers f (calls_of evs ++ cs) =
+                    answers_of evs ++ ffi_answers f' cs
+Proof
+  ho_match_mp_tac relationTheory.RTC_INDUCT >> rw[]
+  >- (TRY (qexists_tac ‘[]’) >> simp[calls_of_def, answers_of_def]) >>
+  gvs[call_FFI_rel_def, call_FFI_def, AllCaseEqs()]
+  >- (TRY (qexists_tac ‘IO_event n conf (ZIP (bytes, t)) :: evs’) >>
+      simp[calls_of_def, answers_of_def, ffi_answers_def, MAP_ZIP] >>
+      gen_tac >>
+      first_x_assum (qspec_then ‘cs’ mp_tac) >>
+      simp[calls_of_def, answers_of_def, MAP_ZIP])
+  >> TRY (qexists_tac ‘evs’) >> simp[]
+QED

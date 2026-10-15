@@ -1,0 +1,19 @@
+# Generated from the review-series layout (see REVIEW-SERIES-PLAN.md).
+INCLUDES = ../../cakeml/approx \
+           ../../cakeml/library \
+           ../../loop/polling \
+           ../../model/core \
+           ../../model/level2 \
+           ../echo \
+           ../../servers/echo \
+           ../../servers/http \
+           ../../servers/relabel \
+           ../../spec \
+           ../../world/clock \
+           ../../world/composed \
+           ../../world/sockets \
+           $(CAKEMLDIR)/semantics
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif
+EXTRA_CLEANS = http_server.sexp

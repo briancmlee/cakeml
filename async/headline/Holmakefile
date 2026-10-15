@@ -6,8 +6,11 @@ INCLUDES = ../cakeml/approx \
            ../model/level2 \
            ../programs/echo \
            ../programs/echo-live \
+           ../programs/http \
+           ../programs/http-h \
            ../servers/closed-loop \
            ../servers/echo \
+           ../servers/http \
            ../servers/relabel \
            ../spec \
            ../world/clock \

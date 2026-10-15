@@ -21,10 +21,28 @@ Kept current at every commit.
   spike/modular-parsing): asyncProtoServer, asyncProtoSafe,
   asyncProtoSockModel, plus `asyncProtoVia{Strict,H,B}`, which re-derive
   `http_comp_safe{,_h,_b}` through the generic pipeline.
-- NEXT Phase 3: `proto_handler_live`, discharging design/34's
-  `handler_live` (§2.9). Waiting on m4-server for the exact statement and
-  branch.
+- DONE Phase 3a (branch `spike/proto-live`, stacked on
+  spike/proto-server): asyncProtoMachine, asyncProtoDrain,
+  asyncProtoEnvLive (`proto_env_live`: handler_live with henv spelled out).
+- NEXT Phase 3b: when m4-server pushes `spike/sw-live` (theory
+  asyncSWLive: hread, henv, handler_live, sw_live), merge it and prove
+  `proto_handler_live` by unfolding to `proto_env_live`. Then
+  asyncProtoLive = sw_live instance, giving `proto_live` for the trace.
+  Agreed bound: B D = (LENGTH D + 2) * (LENGTH (proto_all P D) + 3).
+- THEN Phase 4: generic CakeML handler and CF spec (§2.4).
 - Not mine any more: cause-of-actions (async-spike's `hok_cause`).
+
+## Gotchas (phase 3)
+
+- Ported proofs with a new hypothesis: state `proto_ok P ⇒ (orig)`,
+  start with `DISCH_TAC`, and use lemmas as `ok th` (hypothesis
+  undischarged), so drule/irule shapes are unchanged. Use
+  `UNDISCH (SPEC_ALL th)` where a proof does `Q.INST` (ok's GEN_ALL
+  hides the names).
+- Renaming `h*` to `p*` must also rename `h*_def`: the stale names resolved
+  silently to the echo machine's definitions in asyncProgress.
+- `drule … Sj_SUC` with `qspecl_then` over the free variables is
+  fragile; `drule_then (fn th => REWRITE_TAC[th]) Sj_SUC` is not.
 
 ## Assumptions made
 

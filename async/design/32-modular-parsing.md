@@ -476,3 +476,24 @@ the P3 form. Phase 2 (generic server and safety) can build on it.
 - **Level 2 friendliness:** the handler's body (`proto_body`) is its own
   definition, so a `server_with2` version can reuse its shape.
 
+### Phase 3a: generic liveness of the handler (DONE, up to design/34's wrapper)
+
+- **`asyncProtoMachine`** (22 proofs): the handler as a per-round state
+  machine (`PA`/`PB`/`PD`), `pmachine_trans`, `pmachine_inv`.
+- **`asyncProtoDrain`** (20 proofs): `pmachine_live`, `pmachine_live_read`,
+  `pmachine_live_p` (partial reads, the `(|D|+2)(K+3)` bound),
+  `pmachine_reading`, `pmachine_eof`.
+- These are asyncHttpMachineB/DrainB ported to any `proto_ok P` by
+  renaming. Lemmas that need `proto_ok P` are used with it undischarged
+  (`ok`, at the top of each file), so the ported proofs keep their shape.
+- **`asyncProtoEnvLive`**: `proto_env_live` is design/34's `handler_live`
+  obligation for `proto_handler`, with `henv`'s four facts written out on
+  the handler's transcript. Once `asyncSWLive` (m4-server, branch
+  `spike/sw-live`) lands, `proto_handler_live` is its unfolding, about
+  10 lines:
+  ```
+  proto_ok P ⇒ handler_live (λfd. proto_handler P resp (fd, ""))
+                            (λD. MAP resp (proto_all P D))
+                            (λD. (LENGTH D + 2) * (LENGTH (proto_all P D) + 3))
+  ```
+

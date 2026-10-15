@@ -1,7 +1,8 @@
 # 25: EchoSpec2: echo with close and fd reuse (SPEC FIRST, for your review)
 
 Status: **statements written and typechecked; bite and non-vacuity lemmas
-proved; nothing else proved yet.** No cheats, and `Holmake -j2` in
+proved.** Reviewed: decisions 1, 3, 4, 5 approved; decision 2
+generalised to any allocation policy; the closing clause added. No cheats, and `Holmake -j2` in
 `async/spec/` is green. Branch `spike/echospec2`, stacked on
 `spike/m4-liveness` (PR #30, which proves `echo_spec 3w echo_prog`).
 EchoSpec is unchanged.
@@ -23,7 +24,13 @@ echo_spec2 lfd prog ⇔
 
 echo_safe2 io     ⇔ ∀evs j. LPREFIX (fromList evs) io ⇒ ep_written j evs ≼ ep_read j evs
 echo_live2 sk io  ⇔ ∀j n. ∃evs. LPREFIX (fromList evs) io ∧ sent2_upto j n sk ≼ ep_written j evs
+echo_closes2 io   ⇔ ∀evs j. LPREFIX (fromList evs) io ∧ ep_eof_read j evs ⇒
+                            ∃evs'. LPREFIX (fromList evs') io ∧ ep_closed j evs'
 ```
+
+`echo_closes2` (added after review): once the server has read the EOF of
+episode j's client, it eventually closes episode j's fd. Without it, a
+server that never closes (so never frees an fd) would meet the spec.
 
 It has EchoSpec's shape, with per-fd projections replaced by per-**episode**
 ones. Episode j is the life of the j-th accepted connection: from the accept
@@ -38,12 +45,16 @@ of the events in that window. The target is `echo_spec2 3w <program>`.
    connection. In version 1 the schedule picked each connection's fd in
    advance (`Connect l c`). That cannot model reuse, because which fd a
    client gets depends on what the program has closed.
-2. **The kernel picks the fd at accept: the lowest one not in use.** "In
-   use" covers `reserved` (the process's other fds, e.g. 0, 1, 2), the
-   listeners and the open connections. This is POSIX's rule. With
-   `reserved = [0w;1w;2w]` and listener 3 it matches what `socket_ffi.c`
-   sees, as long as the program opens no other fds. `server_world2` allows
-   any `reserved`.
+2. **The kernel picks ANY free fd at accept** (revised after review).
+   "In use" covers `reserved` (the process's other fds, e.g. 0, 1, 2),
+   the listeners and the open connections. The choice is the world's
+   allocation function `alloc j used`, and `server_world2` assumes only
+   `alloc_ok` (it returns a free fd), so the theorem holds for every
+   allocation policy. POSIX's rule, the lowest free fd (`lowest_free`), is
+   one instance (`lowest_free_alloc_ok`). With `reserved = [0w;1w;2w]` and
+   listener 3 it matches what `socket_ffi.c` sees, as long as the program
+   opens no other fds. The generality costs the proof nothing: it only
+   uses that the fd is free.
 3. **Liveness per client.** With one listener, accept takes the oldest
    pending client, so the j-th accept serves client j. `echo_live2` says
    that client j's data is written back in episode j. The data a client
@@ -65,9 +76,11 @@ of the events in that window. The target is `echo_spec2 3w <program>`.
 | `broken_leaks_across_reuse` | **new**: reading "a" on fd 4, closing it, accepting a new client on fd 4 and writing "a" to it violates `echo_safe2` |
 | `v1_misses_leak` | ... while EchoSpec's per-fd `echo_safe` holds of that trace: why EchoSpec2 projects per episode |
 | `broken_never_echoes2` | never echoing violates `echo_live2` |
+| `broken_never_closes` | **new**: version 1's behaviour (echo, read EOF, never close) is safe and live but violates `echo_closes2` |
+| `lowest_free_alloc_ok` | POSIX's lowest-free policy is an allocation policy |
 | `hello_world2_sched_wf`, `server_world2_exists` | a fair world exists: two clients, one after the other |
 | `hello_world2_reuses` | in it, the kernel really reuses an fd: accept gives 4, close 4, accept gives 4 again |
-| `ideal2_trace_safe_and_live` | an ideal echo trace with two episodes on fd 4 is safe and live |
+| `ideal2_trace_spec` | an ideal echo trace with two episodes on fd 4 is safe, live and closes |
 
 ## 4. The plan for the proof (next branches)
 

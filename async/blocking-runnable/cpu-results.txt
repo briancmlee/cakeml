@@ -1,6 +1,5 @@
-calibration: a C busy loop measures 16.2% here (= one core fully busy in this environment)
+calibration: a C busy loop measures 13.6% here (= one core fully busy in this environment)
 phases of 30 s each; CPU% = process CPU time / wall time (100% = one core)
 server                  idle-fresh  light-load  idle-after  rtt median
-echo_blocking                 0.0%        0.1%       80.4%       247us
-echo_polling                  0.1%        0.2%        0.1%       247us
-echo_polling_nowait          24.4%       27.3%       82.5%       265us
+echo_blocking                 0.0%        0.1%       65.8%       315us
+echo_polling                 26.0%       15.9%       67.3%       718us

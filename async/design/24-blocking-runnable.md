@@ -32,10 +32,9 @@ rejects those. With k = 0 it blocks forever.
 **Trust item:** `ffisock_select` behaves as `ffi_sock_select`. The
 following `sock_poll` reports the ready set, as in the model.
 
-`socket_ffi.c` also gains a compile-time switch, `-DNO_IDLE_WAIT`. It
-turns off #23's idle-wait heuristic in `sock_poll` (§4), so that
-`sock_poll` never waits, exactly as the model's poll. The default build is
-unchanged.
+#23's idle-wait heuristic in `sock_poll` has since been **removed**
+(§4, `spike/no-idle-wait`): `sock_poll` never waits, exactly as the
+model's poll, in every build.
 
 ## 2. The program, compiled and running
 
@@ -68,23 +67,29 @@ calibration row, not with 100%. Run `make cpu` in a normal terminal for
 absolute numbers.
 
 ```
-calibration: a C busy loop measures 16.2% here (= one core fully busy in this environment)
+calibration: a C busy loop measures 13.6% here (= one core fully busy in this environment)
+phases of 30 s each; CPU% = process CPU time / wall time (100% = one core)
 server                  idle-fresh  light-load  idle-after  rtt median
-echo_blocking                 0.0%        0.1%       80.4%       247us
-echo_polling                  0.1%        0.2%        0.1%       247us
-echo_polling_nowait          24.4%       27.3%       82.5%       265us
+echo_blocking                 0.0%        0.1%       65.8%       315us
+echo_polling                 26.0%       15.9%       67.3%       718us
 ```
+
+(Re-measured after the idle wait was removed, §4; the same niced session,
+so compare with the calibration row. Before the removal, `echo_polling`
+measured 0.1% / 0.2% / 0.1% with the heuristic, and the model-faithful
+build without it, then called `echo_polling_nowait`, measured
+24.4% / 27.3% / 82.5% against a 16.2% calibration.)
 
 | build | what it is |
 |---|---|
-| `echo_blocking` | the blocking program (this PR), `sock_poll` without the idle wait |
-| `echo_polling` | #23's polling program and C side, with its 50 ms idle-wait heuristic |
-| `echo_polling_nowait` | the same polling program, `sock_poll` exactly as the model |
+| `echo_blocking` | the blocking program (this PR) |
+| `echo_polling` | #23's polling program; `sock_poll` exactly as the model's (no wait) |
 
 What the numbers show:
 
-- **The model-faithful polling server busy-waits** whenever it runs. It is
-  at or above the busy-loop calibration in every phase.
+- **The polling server busy-polls** whenever it runs: it is at or above
+  the busy-loop calibration in every phase. This is the honest cost of a
+  `sock_poll` that returns at once, as the model's does.
 - **The blocking server sleeps** while no client has ever connected, and
   under light load.
 - **But it spins once a client has disconnected.** The loop's interest
@@ -94,24 +99,22 @@ What the numbers show:
   - This is a property of the verified loop, not of the C side.
   - The fix (select only on the live connections) is in
     `spike/m4-blocking-live`.
-- **#23's polling build is quiet** only because of its C-side heuristic
-  (§4), not because of anything verified.
 
-## 4. #23's idle-wait heuristic in `sock_poll` (a deviation in trusted code)
+## 4. #23's idle-wait heuristic in `sock_poll`: removed
 
-#23's `sock_poll` waits up to 50 ms when the program looks idle: no
+#23's `sock_poll` waited up to 50 ms when the program looked idle: no
 socket operation since the last poll, and the same ready set for 2 polls
-in a row.
+in a row. The wait was unobservable in the model (its poll delivers one
+step of an arbitrary arrival schedule, with no time inside a poll), but
+it was a scheduling heuristic in trusted code, not a refinement of
+anything proved, and it added up to 50 ms of latency when a quiet period
+ended.
 
-- **Semantically harmless.** The model's poll delivers one step of an
-  arbitrary arrival schedule, and there is no time inside a poll. So how
-  long the real poll waits is unobservable in the model.
-- **It must be listed** as a deviation in trusted code.
-  - It is a scheduling heuristic, not a refinement of anything proved.
-  - It adds up to 50 ms of latency when a quiet period ends.
-- **Recommendation.** With the blocking program available, remove it (or
-  build with `-DNO_IDLE_WAIT`). If it stays, keep it with the
-  justification above.
+**It has been removed** (`spike/no-idle-wait`, a user decision): `sock_poll`
+is a single `poll` with timeout 0, so the trusted C now matches the
+model's poll directly. The cost is that the polling program busy-polls
+while idle (§3); the blocking program, which sleeps in `sock_select`, is
+the one to run.
 
 ## 5. Connections are never closed (limitation, future work)
 

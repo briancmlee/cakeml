@@ -1,0 +1,6 @@
+# The final top-level specifications (statements only, plus "bite" and
+# non-vacuity lemmas).  Depends on the socket model in ../ffi-spike.
+INCLUDES = ../ffi-spike
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

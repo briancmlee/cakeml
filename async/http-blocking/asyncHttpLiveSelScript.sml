@@ -14,7 +14,7 @@
   Note: the handler can also stop without an EOF (an invalid request).
   Its fd then stays in the live list, which still covers the server's
   interest (sel_covers only needs ⊇), but select may then return at once
-  for an fd nobody reads: see design note 28 §4.
+  for an fd nobody reads: see design note 31 §4.
 
   MAIN: http_handler_eofs, http_live_ok, quiet_shttp, sel_covers_http.
 *)

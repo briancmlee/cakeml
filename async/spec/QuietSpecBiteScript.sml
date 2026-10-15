@@ -11,6 +11,11 @@
     forever.
   - broken_sleeps_early: a program that goes to sleep before echoing what
     arrived fails, in particular one that blocks in select at once.
+  - select_non_socket_fails, select_stdin_fails: selecting on an fd that
+    is not a socket of the model fails the FFI call; it never puts the
+    program to sleep (asleep needs FFI_diverged).  Without that rule the
+    model would sleep forever on fd 0, which is never ready
+    (stdin_never_ready).
   - ideal_quiet / ideal_quiet_h / ideal_quiet_b: an ideal sleeping run
     meets every clause of the statement in a quiet world.
 *)
@@ -143,6 +148,36 @@ Proof
   gvs[asleep_def] >> rw[] >>
   disj2_tac >> irule broken_never_echoes >> rpt strip_tac >>
   first_x_assum irule >> gvs[LPREFIX_fromList, from_toList]
+QED
+
+(* BITE: select on an fd that is not a socket of the model fails; it does
+   not block, so it cannot end the run asleep *)
+Theorem select_non_socket_fails:
+  MEM fd (bytes_fds conf) ∧ ¬is_listener sk fd ∧ ¬is_conn sk fd ⇒
+  sel_oracle (ExtCall «sock_select») sk conf bs = Oracle_final FFI_failed
+Proof
+  rw[sel_oracle_def, sel_fn_def, ffi_select_def, sel_ok_def, EVERY_MEM] >>
+  metis_tac[]
+QED
+
+(* fd 0 in hello_world: never ready, so the old rule would block forever *)
+Theorem stdin_never_ready:
+  sel_wait [0w] hello_world = NONE
+Proof
+  ‘(tick hello_world).sched = [||]’ by simp[tick_def, hello_world_def] >>
+  ‘∀n. ticks (SUC n) hello_world = tick hello_world’
+    by simp[ticks_def, ticks_quiet] >>
+  simp[sel_wait_def] >>
+  simp[tick_def, hello_world_def, deliver_def, deliver1_def, is_ready_def,
+       is_listener_def, is_conn_def, AFUPDKEY_def, empty_conn_def]
+QED
+
+Theorem select_stdin_fails:
+  sel_oracle (ExtCall «sock_select») hello_world (fds_bytes [0w]) [] =
+  Oracle_final FFI_failed
+Proof
+  irule select_non_socket_fails >> qexists_tac ‘0w’ >>
+  simp[hello_world_def, is_listener_def, is_conn_def]
 QED
 
 (* ------------------------------------------------------------------------

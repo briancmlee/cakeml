@@ -94,7 +94,7 @@ Proof
 QED
 
 (* One answered emit under prompt answering *)
-Theorem bind_emit_step[local]:
+Theorem bind_emit_step:
   prompt (bind (emit a) f) (s :: q) ⇒
   ∃r. oHD s.results = SOME r ∧ prompt (f r) q ∧
       trans (bind (emit a) f) (s :: q) = (a, SOME r) :: trans (f r) q

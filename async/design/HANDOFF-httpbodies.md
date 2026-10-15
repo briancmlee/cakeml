@@ -24,9 +24,11 @@ Kept current at every commit.
 
 ## Status
 
-- DONE: spec plus bites (proved), feasibility note.
-- IN PROGRESS: the parser and the `_b` pipeline (waiting for the
-  dependency build in this fresh worktree, at `-j1`).
+- DONE: spec plus bites (proved), feasibility, parser, safety
+  (`http_prog_b_safe`), liveness and the whole spec
+  (`http_prog_b_spec : ⊢ http_spec_b 3w demo_files http_prog_b`, DISK_THM
+  only), the linear-time parsing fix (2d54fd809), and the runnable demo with
+  plain curl. No cheats; Holmake -j1 green.
 
 ## Assumptions made
 
@@ -36,3 +38,11 @@ See 28 §3.
 
 - A fresh sparse worktree builds the whole async stack (~81 theories) at
   `-j1` before anything downstream can be checked.
+- The hol-lsp session goes stale ("No merge for grammars", "not in
+  ancestry") after ancestors are rebuilt underneath it. Restart it, or
+  check with Holmake.
+- The translator has no `toLower` and no `FOLDL`; num subtraction gives a
+  precondition unless guarded.
+- Running time is invisible to the proofs. A double recursive call made
+  the parsers exponential, and only the runnable demo revealed it. Worth
+  checking `FST (f x) … SND (f x)` patterns in any translated code.

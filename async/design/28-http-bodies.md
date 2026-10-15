@@ -1,8 +1,12 @@
 # 28: Request bodies (Content-Length): spec and feasibility
 
-Status: **step 1 (spec) is done and proved. Step 2 (this note) concludes
-it is feasible, with no blocking issue.** Branch `spike/http-bodies`,
-stacked on `spike/http-liveness` (which has `http_prog_h_spec`).
+Status: **done.** `http_prog_b_spec : ⊢ http_spec_b 3w demo_files
+http_prog_b` is proved, with only the `DISK_THM` tag (no oracles, no
+axioms) and no cheats; `Holmake -j1` is green in `async/http-bodies/`. The
+program runs, and plain `curl -d` works (§5). Branch `spike/http-bodies`,
+stacked on `spike/http-liveness` (which has `http_prog_h_spec`). The
+feasibility analysis of §2 held: the per-connection machine and the drain
+argument carried over unchanged.
 
 ## 1. The spec (done)
 
@@ -136,6 +140,65 @@ That is roughly 3–4 worker-days in total, with the parser being 1 day and
 the rest mostly porting. The dominant risk is build time and memory: the
 machine is at its limit, so I use `-j1`. The proof structure is not a
 risk.
+
+## 4. What was built (step 3)
+
+| theory (`async/http-bodies/`) | contents |
+|---|---|
+| `asyncHttpParseB` | `parse_brequest` (method, request line, headers, framed body); `parse_bprint`, `parse_bcomplete`, `parse_bextend`, `parse_all_brequests`, `parse_all_b_mono` (39 proofs) |
+| `asyncHttpParseBExt` | `parse_brequest_invalid_ext`, `parse_binvalid` (the hardest lemma, ~150 lines, reusing asyncHttpParseHExt) |
+| `asyncHttpServerB`, `asyncHttpSafeB`, `asyncHttpSockModelB` | model server, `http_comp_safe_b`, socket-vocabulary unfolding |
+| `asyncHttpSockProgB`, `asyncHttpSockSpecB` | the CakeML program (`brespond` with `brespond_thm`; the parser translated) and its CF specs |
+| `asyncHttpMainB`, `asyncHttpSemanticsB`, `asyncHeadlineB` | main, the export (64 declarations), `http_semantics_prog_bodies`, `http_prog_b_safe` |
+| `asyncHttpMachineB`, `asyncHttpDrainB`, `asyncHttpLiveB`, `asyncHttpSpecB` | liveness: mechanical ports of http-liveness-h; `http_prog_b_spec` |
+
+### Linear-time parsing (a bug found on the way, in all HTTP servers)
+
+`split_at` (asyncHttpParseH) and `split_path` (asyncHttpParse) evaluate
+their recursive call twice (`FST` and `SND` of it), so they take time
+exponential in the distance to the separator.
+
+- **Symptom:** a 33-character header value already takes 2^33 steps.
+  curl -d's `Content-Type: application/x-www-form-urlencoded` made the
+  server spin at 100% CPU forever.
+- **Proofs unaffected:** the theorems are about values, and liveness is
+  "eventually", so no theorem is wrong.
+- **Other servers:** the header-tolerant and strict running servers have
+  the same problem with long header values, such as browser User-Agents.
+- **Fix (asyncHttpSockProgB):** `split_at2`, `split_path2` and
+  `parse_headers2` share the recursive call. They are proved equal to the
+  originals (`split_at2_eq`, `split_path2_eq`, `parse_headers2_eq`,
+  `bline2_eq`), and `parse_brequest` is translated through them
+  (`parse_brequest_lin`). No theorem about the parser changes; only the
+  compiled code becomes linear.
+
+The same translation-only fix applies to the H server (m4-server is
+porting it).
+
+**Translator notes:**
+- `toLower` has no basis translation. It is translated here, with its
+  `CHR` side condition discharged.
+- `FOLDL` has no translation, so `dec_fold` is translated through
+  `dec_acc`.
+- An unguarded `ORD c - 48` gives a precondition; it is guarded instead.
+
+## 5. Running it
+
+```
+cd async/http-bodies
+Holmake          # writes http_server_b.sexp
+make demo        # writes http-bodies-demo-transcript.txt
+```
+
+The transcript shows:
+- `curl -d hello …/echo` answered with `hello`;
+- a body that is literally `GET /a HTTP/1.0\r\n\r\n`, echoed back as
+  data;
+- a 20 kB body (many reads) echoed in full;
+- a request with a 146-character User-Agent, answered in about 0.04 s;
+- POST to another path answered with 404;
+- a request following a body on the same connection, answered;
+- `Transfer-Encoding: chunked` rejected (no response).
 
 ## 3. Assumptions made
 

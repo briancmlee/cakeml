@@ -1,0 +1,12 @@
+# The runnable BLOCKING echo server: m4-blocking's verified program
+# (echo_b_prog, asyncM4BlkMain) plus the call main (), exported as an
+# S-expression for the CakeML release compiler (as ../runnable does for the
+# polling program).
+INCLUDES = ../model ../cf-spike ../cf-actions ../cf-reactive ../ffi-spike \
+           ../m3-assembly ../m4-server ../m4-common ../spec ../m4-safety \
+           ../m4-blocking ../runnable $(CAKEMLDIR)/semantics
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif
+
+EXTRA_CLEANS = echo_blocking.sexp

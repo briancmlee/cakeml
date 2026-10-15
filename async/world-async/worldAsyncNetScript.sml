@@ -34,7 +34,7 @@ Theory worldAsyncNet
 Ancestors
   pair list rich_list arithmetic option pred_set string
   asyncCore asyncLevel1 asyncLoop asyncTranscript asyncServer
-  asyncServerSafety
+  asyncServerSafety worldAsyncCtrans
 Libs
   BasicProvers
 
@@ -153,49 +153,6 @@ Definition run_def:
         (s, w') = world_step fd c w (new_actions (log_of m) hs)
     in (hs ++ [s], w')
 End
-
-(* ------------------------------------------------------------------------
-   Completed transcripts: only the rounds whose responses have arrived
-   ------------------------------------------------------------------------ *)
-
-Definition ctrans_def:
-  ctrans m h = FLAT (GENLIST (round_trans m h) (LENGTH h))
-End
-
-Theorem ctrans_NIL[simp]:
-  ctrans m [] = []
-Proof
-  simp[ctrans_def]
-QED
-
-Theorem ctrans_SNOC:
-  ctrans m (h ++ [s]) = ctrans m h ++ zipr (new_actions (log_of m) h) s.results
-Proof
-  simp[ctrans_def] >> REWRITE_TAC[GSYM ADD1, GENLIST, SNOC_APPEND, FLAT_APPEND]
-  >> simp[round_trans_def, responses_at_def, EL_APPEND2, TAKE_LENGTH_APPEND, zipr_def]
-  >> AP_TERM_TAC >> simp[GENLIST_FUN_EQ, round_trans_def, TAKE_APPEND1,
-                         responses_at_def, EL_APPEND1]
-QED
-
-Theorem trans_ctrans:
-  trans m h = ctrans m h ++ zipr (new_actions (log_of m) h) []
-Proof
-  simp[trans_def, ctrans_def, GENLIST, SNOC_APPEND, round_trans_def,
-       responses_at_def]
-QED
-
-Theorem zipr_NIL_read:
-  ∀as. read fd (zipr as []) = []
-Proof
-  Induct >> simp[zipr_def]
-  >> Cases >> simp[]
-QED
-
-Theorem LENGTH_zipr[simp]:
-  ∀as rs. LENGTH (zipr as rs) = LENGTH as
-Proof
-  Induct >> simp[zipr_def]
-QED
 
 (* ------------------------------------------------------------------------
    The kernel moves strings, it never creates or drops them

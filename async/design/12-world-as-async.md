@@ -1,8 +1,10 @@
 # The world as an async program (experiment)
 
-Status: **experimental**, timeboxed. Prototype in
-`async/world-async/worldAsyncNetScript.sml` (pure HOL, includes
-`../model`; all proved, no `cheat`).
+Status: **experimental**, timeboxed. Prototypes in `async/world-async/`
+(pure HOL, includes `../model`; all proved, no `cheat`):
+`worldAsyncNetScript.sml` (one connection, §2–§3),
+`worldAsyncMultiScript.sml` (the full server, any number of clients, §8),
+`worldAsyncCtransScript.sml` (shared transcript lemmas).
 
 **Verdict, short.** The literal idea, a world that is an async computation
 with the interface flipped, has no clean formulation (§1), so I shelved
@@ -12,6 +14,13 @@ state machine)**. Composition is well defined, takes a page of HOL, and
 gives a closed-system theorem for *every* client program at almost no cost
 (§3). Liveness, i.e. fairness derived from client structure, is plausible
 but unproved (§5). Worth one more step (§7).
+
+**Update (§8): the step from §7 is done.** The full server `server lfd`, run
+against any number of clients written as one async program (e.g. `both
+client1 client2`), with a multi-connection kernel: on every connection,
+what the client receives is a prefix of what it sent, in order. `fresh` is
+now a proved kernel fact, so the closed-system theorem has **no
+assumptions**. Liveness is still open; §8.4 says exactly what blocks it.
 
 ## 1. The literal mirror doesn't work
 
@@ -205,3 +214,160 @@ pursued, the next step (about half a day) is:
    assumption.
 3. Only then decide whether to invest in the liveness simulation (§5), in
    coordination with the closed-loop spike so the two don't duplicate work.
+
+## 8. Many clients, the full server (`worldAsyncMulti`)
+
+### 8.1 The kernel
+
+```
+knet = <| pending : num list; next : num;
+          up : num -> string list; down : num -> string list |>
+net0 lfd = <| pending := []; next := SUC lfd; up := K []; down := K [] |>
+
+client actions:  Connect | Send g d | Recv g        responses: Connected g | Sent | Got d | Empty
+server actions:  Accept l | Read g | Write g d      responses: Accepted g | NoConn | Data d | WouldBlock | Written
+```
+
+- `Connect` takes a fresh number `next` (above the listener), appends it to
+  `pending` and returns it to the client at once. The client can start
+  sending before it is accepted, as with a real socket's backlog.
+- `Accept` pops `pending`. `Read g`/`Write g d` and `Send g d`/`Recv g`
+  work on connection g's two queues, as before.
+- Readiness: `Readable lfd` iff something is pending; `Readable g` iff
+  `up g ≠ []`; the client's `CReadable g` iff `down g ≠ []`. This is
+  computed over the connections handed out so far
+  (`conns lfd k = [SUC lfd ..< k.next]`), so the sets are finite and EVAL
+  can compute them.
+- `world_step` and `run` are as in §2, with the client batch being the
+  combined batch of `both client1 client2 …`. **Client-side `both` works
+  unchanged:** the kernel answers the combined batch positionally, and
+  `both` routes each response back to the client that asked. Each client
+  names its connection, so no routing by address is needed on that side.
+  The asymmetry in §1 disappears once the world is a kernel rather than a
+  program.
+
+### 8.2 What is proved
+
+```
+(* any server m, any client program c *)
+multi_conservation:
+  run lfd m c n = (hs, (k, hc)) ⇒
+  (∀g. read g (ctrans m hs) ++ k.up g = sent g (ctrans c hc) ∧
+       got g (ctrans c hc) ++ k.down g = written g (ctrans m hs)) ∧
+  accepted (ctrans m hs) ++ k.pending = conns lfd k ∧ SUC lfd ≤ k.next
+
+(* `fresh` is a kernel fact, not an assumption *)
+fresh_kernel:
+  run lfd m c n = (hs, (k, hc)) ⇒ fresh (trans m hs)
+
+(* MAIN: the echo server, any clients: everything sent on g is accounted for *)
+closed_echo:
+  run lfd (server lfd) c n = (hs, (k, hc)) ⇒
+  ∀g. sent g (ctrans c hc) =
+        got g (ctrans c hc) ++ k.down g ++
+        written g (zipr (new_actions (log_of (server lfd)) hs) []) ++ k.up g
+
+(* MAIN: for any number of clients (one async program, e.g. a `both` of
+   them), on every connection, received ≼ sent, in order *)
+every_client_receives_what_it_sent:
+  run lfd (server lfd) c n = (hs, (k, hc)) ⇒
+  ∀g. got g (ctrans c hc) ≼ sent g (ctrans c hc)
+```
+
+The server side is entirely `echo_server_safety` from
+`asyncServerSafety`, reused as is. Its one hypothesis, `fresh`, is
+discharged by `fresh_kernel`: the server is handed exactly the connections
+that were made, in order (`accepted ++ pending = conns`), and those are
+distinct. The new proofs are the kernel's bookkeeping (`sacts_moves`,
+`cacts_moves`) and an induction over rounds, about 300 lines in all.
+
+**Per connection versus per client.** The theorem is stated per
+connection. It becomes per client when each client only uses the
+connection it got from `Connect`, which is true of `client` below. A client
+that sends on someone else's connection number is not prevented (no
+ownership), and the theorem still holds per connection, which is the
+honest statement.
+
+### 8.3 Clients and a concrete run
+
+```
+client ls = bind (emit Connect) (λr. case r of
+              Connected g => bind (send_all g ls) (λu. recv_n (g, LENGTH ls))
+            | _ => return [])
+two = both (client ["hi"; "there"]) (client ["yo"])
+```
+
+`example_two_clients` (EVAL, about 12 s): after 10 rounds,
+`(two hc).result = SOME (["hi"; "there"], ["yo"])`, and the server emitted
+
+```
+[Accept 0; Read 1; Accept 0; Write 1 "hi"; Read 2; Read 1; Write 2 "yo"; Write 1 "there"]
+```
+
+So client 1 got connection 1 and client 2 got connection 2, and the two
+connections were served interleaved.
+
+Cost of EVAL: the model recomputes each computation from its whole history
+every round, so running n rounds costs roughly n² polls of a tree that
+grows with the number of handlers. It takes 0.3 s for 4 rounds, 4 s for 8,
+and 27 s for 12. That's fine for examples but not for a test harness. A
+harness would run the compiled clients, not EVAL (§6, payoff 3).
+
+A pitfall I hit: with readiness written as `set l ∪ {Readable lfd}`, EVAL
+can't decide membership. `wait` then never resolves, and evaluating `fix`
+blows up without an error. Readiness is now a single `set` of a list.
+
+### 8.4 Liveness: what exactly blocks it
+
+The conjecture:
+
+> For all `ls1 ls2`, there is n such that
+> `run lfd (server lfd) (both (client ls1) (client ls2)) n = (hs, (k, hc))`
+> and `(both (client ls1) (client ls2) hc).result = SOME (ls1, ls2)`.
+> More generally: for any client program that eventually stops sending and
+> keeps receiving on its connections, `got g = sent g` eventually.
+
+With `closed_echo`, it reduces to showing that the queues drain:
+`k.up g`, `k.down g`, the in-flight writes and `pending` eventually become
+empty, and the clients keep receiving. Three things block a cheap proof:
+
+1. **No residual operator.** A computation is a function of its *whole*
+   history. A progress argument needs "after history h, m behaves like
+   m' on the rest", i.e. `m (h ++ h') = (m after h) h'` up to the actions
+   already emitted. The model has this for `bind` once the first part has
+   finished (`bind_continues`). It does not have it for `both`: the
+   routing of h' depends on `par_views` of all of h, and for `fix` only via
+   unfolding. A residual operator `after m h` with laws for `bind`/`both`/
+   `map`/`fix` (and `wf` preservation) is the missing infrastructure. It's
+   probably a few hundred lines in `asyncCore`/`asyncLevel1`, and generally
+   useful (it is also what a step-function view of a program needs).
+2. **An unbounded tree of handlers.** After k accepts, the server's
+   residual is `both (handler g1) (both (handler g2) (… (server lfd)))`.
+   Progress needs a phase per handler (waiting / reading / writing) and a
+   measure that decreases: total strings in `up`/`down`, plus pending
+   connections, plus each handler's phase. That's a simulation over a tree
+   built by `fix`, not a single loop invariant.
+3. **The clients' structure has to be expressed.** "Eventually stops
+   sending and keeps receiving" is a property of a program, not of a
+   schedule. With the residual operator it's an invariant of the client's
+   residuals, e.g. a phase function like the server's. Without it, it can
+   only be stated for specific clients (`client ls`).
+
+None of these is a problem with the closed-system formulation. They're the
+cost of reasoning forwards about history-function programs. The likely
+cheaper route is the closed-loop spike's: liveness for a state + step
+function. That needs the server as a step function (a residual operator
+again, or a refinement), and then this kernel and the clients are the
+world. Which way to go is worth deciding together with that spike.
+
+### 8.5 Verdict (update)
+
+**Promising, and now with a clean headline:** for any number of clients
+written as async programs, in a closed system with no assumptions, every
+connection receives exactly a prefix of what was sent on it, in order. The
+world-as-programs view made `fresh` a theorem and turned the M4 safety
+property into a statement about clients, at low cost, reusing the existing
+server proof unchanged. Liveness (fairness from client structure) is still
+open. It needs a residual operator for computations (§8.4), which is the
+recommended next step if liveness at the model level is wanted. Otherwise
+stop here; the safety result stands on its own.

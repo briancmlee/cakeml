@@ -630,23 +630,29 @@ Proof
   gvs[v2_call_def, socket2_fn_def, ffi_sock_poll2_def]
 QED
 
-Theorem v2_converse:
+(* The version-2 world of an endpoint server world with a fixed schedule *)
+Definition v2of_def:
+  v2of lfd a (w:eworld) =
+    <| listening := [(lfd, [])]; clients := []; open_fds := [];
+       reserved := w.reserved; alloc := w.alloc;
+       future := LGENLIST (λn. untr lfd a (w.env (w.clock + n) [])) NONE |>
+End
+
+Theorem v2of_props:
   ep_server_world v2_calls lfd a w ∧ no_backpressure w ∧ open_loop w ∧ ep_rely w ⇒
-  ∃sk. server_world2 lfd sk ∧ same_answers (socket2_ffi sk) (ep_ffi w)
+  server_world2 lfd (v2of lfd a w) ∧ v2rel lfd a (v2of lfd a w) w ∧
+  same_answers (socket2_ffi (v2of lfd a w)) (ep_ffi w)
 Proof
   rw[ep_server_world_def] >>
-  qabbrev_tac ‘sk0 = <| listening := [(lfd, [])]; clients := []; open_fds := [];
-                        reserved := w.reserved; alloc := w.alloc;
-                        future := LGENLIST (λn. untr lfd a (w.env (w.clock + n) [])) NONE |>’ >>
+  qabbrev_tac ‘sk0 = v2of lfd a w’ >>
   ‘v2rel lfd a sk0 w’
-    by (simp[Abbr ‘sk0’, v2rel_def, core_def, ep_inv_def] >>
+    by (simp[Abbr ‘sk0’, v2of_def, v2rel_def, core_def, ep_inv_def] >>
         rw[fut_step_def, LNTH_LGENLIST] >> fs[open_loop_def] >>
         metis_tac[al_rel_untr]) >>
-  qexists_tac ‘sk0’ >>
-  reverse conj_tac
-  >- (simp[same_answers_def] >> metis_tac[v2rel_run_calls]) >>
+  simp[] >> rpt conj_tac >>
+  TRY (simp[same_answers_def] >> metis_tac[v2rel_run_calls]) >>
   ‘sk0.listening = [(lfd,[])] ∧ sk0.clients = [] ∧ sk0.open_fds = [] ∧
-   sk0.alloc = w.alloc’ by simp[Abbr ‘sk0’] >>
+   sk0.alloc = w.alloc’ by simp[Abbr ‘sk0’, v2of_def] >>
   simp[server_world2_def] >> conj_tac >- fs[ep_rely_def] >>
   simp[sched_wf2_def] >> gen_tac >>
   drule_then (qspec_then ‘n’ strip_assume_tac) v2_after_polls >>
@@ -659,6 +665,13 @@ Proof
   disch_then (qspecl_then [‘ticks2 n sk0’, ‘settle wk with clock := wk.clock + 1’] mp_tac) >>
   imp_res_tac core_all_up >> imp_res_tac settle_id >>
   simp[next_step2_fut]
+QED
+
+Theorem v2_converse:
+  ep_server_world v2_calls lfd a w ∧ no_backpressure w ∧ open_loop w ∧ ep_rely w ⇒
+  ∃sk. server_world2 lfd sk ∧ same_answers (socket2_ffi sk) (ep_ffi w)
+Proof
+  metis_tac[v2of_props]
 QED
 
 (* MAIN: version 2's server worlds are exactly the endpoint server worlds

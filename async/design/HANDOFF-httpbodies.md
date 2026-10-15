@@ -36,6 +36,9 @@ Kept current at every commit.
   ProgH's `split_at2`/`toLower` and strict's `split_path2`.
   `http_prog_b_spec` is unchanged as a statement. The demo was rerun.
 
+- DONE (SPEC CHANGE, user-approved): header names are RFC 9110 tokens
+  (28 §7). `http_prog_b_spec` re-proved; demo rerun.
+
 ## Assumptions made
 
 See 28 §6.

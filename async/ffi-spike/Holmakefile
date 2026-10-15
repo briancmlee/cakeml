@@ -1,0 +1,6 @@
+# FFI-integration spike: a clock component added to CakeML's FFI model
+# without editing basis_ffi.  Built against the prebuilt shared base (see
+# async/design/shared-base-build.md); the basis heap saves reloading basisProg.
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

@@ -1,0 +1,6 @@
+# Reuses the base basis heap, the HOL model (../model), the CF determinism
+# lemmas (../cf-spike) and the actions/responses CF layer (../cf-actions).
+INCLUDES = ../model ../cf-spike ../cf-actions
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

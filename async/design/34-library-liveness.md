@@ -1,7 +1,10 @@
 # 34: Liveness carried by the library: audit and a generic liveness principle
 
-Status: **audit and design only, for user review.** Nothing here is
-implemented, and no existing statement changes. Branch
+Status: **approved by the user; implementation in progress** on
+`spike/sw-live` (theory `asyncServerWithLive` in `async/library-liveness/`).
+The library theorem is named `server_with_live`: `sw_live` is already
+taken by async-spike's asyncSWLiveServer (PR #56). No existing statement
+changes. Branch
 `spike/library-liveness`, from `spike/http-bodies`.
 
 User direction: proofs should be carried by the Async library's generic
@@ -104,7 +107,7 @@ part is `handler_progress` and its helpers (~350 lines in asyncProgress),
 
 Each server then proves only the per-handler statement (a progress
 measure on its own history). Everything from the handler's history down
-to the socket trace is one library theorem, `sw_live`.
+to the socket trace is one library theorem, `server_with_live`.
 
 ### 2.2 The environment of a handler (generic)
 
@@ -153,7 +156,7 @@ handler_live hf out B ⇔
 
 ```
 (* MAIN (proposed): handler liveness ⇒ the server's socket trace is live *)
-Theorem sw_live:
+Theorem server_with_live:
   hok hf ∧ handler_live hf out B ∧
   s0.listeners = [(n2w lfdn, [])] ∧ s0.conns = [] ∧ lfdn < dimword (:64) ∧ sched_wf s0 ∧
   bytes D ≼ sent_upto c n s0 ∧ (D ≠ [] ∨ out D = []) ⇒
@@ -172,16 +175,16 @@ is `http_live_h_rounds`'s, with the handler abstracted:
 6. bytes and `rounds_LPREFIX`.
 
 Spec-shaped corollaries, one line each:
-- HTTP: `http_live_h_rounds = sw_live` with `out = responses_to_h files`, using `parse_all_h_printed`;
-- echo: `echo_live_rounds = sw_live` with `out = λD. [D]`.
+- HTTP: `http_live_h_rounds = server_with_live` with `out = responses_to_h files`, using `parse_all_h_printed`;
+- echo: `echo_live_rounds = server_with_live` with `out = λD. [D]`.
 
-**Composition with the event loop.** `sw_live` is stated on `grounds_events
+**Composition with the event loop.** `server_with_live` is stated on `grounds_events
 (EI lfdn)`, the dynamic-interest loop `run_i`. `run_i_spec` plus the
 existing `*_semantics_prog` lemmas give the program trace, as now. For
 another loop (the blocking/select loop of design/31, option C's declared
 interest), the only loop-dependent input is the readiness fact: "Readable
 fd ∉ ready ⇒ nothing unread" needs fd to be in the loop's interest
-(`interest_accepted`, or `sel_covers`). So `sw_live` should take the loop
+(`interest_accepted`, or `sel_covers`). So `server_with_live` should take the loop
 as a parameter, with the hypothesis `∀n c. MEM c (wacc …) ⇒ MEM c (ifds
 (ghist …))`. That makes it hold for any interest function covering the
 accepted fds.
@@ -192,9 +195,9 @@ accepted fds.
 - `prompt_with_store` and `relabel_with_store` move the view to the inner computation on `inner_hist`.
 - `trans_with_store` gives `untag`.
 
-So `sw_live` applies to `server_with_k` once two generic lemmas exist:
+So `server_with_live` applies to `server_with_k` once two generic lemmas exist:
 - **`with_store_answers`**: every Kv query emitted in round j is answered in the results of snapshot j+1 of `inner_hist`. This is "the effect is handled promptly", (ii), and it is proved from `inner_hist`'s definition.
-- **`sw_live_k`**: `sw_live` for `server_with_k`, by the same proof over the tagged transcript.
+- **`server_with_live_k`**: `server_with_live` for `server_with_k`, by the same proof over the tagged transcript.
 
 The KV handler's `handler_live` then has one more state (HK, waiting one
 round for the store). Its bound becomes about 3K+2, as design/30 predicts.
@@ -217,17 +220,17 @@ The obligation stays per-handler.
   ```
   proto_handler_live: proto_ok P ⇒ handler_live (λfd. proto_handler P resp (fd, "")) (proto_responses P resp) (B_P)
   ```
-- Its asyncProtoLive should then be a two-line instance of `sw_live`, rather than a re-proof of asyncHttpLiveH.
+- Its asyncProtoLive should then be a two-line instance of `server_with_live`, rather than a re-proof of asyncHttpLiveH.
 - KV's answering computation `ans` (32 §2.3) fits as long as `ans` finishes in bounded rounds without waiting, which is exactly what `handler_live` needs.
-- **Ownership:** cf-actions owns `proto_*` and `proto_handler_live`. The liveness worker (me) owns `henv`, `handler_live`, `sw_henv` and `sw_live`.
+- **Ownership:** cf-actions owns `proto_*` and `proto_handler_live`. The liveness worker (me) owns `henv`, `handler_live`, `sw_henv` and `server_with_live`.
 
 **design/33, option C (async-spike).**
-- Its quiescence argument needs a progress measure that decreases within k rounds. That is the same per-handler fact. Under option C the loop selects on declared interest, so the readiness fact in `henv` comes from `sel_covers` instead of `interest_accepted`; `sw_live`'s interest parameter (§2.4) covers it.
+- Its quiescence argument needs a progress measure that decreases within k rounds. That is the same per-handler fact. Under option C the loop selects on declared interest, so the readiness fact in `henv` comes from `sel_covers` instead of `interest_accepted`; `server_with_live`'s interest parameter (§2.4) covers it.
 - Its hardest lemma, progress ⇒ stability, needs the *converse* direction: what makes a handler act at all. That is the cause-of-actions lemma (`handler_cause`, in an untracked echo file). The library generalisation:
   ```
   hok_cause: new actions at round j ⇒ Readable fd ∈ ready_j ∨ a response arrived at j
   ```
-  It holds for handlers built only from `readable`, `emit`, `bind`, `both`. It belongs to option C, not to `sw_live`, which does not need it.
+  It holds for handlers built only from `readable`, `emit`, `bind`, `both`. It belongs to option C, not to `server_with_live`, which does not need it.
 - **Ownership:** async-spike owns Level 2, declared interest, quiescence and `hok_cause`. It should *consume* `handler_live` as its measure, and not define a second one.
 
 **Avoiding duplication.** The four `henv` facts are stated once, in the
@@ -244,16 +247,16 @@ re-derives the socket environment again.
 | piece | lines (est.) | from |
 |---|---|---|
 | `henv`, `handler_live`, `sw_henv` (environment derivation, generic) | 300 | lift from asyncHttpLiveH |
-| `sw_live` (+ interest parameter) | 200 | lift `http_accepted_live_h`'s tail + `http_live_h_rounds` |
+| `server_with_live` (+ interest parameter) | 200 | lift `http_accepted_live_h`'s tail + `http_live_h_rounds` |
 | HTTP `_h` re-derived: bridge + `http_live_h_rounds_via_lib` | 100 | |
 | HTTP `_b`: the same, or free via design/32 | 100 / 0 | |
 | echo: `handler_live` for `handler` + `echo_live_rounds_via_lib` | 200 | |
-| KV: `with_store_answers`, `sw_live_k`, kv `handler_live` | 500 | new (instead of ~900 for a third asyncHttpLiveH-style copy) |
+| KV: `with_store_answers`, `server_with_live_k`, kv `handler_live` | 500 | new (instead of ~900 for a third asyncHttpLiveH-style copy) |
 | **total** | **~1,400** | 3–4 worker-days |
 
 **Savings per future program.**
 - Today a new server's socket-level liveness costs ~400 lines (an asyncHttpLiveH copy), plus its handler measure.
-- With `sw_live` the socket part is 0, and the program proves `handler_live` only.
+- With `server_with_live` the socket part is 0, and the program proves `handler_live` only.
 - With design/32 a parse–respond protocol's `handler_live` is also free: ~20 lines of `proto_ok` + a ~30-line instance.
 - So the liveness share rises from ~0.75 to ~0.95 for protocols, and to ~0.8 for handlers with their own state machine (KV-like).
 
@@ -261,7 +264,7 @@ re-derives the socket environment again.
 1. **`henv` may be too weak for some handlers.** It talks about one fd. Handlers that wait on timers, other fds or each other (§5) need an extended environment (one per event kind). It should be designed so that conjuncts can be added, not changed.
 2. **Echo's measure** is stated as "readable 3 rounds ⇒ nreads grows". Turning it into `handler_live` needs the unread-length induction of `hmachine_live_p`. That is a re-proof, not a restatement, so the 200 lines may be optimistic.
 3. **The interest parameter.** Loops whose interest does not cover every accepted fd (the live-fd select loop drops closed fds) need care: the readiness fact is only needed while the handler waits.
-4. **Ownership drift.** If design/32 or 33 start before `sw_live` exists, each may re-derive the environment. Mitigation: land `henv`/`sw_live` first. It is small and only lifts existing proofs.
+4. **Ownership drift.** If design/32 or 33 start before `server_with_live` exists, each may re-derive the environment. Mitigation: land `henv`/`server_with_live` first. It is small and only lifts existing proofs.
 
 ---
 
@@ -314,7 +317,7 @@ it needs.
 
 ## 6. Decisions for the user
 
-1. Land `henv`/`handler_live`/`sw_live` (§2, ~500 lines, lifting existing proofs) before design/32 phases 2–4 and option C, so that both consume it.
-2. Who owns what (§3): cf-actions owns protocol-generic `handler_live`; async-spike owns option C and `hok_cause`; the liveness worker owns `sw_live`.
+1. Land `henv`/`handler_live`/`server_with_live` (§2, ~500 lines, lifting existing proofs) before design/32 phases 2–4 and option C, so that both consume it.
+2. Who owns what (§3): cf-actions owns protocol-generic `handler_live`; async-spike owns option C and `hok_cause`; the liveness worker owns `server_with_live`.
 3. `with_timeout` keeps the loser (the existing `choose` semantics).
 4. Backpressure needs a spec-level "clients read" assumption, if and when it is modelled.

@@ -1,7 +1,8 @@
 # The verified chat server (spec/ChatSpec): design/40-chat.md.
 INCLUDES = ../model ../cf-spike ../cf-actions ../cf-reactive ../ffi-spike \
            ../m3-assembly ../m4-server ../m4-common ../spec ../m4-safety \
-           ../http-kv
+           ../http-kv ../http-safety ../runnable ../machine-code \
+           ../http-model ../http-impl ../headline
 ifdef POLY
 HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
 endif

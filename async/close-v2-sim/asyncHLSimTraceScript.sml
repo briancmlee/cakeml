@@ -20,7 +20,7 @@ Overload EI = “interest [n2w lfdn : word64]”
 
 (* The version-1 run's pairs of a round act on no connection whose EOF it
    has read *)
-Theorem round_no_after_eof[local]:
+Theorem round_no_after_eof:
   s0.listeners = [(n2w lfdn, [])] ∧ s0.conns = [] ⇒
   no_after_eof (gperf ifds ES s0 n) (ZIP (gacts ifds ES s0 n, gres ifds ES s0 n))
 Proof
@@ -44,7 +44,7 @@ Proof
   Cases_on ‘a’ >> rw[deliver2_def, update_client_def]
 QED
 
-Theorem tick2_open_fds[local]:
+Theorem tick2_open_fds:
   (tick2 s).open_fds = s.open_fds
 Proof
   ‘∀as s. (FOLDL deliver2 s as).open_fds = s.open_fds’
@@ -52,7 +52,7 @@ Proof
   rw[tick2_def] >> CASE_TAC >> simp[]
 QED
 
-Theorem poll_events_kinds[local]:
+Theorem poll_events_kinds:
   event_accepted (spoll2_event fds s) = NONE ∧ event_closed (spoll2_event fds s) = NONE ∧
   ev_fd (spoll2_event fds s) = NONE ∧ event_eof (spoll2_event fds s) = NONE ∧
   event_read c (spoll_event fds' s') = [] ∧ event_written c (spoll_event fds' s') = []

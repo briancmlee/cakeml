@@ -17,8 +17,8 @@ Content-Length: 0
 
 
 $ three concurrent curls (/, /about, /index.html), outputs in order of completion
-  /about -> HTTP/1.0 200 OK
   / -> HTTP/1.0 200 OK
+  /about -> HTTP/1.0 200 OK
   /index.html -> HTTP/1.0 200 OK
 
 $ printf 'GET /about HTTP/1.0\r\n\r\nGET / HTTP/1.0\r\n\r\n' | nc -w 1 127.0.0.1 7830    # two pipelined requests

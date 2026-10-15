@@ -151,7 +151,7 @@ Definition no_after_eof_def:
                     MEM (Read c k, Got (SOME [])) (P ++ p1) ⇒ ¬sock_on c a
 End
 
-Theorem no_after_eof_CONS[local]:
+Theorem no_after_eof_CONS:
   no_after_eof P ((a, r) :: ps) ⇒
   (∀c k. MEM (Read c k, Got (SOME [])) P ⇒ ¬sock_on c a) ∧
   no_after_eof (P ++ [(a, r)]) ps
@@ -166,7 +166,7 @@ QED
 
 (* A handle closed after an action was closed before, or the action read
    its EOF *)
-Theorem hdo_closed[local]:
+Theorem hdo_closed:
   hdo lfd (s2, hs) a = SOME (r, (s2', hs'), evs) ∧
   j < hs'.nxt ∧ ALOOKUP hs'.tbl (hdl lfd j) = NONE ⇒
   (j < hs.nxt ∧ ALOOKUP hs.tbl (hdl lfd j) = NONE) ∨

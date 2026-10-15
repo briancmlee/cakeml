@@ -1,0 +1,36 @@
+[  0.000s] server   echo server: listening on 127.0.0.1:7802
+[  0.000s] alice    connected
+[  0.001s] alice    sent     'hello from alice'
+[  0.001s] bob      connected
+[  0.001s] bob      sent     'bob says hi'
+[  0.001s] carol    connected
+[  0.001s] carol    sent     'carol here'
+[  0.001s] alice    received 'hello from alice'
+[  0.001s] bob      received 'bob says hi'
+[  0.001s] carol    received 'carol here'
+[  0.106s] bob      sent     'bob: second line'
+[  0.107s] bob      received 'bob: second line'
+[  0.122s] carol    sent     'carol: ünïcödé bytes ✓'
+[  0.122s] carol    received 'carol: ünïcödé bytes ✓'
+[  0.151s] alice    sent     'alice: line 2'
+[  0.151s] alice    received 'alice: line 2'
+[  0.215s] bob      sent     'bob: third'
+[  0.216s] bob      received 'bob: third'
+[  0.246s] carol    sent     'carol: last'
+[  0.246s] carol    received 'carol: last'
+[  0.311s] alice    sent     'alice: line 3'
+[  0.311s] alice    received 'alice: line 3'
+[  0.326s] bob      sent     'bob: fourth'
+[  0.326s] bob      received 'bob: fourth'
+[  0.376s] carol    closed
+[  0.436s] bob      closed
+[  0.464s] alice    closed
+[  0.464s] dave     connected
+[  0.464s] dave     sent     'dave arrives after the others left'
+[  0.464s] dave     received 'dave arrives after the others left'
+[  0.464s] dave     closed
+[  0.465s] server   terminated (the server loop runs forever; stopped with SIGTERM)
+[  0.465s] check    carol: received exactly its own lines: True
+[  0.465s] check    bob: received exactly its own lines: True
+[  0.465s] check    alice: received exactly its own lines: True
+[  0.465s] check    dave: received exactly its own lines: True

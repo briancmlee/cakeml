@@ -86,7 +86,7 @@ def main():
     p.add_argument("--seconds", type=float, default=30.0)
     p.add_argument("--port", type=int, default=7811)
     p.add_argument("--out")
-    p.add_argument("--calibrate", help="a busy-loop binary: its CPU%% is 'one core busy' here")
+    p.add_argument("--calibrate", help="a busy-polling binary: what busy polling costs here")
     a = p.parse_args()
     rows = []
     calib = ""
@@ -96,8 +96,8 @@ def main():
         c = phase(proc.pid, a.seconds)
         proc.terminate()
         proc.wait()
-        calib = (f"calibration: a C busy loop measures {c:.1f}% here "
-                 f"(= one core fully busy in this environment)\n")
+        calib = (f"calibration: a C busy-polling loop (non-blocking polls) "
+                 f"measures {c:.1f}% here\n")
         print(calib, flush=True)
     for i, b in enumerate(a.servers):
         r = measure(b, a.port + i, a.seconds)

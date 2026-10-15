@@ -17,14 +17,19 @@ safety and liveness pipelines already use the parser only through four
 facts. The `_b` pipeline is a renamed copy of `_h`: of its 2,249
 non-parser lines, 64 differ.
 
-**The design:**
-1. A *framed request protocol* interface (four parameters, four
-   obligations), with the server, safety, liveness and CF pipeline proved
-   **once** against it. Strict, `_h`, `_b` and KV become instances.
-2. Inside the grammar, *components*: request line, header block and body
-   framing, each with the same four-fact bundle, composed by a sequencing
-   combinator that preserves the bundle. Adding chunked encoding then
-   touches one component.
+**Scope** (refined by you): the goal is (a), principled *separation* of
+each server's parsing and format from everything else.
+- One generic pipeline (safety, liveness, and KV where it fits) is proved
+  once, parametric in a protocol interface.
+- Strict, `_h`, `_b` and KV become instances that only discharge the
+  interface lemmas.
+- §2.4 covers what stays per instance on the CakeML side.
+- Grammar-as-components is not a goal (one paragraph, §2.6).
+- §2.5 states the limits: the formats the interface excludes.
+
+**The design:** a *framed request protocol* interface (three parameters,
+four obligations), plus an answering parameter, with the server, safety,
+liveness and CF pipeline proved **once** against it.
 
 ## 1. Audit
 
@@ -64,7 +69,7 @@ block, or the body.
 vocabulary: `valid_brequest`, `brequests`, `no_full_brequest`. It answers
 through a `Kv` action that the loop performs on a shared store, so its
 *answering step* is a short computation, not a pure function. That is
-the one way it departs from the interface below (§2.4).
+the one way it departs from the interface below (§2.3).
 
 ### 1.2 Where the duplication lives
 
@@ -173,15 +178,15 @@ equality lemma*, for example
 | asyncProtoSafe | asyncHttpSafeH | `proto_comp_safe` (the trace bridge) |
 | asyncProtoMachine, asyncProtoDrain, asyncProtoLive | the `_h` liveness files | the machine, the partial-read drain, `proto_live_rounds` |
 | asyncProtoSockModel | asyncHttpSockModelH | `sproto_handler_unfold` |
-| asyncProtoProg, asyncProtoSpec | asyncHttpSockProgH/SpecH | the CakeML handler, its CF spec (§2.5) |
-| asyncProtoProgram | Main/Semantics/Spec | the whole-program theorem, parametric in the instance's CF facts (§2.5) |
+| asyncProtoProg, asyncProtoSpec | asyncHttpSockProgH/SpecH | the CakeML handler, its CF spec (§2.4) |
+| asyncProtoProgram | Main/Semantics/Spec | the whole-program theorem, parametric in the instance's CF facts (§2.4) |
 
 **Each instance then supplies:**
 - `P_x` and `resp_x`;
 - `proto_ok P_x`, which is P1–P4 from its existing parser lemmas: about
   20 lines each, since all four facts are already proved;
 - the spec equality lemma;
-- the translation and `main` (§2.5).
+- the translation and `main` (§2.4).
 
 **Re-deriving the existing results.** `http_handler_b files =
 proto_handler P_b (print_response o bhandle files)` holds by `fix`
@@ -191,66 +196,7 @@ generic one, without changing it. I propose to prove those re-derivations
 as `…_via_proto` corollaries alongside the existing proofs, and to let
 you retire the old proofs later.
 
-### 2.3 Inside the grammar: components and a sequencing combinator
-
-Each grammar part is a *component parser*: the same four-fact bundle, but
-over a part of the request rather than a whole request:
-
-```
-comp = <| valid : 'a -> bool; print : 'a -> string; parse : string -> 'a presult |>
-```
-
-| component | value | today's code it would replace |
-|---|---|---|
-| `method_c` | `"GET"` / `"POST"` (`+ " "`) | the `get_sp`/`post_sp` dispatch in `parse_brequest` |
-| `line_c` | `(path, version)` up to and including CRLF | `split_path` + `sp_http10/11` (bline) |
-| `headers_c` | header list up to and including the blank line | `parse_headers` (already this shape: `HDone hs rest` / `HMore` / `HBad`) |
-| `body_c hs` | the body, **depending on the headers** | `bbody` (Content-Length framing) |
-
-**The combinator** is a dependent sequence. The second component may
-depend on the first's value, as the body depends on the headers:
-
-```
-seq c1 c2 : ('a # 'b) comp
-  parse s  = case c1.parse s of
-               PComplete a rest => (case (c2 a).parse rest of
-                                      PComplete b rest' => PComplete (a, b) rest'
-                                    | x => x)
-             | x => x
-  print (a, b) = c1.print a ++ (c2 a).print b
-  valid (a, b) = c1.valid a ∧ (c2 a).valid b
-```
-
-**Theorem (once): `comp_ok c1 ∧ (∀a. c1.valid a ⇒ comp_ok (c2 a)) ⇒
-comp_ok (seq c1 c2)`.**
-- P1, P2: by the components' P1, P2.
-- P3: if c1 is invalid, it stays invalid. If c1 is complete and c2 is
-  invalid on the rest, then c1 extends (P1 + P2 give extension) and c2
-  stays invalid.
-- P4: from c1's P4.
-
-So:
-- A request protocol is a `seq` of components, plus a map from the nested
-  tuple to the request type.
-- Its `proto_ok` is the composition theorem plus each component's bundle.
-- **Adding chunked encoding** replaces `body_c` by a `body_c'` (length *or*
-  chunked framing, chosen from `hs`). Only `body_c'` and its bundle are
-  new; nothing above `proto_ok` changes.
-- **New methods** extend `method_c`'s value set.
-- **New header rules** (like http-nobody's) are a stricter
-  `headers_c.valid`, whose bundle proof is the old one plus the new
-  conjunct.
-
-**Matching the trusted printers.** The specs (approved, owned by you)
-define `print_brequest` monolithically. The instance proves an equality,
-`print_brequest r = (seq …).print (to_tuple r)`, by unfolding: about 10
-lines per spec.
-
-**The linear-time bug is fixed once.** `line_c` and `headers_c` are
-written with the shared-recursion splits, so every instance gets linear
-parsing.
-
-### 2.4 KV: the answering step
+### 2.3 KV: the answering step
 
 KV's handler (note 30 §4, A), on a complete request, *emits* `Kv req` and
 writes the answer it gets back, one round later. To cover it, the generic
@@ -281,7 +227,7 @@ already in the interface but only `return` instantiated. Add the bounded
 `ans` obligation when KV needs it. KV's global part (the store invariant
 and the timestamped bridge) is outside this interface either way.
 
-### 2.5 The translator and CF side
+### 2.4 The translator and CF side: what stays per instance
 
 **This can be generic.**
 
@@ -308,9 +254,9 @@ and the timestamped bridge) is outside this interface either way.
   `sserver_with_spec`'s pattern (§2 of note 20), one level up.
 - **Per instance, what remains:**
   1. translate its parser into `'r presult` and its responder (the
-     translator quirks stay per instance, but the components of §2.3 are
-     translated once, so a new instance mostly composes already-translated
-     components);
+     translator quirks stay per instance, though the linear-time splitting
+     helpers can be
+     shared once a generic splitting library exists);
   2. instantiate the CF spec (about 20 lines);
   3. `main` and the whole-program theorem.
 - **The whole-program theorem.** Every instance's `asyncHttpSemanticsX` is
@@ -324,7 +270,79 @@ and the timestamped bridge) is outside this interface either way.
   list, and its `Decls` theorem and `prog_syntax_ok` are computed by
   evaluation per program. That is irreducible but mechanical.
 
-### 2.6 Estimate
+### 2.5 What the interface excludes (the limits, explicitly)
+
+Each obligation rules out a class of formats. Each is listed below with
+what lifting it would cost.
+
+1. **Close-delimited or EOF-terminated requests** (P1).
+   - P1 says a printed request parses back *followed by anything*. So a
+     request must be *self-delimiting*: where it ends is determined by its
+     own bytes, and "complete" is decidable from a prefix.
+   - This excludes bodies delimited by connection close (RFC 9112 allows
+     these only for responses; for requests they are already invalid), and
+     any format whose end depends on bytes *after* the request.
+   - Lifting it would need the end of stream as part of the parser's input
+     (`parse : string → bool (* eof *) → …`) and the handler's EOF branch
+     to re-parse. That is a moderate change to the interface and machine.
+2. **Lenient parsing of equivalent spellings, unless recorded** (P2).
+   - P2 says whatever parses as complete is *exactly* `print r ++ rest`.
+     So the request value must determine its bytes, and the parser cannot
+     quietly accept a non-canonical spelling (`Content-Length: 007`,
+     `get` instead of `GET`, extra whitespace) and normalise it.
+   - Such formats are still *expressible*: the request type records the
+     raw spelling (for example the raw value string), validity checks it is
+     well-formed, and the response function ignores the difference. This
+     is a limit on how the spec is written, not on what can be accepted.
+3. **Error recovery and resynchronisation** (P3, and the handler).
+   - P3 says invalid stays invalid, and the generic handler stops at an
+     invalid buffer. So a server that skips a bad line or request and
+     carries on is excluded.
+   - Lifting it would need `PInvalid` to carry a skip length, and safety
+     and liveness to account for skipped bytes (their spec would have to
+     say which bytes may be skipped). This is a real extension.
+4. **Anything but one ordered request stream with one response each.**
+   The interface is FIFO pipelining: the i-th response answers the i-th
+   request. Excluded:
+   - interim responses (`100 Continue`, written before the body is read);
+   - responses that stream while the request is still arriving;
+   - out-of-order or multiplexed responses (HTTP/2 streams, server push).
+
+   "No response" can be modelled as an empty response string.
+5. **Connection management** (the model has no `close`).
+   - `Connection: close`, closing after an invalid request, and timeouts
+     are not expressible. The handler keeps the connection open, and
+     liveness is per request.
+   - This is a limit of the socket model (no close operation), not of the
+     interface.
+6. **State across requests on a connection** (P1–P3 make `parse` a
+   function of the buffer alone).
+   - Excluded: protocol switches (`Upgrade` to WebSocket, `CONNECT`
+     tunnels), and parsing that depends on earlier requests (negotiated
+     encodings).
+   - Lifting it would need a per-connection parser state threaded through
+     the handler, which is a moderate interface change.
+7. **Shared state across connections**, except through the answering
+   computation (§2.3). That covers KV-style servers whose answers come
+   from an action the loop performs. A server whose *parsing* depends on
+   shared state is excluded (item 6).
+
+**Allowed, for contrast:** binary or length-prefixed protocols, any
+self-delimiting text format, header continuation lines (`obs-fold`, which
+are inside the header block), and `Content-Length` and chunked bodies.
+Chunked bodies are self-delimiting by the zero-length chunk.
+
+### 2.6 Grammar components (not a goal, noted for completeness)
+
+The parser *inside* an instance could itself be built from components
+(method, request line, header block, body framing given the headers),
+each with the same four-fact bundle, composed by a dependent sequencing
+combinator with one theorem: bundles compose. A format change such as
+chunked bodies would then touch one component's bundle. Per your
+scoping, this is not proposed now. The interface in §2.1 does not depend
+on it, and it could be added later without touching the generic pipeline.
+
+### 2.7 Estimate
 
 | phase | contents | size | time |
 |---|---|---|---|
@@ -332,16 +350,14 @@ and the timestamped bridge) is outside this interface either way.
 | 2 | generic server and safety (Server, Safe, SockModel); `…_via_proto` re-derivations | ~450 lines | 1 day |
 | 3 | generic liveness (Machine, Drain, Live) | ~1,400 lines, mostly a parametric port | 1.5–2 days |
 | 4 | generic CakeML handler and CF spec, generic whole-program theorem; a `_b` program re-derived through them (a new program value; the existing one is untouched) | ~600 lines | 1.5–2 days (risk: translator and polymorphic datatype, CF with higher-order arguments) |
-| 5 | grammar components and `seq`; `_b`'s parser re-expressed as a composition (equality with `parse_brequest`); linear splits once | ~700 lines | 2 days |
-| optional | chunked bodies as a `body_c'` instance (spec first, as for bodies) | ~400 lines + spec | 1.5 days |
-| KV | bounded-`ans` obligation (§2.4); KV's global part is note 30's | +~200 lines | +1 day |
+| optional | a shared linear-time splitting library used by all instances' translations | ~150 lines | 0.5 day |
+| KV | bounded-`ans` obligation (§2.3); KV's global part is note 30's | +~200 lines | +1 day |
 
-The total for phases 1–5 is about **3,500 lines, 7–9 worker-days**.
-After it, a new instance costs about **200–300 lines** (its components'
-bundles, the spec equality, the translation, `main`) instead of
-~2,500.
+The total for phases 1–4 is about **2,800 lines, 4.5–6 worker-days**.
+After it, a new instance costs about **200–300 lines** (its `proto_ok`
+proof, the spec equality, the translation, `main`) instead of ~2,500.
 
-### 2.7 Additive plan
+### 2.8 Additive plan
 
 1. **New directories only**: `async/http-proto/` for the generic theories
    and `async/http-proto-inst/` for the instance glue. No existing file is
@@ -367,5 +383,6 @@ bundles, the spec equality, the translation, `main`) instead of
    framing can serve different servers (files, echo, KV).
 3. KV enters through the answering computation (note 30's option A), not
    through shared state in the model.
-4. Trusted specs stay monolithic and unchanged. The modular structure
+4. Trusted specs stay monolithic and unchanged. The generic structure
    lives below them, connected by equality lemmas.
+5. Per your scoping, grammar components (§2.6) are not part of the plan.

@@ -21,6 +21,9 @@
      (accept takes the oldest pending client), so liveness is stated per
      client: everything client j sends is eventually written back in
      episode j.
+   - A third clause, echo_closes2: once the server has read the EOF of an
+     episode's client, it eventually closes the episode's fd (so a server
+     that never closes, and so never frees an fd, does not meet the spec).
   Safety and liveness have EchoSpec's shape, per episode.
 
   Nothing here is proved; echo_spec2 is a definition.
@@ -66,11 +69,12 @@ End
 
 (* The worlds the server is run in: one listener lfd with nothing pending,
    no clients and no open connections yet, any other fds of the process,
+   a kernel that gives new connections free fds (any allocation policy),
    and a fair schedule. *)
 Definition server_world2_def:
   server_world2 lfd sk ⇔
     sk.listening = [(lfd, [])] ∧ sk.clients = [] ∧ sk.open_fds = [] ∧
-    sched_wf2 sk
+    alloc_ok sk.alloc ∧ sched_wf2 sk
 End
 
 (* ------------------------------------------------------------------------
@@ -114,6 +118,31 @@ Definition ep_events_def:
          case event_closed ev of
          | SOME f => ep_events j k (ADELKEY f opn) evs
          | NONE => ep_events j k opn evs)
+End
+
+(* The fd a read event that returned EOF read: status 2 *)
+Definition event_eof_def:
+  event_eof (IO_event (ExtCall n) conf bytes) =
+    (let out = MAP SND bytes in
+     if n = «sock_read» ∧ LENGTH conf = 8 ∧ out ≠ [] ∧ HD out = 2w
+     then SOME (bytes_fd conf) else NONE) ∧
+  event_eof _ = NONE
+End
+
+(* In a finite trace, the program read the EOF of episode j's fd, while
+   episode j was open *)
+Definition ep_eof_read_def:
+  ep_eof_read j evs ⇔
+    j < LENGTH (accepted_fds evs) ∧
+    EXISTS (λev. event_eof ev = SOME (EL j (accepted_fds evs))) (ep_events j 0 [] evs)
+End
+
+(* In a finite trace, episode j ended: the program closed its fd while it
+   was open *)
+Definition ep_closed_def:
+  ep_closed j evs ⇔
+    j < LENGTH (accepted_fds evs) ∧
+    EXISTS (λev. event_closed ev = SOME (EL j (accepted_fds evs))) (ep_events j 0 [] evs)
 End
 
 (* What the program read in / wrote in episode j of a finite trace: the
@@ -169,13 +198,21 @@ Definition echo_live2_def:
     ∀j n. ∃evs. LPREFIX (fromList evs) io ∧ sent2_upto j n sk ≼ ep_written j evs
 End
 
+(* Closing: once the program has read the EOF of episode j's client, it
+   eventually closes episode j's fd. *)
+Definition echo_closes2_def:
+  echo_closes2 io ⇔
+    ∀evs j. LPREFIX (fromList evs) io ∧ ep_eof_read j evs ⇒
+            ∃evs'. LPREFIX (fromList evs') io ∧ ep_closed j evs'
+End
+
 (* THE STATEMENT: in every fair version-2 world with one listener lfd, the
    program runs forever, and its I/O trace is safe and live in every
-   episode. *)
+   episode, and closes every episode whose client has closed. *)
 Definition echo_spec2_def:
   echo_spec2 lfd (prog : dec list) ⇔
     ∀sk. server_world2 lfd sk ⇒
          ∃io. semantics_prog (init_state (socket2_ffi sk)) init_env prog
                 (Diverge io) ∧
-              echo_safe2 io ∧ echo_live2 sk io
+              echo_safe2 io ∧ echo_live2 sk io ∧ echo_closes2 io
 End

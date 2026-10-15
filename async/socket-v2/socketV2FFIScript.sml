@@ -8,11 +8,13 @@
     connects to listener l), Data2 j bs, Eof2 j.  In version 1 the
     schedule chose each connection's fd in advance, which cannot model
     reuse (the fd a client gets depends on what the program has closed).
-  - The fd is chosen by the kernel when the program accepts: the LOWEST
-    fd not in use (as POSIX accept does), where "in use" means one of the
-    process's other fds (reserved, e.g. 0, 1, 2), a listener, or an open
-    connection.  So after the program closes fd f, the next accepted
-    connection may get f again.
+  - The fd is chosen by the kernel when the program accepts: ANY fd not in
+    use, where "in use" means one of the process's other fds (reserved,
+    e.g. 0, 1, 2), a listener, or an open connection.  The choice is the
+    world's allocation function alloc (j-th client, fds in use); the
+    assumption alloc_ok says it returns a free fd.  POSIX accept's policy,
+    the LOWEST free fd (lowest_free), is one such function.  So after the
+    program closes fd f, a later connection may get f again.
   - A fifth call, «sock_close», closes a connection fd.  The client's byte
     stream stays in the world (data it still sends is never read).
 
@@ -46,6 +48,9 @@ Datatype:
               ; open_fds : (word64 # num) list
                                           (* open connection fd, its client *)
               ; reserved : word64 list    (* the process's other fds *)
+              ; alloc : num -> word64 list -> word64
+                                          (* the kernel's choice of fd for
+                                             client j, given the fds in use *)
               ; future : arrival2 list llist
               |>
 End
@@ -55,7 +60,14 @@ Definition used_fds_def:
   used_fds s = s.reserved ++ MAP FST s.listening ++ MAP FST s.open_fds
 End
 
-(* The lowest fd not in a list *)
+(* ASSUMPTION alloc_ok: the kernel gives a new connection a free fd
+   (whenever there is room) *)
+Definition alloc_ok_def:
+  alloc_ok (a : num -> word64 list -> word64) ⇔
+    ∀j used. LENGTH used < dimword (:64) ⇒ ¬MEM (a j used) used
+End
+
+(* The lowest fd not in a list: POSIX's policy (λj. lowest_free) *)
 Definition lowest_free_def:
   lowest_free (used : word64 list) : word64 =
     n2w (LEAST n. ¬MEM (n2w n : word64) used)
@@ -116,8 +128,8 @@ Definition sock_poll2_def:
   sock_poll2 fds s = (FILTER (is_ready2 (tick2 s)) fds, tick2 s)
 End
 
-(* accept: the oldest pending client, on the lowest free fd; NONE (would
-   block) if there is no pending client, or no free fd *)
+(* accept: the oldest pending client, on the fd the kernel chooses; NONE
+   (would block) if there is no pending client, or no room *)
 Definition sock_accept2_def:
   sock_accept2 l s =
     case ALOOKUP s.listening l of
@@ -125,7 +137,7 @@ Definition sock_accept2_def:
     | SOME [] => SOME (NONE, s)
     | SOME (j::q) =>
         if LENGTH (used_fds s) < dimword (:64) then
-          let f = lowest_free (used_fds s) in
+          let f = s.alloc j (used_fds s) in
             SOME (SOME f, s with <| listening := AFUPDKEY l (K q) s.listening
                                   ; open_fds := (f, j) :: s.open_fds |>)
         else SOME (NONE, s)

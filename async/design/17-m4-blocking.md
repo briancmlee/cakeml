@@ -4,7 +4,7 @@ Branch `spike/m4-blocking`, stacked on `spike/l2-blocking` (PR #21). It
 merges `spike/m4-liveness` and `spike/m4-safety` and uses them read-only:
 `async/m4-common`, `async/m4-server`, `async/m4-safety`, `async/spec`.
 
-- New code: `async/m4-blocking/` (5 theories, ~1500 lines).
+- New code: `async/m4-blocking/` (5 theories, ~2000 lines).
 - No existing file changed. `EchoSpec` is untouched.
 
 Full `Holmake` in `async/m4-blocking` is green. There are no cheats.

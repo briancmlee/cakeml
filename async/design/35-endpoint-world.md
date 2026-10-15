@@ -187,16 +187,17 @@ rule.
 
 ## 6. Decisions for you
 
-1. The acceptance policy `takes j b n` gives one number per call. A policy
+1. **[PENDING USER DECISION]** The acceptance policy `takes j b n` gives one number per call. A policy
    that varies with time, beyond the bytes in flight, would need the
    environment.
-2. A connect's outcome is the world's choice (`accepts a j`), settled at the
+2. **[PENDING USER DECISION]** A connect's outcome is the world's choice (`accepts a j`), settled at the
    next tick. A refused channel reads as EOF.
-3. `«sock_write»` stays a full write; under backpressure a full write that
+3. **[PENDING USER DECISION]** `«sock_write»` stays a full write; under backpressure a full write that
    doesn't fit is a misuse.
-4. Writability is a separate call (`«sock_writable»`), so `«sock_poll»` is
+4. **[PENDING USER DECISION]** Writability is a separate call (`«sock_writable»`), so `«sock_poll»` is
    unchanged and version 1 is an exact instance.
-5. Composition is binary and closed (client + server) in this round. The
+5. **[APPROVED 2026-10-16: go to n-ary open systems + buffer closure]**
+   Composition is binary and closed (client + server) in this round. The
    stress test recommends, as the next step:
    - **n-ary open systems**: processes plus routing, open to an environment
      that plays the external addresses, whose external view is an
@@ -205,5 +206,5 @@ rule.
      verified proxy meets its own spec" a corollary.
 
    Is that the direction you want?
-6. Clients must diverge (`rg_spec` asks for `Diverge`), so a finished client
+6. **[APPROVED 2026-10-16: add the terminating form]** Clients must diverge (`rg_spec` asks for `Diverge`), so a finished client
    idles. A terminating spec form is a small addition if you want one.

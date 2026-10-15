@@ -44,6 +44,18 @@
     `spike/async-m2`; its PR has base `spike/async-m2`):
     `asyncIdle2Script.sml`, with `wf2_idle2`, `quiet_idle2` and
     `guarded2_bind2_split`, plus EVAL checks of what it waits for.
+- **Echo server branch `spike/async-echo-server`** (stacked on
+  `spike/async-idle2`; its PR has base `spike/async-idle2`):
+  - `asyncServer` (server, wf, settled);
+  - `asyncTranscript` (transcripts, `trans_bind_continues`,
+    `trans_both_filter_*`);
+  - `asyncServerSafety` (`handler_echoes`, `server_echoes`,
+    `echo_server_safety`, EVAL with two clients);
+  - `asyncServer2` (`erase_server2`, `wf2_server2`,
+    `server_no_busy_waiting`);
+  - design note `design/08-echo-server.md`.
+  - Assumptions recorded there: the vocabulary extension
+    (Accept/Accepted/NoConn); distinct connections (`fresh`; no close).
   - Nothing else is queued. Wait for the coordinator or the user.
 - **Conventions (from the coordinator):**
   - Never kill processes you did not start. No `pkill`/`killall` or any

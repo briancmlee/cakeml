@@ -18,7 +18,10 @@ this file plus the coordinator's original brief.
     `poll`, `wait`, `never`, `emit`, `skip`, `bind`), the predicates
     `SNAPSHOT`, `POLL_RESULT`, `STEPA` (coinductive), `COMP`, the
     approximations `STEPAn` and the limit lemma `app_COMP_of_approx`.
-  - `asyncCfActSpecScript.sml`: the CF specs (in progress).
+  - `asyncCfActSpecScript.sml`: the CF specs.
+  - `asyncCfActWorldScript.sml`: pure HOL: the FFI model, the snapshot
+    sequence the world provides, and the trace/model link.
+  - `asyncCfActLoopScript.sml`: the CakeML event loop and its cfDiv spec.
 - Docs: this file; `async/design/05-cf-actions.md` (to be written).
 
 ## Representation (decided, see the comment at the top of asyncCfActProg)
@@ -42,8 +45,13 @@ Snapshots are CakeML triples `(ready, now, results)` (`SNAPSHOT READY R`).
 - DONE (`asyncCfActSpecScript.sml`): `return_spec`, `poll_spec`,
   `wait_spec` (via `wait_spec_n`), `never_spec`, `emit_spec`, `skip_spec`,
   `bind_Done_spec_n`, `bind_spec` (via `bind_spec_n`). Step 2 is complete.
-- TODO next: estimate both/choose (step 3); the event loop (step 4);
-  05-cf-actions.md.
+- DONE (step 4, `asyncCfActWorldScript.sml` + `asyncCfActLoopScript.sml`):
+  FFI model (`act`/`ready` over one byte stream), `rounds`/`hist`/
+  `round_events`, `trace_actions_rounds` (MAIN: the trace's actions are
+  the model's log after the world's snapshots), `do_act_spec`,
+  `perform_spec`, `get_ready_spec`, `step_spec`, `run_spec` (MAIN: the loop
+  diverges with trace `LFLATTEN (LGENLIST (λi. fromList (round_events m ws i)) NONE)`).
+- TODO next: both (step 3, in progress or estimate); 05-cf-actions.md; PR.
 
 ## Plan for the event loop (step 4)
 
@@ -71,6 +79,12 @@ As in HANDOFF-cf.md: never Holmake in the base; `-j2` at most; kill only
 by recorded PID; no cheats in commits.
 
 ## Tool feedback
+
+- `xcf_div` + `xapp` worked in hol-lsp this time (unlike in HANDOFF-cf.md),
+  maybe because the step function's spec was used via `xapp_spec` on an
+  assumption, or because of the basis heap.
+- BSD `sed -E` has no `\b`; a rename of `IO` (which clashes with the
+  basis's `IO`) silently missed the definition label. Not a HOL issue.
 
 - After building ancestor theories with Holmake, `retryCompile` in hol-lsp
   failed with `target theory "asyncCore" is sealed; cross-theory mints are

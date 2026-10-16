@@ -1,5 +1,7 @@
 # Generated from the review-series layout (see REVIEW-SERIES-PLAN.md).
-INCLUDES = ../spec \
+INCLUDES = ../programs/echo-v2 \
+           ../quiet/ffi \
+           ../spec \
            ../spec-v2 \
            ../world/sockets \
            ../world/sockets-v2 \

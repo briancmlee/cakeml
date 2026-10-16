@@ -1,7 +1,14 @@
 (*
-  The link from the lifetimes world (close and fd reuse; socketV2FFI,
-  EchoSpec2) down to the core world (ffiSpikeSocketFFI, EchoSpec): the
-  theorem the lifetimes level opens with.  STATEMENT FIRST, for review.
+  CONSERVATIVITY: adding close and fd reuse (the lifetimes world;
+  socketV2FFI, EchoSpec2) changes nothing for programs that use neither.
+  The theorem the lifetimes level opens with (user-approved statement).
+  PROVED in lifetimeCoreProof (lifetime_core_link_thm).
+
+  A LEAF: no other theorem, headline or layer depends on it.  The servers
+  that DO close (the echo with close and fd reuse, and the HTTP and KV
+  servers on the lifetimes world) reach the core level through the
+  handle-layer simulation (hrun_sim; v2_instance in the peers level), not
+  through this theorem.
 
   A program that never closes a connection, and touches only the listener
   and the fds it has accepted, behaves in a lifetimes world sk exactly as

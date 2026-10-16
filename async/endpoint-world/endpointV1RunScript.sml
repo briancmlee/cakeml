@@ -364,7 +364,7 @@ Theorem v1_trace:
                    (event_written c ev ≠ [] ∨ event_read c ev ≠ []) ⇒
                    MEM c (opened_fds pre)) ∧
   ∃cs k. opened_fds evs = TAKE k cs ∧ k ≤ LENGTH cs ∧ ALL_DISTINCT cs ∧ ¬MEM lfd cs ∧
-         ∀j. j < LENGTH cs ⇒ conn_fd ll0 j = EL j cs
+         LENGTH cs + 3 < dimword (:64) ∧ ∀j. j < LENGTH cs ⇒ conn_fd ll0 j = EL j cs
 Proof
   strip_tac >> drule_all v1_prefix_replays >> strip_tac >>
   ‘EVERY v1_event evs’ by metis_tac[replays_v1_events] >>
@@ -385,6 +385,8 @@ Proof
         asm_rewrite_tac[] >> simp[MAP_REVERSE, MAP_GENLIST, combinTheory.o_DEF]) >>
   asm_rewrite_tac[] >> rpt conj_tac >>
   TRY (simp[LIST_EQ_REWRITE, EL_TAKE] >> NO_TAC) >>
+  TRY (qpat_x_assum ‘∀m. LENGTH _ + 3 < _’ (qspec_then ‘0’ mp_tac) >>
+       simp[sched_conns_def] >> NO_TAC) >>
   rpt strip_tac >>
   qpat_x_assum ‘∀m j. _’ (qspecl_then [‘0’, ‘j’] mp_tac) >> simp[sched_conns_def]
 QED

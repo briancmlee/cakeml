@@ -194,7 +194,7 @@ Proof
   Cases_on ‘a’ >> rw[deliver1_def]
 QED
 
-Theorem FOLDL_deliver1_sched[local]:
+Theorem FOLDL_deliver1_sched:
   ∀st s. (FOLDL deliver1 s st).sched = s.sched
 Proof
   Induct >> simp[deliver1_sched]
@@ -207,7 +207,7 @@ Proof
   rw[deliver2_def, update_client_def]
 QED
 
-Theorem step_ok_with_sched[local]:
+Theorem step_ok_with_sched:
   ∀st s. step_ok (s with sched := x) st ⇔ step_ok s st
 Proof
   ‘∀a s. deliver1 (s with sched := x) a = (deliver1 s a) with sched := x’
@@ -533,7 +533,7 @@ Proof
   rpt strip_tac >> CASE_TAC >> simp[]
 QED
 
-Theorem sched_conns_EL[local]:
+Theorem sched_conns_EL:
   j < LENGTH (sched_conns m ll) ∧ j < LENGTH (sched_conns n ll) ⇒
   EL j (sched_conns m ll) = EL j (sched_conns n ll)
 Proof

@@ -235,11 +235,23 @@ Proof
   rpt gen_tac >> CASE_TAC >> simp[]
 QED
 
-(* The non-saturation hypothesis (agreed 2026-10-16): the schedule connects
-   at most M clients *)
-Definition sched_connects_le_def:
+(* endpointInstances' sched_connects_le counts the connects of the first n
+   steps, as sched_conns lists them *)
+Theorem sched_conns_count[local]:
+  ∀n ll. LENGTH (sched_conns n ll) =
+         LENGTH (FILTER (λa. ∃l c. a = Connect l c) (arrivals_upto n ll))
+Proof
+  ‘∀st. LENGTH (step_conns st) = LENGTH (FILTER (λa. ∃l c. a = Connect l c) st)’
+    by (Induct >> simp[step_conns_def] >> Cases >> simp[] >> fs[step_conns_def]) >>
+  Induct >> simp[sched_conns_def, arrivals_upto_def] >> rpt gen_tac >>
+  CASE_TAC >> simp[FILTER_APPEND]
+QED
+
+Theorem sched_connects_le_conns[local]:
   sched_connects_le M ll ⇔ ∀m. LENGTH (sched_conns m ll) ≤ M
-End
+Proof
+  simp[sched_connects_le_def, sched_conns_count]
+QED
 
 (* A bounded version-1 server world's version-2 world is related and is a
    server world *)
@@ -249,7 +261,7 @@ Theorem v2of1_server_world2:
 Proof
   strip_tac >>
   ‘v12rel lfd sk.sched sk (v2of1 lfd sk)’
-    by (irule v12rel_init >> fs[server_world_def, sched_connects_le_def] >>
+    by (irule v12rel_init >> fs[server_world_def, sched_connects_le_conns] >>
         gen_tac >> first_x_assum (qspec_then ‘m’ mp_tac) >> decide_tac) >>
   ‘sched_wf2 (v2of1 lfd sk)’ by metis_tac[v12rel_sched_wf2, server_world_def] >>
   simp[server_world2_def] >> simp[v2of1_def, alloc1_ok]
@@ -308,6 +320,15 @@ Proof
   >- fs[open_loop_def]
   >- simp[ep_rely_v1] >>
   ‘semantics_prog (init_state (ep_ffi (w with calls := v1_calls))) init_env prog (Diverge io)’
-    by (irule v1_ep_diverge >> fs[server_world_def] >> simp[v2of1_def] >> metis_tac[]) >>
+    by (irule v1_ep_diverge >> fs[server_world_def] >>
+        qexistsl_tac [‘lfd’, ‘sk.sched’, ‘v2of1 lfd sk’, ‘sk’] >> simp[v2of1_def]) >>
   metis_tac[diverge_only]
+QED
+
+(* MAIN: the approved claim *)
+Theorem v1_instance_disc_holds:
+  v1_instance_disc
+Proof
+  rw[v1_instance_disc_def] >> irule v1_instance_disc_thm >> simp[] >>
+  qexists_tac ‘M’ >> simp[]
 QED

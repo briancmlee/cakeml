@@ -17,7 +17,7 @@
   design/08-echo-server.md).  This theory does not build on asyncEcho, so
   the constructor names do not clash.
 *)
-Theory asyncServer
+Theory echoServer
 Ancestors
   pair list rich_list arithmetic option pred_set string
   asyncCore asyncLevel1 asyncLoop

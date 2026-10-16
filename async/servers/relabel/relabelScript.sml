@@ -1,7 +1,7 @@
 (*
   Relabelling a computation's vocabulary, in the model.
 
-  The echo server speaks the model's vocabulary (asyncServer: num fds,
+  The echo server speaks the model's vocabulary (echoServer: num fds,
   string data, events Readable fd).  M3's event loop (spike/m3-assembly)
   speaks the socket model's (sact/sresp: word64 fds, byte lists, a ready
   set of fds).  The bridge is a relabelling: translate each emitted action
@@ -17,7 +17,7 @@
   relabelled computation's transcript on h.  This file does not depend on
   M3's definitions.
 *)
-Theory asyncM4Relabel
+Theory relabel
 Ancestors
   pair list rich_list arithmetic option asyncCore asyncLevel1 asyncLevel2
   asyncTranscript

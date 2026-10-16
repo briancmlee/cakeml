@@ -20,14 +20,14 @@
   Safety (http_server_safety): if the connections the world hands out are
   distinct, then on every connection fd the strings written to fd are a
   prefix of the printed responses to the complete requests read from fd so
-  far.  http_server_safety_requests restates it in HttpSpec's terms
+  far.  http_server_safety_requests restates it in HttpGetSpec's terms
   (requests rs ++ rest).
 *)
-Theory asyncHttpServer
+Theory httpGetServer
 Ancestors
   pair list rich_list arithmetic option pred_set string
-  asyncCore asyncLevel1 asyncLoop asyncLevel2 asyncTranscript asyncServer
-  asyncServerSafety asyncServerWith HttpSpec asyncHttpParse
+  asyncCore asyncLevel1 asyncLoop asyncLevel2 asyncTranscript echoServer
+  echoServerSafety skeleton HttpGetSpec httpGetParse
 Libs
   BasicProvers
 
@@ -197,7 +197,7 @@ Proof
   rw[http_server_def] >>
   mp_tac (server_with_isolates
           |> INST_TYPE [alpha |-> “:unit”]
-          |> INST [mk_var ("h", “:num -> (event, asyncServer$response) snapshot list ->
+          |> INST [mk_var ("h", “:num -> (event, echoServer$response) snapshot list ->
                                  (action, unit option) asyncCore$outcome”) |->
                    “λfd. http_handler files (fd, "")”]
           |> BETA_RULE) >>
@@ -209,7 +209,7 @@ Proof
   >> simp[]
 QED
 
-(* MAIN: the same in HttpSpec's terms.  If what the server has read from fd
+(* MAIN: the same in HttpGetSpec's terms.  If what the server has read from fd
    is printed valid requests rs followed by a rest that does not start with
    a printed valid request, then what it has written to fd is a prefix of
    the printed responses to rs. *)

@@ -17,10 +17,10 @@
   distinct (fresh tr).  There is no close in this model, so fds are not
   reused.
 *)
-Theory asyncServerSafety
+Theory echoServerSafety
 Ancestors
   pair list rich_list arithmetic option pred_set string
-  asyncCore asyncLevel1 asyncLoop asyncLevel2 asyncTranscript asyncServer
+  asyncCore asyncLevel1 asyncLoop asyncLevel2 asyncTranscript echoServer
 Libs
   BasicProvers
 

@@ -1,6 +1,6 @@
 (*
   The generic server skeleton never misuses the socket API, in the model:
-  m4-server's server_uses_accepted (asyncM4ServerUses), for server_with h
+  m4-server's server_uses_accepted (echoServerUses), for server_with h
   and any handler h whose run on fd only reads and writes fd.
 
      server_with_uses_accepted:
@@ -10,11 +10,11 @@
   The proof is server_uses_accepted's, with server_with_unfold for
   server_unfold and the handler hypothesis for handler_echoes.
 *)
-Theory asyncServerWithUses
+Theory skeletonUses
 Ancestors
   pair list rich_list arithmetic option asyncCore asyncLevel1 asyncLevel2
-  asyncTranscript asyncServer asyncServerSafety asyncM4ServerUses
-  asyncServerWith asyncHttpServer
+  asyncTranscript echoServer echoServerSafety echoServerUses
+  skeleton httpGetServer
 Libs
   BasicProvers
 
@@ -98,7 +98,7 @@ Theorem http_server_uses_accepted:
   ∀hh. accepts_on lfd (trans (http_server files lfd) hh) ∧
        ∀fd. acc_first fd (trans (http_server files lfd) hh)
 Proof
-  simp[asyncHttpServerTheory.http_server_def] >> gen_tac >>
+  simp[httpGetServerTheory.http_server_def] >> gen_tac >>
   irule server_with_uses_accepted >> simp[] >>
-  metis_tac[asyncHttpServerTheory.http_handler_serves]
+  metis_tac[httpGetServerTheory.http_handler_serves]
 QED

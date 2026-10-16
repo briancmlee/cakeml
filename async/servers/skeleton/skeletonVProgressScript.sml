@@ -1,21 +1,21 @@
 (*
-  Progress of the skeleton  server_v V hf lfd  (asyncServerV), for any
+  Progress of the skeleton  server_v V hf lfd  (skeletonV), for any
   vocabulary V with vocab_ok V and any handler hf that is well-formed,
-  settled and only acts on its own fd (hokv V).  This is asyncSWProgress
+  settled and only acts on its own fd (hokv V).  This is skeletonProgress
   (sw_handler_view, sw_accept_progress) for server_v: the proofs are
-  asyncSWProgress's, with Accept, Accepted, on_fd, accepted and nreads read
+  skeletonProgress's, with Accept, Accepted, on_fd, accepted and nreads read
   through V.
 
-  For idV every notion here is asyncSWProgress's (hokv_idV, acceptedv_idV,
+  For idV every notion here is skeletonProgress's (hokv_idV, acceptedv_idV,
   freshv_idV, nreadsv_idV, nacceptsv_idV); sw_handler_view_from_v and
-  sw_accept_progress_from_v re-derive asyncSWProgress's two main theorems,
+  sw_accept_progress_from_v re-derive skeletonProgress's two main theorems,
   with their statements unchanged, as a check.
 *)
-Theory asyncServerVProgress
+Theory skeletonVProgress
 Ancestors
   pair list rich_list arithmetic option pred_set string
-  asyncCore asyncLevel1 asyncLoop asyncTranscript asyncServer asyncServerSafety
-  asyncProgress asyncServerWith asyncSWProgress asyncServerV
+  asyncCore asyncLevel1 asyncLoop asyncTranscript echoServer echoServerSafety
+  echoProgress skeleton skeletonProgress skeletonV
 Libs
   BasicProvers
 
@@ -145,7 +145,7 @@ Proof
   metis_tac[hokv_wf, wf_server_v]
 QED
 
-(* For the identity vocabulary, these are asyncSWProgress's notions *)
+(* For the identity vocabulary, these are skeletonProgress's notions *)
 Theorem hokv_idV:
   hokv idV hf ⇔ hok hf
 Proof
@@ -981,7 +981,7 @@ Proof
 QED
 
 (* ------------------------------------------------------------------------
-   The identity vocabulary: asyncSWProgress's theorems, unchanged
+   The identity vocabulary: skeletonProgress's theorems, unchanged
    ------------------------------------------------------------------------ *)
 
 (* sw_handler_view's statement, as the idV instance of sv_handler_view *)

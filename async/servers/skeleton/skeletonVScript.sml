@@ -23,20 +23,20 @@
   sproj V: the socket part of a transcript over V (untag, for Sock/Kv; the
   identity, for idV).
 *)
-Theory asyncServerV
+Theory skeletonV
 Ancestors
   pair list rich_list arithmetic option pred_set string
-  asyncCore asyncLevel1 asyncLoop asyncLevel2 asyncTranscript asyncServer
-  asyncServerSafety asyncServerWith
+  asyncCore asyncLevel1 asyncLoop asyncLevel2 asyncTranscript echoServer
+  echoServerSafety skeleton
 Libs
   BasicProvers
 
 Datatype:
   vocab = <| acc : num -> 'a ; rd : num -> 'a ; wr : num -> string -> 'a ;
              qry : 'q -> 'a ;
-             sact : 'a -> asyncServer$action option ;
-             rinj : asyncServer$response -> 'r ;
-             sres : 'r -> asyncServer$response option ;
+             sact : 'a -> echoServer$action option ;
+             rinj : echoServer$response -> 'r ;
+             sres : 'r -> echoServer$response option ;
              kans : 'r -> 'k option ;
              owner : 'a -> num option |>
 End
@@ -70,7 +70,7 @@ End
 
 (* The identity vocabulary *)
 Definition idV_def:
-  idV : (asyncServer$action, 'k, 'q, asyncServer$response) vocab =
+  idV : (echoServer$action, 'k, 'q, echoServer$response) vocab =
     <| acc := Accept ; rd := Read ; wr := Write ; qry := (λq. Accept 0) ;
        sact := SOME ; rinj := I ; sres := SOME ; kans := K NONE ;
        owner := (λa. case a of Read fd => SOME fd | Write fd d => SOME fd

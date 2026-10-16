@@ -18,10 +18,10 @@
      ready sets from the round it was accepted, and the server's reads of
      that connection are exactly its handler's.
 *)
-Theory asyncProgress
+Theory echoProgress
 Ancestors
   pair list rich_list arithmetic option pred_set string
-  asyncCore asyncLevel1 asyncLoop asyncTranscript asyncServer asyncServerSafety
+  asyncCore asyncLevel1 asyncLoop asyncTranscript echoServer echoServerSafety
 Libs
   BasicProvers
 

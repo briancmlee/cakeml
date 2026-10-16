@@ -1,12 +1,12 @@
 (*
-  HttpSpecBodiesTchar: the names rfcAgree is stated with, against the REAL
-  HttpSpecBodies.  In the review's copy this theory added the tchar fix to
-  HttpSpecBodies; the real spec now has it (and the RFC character sets), so
+  HttpSpecRfcNames: the names rfcAgree is stated with, against the REAL
+  HttpSpec.  In the review's copy this theory added the tchar fix to
+  HttpSpec; the real spec now has it (and the RFC character sets), so
   valid_brequest_t is just valid_brequest (valid_brequest_t_eq).
 *)
-Theory HttpSpecBodiesTchar
+Theory HttpSpecRfcNames
 Ancestors
-  HttpSpecBodies HttpSpecHeaders HttpSpec
+  HttpSpec HttpHeadersSpec HttpGetSpec
 Libs
   preamble
 

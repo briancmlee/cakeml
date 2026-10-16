@@ -1070,3 +1070,56 @@ Proof
       gvs[l0own_def] >> metis_tac[])
   >> gvs[fds_lt_def] >> metis_tac[]
 QED
+
+(* ------------------------------------------------------------------------
+   One round
+   ------------------------------------------------------------------------ *)
+
+Theorem hdo_world:
+  hdo lfd (s, hs) a = SOME (r, (s', hs'), evs) ⇒
+  s'.future = s.future ∧ s'.alloc = s.alloc ∧ LENGTH s'.clients = LENGTH s.clients
+Proof
+  Cases_on ‘a’ >>
+  rw[hdo_def, sock_accept2_def, sock_read2_def, sock_write2_def, sock_close2_def,
+     update_client_def, AllCaseEqs()] >> gvs[]
+QED
+
+Theorem hacts_world:
+  ∀acts s hs rs evs s' hs'.
+    hacts lfd (s, hs) acts = SOME (rs, evs, (s', hs')) ⇒
+    s'.future = s.future ∧ s'.alloc = s.alloc ∧ LENGTH s'.clients = LENGTH s.clients
+Proof
+  Induct >> simp[hacts_def] >> rpt gen_tac >> strip_tac >> gvs[AllCaseEqs()] >>
+  rename1 ‘hdo _ _ _ = SOME (r1, st1, evs1)’ >> PairCases_on ‘st1’ >>
+  drule hdo_world >> first_x_assum drule >> simp[]
+QED
+
+Theorem round_rel:
+  pround lfd hw hs (w, ps) acts = SOME (snap, (w', ps'), log, evs) ∧
+  pv_rel lfd cm ps s ∧ pown lfd ps ∧ l0own lfd w ps ∧ l0_rely w ∧ fds_lt w ∧
+  arrs lfd (cm, LENGTH s.clients) log = (as, (cm', k')) ∧
+  (∀f j. MEM (f, j) cm' ∧ LENGTH s.clients ≤ j ⇒
+         ∀used. ¬MEM f used ⇒ s.alloc j used = f) ∧
+  LHD s.future = SOME as ⇒
+  ∃rs hevs s1 s2.
+    hacts lfd (s, hs_of ps) acts = SOME (rs, hevs, (s1, hs_of ps')) ∧
+    snap = ssnap (FST (hpoll lfd (hs_of ps') hs s1)) rs ∧
+    SND (hpoll lfd (hs_of ps') hs s1) = s2 ∧
+    pv_rel lfd cm' ps' s2 ∧ pown lfd ps' ∧ l0own lfd w' ps' ∧ l0_rely w' ∧
+    fds_lt w' ∧ k' = LENGTH s2.clients ∧ s2.alloc = s.alloc ∧
+    s2.future = THE (LTL s.future)
+Proof
+  simp[pround_def] >> strip_tac >> gvs[AllCaseEqs()] >>
+  rename1 ‘pacts _ _ _ = SOME (rs, aevs, ws1)’ >> PairCases_on ‘ws1’ >>
+  rename1 ‘pacts _ _ _ = SOME (rs, aevs, (w1, ps1))’ >>
+  rename1 ‘pf_tail _ _ _ _ = SOME (rdy, _, _, tevs)’ >>
+  drule_all pacts_hacts >> strip_tac >>
+  drule_all pacts_l0 >> strip_tac >>
+  drule hacts_world >> strip_tac >>
+  ‘LHD s'.future = SOME as’ by simp[] >>
+  ‘∀f j. MEM (f, j) cm' ∧ LENGTH s'.clients ≤ j ⇒
+         ∀used. ¬MEM f used ⇒ s'.alloc j used = f’ by gvs[] >>
+  ‘arrs lfd (cm, LENGTH s'.clients) log = (as, (cm', k'))’ by gvs[] >>
+  drule_all tail_rel >> strip_tac >>
+  qexistsl_tac [‘rs’, ‘hevs’, ‘s'’] >> gvs[]
+QED

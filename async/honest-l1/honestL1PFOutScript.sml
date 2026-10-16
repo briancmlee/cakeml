@@ -462,3 +462,251 @@ Proof
   Cases_on ‘a’ >> PURE_REWRITE_TAC[hdo_def, hwrote_def] >> strip_tac >>
   gvs[AllCaseEqs()] >> imp_res_tac sock_ops_clients >> gvs[]
 QED
+
+(* ------------------------------------------------------------------------
+   A queued connection has nothing sent: the kernel takes bytes on a
+   channel only through a send on its fd, and a queued channel has none
+   ------------------------------------------------------------------------ *)
+
+Definition qfresh_def:
+  qfresh w ⇔
+    ∀l p q j. MEM (l, p, q) w.listeners ∧ MEM j q ⇒ j < LENGTH w.chans ∧ csent w j = []
+End
+
+Theorem MEM_AFUPDKEY_imp:
+  ∀ls. MEM (k', v') (AFUPDKEY k g ls) ⇒ MEM (k', v') ls ∨ ∃v. MEM (k, v) ls ∧ k' = k ∧ v' = g v
+Proof
+  Induct >> simp[AFUPDKEY_def, FORALL_PROD] >> rw[] >> metis_tac[]
+QED
+
+Theorem qfresh_simple[simp]:
+  (qfresh (w with hist := h) ⇔ qfresh w) ∧ (qfresh (w with clock := c) ⇔ qfresh w) ∧
+  (qfresh (w with open_fds := fs) ⇔ qfresh w) ∧ (qfresh (w with reserved := rs) ⇔ qfresh w)
+Proof
+  simp[qfresh_def, csent_def]
+QED
+
+Theorem qfresh_upd:
+  qfresh w ∧ (j < LENGTH w.chans ⇒ (g (EL j w.chans)).sent = (EL j w.chans).sent) ⇒
+  qfresh (upd_lchan j g w)
+Proof
+  rw[qfresh_def, upd_lchan_def, csent_def, EL_LUPDATE] >> res_tac >> rw[] >> gvs[csent_def]
+QED
+
+Theorem qfresh_deliver:
+  qfresh w ⇒ qfresh (l0_deliver w a)
+Proof
+  Cases_on ‘a’ >> rw[l0_deliver_def] >> every_case_tac >> gvs[] >>
+  TRY (irule qfresh_upd >> rw[break_lchan_def] >> NO_TAC) >>
+  gvs[qfresh_def] >> rpt gen_tac >> strip_tac >>
+  drule MEM_AFUPDKEY_imp >> strip_tac >> gvs[]
+  >- (res_tac >> gvs[csent_def, EL_APPEND1])
+  >> pairarg_tac >> gvs[]
+  >- (res_tac >> gvs[csent_def, EL_APPEND1])
+  >> simp[csent_def, EL_APPEND2, fresh_lchan_def]
+QED
+
+Theorem qfresh_tick:
+  qfresh w ⇒ qfresh (l0_tick nm w)
+Proof
+  simp[l0_tick_def] >>
+  ‘∀as w. qfresh w ⇒ qfresh (FOLDL l0_deliver w as)’
+    by (Induct >> simp[] >> metis_tac[qfresh_deliver]) >>
+  rw[] >> first_x_assum irule >> simp[]
+QED
+
+Theorem qfresh_ticks:
+  ∀k w. qfresh w ⇒ qfresh (l0_ticks nm k w)
+Proof
+  Induct >> simp[l0_ticks_def] >> metis_tac[qfresh_tick]
+QED
+
+Theorem qfresh_FOLDL_break:
+  ∀q w. qfresh w ⇒ qfresh (FOLDL (λw j. upd_lchan j (break_lchan e F) w) w q)
+Proof
+  Induct >> simp[] >> rpt strip_tac >> first_x_assum irule >>
+  irule qfresh_upd >> rw[break_lchan_def]
+QED
+
+Theorem qfresh_listen:
+  qfresh w ∧ l0_listen p w = (x, w') ⇒ qfresh w'
+Proof
+  strip_tac >> gvs[l0_listen_def, AllCaseEqs()] >> gvs[qfresh_def] >> rw[] >> gvs[] >>
+  metis_tac[]
+QED
+
+Theorem qfresh_send:
+  qfresh w ∧ l0wf w ∧ l0_send g bs w = (r, w') ⇒ qfresh w'
+Proof
+  strip_tac >>
+  gvs[l0_send_def, AllCaseEqs()] >> TRY (irule qfresh_upd >> simp[] >> NO_TAC) >>
+  gvs[l0_chan_of_def, AllCaseEqs()] >> imp_res_tac ALOOKUP_MEM >>
+  gvs[qfresh_def, upd_lchan_def, csent_def, EL_LUPDATE] >>
+  rpt gen_tac >> strip_tac >> first_x_assum drule_all >> strip_tac >> simp[] >>
+  rename1 ‘MEM j' q’ >> Cases_on ‘j' = j’ >> simp[] >> gvs[] >>
+  gvs[l0wf_def, used_chans_def, ALL_DISTINCT_APPEND] >>
+  ‘MEM j (FLAT (MAP (SND ∘ SND) w.listeners))’
+    by (simp[MEM_FLAT, MEM_MAP, PULL_EXISTS] >> qexists_tac ‘(l, p, q)’ >> simp[]) >>
+  ‘MEM j (MAP SND w.open_fds)’ by (simp[MEM_MAP] >> qexists_tac ‘(g, j)’ >> simp[]) >>
+  qpat_x_assum ‘∀e. MEM e (MAP SND w.open_fds) ⇒ _’ drule >> simp[]
+QED
+
+Theorem qfresh_recv:
+  qfresh w ∧ l0_recv g n w = (r, d, w') ⇒ qfresh w'
+Proof
+  strip_tac >> gvs[l0_recv_def, AllCaseEqs()] >> rpt (irule qfresh_upd >> simp[])
+QED
+
+Theorem qfresh_shutdown:
+  qfresh w ∧ l0_shutdown g w = (r, w') ⇒ qfresh w'
+Proof
+  strip_tac >> gvs[l0_shutdown_def, AllCaseEqs()] >> rpt (irule qfresh_upd >> simp[])
+QED
+
+Theorem qfresh_connerr:
+  qfresh w ∧ l0_connerr g w = (y, w') ⇒ qfresh w'
+Proof
+  strip_tac >> gvs[l0_connerr_def, AllCaseEqs()] >> rpt (irule qfresh_upd >> simp[])
+QED
+
+Theorem qfresh_close:
+  qfresh w ∧ l0_close g w = (r, w') ⇒ qfresh w'
+Proof
+  strip_tac >> gvs[l0_close_def, AllCaseEqs()] >> simp[close_fd_def] >> every_case_tac >> gvs[] >>
+  TRY (irule qfresh_upd >> simp[] >> NO_TAC) >>
+  irule qfresh_FOLDL_break >> gvs[qfresh_def, MEM_FILTER] >> metis_tac[]
+QED
+
+Theorem qfresh_pop:
+  qfresh w ∧ FILTER (λ(l', p, q). l' = l) w.listeners = (x, p, j :: q') :: t ⇒
+  qfresh (w with listeners := AFUPDKEY l (K (p, q')) w.listeners)
+Proof
+  simp[qfresh_def] >> strip_tac >>
+  ‘MEM (x, p, j :: q') w.listeners ∧ x = l’
+    by (qpat_x_assum ‘FILTER _ _ = _’ (mp_tac o Q.AP_TERM ‘MEM (x, p, j :: q')’) >>
+        simp[MEM_FILTER]) >>
+  rpt gen_tac >> strip_tac >>
+  drule MEM_AFUPDKEY_imp >> strip_tac >- (res_tac >> simp[]) >>
+  gvs[] >> metis_tac[MEM]
+QED
+
+Theorem qfresh_accept:
+  qfresh w ∧ l0_accept g w = (r, w') ⇒ qfresh w'
+Proof
+  strip_tac >> gvs[l0_accept_def, AllCaseEqs(), fail_def] >>
+  drule_all qfresh_pop >> strip_tac >>
+  TRY (irule qfresh_upd >> simp[] >> rw[break_lchan_def] >> NO_TAC) >>
+  fs[qfresh_def, csent_def] >> first_assum ACCEPT_TAC
+QED
+
+Theorem qfresh_call:
+  l0_call n conf bytes w = SOME (FFIreturn bytes' w') ∧ n ≠ «sys_connect» ∧
+  qfresh w ∧ l0wf w ⇒ qfresh w'
+Proof
+  rw[l0_call_def] >> gvs[AllCaseEqs()] >>
+  rpt (pairarg_tac >> gvs[]) >>
+  imp_res_tac qfresh_listen >> imp_res_tac qfresh_send >> imp_res_tac qfresh_recv >>
+  imp_res_tac qfresh_shutdown >> imp_res_tac qfresh_connerr >> imp_res_tac qfresh_close >>
+  imp_res_tac qfresh_accept >> gvs[qfresh_ticks]
+QED
+
+Theorem qfresh_do:
+  l0_do n conf alen w = SOME (out, w', ev) ∧ n ≠ «sys_connect» ∧ qfresh w ∧ winv w ⇒
+  qfresh w'
+Proof
+  strip_tac >> drule l0_do_cases >> strip_tac >> gvs[] >>
+  drule qfresh_call >> simp[] >> disch_then irule >>
+  gvs[winv_def, qfresh_tick, l0wf_tick]
+QED
+
+Theorem sys_qfresh:
+  (qfresh w ∧ winv w ∧ sys_send g bs w = SOME (out, w', ev) ⇒ qfresh w') ∧
+  (qfresh w ∧ winv w ∧ sys_close g w = SOME (out, w', ev) ⇒ qfresh w') ∧
+  (qfresh w ∧ winv w ∧ sys_recv g k w = SOME (out, w', ev) ⇒ qfresh w') ∧
+  (qfresh w ∧ winv w ∧ sys_accept g w = SOME (out, w', ev) ⇒ qfresh w') ∧
+  (qfresh w ∧ winv w ∧ sys_poll fes w = SOME (out, w', ev) ⇒ qfresh w')
+Proof
+  rw[sys_close_def, sys_send_def, sys_recv_def, sys_accept_def, sys_poll_def] >>
+  drule_at (Pos (el 1)) qfresh_do >> simp[]
+QED
+
+Theorem l1_close_qfresh:
+  l1_close g (w, st) = SOME ((w', st'), evs) ∧ qfresh w ∧ winv w ⇒ qfresh w'
+Proof
+  rw[l1_close_def, AllCaseEqs()] >> gvs[] >> metis_tac[sys_qfresh]
+QED
+
+Theorem pdo_qfresh:
+  pdo lfd (w, ps) a = SOME (r, (w', ps'), evs) ∧ qfresh w ∧ winv w ⇒ qfresh w'
+Proof
+  Cases_on ‘a’ >> simp[pdo_def] >> rw[AllCaseEqs()] >> gvs[] >>
+  PairCases_on ‘z’ >> gvs[] >>
+  TRY (drule_all l1_close_qfresh >> simp[] >> NO_TAC) >>
+  gvs[l1do_def, AllCaseEqs()] >> metis_tac[sys_qfresh]
+QED
+
+Theorem pacts_qfresh:
+  ∀acts w ps rs evs w' ps'.
+    pacts lfd (w, ps) acts = SOME (rs, evs, (w', ps')) ∧ qfresh w ∧ winv w ⇒ qfresh w'
+Proof
+  Induct >> simp[pacts_def] >> rpt gen_tac >> strip_tac >>
+  gvs[AllCaseEqs()] >> PairCases_on ‘ws1’ >>
+  drule_all pdo_qfresh >> strip_tac >> drule_all pdo_winv >> strip_tac >>
+  first_x_assum drule_all >> simp[]
+QED
+
+Theorem l1_polls_qfresh:
+  ∀chs w rv w' evs. l1_polls chs w = SOME (rv, w', evs) ∧ winv w ∧ qfresh w ⇒ qfresh w'
+Proof
+  Induct >> simp[l1_polls_def] >> rpt gen_tac >> strip_tac >> gvs[AllCaseEqs()] >>
+  ‘winv w1 ∧ qfresh w1’ by metis_tac[sys_winv, sys_qfresh] >>
+  first_x_assum drule_all >> simp[]
+QED
+
+Theorem l1_flush_qfresh:
+  ∀fs w st w' st' evs. l1_flush fs (w, st) = SOME ((w', st'), evs) ∧ winv w ∧ qfresh w ⇒
+                       qfresh w'
+Proof
+  Induct >> simp[l1_flush_def] >> rpt gen_tac >> strip_tac >>
+  qpat_x_assum ‘(if _ then _ else _) = _’ mp_tac >> IF_CASES_TAC >> strip_tac
+  >- (first_x_assum drule_all >> simp[]) >>
+  gvs[AllCaseEqs()] >>
+  ‘winv w'' ∧ qfresh w''’ by metis_tac[sys_winv, sys_qfresh] >>
+  first_x_assum drule_all >> simp[]
+QED
+
+Theorem pf_fetch_qfresh:
+  ∀fs w ps w' ps' log evs.
+    pf_fetch lfd hw fs (w, ps) = SOME ((w', ps'), log, evs) ∧ winv w ∧ qfresh w ⇒ qfresh w'
+Proof
+  Induct >> simp[pf_fetch_def] >> rpt gen_tac >> rw[] >>
+  TRY (first_x_assum drule_all >> simp[] >> NO_TAC) >>
+  gvs[AllCaseEqs()] >> pairarg_tac >> gvs[AllCaseEqs()] >>
+  first_x_assum irule >> metis_tac[sys_winv, sys_qfresh]
+QED
+
+Theorem l1_reap_qfresh:
+  ∀fs w st w' st' evs. l1_reap fs (w, st) = SOME ((w', st'), evs) ∧ winv w ∧ qfresh w ⇒
+                       qfresh w'
+Proof
+  Induct >> simp[l1_reap_def] >> rpt gen_tac >> strip_tac >> gvs[] >>
+  qpat_x_assum ‘(if _ then _ else _) = _’ mp_tac >> IF_CASES_TAC >> strip_tac
+  >- (gvs[AllCaseEqs()] >> Cases_on ‘ws’ >>
+      drule_all l1_close_qfresh >> strip_tac >>
+      drule_all l1_close_winv >> strip_tac >>
+      first_x_assum drule_all >> simp[])
+  >> first_x_assum drule_all >> simp[]
+QED
+
+Theorem pround_qfresh:
+  pround lfd hw hs (w, ps) acts = SOME (snap, (w', ps'), log, evs) ∧ winv w ∧ qfresh w ⇒
+  qfresh w'
+Proof
+  rw[pround_def, AllCaseEqs()] >>
+  PairCases_on ‘ws1’ >> drule_all pacts_qfresh >> drule_all pacts_winv >> rpt strip_tac >>
+  gvs[pf_tail_def, AllCaseEqs()] >>
+  drule_all l1_polls_qfresh >> drule_all l1_polls_winv >> rpt strip_tac >>
+  drule_all l1_flush_qfresh >> drule_all l1_flush_winv >> rpt strip_tac >>
+  drule_all pf_fetch_qfresh >> drule_all pf_fetch_winv >> rpt strip_tac >>
+  drule_all l1_reap_qfresh >> simp[]
+QED

@@ -2,25 +2,25 @@
   The runnable HTTP-bodies server on the select-on-interest loop (option
   C): the verified program, exported for the CakeML release compiler.
 
-  The program is exactly the one asyncOCSemB's http_q_semantics and
-  http_q_spec, and asyncOCQuietB's http_q_quiet_b, are about:
+  The program is exactly the one httpBlockingSemantics's http_blocking_semantics and
+  http_blocking_spec, and httpQuietStable's http_blocking_quiet_stable, are about:
 
-     SNOC (main_call «main») http_q_prog
+     SNOC (main_call «main») http_blocking_prog
 
   with  fun main u = run_q ([3], proto_server2 b_parse bresp_demo 3).
   As in ../echo-blocking: the declarations after the basis are written to
-  http_quiet.sexp (sexpV3479Lib).
+  http_headers_quiet.sexp (sexpV3479Lib).
 *)
-Theory asyncOCHttpExport
+Theory httpBlockingExport
 Ancestors
-  asyncOCSemB ffiSpikeDivMain basisProg
+  httpBlockingSemantics divMain basisProg
 Libs
   preamble sexpV3479Lib
 
 val prog =
-  “SNOC (main_call «main») http_q_prog”
-  |> (REWRITE_CONV [asyncOCSemBTheory.http_q_prog_def,
-                    ffiSpikeDivMainTheory.main_call_def, SNOC_APPEND, APPEND]
+  “SNOC (main_call «main») http_blocking_prog”
+  |> (REWRITE_CONV [httpBlockingSemanticsTheory.http_blocking_prog_def,
+                    divMainTheory.main_call_def, SNOC_APPEND, APPEND]
       THENC REWRITE_CONV [GSYM SNOC_APPEND] THENC REWRITE_CONV [SNOC, APPEND])
   |> concl |> rhs;
 

@@ -2,22 +2,22 @@
   The runnable HTTP-bodies server (polling loop): the verified program,
   exported for the CakeML release compiler.
 
-  The program is exactly the one asyncProtoSemB's http_prog_pb_spec is
+  The program is exactly the one httpSemantics's http_prog_spec is
   about:
 
-     http_prog_pb = SNOC (main_call «main») http_decs_pb
+     http_prog = SNOC (main_call «main») http_decs_pb
 
   with  fun main u = proto_main b_parse bresp_demo u.  As in
   ../echo-blocking and ../http-quiet: the declarations after the basis are
   written to http_server_pb.sexp (sexpV3479Lib).
 *)
-Theory asyncProtoBExport
+Theory httpExport
 Ancestors
-  asyncProtoSemB basisProg
+  httpSemantics basisProg
 Libs
   preamble sexpV3479Lib
 
-val prog = asyncProtoSemBTheory.http_prog_pb_eq |> concl |> rhs;
+val prog = httpSemanticsTheory.http_prog_eq |> concl |> rhs;
 
 val basis_decls =
   basisProgTheory.basis_def |> concl |> rhs |> listSyntax.dest_list |> fst;

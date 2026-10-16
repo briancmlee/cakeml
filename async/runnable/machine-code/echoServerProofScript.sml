@@ -1,6 +1,6 @@
 (*
   NOT YET RUN.  The machine-code theorem for the echo server: compose the
-  program's semantics (asyncEchoSemantics' echo_semantics_prog: it diverges
+  program's semantics (echoSemantics' echo_semantics_prog: it diverges
   with trace echo_trace s0, which satisfies echo_safe) with CakeML's
   compiler correctness theorem (backendProof's compile_correct) and the
   in-logic compilation (echoServerCompile), for arm8.  The pattern is the
@@ -9,7 +9,7 @@
 *)
 Theory echoServerProof
 Ancestors
-  semanticsProps backendProof arm8_configProof asyncEchoSemantics
+  semanticsProps backendProof arm8_configProof echoSemantics
   echoServerCompile
 Libs
   preamble

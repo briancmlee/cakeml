@@ -6,7 +6,7 @@
 *)
 Theory echoServerCompile
 Ancestors
-  asyncEchoMain
+  echoMain
 Libs
   preamble eval_cake_compile_arm8Lib
 

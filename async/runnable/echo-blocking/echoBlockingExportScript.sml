@@ -3,32 +3,32 @@
   m4-blocking-live's verified program,
   exported for the CakeML release compiler.
 
-  The program is exactly the one asyncM4LiveMain's echo_live_semantics
-  and echo_live_spec are about:
+  The program is exactly the one echoBlockingMain's echo_blocking_semantics
+  and echo_blocking_spec are about:
 
-     SNOC (main_call «main») echo_l_prog
+     SNOC (main_call «main») echo_blocking_prog
 
-  where echo_l_prog is the basis, Socket, the Async library, M4's loop,
-  the echo server (spike/m4-safety's asyncM4SockServer), the blocking loop
-  (asyncM4LiveLoop: upd_live, step_l, run_l) and
+  where echo_blocking_prog is the basis, Socket, the Async library, M4's loop,
+  the echo server (spike/m4-safety's echoSockServer), the blocking loop
+  (echoBlockingProg: upd_live, step_l, run_l) and
 
      fun main u = run_l ([3], [3], server 3);
 
-  As in ../runnable (asyncEchoMain): the declarations after the basis are
+  As in ../runnable (echoMain): the declarations after the basis are
   written to echo_live.sexp in the S-expression format of the CakeML
   release v3479 (sexpV3479Lib); the release compiler adds its own basis.
 *)
-Theory asyncEchoLiveExport
+Theory echoBlockingExport
 Ancestors
-  asyncM4LiveMain ffiSpikeDivMain basisProg
+  echoBlockingMain divMain basisProg
 Libs
   preamble sexpV3479Lib
 
 (* The verified whole program, as a list of declarations *)
 val prog =
-  “SNOC (main_call «main») echo_l_prog”
-  |> (REWRITE_CONV [asyncM4LiveMainTheory.echo_l_prog_def,
-                    ffiSpikeDivMainTheory.main_call_def, SNOC_APPEND, APPEND]
+  “SNOC (main_call «main») echo_blocking_prog”
+  |> (REWRITE_CONV [echoBlockingMainTheory.echo_blocking_prog_def,
+                    divMainTheory.main_call_def, SNOC_APPEND, APPEND]
       THENC REWRITE_CONV [GSYM SNOC_APPEND] THENC REWRITE_CONV [SNOC, APPEND])
   |> concl |> rhs;
 

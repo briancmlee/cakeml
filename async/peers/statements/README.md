@@ -2,13 +2,18 @@
 
 `peerStatementsScript.sml` states each server's peer-world headline over the
 **simple class** of peer worlds: no backpressure, open loop, not filling the
-fd space (`nonsat`). Over all peer worlds these specs are false for our
+fd space (`nonsat1`: reserved + M + 4 < 2^64 connections in all, user-approved).
+`nonsat1` is used **uniformly**, for every claim. Only the converse (⇒)
+directions need it, but it is stronger than `nonsat`, so the echo-with-close
+claim, whose converse needs only `nonsat`, still follows. The file carries a
+verbatim copy of close-v2's `endpointV1EchoConv.nonsat1` (spike/v1-conv); the
+copy is removed when L2 is folded. Over all peer worlds these specs are false for our
 servers, because a full write under backpressure is a misuse; backpressure,
 fd limits and errors are L3's job.
 
 | claim | program | status |
 |---|---|---|
-| `peer_echo_episodes_claim` | L1's `echo_episodes_prog` | **provable now**, in one step: the converse of `echo_episodes_peer_equiv_thm` (under `nonsat`) plus L1's `echo_episodes_prog_spec` |
+| `peer_echo_episodes_claim` | L1's `echo_episodes_prog` | **provable now**, in one step: the converse of `echo_episodes_peer_equiv_thm` (under `nonsat`, implied by `nonsat1`) plus L1's `echo_episodes_prog_spec` |
 | `peer_echo_prog_claim` | L0's `echo_prog` | ⏳ needs the version-1 converse (close-v2, spike/v1-conv) and `v1_disciplined 3w echo_prog` |
 | `peer_http_prog_claim demo_files http_prog` | L0's `http_prog` | ⏳ the same; `v1_disciplined` still to redo for the series' program |
 | `peer_kv_prog_claim kv_prog` | L0's `kv_prog` | ⏳ the same |

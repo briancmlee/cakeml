@@ -1222,8 +1222,23 @@ and is client j of `psk`. The fetch log is `plog`.
   j = `cl (pcm n0) f`: eventually `Eof2 j` is among `psk`'s arrivals from
   step n0 on, or c's kernel inbox at n0 is a prefix of client j's `Data2`
   bytes there. Hypotheses: the run's side conditions, `winv w0`, [F1]
-  (D11′), S1, S3, S4 for f. The D16 corollary (hard errors only on a real
-  break) and live-conn ([F3]) remain.
+  (D11′), S1, S3, S4 for f. The D16 corollary and live-conn are proved
+  too (below and honestL1PFConnRun).
+  **D16 corollary (proved, honestL1PFD16, fd75f3319):** hypothesis HD16 f
+  (`HD16_def`, on the fetch log and f's channel at round boundaries): if
+  round k's fetch log has `FReset f`, f's channel at the end of round k
+  is broken with an empty inbox (`flushed`). Then `live_data_d16`: f's
+  kernel input R at round n0 is eventually a prefix of what L1 fetched
+  on f, or ∃k ≥ n0 with f flushed. `live_data_psk_d16` gives the same in
+  psk, as client data. An orderly EOF needs no hypothesis (`recv_zero`:
+  L0 returns 0 only with an empty inbox). *Wording refined (agreed with
+  the coordinator, 2026-10-17):* the approved wording "every byte c's peer
+  delivered is eventually in psk" is refined to "... unless the
+  connection genuinely broke and the kernel discarded unread data". Real
+  TCP may discard received-but-unread data on an RST (the model's LBreak
+  with keep = F), so the unrefined statement is false for real
+  connections. The corollary still excludes exactly what D16 is about:
+  a spurious hard error ending the episode early.
   *Formal shapes for live-conn (agreed).* **[F3]:** infinitely often some
   fd below the limit is free (`∀n. ∃n' ≥ n. ∃x < fd_limit. n2w x ∉
   l0_used (rworld n')`). It is a condition on the run, on what the process

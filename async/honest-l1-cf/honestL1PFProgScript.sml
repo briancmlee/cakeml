@@ -122,6 +122,17 @@ val r = tr writable_fds_def;
 val r = tr poll_conf_def;
 val r = tr (poll_chunks_def |> CONV_RULE (DEPTH_CONV ETA_CONV));
 
+Theorem poll_chunks_ind_holds[local]:
+  poll_chunks_ind (:'a)
+Proof
+  rw[fetch "-" "poll_chunks_ind_def"] >>
+  completeInduct_on ‘LENGTH v1’ >> rw[] >>
+  last_x_assum irule >> rw[mllistTheory.drop_def] >>
+  first_x_assum (qspec_then ‘LENGTH (DROP 4096 v1)’ mp_tac) >> simp[]
+QED
+
+val _ = update_precondition poll_chunks_ind_holds;
+
 (* ------------------------------------------------------------------------
    L1's bookkeeping
    ------------------------------------------------------------------------ *)

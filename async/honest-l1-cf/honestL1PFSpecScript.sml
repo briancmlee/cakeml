@@ -14,6 +14,7 @@ Ancestors
   ml_translator cfHeapsBase Word8ArrayProof mlstring
   honestL0 honestL0World honestL1Model honestL1PFModel honestL0Part
   honestL0Prog honestL0Proof honestL1PFProg ffiSpikeSocketFFI asyncM3Loop asyncM3World
+  asyncM3Prog asyncM4Loop asyncCfActProg
 Libs
   preamble ml_translatorLib ml_progLib cfLib basisFunctionsLib
 
@@ -298,4 +299,82 @@ Proof
       first_x_assum drule >> strip_tac >> xapp >> simp[]) >>
   gvs[GSYM quiet_fd_def] >>
   first_x_assum drule >> strip_tac >> xapp >> fs[]
+QED
+
+Theorem pf_tail_spec:
+  pf_tail lfd hw hs (w, ps) = SOME (rdy, (w', ps'), log, evs1) ∧
+  WORD lfd lfdv ∧ NUM hw hwv ∧ LIST_TYPE WORD hs hsv ∧ L1P ps psv ⇒
+  app (p:'ffi ffi_proj) pf_tail_v [lfdv; hwv; hsv; psv] (L0_EV w0 w evs)
+    (POSTv v. &(∃rdyv psv'. v = Conv NONE [rdyv; psv'] ∧
+                            LIST_TYPE WORD rdy rdyv ∧ L1P ps' psv') *
+              L0_EV w0 w' (evs ++ evs1))
+Proof
+  rpt strip_tac >>
+  xcf_with_def (fetch "honestL1PFProg" "pf_tail_v_def") >>
+  gvs[pf_tail_def, AllCaseEqs()] >>
+  rpt (xlet_auto >- xsimpl) >>
+  xlet ‘POSTv v. &LIST_TYPE (PAIR_TYPE WORD REV) rv v * L0_EV w0 w1 (evs ++ pevs)’
+  >- (xapp_spec l1_polls_spec >> xsimpl >> metis_tac[]) >>
+  rpt (xlet_auto >- xsimpl) >>
+  xlet ‘POSTv v. &L1ST b2 v * L0_EV w0 w2 (evs ++ pevs ++ fevs)’
+  >- (xapp_spec l1_flush_spec >> xsimpl >> gvs[l1p_b_def] >> metis_tac[]) >>
+  rpt (xlet_auto >- xsimpl) >>
+  xlet ‘POSTv v. &L1P ps3 v * L0_EV w0 w3 (evs ++ pevs ++ fevs ++ gevs)’
+  >- (xapp_spec pf_fetch_spec >> xsimpl >> gvs[filter_in_def, set_b_def] >> metis_tac[]) >>
+  rpt (xlet_auto >- xsimpl) >>
+  xlet ‘POSTv v. &L1ST b4 v * L0_EV w0 w' (evs ++ pevs ++ fevs ++ gevs ++ cevs)’
+  >- (xapp_spec l1_reap_spec >> xsimpl >> gvs[l1p_b_def, closing_of_def] >> metis_tac[]) >>
+  rpt (xlet_auto >- xsimpl) >>
+  xcon >> xsimpl >> gvs[set_b_def]
+QED
+
+(* One round of the loop: perform m's actions, then poll, flush, fetch and
+   reap on the interest fds, and poll m with the snapshot *)
+Theorem step_pf_spec:
+  COMP p SACT A (SNAPSHOT SREADY SRESP) m cv ∧ WORD lfd lfdv ∧ NUM hw hwv ∧
+  LIST_TYPE NUM (MAP w2n fds) fdsv ∧ L1P ps psv ∧
+  pround lfd hw fds (w, ps) (m []).actions = SOME (snap, (w', ps'), log, evs1) ⇒
+  app (p:'ffi ffi_proj) step_pf_v [Conv NONE [lfdv; hwv; fdsv; psv; cv]]
+    (L0_EV w0 w evs)
+    (POSTv v.
+       &(∃fdsv' psv' cv'. v = Conv NONE [lfdv; hwv; fdsv'; psv'; cv'] ∧
+           LIST_TYPE NUM (MAP w2n (add_accepted fds snap.results)) fdsv' ∧
+           L1P ps' psv' ∧
+           COMP p SACT A (SNAPSHOT SREADY SRESP) (suspended m [snap]) cv') *
+       L0_EV w0 w' (evs ++ evs1))
+Proof
+  rpt strip_tac >>
+  qpat_assum ‘COMP _ _ _ _ _ _’
+    (strip_assume_tac o REWRITE_RULE[COMP_def, POLL_RESULT_def]) >>
+  gvs[pround_def, AllCaseEqs()] >>
+  xcf_with_def (fetch "honestL1PFProg" "step_pf_v_def") >> xmatch >> xmatch >>
+  PairCases_on ‘ws1’ >>
+  xlet ‘POSTv v. &(∃psv' rsv. v = Conv NONE [psv'; rsv] ∧ L1P ws11 psv' ∧
+                              LIST_TYPE SRESP rs rsv) * L0_EV w0 ws10 (evs ++ evs')’
+  >- (xapp_spec pacts_spec >> xsimpl >> metis_tac[]) >>
+  gvs[] >> xmatch >> (xlet_auto >- xsimpl) >>
+  xlet ‘POSTv v. &(∃rdyv psv'. v = Conv NONE [rdyv; psv'] ∧
+                         LIST_TYPE WORD rdy rdyv ∧ L1P ps' psv') *
+                 L0_EV w0 w' (evs ++ evs' ++ tevs)’
+  >- (xapp_spec pf_tail_spec >> xsimpl >>
+      gvs[map_w64_def, MAP_MAP_o, combinTheory.o_DEF] >> metis_tac[]) >>
+  gvs[] >> xmatch >> (xlet_auto >- xsimpl) >>
+  xlet ‘POSTv wv. &SNAPSHOT SREADY SRESP (ssnap rdy rs) wv * L0_EV w0 w' (evs ++ evs' ++ tevs)’
+  >- (xcon >> xsimpl >> simp[SNAPSHOT_def, ssnap_def, SREADY_def, NUM_def, INT_def] >>
+      qexists_tac ‘rdy’ >> fs[map_num_def] >>
+      qmatch_asmsub_abbrev_tac ‘LIST_TYPE NUM (MAP ff rdy)’ >>
+      ‘ff = w2n’ by simp[Abbr‘ff’, FUN_EQ_THM] >> gvs[]) >>
+  ‘app p Async_poll_v [Conv NONE [av; sv]; wv] emp
+     (POSTv v. &COMP p SACT A (SNAPSHOT SREADY SRESP) (suspended m [ssnap rdy rs]) v)’
+    by (irule Async_poll_spec >> simp[]) >>
+  xlet ‘POSTv cv'. &COMP p SACT A (SNAPSHOT SREADY SRESP) (suspended m [ssnap rdy rs]) cv' *
+                   L0_EV w0 w' (evs ++ evs' ++ tevs)’
+  >- (qpat_x_assum ‘app _ Async_poll_v _ _ _’ xapp_spec >> xsimpl) >>
+  ‘app p add_accepted_v [fdsv; rsv] emp
+     (POSTv v. &LIST_TYPE NUM (MAP w2n (add_accepted fds rs)) v)’
+    by (irule add_accepted_spec >> simp[]) >>
+  xlet ‘POSTv fv. &LIST_TYPE NUM (MAP w2n (add_accepted fds rs)) fv *
+                  L0_EV w0 w' (evs ++ evs' ++ tevs)’
+  >- (qpat_x_assum ‘app _ add_accepted_v _ _ _’ xapp_spec >> xsimpl) >>
+  xcon >> xsimpl >> simp[ssnap_def]
 QED

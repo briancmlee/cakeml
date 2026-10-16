@@ -329,6 +329,22 @@ Proof
   >> gvs[sys_close_def] >> drule l0_do_cases >> rw[] >> simp[ev_name_def]
 QED
 
+Theorem inb_of_upd[simp]:
+  inb_of (ps with b := x) f = inb_of ps f ∧ inb_of (ps with eof := e) f = inb_of ps f ∧
+  inb_of (ps with acq := q) f = inb_of ps f
+Proof
+  simp[inb_of_def]
+QED
+
+Theorem outbox_of_upd[simp]:
+  outbox_of (b with tbl := t) f = outbox_of b f ∧
+  outbox_of (b with closing := c) f = outbox_of b f ∧
+  outbox_of (b with nxt := n) f = outbox_of b f ∧
+  outbox_of (b with exhausted := x) f = outbox_of b f
+Proof
+  simp[outbox_of_def]
+QED
+
 Theorem fkeep_b_same:
   fkeep lfd h f ps ∧ b'.tbl = ps.b.tbl ∧ b'.nxt = ps.b.nxt ∧
   (∀x. MEM x b'.closing ⇒ MEM x ps.b.closing) ⇒
@@ -451,30 +467,32 @@ Proof
   drule_all pf_fetch_winv >> strip_tac >> drule_all l1_reap_winv >> simp[]
 QED
 
-(* ------------------------------------------------------------------------
-   WORK IN PROGRESS (kept as a comment until proved; the statements are
-   the plan for R1-live's round step, design/36 §6; the *_winv lemmas
-   below loop on TRY metis_tac[] and need targeted tactics):
+(* A recv on a pending fd either succeeds or leaves the input pending *)
+Theorem recv_pend_or_ok:
+  pend w f ∧ noconn w ∧ errb w ∧ l0_recv f n w = (r, d, w') ⇒
+  pend w' f ∨ ∃k. r = Ok k ∧ k ≤ n
+Proof
+  rw[pend_def] >> gvs[l0_recv_def, AllCaseEqs()] >>
+  ‘j < LENGTH w.chans’ by gvs[l0_chan_of_def, AllCaseEqs()] >>
+  gvs[noconn_def, errb_def, upd_lchan_def, l0_chan_of_def, EL_LUPDATE]
+QED
 
-(-* ... and a retried recv on f *-)
+(* ... and a retried recv on f *)
 Theorem pend_recv_retried:
-  winv w ∧ pend w f ∧ sys_recv f k w = SOME (out, w', ev) ∧ retried ev ⇒ pend w' f
+  winv w ∧ pend w f ∧ k < 256 ** 8 ∧ sys_recv f k w = SOME (out, w', ev) ∧ retried ev ⇒
+  pend w' f
 Proof
   rw[sys_recv_def] >>
   ‘l0_rely w’ by gvs[winv_def] >> drule_all ev_do >> strip_tac >> gvs[] >>
   drule l0_do_cases >> strip_tac >> gvs[] >>
-  qabbrev_tac ‘wt = l0_tick «sys_recv» w’ >>
-  ‘pend wt f ∧ noconn wt ∧ errb wt ∧ l0_rely wt’
-    by (gvs[Abbr ‘wt’, winv_def, pend_tick, noconn_tick, errb_tick] >>
-        irule l0_rely_ch >> qexists_tac ‘w’ >> simp[]) >>
-  qpat_x_assum ‘l0_call _ _ _ _ = _’ mp_tac >>
-  simp[l0_call_def, l0_hdr_def] >> rw[] >> pairarg_tac >> gvs[] >>
-  ‘TAKE 8 (fd_bytes f ++ []) = fd_bytes f’ by simp[TAKE_DROP_fd_bytes] >> gvs[] >>
-  gvs[pend_def] >>
-  qpat_x_assum ‘l0_recv _ _ _ = _’ mp_tac >>
-  simp[l0_recv_def] >> rpt (CASE_TAC >> gvs[]) >> rw[] >> gvs[noconn_def] >>
-  TRY (‘j < LENGTH wt.chans’ by gvs[l0_chan_of_def, AllCaseEqs()] >> gvs[] >> NO_TAC) >>
-  cheat
+  ‘pend (l0_tick «sys_recv» w) f ∧ noconn (l0_tick «sys_recv» w) ∧
+   errb (l0_tick «sys_recv» w)’
+    by gvs[winv_def, pend_tick, noconn_tick, errb_tick] >>
+  gvs[l0_call_def, l0_hdr_def, AllCaseEqs()] >> pairarg_tac >> gvs[] >>
+  drule_all recv_pend_or_ok >> rw[] >> gvs[] >>
+  qspecl_then [‘Ok k'’, ‘d ++ REPLICATE (k − LENGTH d) 0w’] mp_tac
+    (Q.GENL [‘r’, ‘rest’] l0_res_of_enc_app) >>
+  gvs[l0_res_ok_def]
 QED
 
 Theorem pdo_f:
@@ -485,20 +503,39 @@ Theorem pdo_f:
   EVERY (λev. ev_name ev = ExtCall «sys_send» ∨ ev_name ev = ExtCall «sys_close») evs
 Proof
   Cases_on ‘a’ >> simp[pdo_def] >> strip_tac
-  >- ((-* Accept *-)
-      gvs[AllCaseEqs()] >> gvs[fkeep_def] >> rw[] >>
-      gvs[AllCaseEqs()]
-      >- (first_x_assum drule >> strip_tac >>
-          ‘l1hdln (w2n lfd) i < dimword (:64)’ by simp[] >>
-          drule_all l1hdl_11 >> simp[])
-      >- (first_x_assum drule >> rw[] >> metis_tac[])
-      >- (rename1 ‘ALOOKUP _ h' = SOME g’ >> Cases_on ‘h' = l1hdl lfd ps.b.nxt’ >> gvs[]
-          >- (qexists_tac ‘ps.b.nxt’ >> simp[])
-          >> first_x_assum drule >> rw[] >> qexists_tac ‘i’ >> simp[]))
-  >- ((-* Read *-)
-      gvs[AllCaseEqs()] >> cheat)
-  >> (-* Write *-)
-  cheat
+  >- ((* Accept *)
+      gvs[AllCaseEqs()] >> gvs[fkeep_def, outbox_of_def, inb_of_def] >>
+      rw[] >> gvs[] >>
+      TRY (qexists_tac ‘ps.b.nxt’ >> simp[] >> NO_TAC) >>
+      first_x_assum drule >> rw[] >> TRY (qexists_tac ‘i’ >> simp[] >> NO_TAC) >>
+      qspecl_then [‘c’, ‘ps.b.nxt’, ‘i’] mp_tac (Q.GENL [‘lfd’, ‘i’, ‘j’] l1hdl_11) >>
+      simp[])
+  >- ((* Read *)
+      Cases_on ‘ALOOKUP ps.b.tbl c’ >> gvs[] >> rename1 ‘ALOOKUP _ c = SOME g’ >>
+      ‘g = f ⇒ c = h’ by gvs[fkeep_def] >>
+      Cases_on ‘g = f’ >- gvs[fkeep_def] >>
+      ‘c ≠ h’ by (strip_tac >> gvs[fkeep_def]) >>
+      gvs[AllCaseEqs()] >>
+      TRY (PairCases_on ‘z’ >> gvs[] >> drule_all l1_close_f >> strip_tac >> gvs[]) >>
+      gvs[fkeep_def, ALOOKUP_ADELKEY, MEM_FILTER, EVERY_MEM] >> rw[] >>
+      gvs[ALOOKUP_ADELKEY])
+  >> (* Write *)
+  PairCases_on ‘z’ >> gvs[l1do_def, AllCaseEqs()] >>
+  TRY (‘ps with b := ps.b = ps’ by simp[l1p_component_equality] >> gvs[] >> NO_TAC) >>
+  rename1 ‘ALOOKUP _ c = SOME g’ >>
+  ‘g ≠ f’ by (strip_tac >> gvs[fkeep_def] >> res_tac) >>
+  TRY (conj_tac >- (irule fkeep_b_same >> simp[set_outbox_def]) >>
+       simp[outbox_of_set_outbox] >> NO_TAC) >>
+  ‘winv w' ∧ pend w' f’
+    by (qpat_x_assum ‘sys_send _ _ _ = _’ mp_tac >> simp[sys_send_def] >> strip_tac >>
+        conj_tac >- (drule_at (Pos last) winv_do >> simp[]) >>
+        drule_at (Pos last) pend_do >> simp[]) >>
+  simp[outbox_of_after_send, outbox_of_set_outbox] >> conj_tac
+  >- (irule fkeep_b_same >> simp[after_send_def, set_outbox_def] >>
+      every_case_tac >> simp[])
+  >> ‘f ≠ g’ by simp[] >>
+  simp[Once outbox_of_after_send, outbox_of_set_outbox] >>
+  gvs[sys_send_def] >> drule l0_do_cases >> rw[] >> simp[ev_name_def]
 QED
 
 Theorem pacts_f:
@@ -511,9 +548,15 @@ Theorem pacts_f:
 Proof
   Induct >> simp[pacts_def] >> rpt gen_tac >> strip_tac >>
   gvs[AllCaseEqs()] >> PairCases_on ‘ws1’ >>
-  drule pdo_f >> simp[] >> strip_tac >>
+  drule pdo_f >> simp[] >> disch_then (qspecl_then [‘h’, ‘f’] mp_tac) >>
+  simp[] >> strip_tac >>
   first_x_assum drule_all >> simp[]
 QED
+
+(* ------------------------------------------------------------------------
+   WORK IN PROGRESS (kept as a comment until proved; the statements are
+   the plan for R1-live's round step, design/36 §6; the *_winv lemmas
+   below loop on TRY metis_tac[] and need targeted tactics):
 
 Theorem l1_polls_f:
   ∀chs w rv w' evs.

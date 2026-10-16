@@ -283,24 +283,30 @@ Definition poll_hup_def:
 End
 
 
-(* The polls in a list of events (each L1 round polls at least once, so
-   K polls are at most K rounds) *)
-Definition n_polls_def:
-  n_polls (evs : io_event list) =
-    LENGTH (FILTER (λev. ∃conf bs. ev = IO_event (ExtCall «sys_poll») conf bs) evs)
+(* The polls in a list of events that list fd f for output (an entry
+   (f, e) with bit 2 of e set).  L1 polls f for output exactly in the
+   rounds in which f's outbox is not empty (pf_poll_set), which are the
+   rounds D19's count runs in; idle polls (which a blocking L1 collapses)
+   never count *)
+Definition n_out_polls_def:
+  n_out_polls f (evs : io_event list) =
+    LENGTH (FILTER (λev. ∃conf bs. ev = IO_event (ExtCall «sys_poll») conf bs ∧
+                                   ∃e. MEM (f, e) (poll_entries (DROP 1 conf)) ∧ 2 ≤ e MOD 4)
+                   evs)
 End
 
 (* D19 (user decision, option 2: the bounded flush), per episode: once
    POLLHUP has been reported on episode j's fd, whenever channel c has bytes
-   in flight its peer reads them all within K − 1 polls.  K is L1's
+   in flight its peer reads them all within K − 1 polls that list the fd
+   for output (user-approved form b″).  K is L1's
    pf_hupwait (honest-ffi's hup_step): L1 keeps flushing a half-closed fd
    and closes it when drained, but drops its outbox after pf_hupwait
    consecutive rounds whose flush takes nothing while the outbox is not
    empty (the count restarts on progress or an empty outbox); a broken fd
    is dropped at once (its hard error is D16's excuse).  With [F2] (nothing
    in flight: a send takes a byte), and since a hung-up fd is flushed every
-   round its poll reports POLLHUP, this gives send progress within K rounds.
-   Stated per poll: each round polls at least once *)
+   round its poll reports POLLHUP, this gives send progress within K rounds
+   of a non-empty outbox *)
 Definition hup_drains_def:
   hup_drains K w0 io j c ⇔
     ∀evs ev mid w.
@@ -308,7 +314,8 @@ Definition hup_drains_def:
       poll_hup (EL j (l0_accepted evs)) ev ∧
       world_at w0 (evs ++ [ev] ++ mid) = SOME w ∧ c < LENGTH w.chans ∧
       0 < (EL c w.chans).inflight ⇒
-      ∃more w'. LPREFIX (fromList (evs ++ [ev] ++ mid ++ more)) io ∧ n_polls more < K ∧
+      ∃more w'. LPREFIX (fromList (evs ++ [ev] ++ mid ++ more)) io ∧
+                n_out_polls (EL j (l0_accepted evs)) more < K ∧
                 world_at w0 (evs ++ [ev] ++ mid ++ more) = SOME w' ∧ c < LENGTH w'.chans ∧
                 (EL c w'.chans).inflight = 0
 End

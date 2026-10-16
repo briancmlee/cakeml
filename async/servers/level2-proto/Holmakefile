@@ -1,0 +1,13 @@
+# Generated from the final-series L0 layout (INCLUDES = the dirs of all ancestors).
+INCLUDES = ../../model/core \
+           ../../model/level2 \
+           ../../model/sched \
+           ../echo \
+           ../proto \
+           ../skeleton \
+           ../../spec \
+           ../../world/sockets \
+           $(CAKEMLDIR)/semantics
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

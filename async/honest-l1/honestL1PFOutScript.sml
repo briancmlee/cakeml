@@ -1592,3 +1592,120 @@ Proof
   impl_tac >- fs[] >>
   disch_then (qspecl_then [‘n’, ‘h’, ‘ws’, ‘evs’, ‘logs’] mp_tac) >> simp[]
 QED
+
+(* ------------------------------------------------------------------------
+   Step 2: round by round on the raw trace.  Through a round, an fd that L1
+   holds (or has pre-accepted) at the start is followed until it is closed:
+   while live, its channel's sent is the start's plus what the round's
+   sys_send events took on it; once closed (dead), that sum is a prefix of
+   what the server wrote, and no later event of the round sends on it
+   ------------------------------------------------------------------------ *)
+
+Definition tk_def:
+  tk live w ps f c tsum out ⇔
+    (live ⇒ (MEM f (MAP SND ps.b.tbl) ∨ MEM f ps.b.closing ∨ MEM f ps.acq) ∧
+            csent w c = tsum ∧ acct w ps.b f c out) ∧
+    (¬live ⇒ tsum ≼ out ∧ ¬MEM f (MAP SND ps.b.tbl) ∧ ¬MEM f ps.b.closing ∧
+             outbox_of ps.b f = [] ∧ ¬MEM f ps.b.gone)
+End
+
+Theorem sys_send_other:
+  sys_send g bs w = SOME (out, w', ev) ∧ g ≠ f ⇒ ev_sent f ev = []
+Proof
+  rw[sys_send_def] >> drule l0_do_cases >> rw[] >>
+  simp[ev_sent_def, taken_def, MAP_SND_ZIP_REPLICATE] >>
+  ‘LENGTH (fd_bytes g) = 8’ by simp[] >>
+  simp[TAKE_APPEND1, TAKE_LENGTH_ID_rwt]
+QED
+
+Theorem outbox_of_after_send_other:
+  g ≠ f ⇒ outbox_of (after_send g r b) f = outbox_of b f ∧
+          (MEM f (after_send g r b).gone ⇔ MEM f b.gone)
+Proof
+  rw[after_send_def] >> every_case_tac >> simp[outbox_of_set_outbox, MEM_FILTER]
+QED
+
+(* An action on others: f (without a handle) is untouched *)
+Theorem pdo_quiet:
+  pdo lfd (w, ps) a = SOME (r, (w', ps'), evs) ∧ pown lfd ps ∧
+  ¬MEM f (MAP SND ps.b.tbl) ⇒
+  evs_sent f evs = [] ∧ outbox_of ps'.b f = outbox_of ps.b f ∧
+  (MEM f ps'.b.gone ⇔ MEM f ps.b.gone) ∧ (MEM f ps'.b.closing ⇔ MEM f ps.b.closing) ∧
+  (MEM f (MAP SND ps'.b.tbl) ⇒ MEM f ps.acq) ∧ (MEM f ps'.acq ⇒ MEM f ps.acq)
+Proof
+  strip_tac >>
+  ‘∀h g. ALOOKUP ps.b.tbl h = SOME g ⇒ g ≠ f’
+    by (rpt strip_tac >> gvs[] >> imp_res_tac ALOOKUP_MEM >> gvs[MEM_MAP] >>
+        metis_tac[SND]) >>
+  Cases_on ‘a’ >> gvs[pdo_def, AllCaseEqs()] >>
+  TRY (PairCases_on ‘z’) >> gvs[] >>
+  rpt (qpat_x_assum ‘l1do _ _ _ = _’ mp_tac) >> rpt (qpat_x_assum ‘l1_close _ _ = _’ mp_tac) >>
+  simp[l1do_def, l1_close_def, AllCaseEqs()] >> rw[] >> res_tac >>
+  gvs[forget_keys, MEM_FILTER, outbox_of_set_outbox, outbox_of_after_send_other] >>
+  TRY (drule (cj 3 sys_ev_sent) >> simp[] >> NO_TAC) >>
+  TRY (drule_all sys_send_other >> simp[] >> NO_TAC) >>
+  TRY (‘f' ≠ f’ by (strip_tac >> gvs[])) >> gvs[] >>
+  imp_res_tac MEM_SND_ADELKEY_sub >> gvs[] >>
+  simp[outbox_of_after_send_other, outbox_of_set_outbox] >>
+  TRY (drule_all sys_send_other >> simp[])
+QED
+
+(* An action that loses f closed it: f had nothing to send (or was gone) *)
+Theorem pdo_closed:
+  pdo lfd (w, ps) a = SOME (r, (w', ps'), evs) ∧ pown lfd ps ∧
+  ¬(¬MEM f (MAP SND ps.b.tbl) ∧ ¬MEM f ps.b.closing ∧ ¬MEM f ps.acq) ∧
+  ¬MEM f (MAP SND ps'.b.tbl) ∧ ¬MEM f ps'.b.closing ∧ ¬MEM f ps'.acq ⇒
+  evs_sent f evs = [] ∧ wbytes f ps.b a = [] ∧
+  (outbox_of ps.b f = [] ∨ MEM f ps.b.gone) ∧ MEM f (MAP SND ps.b.tbl) ∧
+  outbox_of ps'.b f = [] ∧ ¬MEM f ps'.b.gone
+Proof
+  strip_tac >>
+  ‘ALL_DISTINCT (MAP FST ps.b.tbl) ∧ ALL_DISTINCT (MAP SND ps.b.tbl)’
+    by gvs[pown_def, ALL_DISTINCT_APPEND] >>
+  Cases_on ‘a’ >> gvs[pdo_def, AllCaseEqs()] >>
+  TRY (PairCases_on ‘z’) >> gvs[] >>
+  rpt (qpat_x_assum ‘l1do _ _ _ = _’ mp_tac) >> rpt (qpat_x_assum ‘l1_close _ _ = _’ mp_tac) >>
+  simp[l1do_def, l1_close_def, AllCaseEqs()] >> rw[] >>
+  gvs[forget_keys, MEM_FILTER, wbytes_def] >>
+  TRY (drule (cj 3 sys_ev_sent) >> simp[] >> NO_TAC) >>
+  TRY (‘f = f'’ by (qspecl_then [‘ps.b.tbl’, ‘c’, ‘f'’, ‘f’] mp_tac
+                      (Q.GENL [‘l’, ‘h’, ‘f’, ‘g’] MEM_SND_ADELKEY) >> fs[]) >>
+       gvs[] >> NO_TAC) >>
+  imp_res_tac ALOOKUP_MEM >> simp[MEM_MAP, EXISTS_PROD] >> metis_tac[]
+QED
+
+Theorem pdo_tk:
+  pdo lfd (w, ps) a = SOME (r, (w', ps'), evs) ∧ winv w ∧ pown lfd ps ∧
+  EVERY small_send evs ∧ tk live w ps f c ts out ∧ (¬live ⇒ ¬MEM f ps.acq) ⇒
+  ∃live'. tk live' w' ps' f c (ts ++ evs_sent f evs) (out ++ wbytes f ps.b a) ∧
+          (¬live' ⇒ ¬MEM f ps'.acq)
+Proof
+  strip_tac >> qpat_x_assum ‘tk _ _ _ _ _ _ _’ mp_tac >> Cases_on ‘live’ >>
+  simp_tac bool_ss [tk_def] >>
+  disch_then (fn th => MAP_EVERY assume_tac (CONJUNCTS th)) >>
+  simp_tac bool_ss [tk_def]
+  >- (Cases_on ‘MEM f (MAP SND ps'.b.tbl) ∨ MEM f ps'.b.closing ∨ MEM f ps'.acq’
+      >- (qexists_tac ‘T’ >> simp[] >>
+          ‘l0_chan_of w f = SOME c’ by fs[acct_def] >>
+          drule_all pdo_acct >> disch_then (qspec_then ‘out’ strip_assume_tac) >>
+          rpt conj_tac >> TRY (fs[] >> NO_TAC) >>
+          Cases_on ‘MEM f (MAP SND ps'.b.tbl) ∨ MEM f ps'.b.closing’
+          >- (first_x_assum irule >> fs[]) >>
+          ‘MEM f ps'.acq’ by fs[] >>
+          ‘MEM f ps.acq’ by (drule pdo_lfd >> strip_tac >> gvs[] >>
+                             metis_tac[rich_listTheory.MEM_DROP_IMP]) >>
+          ‘¬MEM f (MAP SND ps.b.tbl)’ by metis_tac[pown_disjoint] >>
+          drule_all pdo_chan >> strip_tac >>
+          drule_all pdo_quiet >> strip_tac >>
+          simp[wbytes_nil] >>
+          mp_tac (Q.INST [‘b’ |-> ‘ps.b’, ‘b'’ |-> ‘ps'.b’] acct_same) >>
+          disch_then irule >> fs[])
+      >> qexists_tac ‘F’ >> simp[] >>
+      ‘¬(¬MEM f (MAP SND ps.b.tbl) ∧ ¬MEM f ps.b.closing ∧ ¬MEM f ps.acq)’ by fs[] >>
+      ‘¬MEM f (MAP SND ps'.b.tbl) ∧ ¬MEM f ps'.b.closing ∧ ¬MEM f ps'.acq’ by fs[] >>
+      drule_all pdo_closed >> strip_tac >> fs[acct_def] >>
+      Cases_on ‘MEM f ps.b.gone’ >> gvs[])
+  >> qexists_tac ‘F’ >> simp[] >>
+  drule_all pdo_quiet >> strip_tac >> simp[wbytes_nil] >>
+  fs[] >> metis_tac[]
+QED

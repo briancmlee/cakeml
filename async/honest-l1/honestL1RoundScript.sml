@@ -366,3 +366,95 @@ Proof
   >- gvs[poll_pairs_of]
   >> gvs[]
 QED
+
+(* ------------------------------------------------------------------------
+   The run: R2
+   ------------------------------------------------------------------------ *)
+
+(* The pairs the handle layer polled at the end of the round before round n *)
+Definition polp_at_def:
+  polp_at lfd ifds m s0 0 = [] ∧
+  polp_at lfd ifds m s0 (SUC n) =
+    pairs_of lfd (SND (hst lfd ifds m s0 (SUC n))).tbl (ifds (hhist lfd ifds m s0 n))
+End
+
+(* What R2 assumes of the server, run on the handle layer (as the handle
+   layer's own hrun_ok does): in every round it keeps the round discipline,
+   fewer than 2^31 - 1 fds are in use, the handle numbers do not
+   overflow, and at most 4096 fds are polled *)
+Definition hl_ok_def:
+  hl_ok lfd ifds m s0 ⇔
+    ∀n. let (s, hs) = hst lfd ifds m s0 n; acts = hacts_of lfd ifds m s0 n in
+          hacts_disc lfd (polp_at lfd ifds m s0 n) (s, hs) acts ∧
+          LENGTH (used_fds s) + LENGTH acts < 2147483647 ∧
+          hdln (w2n lfd) (hs.nxt + LENGTH acts) < dimword (:64) ∧
+          ∀rs evs s1 hs1. hacts lfd (s, hs) acts = SOME (rs, evs, (s1, hs1)) ⇒
+                          LENGTH (hpoll_fds lfd hs1 (ifds (hhist lfd ifds m s0 n))) ≤ 4096
+End
+
+(* One round of the handle layer's run, unfolded *)
+Theorem hround_SUC:
+  hacts_tot lfd (hst lfd ifds m s0 n) (hacts_of lfd ifds m s0 n) = (rs, evs, (s1, hs1)) ⇒
+  hhist lfd ifds m s0 (SUC n) =
+    hhist lfd ifds m s0 n ++
+      [ssnap (FST (hpoll lfd hs1 (ifds (hhist lfd ifds m s0 n)) s1)) rs] ∧
+  hst lfd ifds m s0 (SUC n) = (SND (hpoll lfd hs1 (ifds (hhist lfd ifds m s0 n)) s1), hs1) ∧
+  hround_events lfd ifds m s0 n =
+    evs ++ [spoll2_event (hpoll_fds lfd hs1 (ifds (hhist lfd ifds m s0 n))) s1]
+Proof
+  strip_tac >>
+  ONCE_REWRITE_TAC[hhist_def, hst_def] >>
+  REWRITE_TAC[hrounds_SUC, hround_events_alt] >>
+  simp[GSYM hhist_def, GSYM hst_def]
+QED
+
+Theorem rdy_ok_nil:
+  rdy_ok lfd [] w st
+Proof
+  simp[rdy_ok_def]
+QED
+
+(* MAIN (R2): in a simple version-2 world, L1 running the computation m
+   produces exactly the handle layer's history and states, and its renamed
+   I/O events are the handle layer's with some would-block events deleted *)
+Theorem l1_refines_hl:
+  simple_v2 p lfd sched w0 ∧ l0_rely w0 ∧ fds_lt w0 ∧ w2n lfd < 2147483648 ∧
+  l1v2_rel p lfd sched (w0, l1init) (s0, hinit) ∧ hl_ok lfd ifds m s0 ⇒
+  ∀n. ∃w st evs.
+    lrounds lfd hw ifds m (w0, l1init) n = SOME (hhist lfd ifds m s0 n, (w, st), evs) ∧
+    l1v2_rel p lfd sched (w, st) (hst lfd ifds m s0 n) ∧
+    drops (MAP l0_v2_event evs) (FLAT (GENLIST (hround_events lfd ifds m s0) n)) ∧
+    simple_v2 p lfd sched w ∧ l0_rely w ∧ fds_lt w ∧
+    rdy_ok lfd (polp_at lfd ifds m s0 n) w st
+Proof
+  strip_tac >> Induct
+  >- simp[lrounds_def, hhist_def, hst_def, hrounds_def, polp_at_def, rdy_ok_nil]
+  >> gvs[] >>
+  qpat_x_assum ‘hl_ok _ _ _ _’ (fn th => assume_tac th >> mp_tac (REWRITE_RULE [hl_ok_def] th)) >>
+  disch_then (qspec_then ‘n’ mp_tac) >>
+  Cases_on ‘hst lfd ifds m s0 n’ >> rename1 ‘_ = (s, hs)’ >> simp[] >> strip_tac >>
+  ‘LENGTH (l0_used w) = LENGTH (used_fds s)’
+    by (gvs[l1v2_rel_def] >> imp_res_tac used_fds_rel >> simp[]) >>
+  ‘st.nxt = hs.nxt’ by gvs[l1v2_rel_def] >>
+  qabbrev_tac ‘acts = hacts_of lfd ifds m s0 n’ >>
+  ‘LENGTH (l0_used w) + LENGTH acts < 2147483647’ by simp[] >>
+  ‘hdln (w2n lfd) (st.nxt + LENGTH acts) < dimword (:64)’ by simp[] >>
+  drule_all acts_step >> strip_tac >>
+  rename1 ‘hacts lfd (s, hs) acts = SOME (rs, hevs, (s1, hs1))’ >>
+  first_x_assum (drule_then assume_tac) >>
+  qpat_x_assum ‘l1acts _ _ _ = _’ kall_tac >>
+  drule_all round_step >> disch_then (qspec_then ‘hw’ strip_assume_tac) >>
+  ‘hacts_tot lfd (s, hs) acts = (rs, hevs, (s1, hs1))’ by simp[hacts_tot_def] >>
+  ‘hacts_tot lfd (hst lfd ifds m s0 n) (hacts_of lfd ifds m s0 n) =
+     (rs, hevs, (s1, hs1))’
+    by (qpat_assum ‘Abbrev (acts = _)’
+          (SUBST1_TAC o SYM o REWRITE_RULE [markerTheory.Abbrev_def]) >>
+        qpat_assum ‘hst _ _ _ _ _ = _’ SUBST1_TAC >> first_assum ACCEPT_TAC) >>
+  drule hround_SUC >> strip_tac >>
+  ‘new_actions (log_of m) (hhist lfd ifds m s0 n) = acts’
+    by simp[Abbr ‘acts’, hacts_of_def] >>
+  simp[lrounds_def, polp_at_def] >>
+  simp[GENLIST, SNOC_APPEND, FLAT_APPEND] >>
+  REWRITE_TAC[GSYM APPEND_ASSOC] >> irule drops_APPEND >>
+  conj_tac >> first_assum ACCEPT_TAC
+QED

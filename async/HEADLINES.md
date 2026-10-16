@@ -22,9 +22,9 @@ Names are the final ones; `design/NAMES.md` maps them to the spike names.
 2. [Echo: `echo_prog_spec`](#2-echo) (L0) ✅
 3. [HTTP with bodies: `http_prog_spec`](#3-http) (L0) ✅
 4. [Quiescence: `echo_blocking_quiet`, `http_blocking_quiet`](#4-quiescence) (L0) ✅
-5. [A key-value store: `kv_spec`](#5-kv) (L0): liveness ✅, safety ⏳
+5. [A key-value store: `kv_prog_spec`](#5-kv) (L0) ✅
 6. [Lifetimes: `echo_episodes_prog_spec`](#6-close) (L1) ✅
-7. [Peers](#7-peers) (L2): partly ⏳
+7. [Peers](#7-peers) (L2): ✅ over the simple class
 8. [The real kernel](#8-kernel) (L3) ⏳
 9. [What is trusted](#9-trusted)
 10. [Not yet proved](#10-pending)
@@ -420,7 +420,7 @@ Both are unconditional. The generic protocol server's stability after the last a
 ---
 
 <a id="5-kv"></a>
-## 5. A key-value store over HTTP (L0): liveness ✅, safety ⏳
+## 5. A key-value store over HTTP (L0) ✅
 
 **The spec** (`spec/KvSpec`; approved by the user):
 
@@ -479,13 +479,14 @@ Theorem kv_live_rounds:          (* theory kvLive; L0, layer final/09 *)
 ```
 
 
-**Safety ⏳.** The headline will be:
+**Safety ✅, and the combined headline ✅** (theory `kvHeadline`; L0, layer final/09):
 
 ```
-kv_spec 3w kv_prog
+Theorem kv_prog_spec:
+  kv_spec 3w kv_prog
 ```
 
-The model-level order construction `kv_comp_safe` is proved. The CakeML side (`kv_semantics_prog` → `kv_prog_safe`) is in progress, and this layer waits for it.
+It combines `kv_prog_safe` (linearizable safety, from the model-level order construction `kv_comp_safe`) with liveness.
 
 The program is `fun main u = run_i ([3], kv_server 3);`, with `kv_server lfd = with_store kv_delta (λk. NONE) (kv_inner lfd)`.
 
@@ -543,7 +544,7 @@ echo_episodes_closes io   ⇔ ∀evs j. LPREFIX (fromList evs) io ∧ ep_eof_rea
 ---
 
 <a id="7-peers"></a>
-## 7. Peers: clients, proxies, backpressure (L2), partly ⏳
+## 7. Peers: clients, proxies, backpressure (L2), ✅ over the simple class
 
 The peer world (`peerWorld`, `peerFair`) is POSIX-shaped:
 - channels come from accept or connect;
@@ -565,7 +566,20 @@ rg_spec cls guar (prog : dec list) ⇔
 
 They do not hold over all peer worlds. Our servers write with the full `«sock_write»`, and under backpressure a full write that doesn't fit is a misuse (it fails). So a server spec over every peer world is **false** for `echo_episodes_prog`, `http_prog` and `kv_prog`. Backpressure, fd limits and errors are meant to be absorbed by L3's verified wrappers (section 8), not by the servers.
 
-The class is now `nonsat1` (user-approved: the converse directions need one more fd slot than `nonsat` leaves). The headline claims are drafted on `final/L2-00-statements`.
+The class is now `nonsat1` (user-approved: the converse directions need one more fd slot than `nonsat` leaves). The claims are stated on `final/L2-00-statements` (#151) and **proved** on `final/L2-04-claims` (#152), theory `peerStatements`, over the simple class `simple_class cs lfd a w ⇔ ep_server_world cs lfd a w ∧ no_backpressure w ∧ open_loop w ∧ nonsat1 lfd a w`:
+
+```
+Theorem peer_echo_prog_spec:      (* L0's echo_prog *)
+  ∀a. rg_spec (simple_class v1_calls 3w a) ep_echo_guar echo_prog
+Theorem peer_http_prog_spec:      (* L0's http_prog *)
+  ∀a. rg_spec (simple_class v1_calls 3w a) (ep_http_guar demo_files) http_prog
+Theorem peer_kv_prog_spec:        (* L0's kv_prog *)
+  ∀a. rg_spec (simple_class v1_calls 3w a) ep_kv_guar kv_prog
+Theorem peer_echo_episodes_spec:  (* L1's echo_episodes_prog *)
+  ∀a. rg_spec (simple_class v2_calls 3w a) ep_echo2_guar echo_episodes_prog
+```
+
+(Each is stated through a `peer_*_claim` definition; the bodies are shown unfolded.) Each follows from the level's link theorems below and the L0 or L1 headline, so no server proof is redone.
 
 **What the simple class leaves out, and where each piece is covered** (user condition, 2026-10-16: the simple-class scope is acceptable *provided* these are covered later). Status as of 2026-10-17:
 
@@ -579,12 +593,14 @@ The class is now `nonsat1` (user-approved: the converse directions need one more
 | **filling the fd space** (`nonsat1`: fewer than 2^64 − reserved − 4 connections in all) | not covered, by design: a model bound far above any real `fd_limit`, which is the real constraint (row 3) | — | permanent idealisation (harmless) |
 
 
-**Linked to L1 (proved):**
+**Linked to L1 and L0 (proved):**
 - `v2_instance_thm`: the lifetimes world is an exact instance of the peer world;
-- `echo2_sym_equiv_thm`, in the simple class: the peer-world echo spec there is equivalent to the lifetimes echo spec (the converse also needs `nonsat`).
+- `echo_episodes_peer_equiv_thm`, in the simple class: the peer-world echo spec there is equivalent to the lifetimes echo spec (the converse also needs `nonsat`);
+- `v1_instance_disc_thm`: for an fd-disciplined program and a core world with boundedly many connects, the core world is an instance of the peer world (same behaviours);
+- `echo_peer_equiv_disc_thm`, `http_peer_equiv_disc_thm`, `kv_peer_equiv_disc_thm`: both directions, for fd-disciplined programs; the converses `peer_of_*_spec_le` carry the L0 headlines into the peer world.
 
 **Also proved:**
-- fd discipline (`echo_prog_disciplined`, `echo2_prog_disciplined`);
+- fd discipline (theory `fdDisciplinePrograms`): `echo_prog_disciplined`, `http_prog_disciplined`, `kv_prog_disciplined`, from `fdDiscipline`'s generic `rounds_disciplined`;
 - buffer closure:
   ```
   relay_safety : relay_closed P ∧ (∀t. P (FST (inside t)) (SND (inside t))) ∧
@@ -593,13 +609,9 @@ The class is now `nonsat1` (user-approved: the converse directions need one more
   with `echo_relay_closed`, `http_relay_closed` and `kv_relay_closed`;
 - the bites `never_polls_bite` and `refusal_bite`.
 
-**⏳ Stated, not proved:**
-- the HTTP and KV spec equivalences. These are expected to need `nonsat` and `ticks_forever`. For KV, `kv_live_rounds`' round bound must be restated in peer-world ticks;
-- `v1_instance_disc`: the core world as an instance, for fd-disciplined programs with a bounded number of connects;
-- `client_server_compose`;
-- `http_prog_disciplined` for the series' `http_prog`. The old generic lemma should apply to the protocol skeleton, but this is not yet checked.
+**⏳ Stated, not proved:** `client_server_compose` (a client and a server wired together; the reactive, closed-loop case is the moonshot's, row 5 of the table above).
 
-L2's statements are shown with their spike names; they are renamed when L2 is folded.
+L2's names are final (provisional, as accepted by the user); `design/NAMES.md` maps them to the spike names.
 
 <a id="8-kernel"></a>
 ## 8. The real kernel (L3), ⏳
@@ -659,8 +671,7 @@ Nothing else is trusted: the async library, its CF refinement, the event loops, 
 
 - **The real kernel (L3):** R2–R4 and the whole-program corollaries for the lifetimes-world headlines (section 8). The L0 headlines are not planned to transfer; quiescence and round bounds are open.
 - **HTTP in the lifetimes world (L1):** HttpSpec with close and fd reuse. The spec is written; the program proof is at the CakeML step.
-- **KV safety** (`kv_prog_safe`; the model-level `kv_comp_safe` is proved, and the CakeML side is in progress) and the combined `kv_spec 3w kv_prog`. Liveness is proved (section 6b). The KV spec is approved (75af705c3).
-- **Peers (L2):** the HTTP and KV spec equivalences, `v1_instance_disc`, `client_server_compose` (section 7).
+- **Peers (L2):** `client_server_compose` (section 7). Outside the simple class: backpressure, fd limits and errors (L3), and clients that are not open loop (the moonshot); see section 7's coverage table.
 
 ---
 

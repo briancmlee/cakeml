@@ -35,7 +35,7 @@ proved.
 | **H**, headlines | `final/00-headlines` | every end-product theorem, stated in full; this README; `design/NAMES.md` | — |
 | **L0**, core | `final/01` … `final/11` | simple sockets, with no close, no peers, and the model's C. The specs, the async library, Level 2, the scheduler, isolation, liveness from the library, protocols as instances (HTTP, KV), quiescence, and it runs | — |
 | **L1**, lifetimes | `final/L1-01` … `L1-03` | close and fd reuse; per-connection (episode) specs; the echo server with close | `lifetime_core_link_thm`: conservativity (adding close changes nothing for programs that never close) |
-| **L2**, peers | planned | connect, refusal and half-close; clients and proxies; rely/guarantee specs; buffer closure | `v2_instance_thm`, `echo_episodes_peer_equiv_thm`; the statements are drafted on `final/L2-00-statements` |
+| **L2**, peers | `final/L2-00` … `L2-04` | connect, refusal and half-close; clients and proxies; rely/guarantee specs; buffer closure; the four servers' peer-world specs over the simple class | `v2_instance_thm`, `echo_episodes_peer_equiv_thm` (to L1); `v1_instance_disc_thm` and `*_peer_equiv_disc_thm` (to L0, for fd-disciplined programs) |
 | **L3**, the real kernel | planned | an honest C FFI (one syscall per call), verified wrappers, and the refinement to the lifetimes world | design/36's R1–R4 (in progress) |
 
 ### L0 layers (core)
@@ -62,6 +62,16 @@ proved.
 | 02 | `final/L1-02-link` | #143 | **`lifetime_core_link_thm`**, the link to L0 (a leaf) |
 | 03 | `final/L1-03-echo-episodes` | #144 | **`echo_episodes_prog_spec`**: the echo server with close and fd reuse |
 
+### L2 layers (peers)
+
+| # | branch | PR | layer |
+|---|---|---|---|
+| 00 | `final/L2-00-statements` | #151 | the headline claims, stated first, over the simple class (`simple_class`: no backpressure, open loop, `nonsat1`) |
+| 01 | `final/L2-01-world` | #148 | the peer world (`peerWorld`, `peerFair`), rely/guarantee spec forms, the servers' peer-world specs, buffer closure (`relay_safety`) |
+| 02 | `final/L2-02-lifetimes` | #149 | the link to L1: **`v2_instance_thm`**, **`echo_episodes_peer_equiv_thm`** |
+| 03 | `final/L2-03-core` | #150 | the link to L0: **`v1_instance_disc_thm`**; `echo_`/`http_`/`kv_peer_equiv_disc_thm` |
+| 04 | `final/L2-04-claims` | #152 | fd discipline of the three L0 programs; the four claims **proved** |
+
 ## The headline theorems
 
 | theorem | level | theory |
@@ -73,6 +83,7 @@ proved.
 | `http_blocking_quiet : http_quiet 3w demo_files (SNOC (main_call «main») http_blocking_prog)` | L0 | `programs/http-quiet/httpQuietHeadline` |
 | `lifetime_core_link_thm : lifetime_core_link` | L1 | `lifetimes/link/lifetimeCoreProof` |
 | `echo_episodes_prog_spec : echo_episodes_spec 3w echo_episodes_prog` | L1 | `headline/echoEpisodesHeadline` |
+| `peer_echo_prog_spec`, `peer_http_prog_spec`, `peer_kv_prog_spec`, `peer_echo_episodes_spec` (the four servers in the peer world, simple class) | L2 | `peers/statements/peerStatements` |
 
 Each is stated in full in `HEADLINES.md`, with its bites. The chat server
 is an appendix: it is not part of the series until its revised spec has
@@ -113,10 +124,10 @@ event loops, the scheduler and the protocol pipeline are all proved.
   3. L0 03's Level 2 idea (declared interest, `quiet`, `no_busy_waiting`);
   4. L0 10's design note (`quiet/README.md`: the two spins, and select on
      the declared interest);
-  5. the opening theorem of each later level (L1 02).
+  5. the opening theorem of each later level (L1 02; L2 02 and 03).
 - **The core in full (about 8 hours):** H, then L0 01 → 11. L0 is complete
   on its own.
-- **Everything:** H → L0 → L1 (→ L2 → L3 as they land). Each level starts
+- **Everything:** H → L0 → L1 → L2 (→ L3 as it lands). Each level starts
   with its linking theorem, then its trusted surface, then its proofs.
 
 In each PR, read only the definitions and the ≤ 5 statements its

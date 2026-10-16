@@ -3298,3 +3298,56 @@ Proof
   ‘d − LENGTH pre = SUC (d − LENGTH pre − 1)’ by simp[] >>
   gvs[DROP_def, ALL_DISTINCT_APPEND] >> imp_res_tac MEM_DROP_IMP >> gvs[]
 QED
+
+(* MAIN (G6): an accepted fd gets a handle (unless its EOF is fetched
+   first, at which point nothing of it is left to fetch) *)
+Theorem fifo:
+  simple_run p lfd sched hw ifds m w1 ∧ S2 lfd hw ifds m w1 ⇒
+  ∀q k f c pre post.
+    (rstate lfd hw ifds m w1 k).acq = pre ++ f :: post ∧ LENGTH pre = q ∧
+    ALOOKUP (rworld lfd hw ifds m w1 k).open_fds f = SOME c ⇒
+    ∃k'. k ≤ k' ∧
+         (MEM (Eof2 c) (upto (parr lfd hw ifds m w1) k') ∨
+          MEM f (MAP SND (rstate lfd hw ifds m w1 k').b.tbl) ∧
+          ALOOKUP (rworld lfd hw ifds m w1 k').open_fds f = SOME c)
+Proof
+  strip_tac >> completeInduct_on ‘q’ >> rpt strip_tac >>
+  Cases_on ‘MEM (Eof2 c) (upto (parr lfd hw ifds m w1) k)’ >- (qexists_tac ‘k’ >> simp[]) >>
+  ‘∃n'. k ≤ n' ∧ MEM (Accept lfd) (new_actions (log_of m) (rhist lfd hw ifds m w1 n'))’
+    by (qpat_x_assum ‘S2 _ _ _ _ _’ mp_tac >> simp[S2_def] >>
+        disch_then (qspec_then ‘k’ mp_tac) >> simp[]) >>
+  ‘∀t. k + t ≤ n' ⇒
+       (∃k'. k ≤ k' ∧
+             (MEM (Eof2 c) (upto (parr lfd hw ifds m w1) k') ∨
+              MEM f (MAP SND (rstate lfd hw ifds m w1 k').b.tbl) ∧
+              ALOOKUP (rworld lfd hw ifds m w1 k').open_fds f = SOME c)) ∨
+       (¬MEM (Eof2 c) (upto (parr lfd hw ifds m w1) (k + t)) ∧
+        ALOOKUP (rworld lfd hw ifds m w1 (k + t)).open_fds f = SOME c ∧
+        ∃pre' post'. (rstate lfd hw ifds m w1 (k + t)).acq = pre' ++ f :: post' ∧
+                     LENGTH pre' ≤ q)’
+    by (Induct
+        >- (strip_tac >> disj2_tac >> simp[] >> qexistsl_tac [‘pre’, ‘post’] >> simp[]) >>
+        strip_tac >> fs[] >>
+        TRY (disj1_tac >> metis_tac[] >> NO_TAC) >>
+        rename1 ‘(rstate lfd hw ifds m w1 (k + t)).acq = pr ++ [f] ++ po’ >>
+        drule_then (qspecl_then [‘k + t’, ‘f’, ‘c’, ‘pr’, ‘po’] mp_tac) fifo_step >>
+        simp[] >> strip_tac
+        >- (disj1_tac >> qexists_tac ‘SUC (k + t)’ >> simp[])
+        >- (disj1_tac >> qexists_tac ‘SUC (k + t)’ >> simp[])
+        >> rename1 ‘_ = pr' ++ [f] ++ po'’ >>
+        Cases_on ‘MEM (Eof2 c) (upto (parr lfd hw ifds m w1) (SUC (k + t)))’
+        >- (disj1_tac >> qexists_tac ‘SUC (k + t)’ >> simp[])
+        >> disj2_tac >> fs[ADD_CLAUSES] >> qexistsl_tac [‘pr'’, ‘po'’] >> simp[]) >>
+  first_x_assum (qspec_then ‘n' − k’ mp_tac) >> simp[] >> strip_tac >>
+  TRY (qexists_tac ‘k'’ >> simp[] >> NO_TAC) >>
+  ‘k + (n' − k) = n'’ by simp[] >> fs[] >>
+  rename1 ‘(rstate lfd hw ifds m w1 n').acq = pr ++ [f] ++ po’ >>
+  drule_then (qspecl_then [‘n'’, ‘f’, ‘c’, ‘pr’, ‘po’] mp_tac) fifo_step >>
+  simp[] >> strip_tac
+  >- (qexists_tac ‘SUC n'’ >> simp[])
+  >- (qexists_tac ‘SUC n'’ >> simp[])
+  >> rename1 ‘_ = pr' ++ [f] ++ po'’ >>
+  first_x_assum (qspec_then ‘LENGTH pr'’ mp_tac) >> simp[] >>
+  disch_then (qspecl_then [‘SUC n'’, ‘f’, ‘c’, ‘pr'’, ‘po'’] mp_tac) >> simp[] >>
+  strip_tac >> qexists_tac ‘k'’ >> simp[]
+QED

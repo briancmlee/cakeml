@@ -783,3 +783,135 @@ Proof
                   rw[] >> gvs[] >> metis_tac[]]) >>
   strip_tac >> gvs[FOLDL_APP]
 QED
+
+(* ------------------------------------------------------------------------
+   The poll, the flush and the reap
+   ------------------------------------------------------------------------ *)
+
+Theorem l1_polls_l0:
+  ∀fess w rv w' evs.
+    l1_polls fess w = SOME (rv, w', evs) ∧ l0_rely w ⇒
+    l0_used w' = l0_used w ∧ w'.fd_limit = w.fd_limit ∧ l0_rely w'
+Proof
+  Induct >> simp[l1_polls_def] >> rpt gen_tac >> strip_tac >>
+  gvs[AllCaseEqs()] >> gvs[sys_poll_def] >>
+  imp_res_tac l0_do_env >> imp_res_tac l0_do_used >> imp_res_tac l0_do_rely >>
+  first_x_assum drule_all >> simp[]
+QED
+
+Theorem after_send_b:
+  (after_send f r b).tbl = b.tbl ∧ (after_send f r b).nxt = b.nxt ∧
+  (after_send f r b).closing = b.closing
+Proof
+  Cases_on ‘r’ >> rw[after_send_def, set_outbox_def]
+QED
+
+Theorem l1_flush_l0:
+  ∀fs w b w' b' evs.
+    l1_flush fs (w, b) = SOME ((w', b'), evs) ∧ l0_rely w ⇒
+    l0_used w' = l0_used w ∧ w'.fd_limit = w.fd_limit ∧ l0_rely w' ∧
+    b'.tbl = b.tbl ∧ b'.nxt = b.nxt ∧ b'.closing = b.closing
+Proof
+  Induct >> simp[l1_flush_def] >> rpt gen_tac >> strip_tac >>
+  gvs[AllCaseEqs()] >>
+  TRY (first_x_assum drule_all >> simp[] >> NO_TAC) >>
+  gvs[sys_send_def] >>
+  imp_res_tac l0_do_env >> imp_res_tac l0_do_used >> imp_res_tac l0_do_rely >>
+  first_x_assum drule_all >> simp[after_send_b]
+QED
+
+Theorem close_used_sub:
+  l0_close f w = (r, w') ⇒ ∀g. MEM g (l0_used w') ⇒ MEM g (l0_used w)
+Proof
+  rw[l0_close_def, close_fd_def, AllCaseEqs()] >> gvs[] >>
+  gvs[l0_used_def, MEM_FST_ADELKEY, MEM_FILTER, MEM_MAP, EXISTS_PROD] >>
+  metis_tac[]
+QED
+
+Theorem sys_close_used_sub:
+  sys_close f w = SOME (out, w', ev) ⇒ ∀g. MEM g (l0_used w') ⇒ MEM g (l0_used w)
+Proof
+  rw[sys_close_def, l0_do_def, l0_ffi_fn_def, AllCaseEqs()] >>
+  gvs[l0_call_def, AllCaseEqs()] >> pairarg_tac >> gvs[] >>
+  imp_res_tac close_used_sub >> gvs[]
+QED
+
+Theorem MEM_SND_ADELKEY_sub:
+  MEM g (MAP SND (ADELKEY k l)) ⇒ MEM g (MAP SND l)
+Proof
+  simp[ADELKEY_def, MEM_MAP, MEM_FILTER] >> metis_tac[]
+QED
+
+Theorem l1_close_l0:
+  l1_close f (w, b) = SOME ((w', b'), evs) ∧ l0_rely w ⇒
+  (∀g. g ≠ f ∧ MEM g (l0_used w) ⇒ MEM g (l0_used w')) ∧
+  (∀g. MEM g (l0_used w') ⇒ MEM g (l0_used w)) ∧
+  w'.fd_limit = w.fd_limit ∧ l0_rely w' ∧
+  b'.tbl = b.tbl ∧ b'.nxt = b.nxt ∧ b'.closing = FILTER ($≠ f) b.closing
+Proof
+  rw[l1_close_def, AllCaseEqs()] >> imp_res_tac sys_close_used_sub >>
+  gvs[sys_close_def, forget_def, set_outbox_def] >>
+  imp_res_tac l0_do_env >> imp_res_tac l0_do_used >> imp_res_tac l0_do_rely >> gvs[]
+QED
+
+Theorem l1_reap_l0:
+  ∀fs w b w' b' evs.
+    l1_reap fs (w, b) = SOME ((w', b'), evs) ∧ l0_rely w ⇒
+    (∀g. MEM g (l0_used w) ∧ ¬MEM g fs ⇒ MEM g (l0_used w')) ∧
+    (∀g. MEM g b'.closing ⇒ MEM g b.closing ∧ (MEM g (l0_used w) ⇒ MEM g (l0_used w'))) ∧
+    (∃P. b'.closing = FILTER P b.closing) ∧
+    w'.fd_limit = w.fd_limit ∧ l0_rely w' ∧ b'.tbl = b.tbl ∧ b'.nxt = b.nxt
+Proof
+  Induct >> simp[l1_reap_def]
+  >- (rw[] >> qexists_tac ‘K T’ >> simp[FILTER_T, combinTheory.K_DEF]) >>
+  rpt gen_tac >> strip_tac >> gvs[AllCaseEqs()] >>
+  TRY (rename1 ‘l1_close h (w, b) = SOME (ws, _)’ >> PairCases_on ‘ws’ >>
+       rename1 ‘l1_close h (w, b) = SOME ((w1, b1), evs1)’ >>
+       drule_all l1_close_l0 >> strip_tac >>
+       first_x_assum drule_all >> strip_tac >> gvs[] >>
+       conj_tac >- (rw[] >> gvs[MEM_FILTER] >> metis_tac[MEM_FILTER]) >>
+       qexists_tac ‘λx. h ≠ x ∧ P x’ >>
+       simp[rich_listTheory.FILTER_FILTER] >>
+       AP_THM_TAC >> AP_TERM_TAC >> simp[FUN_EQ_THM] >> metis_tac[]) >>
+  first_x_assum drule_all >> strip_tac >> gvs[] >> metis_tac[]
+QED
+
+Theorem l1do_write_l0:
+  l1do lfd (w, b) (Write h bs) = SOME (r, (w', b'), evs) ∧ l0_rely w ⇒
+  l0_used w' = l0_used w ∧ w'.fd_limit = w.fd_limit ∧ l0_rely w'
+Proof
+  rw[l1do_def, AllCaseEqs()] >> gvs[sys_send_def] >>
+  imp_res_tac l0_do_env >> imp_res_tac l0_do_used >> imp_res_tac l0_do_rely >> gvs[]
+QED
+
+Theorem read_close_l0:
+  ALOOKUP ps.b.tbl c = SOME f ∧
+  l1_close f (w, ps.b with tbl := ADELKEY c ps.b.tbl) = SOME ((w', b'), evs) ∧
+  l0_rely w ∧ fds_lt w ∧ l0own lfd w ps ∧ pown lfd ps ⇒
+  l0_rely w' ∧ fds_lt w' ∧ l0own lfd w' (ps with <| b := b'; eof := X |>)
+Proof
+  strip_tac >> drule_all l1_close_l0 >> strip_tac >>
+  ‘ALL_DISTINCT (MAP FST ps.b.tbl) ∧ ALL_DISTINCT (MAP SND ps.b.tbl) ∧
+   f ≠ lfd ∧ ¬MEM f ps.b.closing ∧ ¬MEM f ps.acq’
+    by (‘MEM f (MAP SND ps.b.tbl)’ by metis_tac[ALOOKUP_SOME_MEM_SND] >>
+        gvs[pown_def, ALL_DISTINCT_APPEND] >> metis_tac[]) >>
+  gvs[fds_lt_def, l0own_def, MEM_FILTER] >> rw[] >>
+  qpat_x_assum ‘∀g. g ≠ f ∧ _ ⇒ _’ irule >> metis_tac[MEM_SND_ADELKEY]
+QED
+
+(* The actions keep the L0-side invariants *)
+Theorem pdo_l0:
+  pdo lfd (w, ps) a = SOME (r, (w', ps'), evs) ∧
+  l0_rely w ∧ fds_lt w ∧ l0own lfd w ps ∧ pown lfd ps ⇒
+  l0_rely w' ∧ fds_lt w' ∧ l0own lfd w' ps'
+Proof
+  Cases_on ‘a’ >> simp[pdo_def] >> strip_tac
+  >- (gvs[AllCaseEqs()] >> gvs[l0own_def] >> metis_tac[])
+  >- (gvs[AllCaseEqs()] >>
+      TRY (PairCases_on ‘z’ >> gvs[] >> drule_all read_close_l0 >> simp[] >> NO_TAC) >>
+      gvs[l0own_def] >> rw[] >> first_x_assum irule >>
+      metis_tac[MEM_SND_ADELKEY_sub, ALOOKUP_SOME_MEM_SND])
+  >> pairarg_tac >> gvs[] >> rename1 ‘l1do _ _ _ = SOME (r, (w', b'), evs)’ >>
+  drule_all l1do_write_l0 >> drule l1do_write_tbl >> rw[] >>
+  gvs[fds_lt_def, l0own_def] >> metis_tac[]
+QED

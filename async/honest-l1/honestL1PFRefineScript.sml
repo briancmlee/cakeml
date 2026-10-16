@@ -285,7 +285,7 @@ QED
 
 Theorem set_inb_fields[simp]:
   (set_inb f x ps).b = ps.b ∧ (set_inb f x ps).acq = ps.acq ∧
-  (set_inb f x ps).eof = ps.eof ∧
+  (set_inb f x ps).eof = ps.eof ∧ (set_inb f x ps).pause = ps.pause ∧
   inb_of (set_inb f x ps) g = if g = f then x else inb_of ps g
 Proof
   rw[set_inb_def, inb_of_def, ALOOKUP_ADELKEY] >> rw[]
@@ -425,6 +425,21 @@ Definition l0own_def:
         MEM f (l0_used w)
 End
 
+Theorem pause_simps[simp]:
+  pf_ready lfd (ps with pause := x) hs = pf_ready lfd ps hs ∧
+  hs_of (ps with pause := x) = hs_of ps
+Proof
+  simp[pf_ready_def, hs_of_def, inb_of_def]
+QED
+
+Theorem rel_pause[simp]:
+  (pv_rel lfd cm (ps with pause := x) s ⇔ pv_rel lfd cm ps s) ∧
+  (pown lfd (ps with pause := x) ⇔ pown lfd ps) ∧
+  (l0own lfd w (ps with pause := x) ⇔ l0own lfd w ps)
+Proof
+  simp[pv_rel_def, pown_def, l0own_def, inb_of_def]
+QED
+
 Theorem lowest_fd_fresh:
   fds_lt w ∧ w.fd_limit ≤ 2 ** 31 ⇒ ¬MEM (lowest_fd w) (l0_used w)
 Proof
@@ -549,7 +564,7 @@ Theorem fetch_accept_rel:
   wants_input lfd hw ps lfd ∧ sys_accept lfd w = SOME (out, w1, ev) ∧
   (case l0_res_of out of
    | Ok k => (ps with acq := ps.acq ++ [n2w k], [FConn (n2w k)])
-   | Fail e _ => (ps with b := ps.b with exhausted := (e = E_MFILE ∨ e = E_NFILE), []))
+   | Fail e _ => ((if e = E_MFILE then ps with pause := pf_backoff else ps), []))
     = (ps1, fl) ∧
   arrs lfd (cm, LENGTH s.clients) fl = (as, (cm1, k1)) ∧
   (∀f. MEM (f, LENGTH s.clients) cm1 ⇒ ∀used. ¬MEM f used ⇒ s.alloc (LENGTH s.clients) used = f) ⇒
@@ -559,7 +574,7 @@ Theorem fetch_accept_rel:
   ps1.inb = ps.inb ∧ ps1.eof = ps.eof
 Proof
   strip_tac >>
-  ‘ps.acq = [] ∧ ¬ps.b.exhausted’ by gvs[wants_input_def] >>
+  ‘ps.acq = [] ∧ ps.pause = 0’ by gvs[wants_input_def] >>
   ‘∀g. MEM g (l0_used w) ⇒ MEM g (l0_used w1)’
     by (gvs[sys_accept_def] >> drule l0_do_used >> simp[]) >>
   Cases_on ‘l0_res_of out’ >> gvs[arrs_def]
@@ -591,11 +606,7 @@ Proof
           gvs[EL_APPEND1])
       >- (gvs[pown_def, inb_of_def, ALL_DISTINCT_APPEND] >> metis_tac[])
       >> gvs[l0own_def] >> metis_tac[]) >>
-  rpt conj_tac
-  >- (‘(ps with b := ps.b with exhausted := (e = E_MFILE ∨ e = E_NFILE)).b.tbl = ps.b.tbl’
-        by simp[] >> simp[pv_rel_b])
-  >- (simp[pown_b])
-  >> gvs[l0own_def] >> metis_tac[]
+  rw[] >> gvs[l0own_def] >> metis_tac[]
 QED
 
 (* Changing one open connection's buffers is updating its client *)
@@ -722,7 +733,7 @@ Theorem fetch_accept_ok:
   pv_rel lfd cm ps s ∧
   (case l0_res_of out of
    | Ok k => (ps with acq := ps.acq ++ [n2w k], [FConn (n2w k)])
-   | Fail e _ => (ps with b := ps.b with exhausted := (e = E_MFILE ∨ e = E_NFILE), []))
+   | Fail e _ => ((if e = E_MFILE then ps with pause := pf_backoff else ps), []))
     = (ps1, fl) ∧
   arrs lfd (cm, LENGTH s.clients) fl = (as, (cm1, k1)) ∧
   LENGTH (FOLDL deliver2 s as).clients + 1 < dimword (:64) ⇒
@@ -1122,6 +1133,9 @@ Proof
   ‘pv_rel lfd cm' (ps3 with b := b4) (FOLDL deliver2 s as)’ by simp[pv_rel_b] >>
   simp[hpoll_def, sock_poll2_def, tick2_def, FOLDL_deliver2_future] >>
   ‘hs_of (ps3 with b := b4) = hs_of ps’ by gvs[hs_of_def, Abbr ‘ps2’] >>
+  ‘ps3 with <| b := b4; pause := ps3.pause − 1 |> =
+   (ps3 with b := b4) with pause := ps3.pause − 1’ by simp[] >>
+  pop_assum SUBST1_TAC >>
   simp[] >> rpt conj_tac
   >- (qpat_x_assum ‘hs_of _ = hs_of ps’ (SUBST1_TAC o SYM) >>
       irule ready_eq >> simp[] >> qexists_tac ‘cm'’ >> simp[])

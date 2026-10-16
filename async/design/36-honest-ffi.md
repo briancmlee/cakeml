@@ -705,6 +705,18 @@ Globally: `exhausted` (the last accept said EMFILE/ENFILE).
 | **close** (v2) | `Close c` → done, as `«sock_close»` today | **Graceful close:** if the outbox is non-empty, `shutdown` after it drains, then close. With unread input, `shutdown(SHUT_WR)`, then read and discard to EOF, then close (lingering close, fixes L8). A `gone` fd is closed at once. Every close clears `exhausted` |
 | **listen** (startup) | none: L2 starts with listener `lfd` | `sys_listen port`. On failure, print the step and errno, and exit (`FFI_failed`-free: a clean `Terminate`) |
 
+*Running out of fds, in the prefetching L1 (D17, supersedes the
+`exhausted` rows above).* ENFILE is retried in the next round, like a
+transient error. EMFILE **pauses** the listener: L1 leaves it out of the
+poll for `pf_backoff` rounds (a named constant in the model; no proof
+uses its value) and then retries the accept, as real servers pause
+accepting and retry. A close does **not** end the pause early: the pause
+only counts down. That is simpler than the lazy L1's "every close clears
+`exhausted`", and still live: the retry comes at most `pf_backoff` rounds
+later. At a real fd limit, each retry's EMFILE may reset one queued
+connection (`emfile_drops`, permitted by [P accept]); live-conn's
+"dropped" case covers that.
+
 **Memory.** The outbox makes a slow reader cost memory, not time:
 
 - **pausing** at H bounds each outbox to H + one read's worth for
@@ -1042,9 +1054,11 @@ L1 becomes *the* L1.
     close then sends **FIN** where the lazy L1 (bytes still in the
     kernel) would have caused an **RST** (RFC 1122 §4.2.2.13; RFC 9293
     §3.6). This is documented behaviour; both are within the standards.
-  - **EMFILE.** One failing accept per exhaustion: the listener is not
-    polled until L1 closes an fd, and the pending connection waits in
-    the kernel's backlog. It is not dropped. The server is told
+  - **EMFILE (D17).** The listener pauses for `pf_backoff` rounds after
+    a failing accept, then L1 retries. Meanwhile the pending connection
+    waits in the kernel's backlog, unless it is reset (`emfile_drops`,
+    which [P accept] permits). ENFILE is retried in the next round. The
+    server is told
     "ready" only when L1's queue holds an fd, so it never sees a failed
     Accept.
 
@@ -1221,10 +1235,25 @@ and is client j of `psk`. The fetch log is `plog`.
   per-server obligations (item 5 of the whole-program list), not inside
   R1-live. **S2:** `(rstate n).acq ≠ [] ⇒` the server issues `Accept lfd`
   at some later round (the listener is reported ready exactly when acq ≠
-  []). **Statement:** a channel j0 in the listener's accept queue at round n0
-  is eventually accepted (a `Connect2 lfd` in `parr k` matched to j0; the
-  FConn form is a lemma) or dropped (it left the queue broken, by
-  ECONNABORTED or by an EMFILE reset).
+  []). **Statement (D18):** a channel j0 in the listener's accept queue
+  at round n0 is eventually (a) accepted (a `Connect2 lfd` in `parr k`
+  matched to j0; the FConn form is a lemma), or (b) dropped (it left the
+  queue broken, by ECONNABORTED or by an EMFILE reset), or (c) L1's
+  accepts on lfd fail infinitely often. Disjunct (c) is the honest cost
+  of D11′. The L0 model lets the world answer an accept with any error
+  but EAGAIN as a transient failure ([P 2.3]), leaving the queue
+  unchanged, and L1 retries every failed accept. [F1] constrains only
+  the `l1_transient` errors, and on the observed trace a spurious
+  ECONNABORTED looks the same as a real one, which pops a broken
+  connection. **Corollary:** with the explicit hypothesis "every
+  ECONNABORTED from L1's accepts on lfd really dropped a queued
+  connection" (stated on the run's observed events and the listener's
+  queue where possible), (c) is gone: j0 is accepted or dropped.
+  **EMFILE needs no new assumption:** while no accept succeeds, nothing
+  allocates an fd (L1 makes no connects or listens), so the set of used
+  fds only shrinks. A fd that [F3] finds free therefore stays free until
+  the next retry, whose accept then cannot fail with EMFILE (in L0,
+  EMFILE comes only when `l0_alloc` finds no fd below the limit).
 - **(live-conn)** Assume [F3]. Every connection that reaches the
   listener's backlog (`LIncoming` on its port) is eventually a
   `Connect2` in `psk`, unless it is dropped. It is dropped only if it
@@ -1566,6 +1595,12 @@ even if it is more work.**
 | D15 | R1-live gains S3 (the server reads what it is shown) and S4 (if the peer drains, the outbox eventually falls to ≤ hw) as per-server obligations, not trusted. They are discharged per server: echo, HTTP and KV from their v2 liveness and reply-only writes; chat via D7 | **approved** |
 | D16 | Spurious hard errors (the L0 model allows any error but EAGAIN as a transient failure, [P 2.3]): (live-data) holds **unless L1 observed a hard error on c**, in which case the episode ended (`Eof2 j`). No new trust. Plus a corollary with the condition as an explicit **hypothesis**: if hard errors on c occur only when the connection really broke, every byte c's peer delivered is eventually in `psk` | **approved** |
 | D11′ | **[F1] restated on observed outcomes** (replaces D11's world-choice form; does not add to it). Per call kind and per fd: a call on f made infinitely often does not return a *retried* outcome infinitely often. Retried = an `l1_transient` error (EAGAIN, EINTR, ENOBUFS, ENOMEM) for recv, accept and send; any failure for poll (L1 retries every failed poll next round). Reason: the weakest single assumption, and no extra narrowing of POSIX. It covers both the world's transient choice and a broken channel's transient-looking errors (`broken_recv`, an `LBreak` error), with no trusted "broken errors are never transient" fact. Stated on the run's IO-event trace (the observed results) | **approved (user, via coordinator)** |
+| D17 | Running out of fds at accept. **ENFILE is retried** (only EMFILE pauses). **While the process is out of fds, L1 retries accept after a backoff** of `pf_backoff` rounds (a model constant; no proof uses its value), as real servers pause accepting and retry, instead of waiting for a close. No "no spurious EMFILE" hypothesis. In the model: `pause` in the PF state; L1 polls the listener only when `pause = 0`. Stated honestly in §5/§6: at a real fd limit on macOS, each retry's EMFILE may reset one queued connection (`emfile_drops`), which live-conn's "dropped" case covers. EMFILE needs no new assumption (§6): while no accept succeeds, no fd is allocated, so a fd that [F3] finds free stays free until the next retry. The CakeML L1 loop and its CF spec follow the model | **decided (user, via coordinator)** |
+| D18 | Spurious accept errors (the analogue of D16 for the listener). **live-conn, main form (no new trust):** j0 is (a) accepted, (b) dropped (broken or aborted, or an EMFILE reset), or (c) L1's accepts on lfd fail (retried) infinitely often. **Corollary** under the explicit hypothesis "every ECONNABORTED on lfd's accept really dropped a queued connection" (on observed events plus the queue where possible; otherwise on world choices, with the reason): accepted or dropped. [F1]'s retried set for accept stays as in D11′. Rationale, for consistency with D11′/D16/D17: never add trusted kernel facts that narrow POSIX's looseness; weaken the main theorem honestly, and give the strong form as a corollary under an explicit hypothesis | **decided (user, via coordinator)** |
+
+**Principle (user):** OS assumptions are justified by POSIX and the RFCs
+only, never by any platform's behaviour. The probes are tests, not
+justification.
 
 §4.1 (the refused/error encoding) is approved with D1/D3, and close-v2
 implements it in the endpoint world.

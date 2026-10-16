@@ -352,7 +352,7 @@ QED
 
 Theorem inb_of_upd[simp]:
   inb_of (ps with b := x) f = inb_of ps f ∧ inb_of (ps with eof := e) f = inb_of ps f ∧
-  inb_of (ps with acq := q) f = inb_of ps f
+  inb_of (ps with acq := q) f = inb_of ps f ∧ inb_of (ps with pause := p) f = inb_of ps f
 Proof
   simp[inb_of_def]
 QED
@@ -366,8 +366,8 @@ Proof
   simp[outbox_of_def]
 QED
 
-Theorem fkeep_exhausted[simp]:
-  fkeep lfd h f (ps with b := ps.b with exhausted := x) ⇔ fkeep lfd h f ps
+Theorem fkeep_pause[simp]:
+  fkeep lfd h f (ps with pause := x) ⇔ fkeep lfd h f ps
 Proof
   simp[fkeep_def]
 QED
@@ -748,7 +748,7 @@ Proof
   >- ((* accept on the listener *)
       ‘g ≠ f’ by (strip_tac >> fs[]) >>
       ‘∀q x. wants_input lfd hw (ps with acq := q) f = wants_input lfd hw ps f ∧
-             wants_input lfd hw (ps with b := ps.b with exhausted := x) f =
+             wants_input lfd hw (ps with pause := x) f =
              wants_input lfd hw ps f’ by simp[wants_input_def] >>
       simp[AllCaseEqs(), PULL_EXISTS] >> rpt gen_tac >> strip_tac >>
       pairarg_tac >> fs[AllCaseEqs()] >> rveq >>
@@ -926,6 +926,9 @@ Proof
       rpt strip_tac >> imp_res_tac ev_on_name >> fs[EVERY_MEM] >> res_tac >> fs[])
   >> strip_tac >> gvs[] >>
   ‘¬MEM f ps3.b.closing’ by (qpat_x_assum ‘fkeep _ _ _ ps3’ mp_tac >> simp[fkeep_def]) >>
-  drule_all l1_reap_f >> strip_tac >> simp[] >>
-  irule fkeep_b_same >> fs[]
+  drule_all l1_reap_f >> strip_tac >>
+  ‘fkeep lfd h f (ps3 with b := b4)’ by (irule fkeep_b_same >> fs[]) >>
+  ‘ps3 with <| b := b4; pause := ps3.pause − 1 |> =
+   (ps3 with b := b4) with pause := ps3.pause − 1’ by simp[] >>
+  pop_assum SUBST1_TAC >> simp[]
 QED

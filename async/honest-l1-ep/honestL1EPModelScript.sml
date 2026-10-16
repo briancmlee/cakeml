@@ -189,7 +189,7 @@ Definition etail_def:
                     let ready_pend = FILTER (λf. MEM f (pend_fds es) ∧
                                                (MEM f (writable_fds rv) ∨ MEM f (readable_fds rv)))
                                             (pend_fds es) in
-                    case settle_fds ready_pend (w4, es with p := ps3 with b := b4) of
+                    case settle_fds ready_pend (w4, es with p := ps3 with <| b := b4; pause := ps3.pause − 1 |>) of
                     | NONE => NONE
                     | SOME ((w5, es5), sevs) =>
                         let es6 = promote es5;

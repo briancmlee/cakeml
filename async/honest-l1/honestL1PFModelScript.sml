@@ -15,13 +15,15 @@
          connection (an error other than a transient one) sets EOF;
          a transient error does nothing;
        - the listener with an empty accept queue: ONE accept.  A new fd
-         joins the accept queue; EMFILE/ENFILE set `exhausted`; anything
-         else does nothing;
+         joins the accept queue; EMFILE (the process is out of fds) pauses
+         the listener: the accept is retried pf_backoff rounds later (as
+         servers pause accepting and retry); anything else (ENFILE included) does nothing,
+         so the accept is retried in the next round;
    - the input interest is the server's poll interest only (BACKPRESSURE:
      a server that stops polling its listener stops accepting; a server
      that stops polling a connection stops receiving on it), minus paused
      fds (outbox above hw), fds whose inbox is not empty or at EOF, and the
-     listener when exhausted or its queue is not empty;
+     listener when paused or its queue is not empty;
    - ready (for the server): an open handle whose inbox is not empty or at
      EOF; the listener if its accept queue is not empty; a closed handle
      (it reads as EOF);
@@ -37,8 +39,8 @@
 
   A round: the actions; then the poll (chunked, as honestL1Model), the
   flush of the writable outboxes, the fetch, the reap of the closing fds;
-  the snapshot.  The run also records what each round fetched (the fetch
-  log), from which R1 builds the version-2 world's schedule.
+  the snapshot; one round of the listener's pause passes.  The run
+  also records what each round fetched (the fetch log), from which R1 builds the version-2 world's schedule.
 *)
 Theory honestL1PFModel
 Ancestors
@@ -53,14 +55,16 @@ Libs
 Datatype:
   l1p = <| b : l1st                          (* honestL1Model's state: handles,
                                                 outboxes, closing, gone,
-                                                exhausted (its rdy is unused) *)
+                                                (its rdy and exhausted are unused) *)
          ; inb : (word64 # word8 list) list  (* fd, fetched bytes not yet read *)
          ; eof : word64 list                 (* fds whose input has ended *)
-         ; acq : word64 list |>              (* accepted fds not yet handed out *)
+         ; acq : word64 list                 (* accepted fds not yet handed out *)
+         ; pause : num |>                    (* rounds left before the listener
+                                                is polled again (after EMFILE) *)
 End
 
 Definition pinit_def:
-  pinit = <| b := l1init; inb := []; eof := []; acq := [] |>
+  pinit = <| b := l1init; inb := []; eof := []; acq := []; pause := 0 |>
 End
 
 Definition inb_of_def:
@@ -70,6 +74,13 @@ End
 Definition set_inb_def:
   set_inb f bs ps =
     ps with inb := if bs = [] then ADELKEY f ps.inb else (f, bs) :: ADELKEY f ps.inb
+End
+
+(* The rounds the listener pauses after an accept fails with EMFILE: the
+   accept is retried every pf_backoff rounds while the process is out of
+   fds (its value matters to no proof) *)
+Definition pf_backoff_def:
+  pf_backoff = 8n
 End
 
 (* The bytes one fetch asks for *)
@@ -145,7 +156,7 @@ End
 (* May L1 fetch on f now? *)
 Definition wants_input_def:
   wants_input lfd hw ps f ⇔
-    if f = lfd then ps.acq = [] ∧ ¬ps.b.exhausted
+    if f = lfd then ps.acq = [] ∧ ps.pause = 0
     else inb_of ps f = [] ∧ ¬MEM f ps.eof ∧ LENGTH (outbox_of ps.b f) ≤ hw
 End
 
@@ -185,7 +196,7 @@ Definition pf_fetch_def:
                 case l0_res_of out of
                 | Ok k => (ps with acq := ps.acq ++ [n2w k], [FConn (n2w k)])
                 | Fail e _ =>
-                    (ps with b := ps.b with exhausted := (e = E_MFILE ∨ e = E_NFILE), [])
+                    ((if e = E_MFILE then ps with pause := pf_backoff else ps), [])
           in
             case pf_fetch lfd hw fs (w1, ps1) of
             | NONE => NONE
@@ -235,7 +246,7 @@ Definition pf_tail_def:
                 case l1_reap ps3.b.closing (w3, ps3.b) of
                 | NONE => NONE
                 | SOME ((w4, b4), cevs) =>
-                    let ps4 = ps3 with b := b4 in
+                    let ps4 = ps3 with <| b := b4; pause := ps3.pause − 1 |> in
                       SOME (pf_ready lfd ps4 hs, (w4, ps4), log,
                             pevs ++ fevs ++ gevs ++ cevs)
 End

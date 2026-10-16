@@ -352,3 +352,42 @@ Proof
   disch_then (qspec_then ‘(k, opn)’ strip_assume_tac) >>
   drule own_ok_cong >> strip_tac >> gvs[]
 QED
+
+Theorem l0_do_rely:
+  l0_do n conf alen w = SOME (out, w', ev) ∧ l0_rely w ⇒ l0_rely w'
+Proof
+  rw[l0_do_def, AllCaseEqs()] >> drule_all l0_ffi_fn_length >> simp[]
+QED
+
+Theorem pdo_rely:
+  pdo lfd (w, ps) a = SOME (r, (w', ps'), evs) ∧ l0_rely w ⇒ l0_rely w'
+Proof
+  Cases_on ‘a’ >> rw[pdo_def, l1do_def, l1_close_def, AllCaseEqs()] >> gvs[] >>
+  gvs[sys_close_def, sys_send_def] >> metis_tac[l0_do_rely]
+QED
+
+(* The round's actions: the input half moves by the server's reads *)
+Theorem pacts_in:
+  ∀acts w ps rs evs w' ps' opn.
+    pacts lfd (w, ps) acts = SOME (rs, evs, (w', ps')) ∧ l0_rely w ∧
+    own_ok lfd (k, opn) ps ∧ l1hdln (w2n lfd) k < dimword (:64) ⇒
+    l0_rely w' ∧ LENGTH rs = LENGTH acts ∧
+    FST (l0_ep_st (k, opn) evs) = k ∧ own_ok lfd (l0_ep_st (k, opn) evs) ps' ∧
+    ∀j. j < k ⇒
+        inbp lfd ps j ++ ep_rd j (k, opn) evs =
+        hread (l1hdl lfd j) (ZIP (acts, MAP SOME rs)) ++ inbp lfd ps' j
+Proof
+  Induct >> simp[pacts_def, ep_fold_def, hread_def] >>
+  rpt gen_tac >> strip_tac >> gvs[AllCaseEqs()] >>
+  PairCases_on ‘ws1’ >> rename1 ‘pdo lfd (w, ps) h = SOME (r, (w1, ps1), evs1)’ >>
+  ‘l1hdln (w2n lfd) k < dimword (:64)’ by simp[] >>
+  drule_all pdo_in >> strip_tac >>
+  drule_all pdo_rely >> strip_tac >>
+  Cases_on ‘l0_ep_st (k, opn) evs1’ >> gvs[] >>
+  first_x_assum drule_all >> strip_tac >>
+  simp[ep_fold_APPEND] >> rpt strip_tac >>
+  qpat_x_assum ‘∀j. j < k ⇒ inbp lfd ps j ++ _ = _’ (qspec_then ‘j’ mp_tac) >>
+  qpat_x_assum ‘∀j. j < k ⇒ inbp lfd ps1 j ++ _ = _’ (qspec_then ‘j’ mp_tac) >>
+  simp[hrd_def, hread_def] >> rpt strip_tac >>
+  rewrite_tac[APPEND_ASSOC] >> gvs[]
+QED

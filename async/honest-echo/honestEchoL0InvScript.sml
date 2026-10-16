@@ -153,6 +153,15 @@ Proof
   rename1 ‘MEM yy ps.b.tbl’ >> PairCases_on ‘yy’ >> gvs[] >> res_tac >> metis_tac[]
 QED
 
+(* As own_hdl_lookup, with the handle as simp leaves it *)
+Theorem own_hdl_lookup_h:
+  own_ok lfd (k, opn) ps ∧ hdln (w2n lfd) k < 18446744073709551616 ∧ j < k ∧
+  ALOOKUP ps.b.tbl (hdl lfd j) = SOME f ⇒
+  j < ps.b.nxt ∧ ALOOKUP opn f = SOME j
+Proof
+  strip_tac >> mp_tac own_hdl_lookup >> fs[]
+QED
+
 Theorem own_ok_cong[local]:
   ps'.b.tbl = ps.b.tbl ∧ ps'.b.nxt = ps.b.nxt ∧ ps'.b.closing = ps.b.closing ∧
   ps'.acq = ps.acq ∧ ps'.inb = ps.inb ⇒
@@ -272,6 +281,18 @@ QED
 
 (* One action: the input L1 holds and the episodes' received bytes stay
    in step with the server's reads *)
+val close_tac =
+  PairCases_on ‘z’ >> gvs[] >> drule l1_close_shape >> strip_tac >> gvs[] >>
+          drule_all sys_close_event >> strip_tac >>
+          ‘hdln (w2n lfd) k < dimword (:64)’ by simp[] >>
+          drule_all own_drop_handle >>
+          disch_then (qspec_then ‘FILTER (λy. f ≠ y) ps.eof’ strip_assume_tac) >>
+          simp[ep_fold_def, l0_ep_step_def] >>
+          ‘∀j. inbp lfd (ps with <|b := forget f (ps.b with tbl := ADELKEY c ps.b.tbl);
+                                    eof := FILTER (λy. f ≠ y) ps.eof|>) j = inbp lfd ps j’
+            by (gen_tac >> irule inbp_ADELKEY >> simp[] >> qexistsl [‘c’, ‘f’] >> simp[]) >>
+          every_case_tac >> gvs[];
+
 Theorem pdo_in:
   pdo lfd (w, ps) a = SOME (r, (w', ps'), evs) ∧ l0_rely w ∧
   own_ok lfd (k, opn) ps ∧ l1hdln (w2n lfd) k < dimword (:64) ⇒
@@ -305,7 +326,27 @@ Proof
       rw[inbp_def] >> gvs[] >>
       Cases_on ‘j = ps.b.nxt’ >> gvs[inb_of_def] >>
       qpat_x_assum ‘∀j. j < _ ⇒ (hdl _ _ = _ ⇔ _)’ (qspec_then ‘j’ mp_tac) >> simp[])
-  >- ((* Read *) FAIL_TAC "WIP")
+  >- ((* Read *)
+      strip_tac >> qpat_x_assum ‘pdo _ _ _ = _’ mp_tac >> simp[pdo_def] >> strip_tac >>
+      gvs[AllCaseEqs()] >> TRY (simp[ep_fold_def] >> NO_TAC)
+      >~ [‘set_inb’]
+      >- (drule_all own_tbl_lookup >> strip_tac >> rename1 ‘ALOOKUP opn f = SOME i’ >>
+          conj_tac
+          >- (qpat_x_assum ‘own_ok _ _ _’ mp_tac >> simp[own_ok_def] >> strip_tac >>
+              rw[] >> imp_res_tac ALOOKUP_MEM >> simp[MEM_MAP, EXISTS_PROD] >>
+              metis_tac[]) >>
+          rw[inbp_def, ep_fold_def] >> every_case_tac >> gvs[] >>
+          rename1 ‘ALOOKUP ps.b.tbl (hdl lfd j) = SOME g’ >>
+          drule_all own_hdl_lookup_h >> strip_tac >>
+          rw[] >> gvs[])
+      >~ [‘l1_close’] >- close_tac
+      >~ [‘l1_close’] >- close_tac >>
+      (* still flushing *)
+      ‘hdln (w2n lfd) k < dimword (:64)’ by simp[] >>
+      drule_all own_drop_handle >>
+      disch_then (qspec_then ‘FILTER (λy. f ≠ y) ps.eof’ strip_assume_tac) >>
+      simp[ep_fold_def] >> rw[] >> irule EQ_SYM >>
+      irule inbp_ADELKEY >> simp[] >> qexistsl [‘c’, ‘f’] >> simp[])
   >> (* Write *)
   strip_tac >> drule_all pdo_write_in >>
   disch_then (qspec_then ‘(k, opn)’ strip_assume_tac) >>

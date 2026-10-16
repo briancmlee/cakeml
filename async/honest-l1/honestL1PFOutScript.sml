@@ -268,6 +268,13 @@ Proof
   simp[] >> strip_tac >> drule l0_do_cases >> strip_tac >> gvs[ev_sent_def]
 QED
 
+Theorem sys_close_chan:
+  winv w ∧ l0_chan_of w f = SOME c ∧ g ≠ f ∧ sys_close g w = SOME (out, w', ev) ⇒
+  l0_chan_of w' f = SOME c
+Proof
+  metis_tac[sys_csent]
+QED
+
 Theorem acct_keep:
   acct w b f c out ∧ l0_chan_of w' f = SOME c ∧ csent w' c = csent w c ⇒ acct w' b f c out
 Proof
@@ -343,4 +350,66 @@ Theorem l1_close_csent:
   st' = forget g st
 Proof
   rw[l1_close_def, AllCaseEqs()] >> drule_all sys_close_csent >> simp[]
+QED
+
+(* ------------------------------------------------------------------------
+   The server's actions
+   ------------------------------------------------------------------------ *)
+
+(* What an action writes to f *)
+Definition wbytes_def:
+  wbytes f (b : l1st) (Write h bs) = (if ALOOKUP b.tbl h = SOME f then bs else []) ∧
+  wbytes f b (Read h n) = [] ∧
+  wbytes f b (Accept l) = []
+End
+
+Theorem pdo_acct:
+  pdo lfd (w, ps) a = SOME (r, (w', ps'), evs) ∧ winv w ∧ EVERY small_send evs ∧
+  l0_chan_of w f = SOME c ∧ pown lfd ps ⇒
+  c < LENGTH w'.chans ∧ csent w' c = csent w c ++ evs_sent f evs ∧
+  (acct w ps.b f c out ∧ (MEM f (MAP SND ps'.b.tbl) ∨ MEM f ps'.b.closing) ⇒
+   acct w' ps'.b f c (out ++ wbytes f ps.b a))
+Proof
+  strip_tac >>
+  ‘c < LENGTH w.chans’ by gvs[l0_chan_of_def, AllCaseEqs()] >>
+  Cases_on ‘a’ >> gvs[pdo_def, AllCaseEqs(), wbytes_def] >>
+  TRY (rw[] >> gvs[acct_def] >> NO_TAC) >>
+  PairCases_on ‘z’ >> gvs[] >>
+  TRY ((* a read that closes f' *)
+       drule_all l1_close_csent >> disch_then (qspec_then ‘f’ strip_assume_tac) >> gvs[] >>
+       strip_tac >>
+       ‘f ≠ f'’
+         by (strip_tac >> gvs[forget_def, set_outbox_def, MEM_FILTER] >>
+             gvs[pown_def, ALL_DISTINCT_APPEND] >> metis_tac[MEM_SND_ADELKEY]) >>
+       qpat_x_assum ‘l1_close _ _ = _’ mp_tac >> simp[l1_close_def, AllCaseEqs()] >>
+       strip_tac >>
+       ‘l0_chan_of w' f = SOME c’ by (irule sys_close_chan >> metis_tac[]) >>
+       qpat_x_assum ‘acct w _ _ _ _’ mp_tac >>
+       simp[acct_def, forget_def, outbox_of_set_outbox, MEM_FILTER] >>
+       simp[outbox_of_def, set_outbox_def, MEM_FILTER] >> NO_TAC) >>
+  (* a write *)
+  qpat_x_assum ‘l1do _ _ _ = _’ mp_tac >> simp[l1do_def] >>
+  Cases_on ‘ALOOKUP ps.b.tbl c'’ >> simp[] >- (rw[] >> gvs[]) >>
+  rename1 ‘ALOOKUP _ _ = SOME g’ >>
+  IF_CASES_TAC
+  >- (rw[] >> gvs[acct_def] >> rw[] >> gvs[] >>
+      metis_tac[IS_PREFIX_TRANS, IS_PREFIX_APPEND3, APPEND_ASSOC]) >>
+  IF_CASES_TAC
+  >- (rw[] >> gvs[acct_def, outbox_of_set_outbox, set_outbox_def] >> rw[] >>
+      fs[outbox_of_def]) >>
+  simp[AllCaseEqs(), PULL_EXISTS] >> rpt gen_tac >> strip_tac >> gvs[] >>
+  rename1 ‘sys_send g _ w = SOME (out1, w1, ev)’ >>
+  drule_all sys_send_csent >> strip_tac >>
+  ‘c < LENGTH w1.chans’ by gvs[l0_chan_of_def, AllCaseEqs()] >> simp[] >>
+  disch_then (CONJUNCTS_THEN2 assume_tac assume_tac) >>
+  ‘g = f ⇒ ¬MEM f ps.b.closing’
+    by (strip_tac >> gvs[] >> imp_res_tac ALOOKUP_MEM >>
+        gvs[pown_def, ALL_DISTINCT_APPEND, MEM_MAP] >> metis_tac[SND]) >>
+  Cases_on ‘g = f’ >> gvs[] >>
+  TRY (gvs[set_outbox_def] >> NO_TAC) >>
+  TRY (irule acct_after_send >> simp[outbox_of_set_outbox, set_outbox_def] >>
+       qexists_tac ‘w’ >> gvs[acct_def, outbox_of_set_outbox] >>
+       every_case_tac >> simp[outbox_of_def, ALOOKUP_ADELKEY] >> NO_TAC) >>
+  irule acct_after_send_other >> simp[] >>
+  gvs[acct_def, outbox_of_set_outbox, set_outbox_def] >> fs[outbox_of_def]
 QED

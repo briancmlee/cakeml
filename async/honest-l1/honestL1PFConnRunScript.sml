@@ -485,3 +485,102 @@ Proof
     by (simp[MAP_FLAT, MEM_FLAT, MEM_MAP] >> gvs[MEM_MAP] >> metis_tac[]) >>
   gvs[FLAT_poll_chunks]
 QED
+
+(* ------------------------------------------------------------------------
+   R1-live, the connection half (D18, main form; no new trust, no [F3])
+   ------------------------------------------------------------------------ *)
+
+Theorem live_conn:
+  run_ok lfd hw ifds m w0 ∧ winv w0 ∧ linv lfd w0 ∧ MEM lfd (l0_used w0) ∧
+  (∀n. SND (pcm lfd hw ifds m w0 n) + 1 < dimword (:64)) ∧
+  F1 lfd hw ifds m w0 ∧ S1 lfd hw ifds m w0 ∧ S2 lfd hw ifds m w0 ∧
+  MEM j0 (qof (rworld lfd hw ifds m w0 n0) lfd) ⇒
+  (∃k. n0 ≤ k ∧ resolved (rworld lfd hw ifds m w0 (SUC k)) (rlog lfd hw ifds m w0 k) j0) ∨
+  accepts_fail lfd hw ifds m w0
+Proof
+  strip_tac >>
+  Cases_on ‘∃k. n0 ≤ k ∧ resolved (rworld lfd hw ifds m w0 (SUC k)) (rlog lfd hw ifds m w0 k) j0’
+  >- simp[] >>
+  disj2_tac >>
+  ‘∀k. n0 ≤ k ⇒ ¬resolved (rworld lfd hw ifds m w0 (SUC k)) (rlog lfd hw ifds m w0 k) j0’
+    by metis_tac[] >>
+  ‘∃p. p < LENGTH (qof (rworld lfd hw ifds m w0 n0) lfd) ∧
+       EL p (qof (rworld lfd hw ifds m w0 n0) lfd) = j0’ by metis_tac[MEM_EL] >>
+  (* j0 stays queued *)
+  ‘∀n. n0 ≤ n ⇒ qof (rworld lfd hw ifds m w0 n) lfd ≠ []’
+    by (rpt strip_tac >> drule_all pos_run >>
+        disch_then (qspec_then ‘n − n0’ strip_assume_tac) >>
+        ‘n0 + (n − n0) = n’ by decide_tac >> gvs[]) >>
+  (* from N on, no round accepts *)
+  ‘∃N. n0 ≤ N ∧ ∀k. N ≤ k ⇒ log_conns (rlog lfd hw ifds m w0 k) = []’
+    by (drule_all stuck_rounds >> disch_then irule >> metis_tac[]) >>
+  (* from N1 on, L1 holds no accepted fd *)
+  drule_all acq_empty >> strip_tac >>
+  drule_all run_lfd >> strip_tac >>
+  drule_all noob_run >> strip_tac >>
+  ‘∀k. MEM lfd (ifds (rhist lfd hw ifds m w0 k))’ by gvs[S1_def] >>
+  (* an unpaused round from N1 on polls the listener *)
+  ‘∀k. N1 ≤ k ∧ (rstate lfd hw ifds m w0 k).pause = 0 ⇒
+       EXISTS (ev_on «sys_poll» lfd) (rrev lfd hw ifds m w0 k)’
+    by (rpt strip_tac >>
+        ‘n0 ≤ k’ by fs[] >>
+        ‘(rstate lfd hw ifds m w0 k).acq = [] ∧ qof (rworld lfd hw ifds m w0 k) lfd ≠ []’ by fs[] >>
+        qpat_assum ‘∀k. (∃d. _) ∧ _’ (qspec_then ‘k’ strip_assume_tac) >>
+        qpat_x_assum ‘_ ∧ _ ∧ _ ∧ _ ⇒ EXISTS _ _ ∧ _’ mp_tac >> simp[]) >>
+  (* a poll on it from N1 on that is not retried is followed by a failed
+     accept in its round *)
+  ‘∀k ev. N1 ≤ k ∧ MEM ev (rrev lfd hw ifds m w0 k) ∧ ev_on «sys_poll» lfd ev ∧
+          ¬retried ev ⇒
+          ∃ev'. MEM ev' (rrev lfd hw ifds m w0 k) ∧ ev_on «sys_accept» lfd ev' ∧ failed ev'’
+    by (rpt strip_tac >>
+        ‘(rstate lfd hw ifds m w0 k).pause = 0’
+          by (CCONTR_TAC >>
+              drule_all round_facts >> disch_then (qspec_then ‘k’ strip_assume_tac) >>
+              drule prun_round' >> disch_then (qspecl_then [‘ARB’, ‘k’] strip_assume_tac) >>
+              drule pround_paused >> simp[] >> qexistsl_tac [‘s’, ‘cm’] >> simp[EXISTS_MEM] >>
+              metis_tac[]) >>
+        ‘n0 ≤ k’ by fs[] >>
+        ‘(rstate lfd hw ifds m w0 k).acq = [] ∧ qof (rworld lfd hw ifds m w0 k) lfd ≠ []’ by fs[] >>
+        qpat_assum ‘∀k. (∃d. _) ∧ _’ (qspec_then ‘k’ strip_assume_tac) >>
+        ‘EXISTS (ev_on «sys_accept» lfd) (rrev lfd hw ifds m w0 k)’
+          by (qpat_x_assum ‘_ ∧ _ ∧ _ ∧ _ ⇒ EXISTS _ _ ∧ _’ mp_tac >> simp[] >>
+              metis_tac[]) >>
+        gvs[EXISTS_MEM] >> qexists_tac ‘e’ >> simp[] >>
+        CCONTR_TAC >> ‘log_conns (rlog lfd hw ifds m w0 k) ≠ []’ by metis_tac[] >>
+        ‘N ≤ k’ by metis_tac[LESS_EQ_TRANS] >> metis_tac[]) >>
+  (* polls on the listener, infinitely often *)
+  drule_all pause_zero >> strip_tac >>
+  drule revs_grows >> strip_tac >>
+  ‘∀i. ∃i'. i ≤ i' ∧ call_at lfd hw ifds m w0 i' «sys_poll» lfd’
+    by (gen_tac >>
+        qpat_assum ‘∀n. ∃n'. n ≤ n' ∧ _’ (qspec_then ‘N1 + i’ strip_assume_tac) >>
+        ‘N1 ≤ n'’ by (qpat_x_assum ‘N1 + i ≤ n'’ mp_tac >> simp[]) >>
+        ‘n0 ≤ n'’ by metis_tac[LESS_EQ_TRANS] >>
+        ‘(rstate lfd hw ifds m w0 n').acq = [] ∧ qof (rworld lfd hw ifds m w0 n') lfd ≠ []’
+          by fs[] >>
+        qpat_assum ‘∀k. (∃d. _) ∧ _’ (qspec_then ‘n'’ strip_assume_tac) >>
+        ‘EXISTS (ev_on «sys_poll» lfd) (rrev lfd hw ifds m w0 n')’
+          by (qpat_x_assum ‘_ ∧ _ ∧ _ ⇒ _ ∧ _’ mp_tac >> fs[EXISTS_MEM]) >>
+        qpat_x_assum ‘EXISTS _ (rrev _ _ _ _ _ n')’
+          (strip_assume_tac o REWRITE_RULE [EXISTS_MEM]) >>
+        drule_all call_at_round >> strip_tac >>
+        qexists_tac ‘i'’ >> simp[] >>
+        ‘LENGTH (revs lfd hw ifds m w0 (N1 + i)) ≤ LENGTH (revs lfd hw ifds m w0 n')’
+          by (irule revs_len_mono >> simp[]) >>
+        first_x_assum (qspec_then ‘N1 + i’ assume_tac) >> decide_tac) >>
+  (* [F1]: infinitely many of them are not retried *)
+  ‘∀i. ∃i'. i ≤ i' ∧ call_at lfd hw ifds m w0 i' «sys_poll» lfd ∧
+            call_ok_at lfd hw ifds m w0 i'’
+    by (qpat_assum ‘F1 _ _ _ _ _’ (mp_tac o REWRITE_RULE [F1_def]) >>
+        disch_then (qspecl_then [‘«sys_poll»’, ‘lfd’] mp_tac) >> metis_tac[]) >>
+  rw[accepts_fail_def] >>
+  first_x_assum (qspec_then ‘LENGTH (revs lfd hw ifds m w0 (N1 + i))’ strip_assume_tac) >>
+  drule_all call_ok_round >> strip_tac >>
+  ‘∃ev'. MEM ev' (rrev lfd hw ifds m w0 k) ∧ ev_on «sys_accept» lfd ev' ∧ failed ev'’
+    by (first_x_assum irule >> simp[] >> qexists_tac ‘ev’ >> simp[]) >>
+  drule_all round_event >> strip_tac >>
+  qexistsl_tac [‘i''’, ‘SUC k’] >> simp[] >>
+  ‘LENGTH (revs lfd hw ifds m w0 (N1 + i)) ≤ LENGTH (revs lfd hw ifds m w0 k)’
+    by (irule revs_len_mono >> simp[]) >>
+  qpat_x_assum ‘∀d. d ≤ LENGTH _’ (qspec_then ‘N1 + i’ assume_tac) >> decide_tac
+QED

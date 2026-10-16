@@ -1095,6 +1095,65 @@ So R1 splits into two halves.
   cannot go through with the weak [F1], the reason will be reported
   before any change of form.
 
+**R1-safe, as built (`async/honest-l1/honestL1PFRefine`, branch
+`spike/honest-r1`).** The theorems, model level, no cheats:
+
+    l1pf_refines_hl :
+      l0_rely w0 ∧ fds_lt w0 ∧ MEM lfd (l0_used w0) ∧
+      (∀n. SND (pcm lfd hw ifds m w0 n) + 1 < 2^64) ⇒
+      ∀n h ws evs logs.
+        prounds lfd hw ifds m (w0, pinit) n = SOME (h, ws, evs, logs) ⇒
+        hhist lfd ifds m (psk lfd hw ifds m w0) n = h ∧ …(the relation and invariants)
+
+    psk_server_world : (same hypotheses) ⇒
+      (psk …).listening = [(lfd, [])] ∧ (psk …).clients = [] ∧
+      (psk …).open_fds = [] ∧ alloc_ok (psk …).alloc ∧ sched_wf2 (psk …)
+
+In words: in **any** L0 world, every run of the prefetching L1 is
+round-for-round the handle layer's run (asyncHLModel, unchanged) in one
+version-2 world `psk`. That world satisfies `server_world2`, the
+hypothesis of the v2 server theorems.
+
+- **The world `psk`** is built from L1's own run, which does not depend
+  on it:
+  - client j is the j-th connection L1 fetched (`pcm`, the client map);
+  - the schedule's step n is what round n fetched (`parr`: `FConn` ↦
+    `Connect2 lfd`, `FData f bs` ↦ `Data2 j bs`, `FEof`/`FReset f` ↦
+    `Eof2 j`, where j is f's client);
+  - `alloc` returns the kernel's fd for each client (`run_alloc`; else
+    `lowest_free`, so `alloc_ok` holds);
+  - `reserved = []`.
+- **The relation `pv_rel`:**
+  - L1's inbox and EOF flag for an open handle's fd are its client's
+    `incoming` and `peer_closed`;
+  - L1's accept queue is the listener's pending clients;
+  - the v2 open fds are the handles' fds.
+- **Invariants:**
+  - `pown`: L1's fds (listener, handles, closing, queued) are distinct,
+    handles are distinct and issued, and only open handles have input;
+  - `l0own`: those fds are open in the L0 world. With `fds_lt` and the
+    rely's fd limit, this makes **every accepted fd fresh**
+    (`sys_accept_fresh`).
+- **Proof structure:**
+  - actions: `pdo_hdo`; Accept is a pop from the queue, Read is TAKE n,
+    and EOF auto-close maps to a lingering close against v2's immediate
+    close;
+  - the fetch: `fetch_rel`, and `step_ok2` for its arrivals;
+  - the snapshot: `ready_eq`;
+  - the round's tail: `tail_rel`;
+  - one round: `round_rel`;
+  - the run: induction.
+  - `sched_wf2` concerns the world *left alone*. It agrees with the
+    handle layer's world on all that `step_ok2` reads (`wagree`), since
+    the program's actions never change listeners, counts or
+    `peer_closed`.
+- **Hypotheses beyond the L0 rely:**
+  - the listener is open;
+  - fewer than 2^64 − 1 connections over the run. This is v2's own
+    fairness bound (`arrival_ok2`), restated on L1's run.
+- **Not yet:** R1-live (fetch completeness; [F1] weak, [F2]); connecting
+  to `semantics_prog`; the switch-over of the servers to this L1.
+
 **(R3) Per-wrapper lemmas** (model level, on L1's functional core; the
 cheap part). For example:
 

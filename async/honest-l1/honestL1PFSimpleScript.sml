@@ -1015,3 +1015,61 @@ Proof
     by (simp[FUN_EQ_THM, APPLY_UPDATE_THM, data_of_def] >> rw[]) >>
   asm_rewrite_tac[] >> metis_tac[]
 QED
+
+(* The fetch's accepted fds: fresh, and open (in a world that keeps open fds
+   open: wmono, pf_fetch_queue) *)
+Theorem pf_fetch_acq:
+  ∀fs w ps w' ps' log evs.
+    pf_fetch lfd hw fs (w, ps) = SOME ((w', ps'), log, evs) ∧ winv w ⇒
+    (∀g. MEM g (l0_used w) ⇒ MEM g (l0_used w')) ∧
+    ∀f. MEM f ps'.acq ⇒ MEM f ps.acq ∨ (¬MEM f (l0_used w) ∧ ∃c. ALOOKUP w'.open_fds f = SOME c)
+Proof
+  Induct >- simp[pf_fetch_def] >>
+  rpt gen_tac >> rename1 ‘g :: fs’ >> simp[Once pf_fetch_def] >>
+  reverse (Cases_on ‘wants_input lfd hw ps g’) >> simp[]
+  >- (strip_tac >> first_x_assum drule_all >> simp[]) >>
+  IF_CASES_TAC
+  >- (pop_assum SUBST_ALL_TAC >> strip_tac >>
+      qpat_x_assum ‘option_CASE (sys_accept _ _) _ _ = _’ mp_tac >>
+      Cases_on ‘sys_accept lfd w’ >> simp[] >>
+      rename1 ‘sys_accept lfd w = SOME z’ >> PairCases_on ‘z’ >> simp[] >>
+      rename1 ‘sys_accept lfd w = SOME (out, wa, ev)’ >>
+      pairarg_tac >> simp[] >>
+      Cases_on ‘pf_fetch lfd hw fs (wa, ps1)’ >> simp[] >>
+      rename1 ‘pf_fetch lfd hw fs (wa, ps1) = SOME y’ >> PairCases_on ‘y’ >> simp[] >>
+      strip_tac >> rveq >>
+      drule_all (el 4 (CONJUNCTS sys_winv)) >> strip_tac >>
+      first_x_assum drule_all >> strip_tac >>
+      drule_all pf_fetch_queue >> strip_tac >>
+      ‘∀g. MEM g (l0_used w) ⇒ MEM g (l0_used wa)’
+        by (qpat_x_assum ‘sys_accept _ _ = _’ mp_tac >> simp[sys_accept_def] >>
+            strip_tac >> drule l0_do_used >> simp[]) >>
+      conj_tac >- metis_tac[] >>
+      rpt strip_tac >> qpat_x_assum ‘∀f. MEM f ps'.acq ⇒ _’ drule >> strip_tac
+      >- (Cases_on ‘MEM f ps.acq’ >> simp[] >>
+          ‘∃k. l0_res_of out = Ok k ∧ f = n2w k’
+            by (Cases_on ‘l0_res_of out’ >> fs[] >> rveq >> fs[] >>
+                every_case_tac >> fs[] >> rveq >> fs[]) >>
+          rveq >>
+          ‘l0_rely w ∧ fds_lt w’ by fs[winv_def] >>
+          conj_tac >- (drule_all sys_accept_fresh >> simp[]) >>
+          drule_all sys_accept_queue >> strip_tac >> gvs[] >>
+          fs[wmono_def] >> res_tac >> metis_tac[])
+      >> disj2_tac >> conj_tac >- (strip_tac >> res_tac) >> simp[])
+  >> strip_tac >>
+  qpat_x_assum ‘option_CASE (sys_recv _ _ _) _ _ = _’ mp_tac >>
+  Cases_on ‘sys_recv g pf_chunk w’ >> simp[] >>
+  rename1 ‘sys_recv g pf_chunk w = SOME z’ >> PairCases_on ‘z’ >> simp[] >>
+  rename1 ‘sys_recv g pf_chunk w = SOME (out, wa, ev)’ >>
+  pairarg_tac >> simp[] >>
+  Cases_on ‘pf_fetch lfd hw fs (wa, ps1)’ >> simp[] >>
+  rename1 ‘pf_fetch lfd hw fs (wa, ps1) = SOME y’ >> PairCases_on ‘y’ >> simp[] >>
+  strip_tac >> rveq >>
+  drule_all (el 3 (CONJUNCTS sys_winv)) >> strip_tac >>
+  first_x_assum drule_all >> strip_tac >>
+  ‘l0_used wa = l0_used w’
+    by (qpat_x_assum ‘sys_recv _ _ _ = _’ mp_tac >> simp[sys_recv_def] >>
+        strip_tac >> drule l0_do_used >> simp[]) >>
+  ‘ps1.acq = ps.acq’ by (every_case_tac >> fs[] >> rveq >> simp[]) >>
+  fs[] >> metis_tac[]
+QED

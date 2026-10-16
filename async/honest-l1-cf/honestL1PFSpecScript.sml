@@ -252,17 +252,34 @@ Proof
   first_x_assum drule >> strip_tac >> xapp >> qexistsl [‘emp’, ‘evs ++ [ev]’] >> xsimpl >> rewrite_tac[GSYM APPEND_ASSOC, APPEND] >> xsimpl
 QED
 
+Overload FLOG = “HONESTL1PFMODEL_FETCHED_TYPE”
+
+(* The tail of a fetch: the recursive call's state and log, then this
+   fd's log entry in front *)
+(* The tail of a fetch: the recursive call, then this fd's log entry in
+   front of the call's log *)
+fun fetch_tail_tac log_def =
+  qmatch_asmsub_rename_tac ‘pf_fetch _ _ _ (w1, _) = SOME ((_, _), lg, ee)’ >>
+  first_x_assum drule >> strip_tac >>
+  (xlet ‘POSTv v. &(∃psv' lv. v = Conv NONE [psv'; lv] ∧ L1P ps' psv' ∧
+                              LIST_TYPE FLOG lg lv) *
+                  L0_EV w0 w' (evs ++ [ev] ++ ee)’
+   >- (xapp >> simp[])) >>
+  gvs[] >> xmatch >> rpt (xlet_auto >- xsimpl) >>
+  xcon >> rewrite_tac[GSYM APPEND_ASSOC, APPEND] >> xsimpl >> gvs[log_def];
+
 Theorem pf_fetch_spec:
   ∀fs w ps w' ps' log evs1 fsv psv evs.
     pf_fetch lfd hw fs (w, ps) = SOME ((w', ps'), log, evs1) ∧
     WORD lfd lfdv ∧ NUM hw hwv ∧ LIST_TYPE WORD fs fsv ∧ L1P ps psv ⇒
     app (p:'ffi ffi_proj) pf_fetch_v [lfdv; hwv; fsv; psv] (L0_EV w0 w evs)
-      (POSTv v. &L1P ps' v * L0_EV w0 w' (evs ++ evs1))
+      (POSTv v. &(∃psv' lv. v = Conv NONE [psv'; lv] ∧ L1P ps' psv' ∧ LIST_TYPE FLOG log lv) *
+                L0_EV w0 w' (evs ++ evs1))
 Proof
   Induct >> rpt strip_tac >>
   xcf_with_def (fetch "honestL1PFProg" "pf_fetch_v_def") >>
   gvs[LIST_TYPE_def, pf_fetch_def] >> xmatch
-  >- (xvar >> xsimpl) >>
+  >- (rpt (xlet_auto >- (TRY xcon >> xsimpl)) >> xcon >> xsimpl >> simp[LIST_TYPE_def]) >>
   rpt (xlet_auto >- xsimpl) >> xif
   >- (gvs[] >> first_x_assum drule >> strip_tac >> xapp >> fs[]) >>
   gvs[] >> xlet_auto >- xsimpl >> xif
@@ -270,14 +287,14 @@ Proof
       (xlet ‘POSTv v. &LIST_TYPE WORD out v * L0_EV w0 w1 (evs ++ [ev])’
        >- (xapp_spec c_accept_spec >> xsimpl >> metis_tac[])) >>
       (xlet_auto >- xsimpl) >> gvs[fetch_acc_upd_def] >>
-      first_x_assum drule >> strip_tac >> xapp >> qexistsl [‘emp’, ‘evs ++ [ev]’] >> xsimpl >> rewrite_tac[GSYM APPEND_ASSOC, APPEND] >> xsimpl) >>
+      fetch_tail_tac fetch_acc_log_def) >>
   gvs[AllCaseEqs()] >> pairarg_tac >> gvs[AllCaseEqs()] >>
   rpt (xlet_auto >- xsimpl) >>
   (xlet ‘POSTv v. &LIST_TYPE WORD out v * L0_EV w0 w1 (evs ++ [ev])’
    >- (xapp_spec c_recv_spec >> xsimpl >> qexistsl [‘h’, ‘pf_chunk’] >>
        simp[fetch "honestL1PFProg" "pf_chunk_v_thm"])) >>
   (xlet_auto >- xsimpl) >> gvs[fetch_recv_upd_def] >>
-  first_x_assum drule >> strip_tac >> xapp >> qexistsl [‘emp’, ‘evs ++ [ev]’] >> xsimpl >> rewrite_tac[GSYM APPEND_ASSOC, APPEND] >> xsimpl
+  fetch_tail_tac fetch_recv_log_def
 QED
 
 Theorem l1_reap_spec:
@@ -302,6 +319,12 @@ Proof
   first_x_assum drule >> strip_tac >> xapp >> fs[]
 QED
 
+Theorem hup_step_pause[local,simp]:
+  (hup_step hfs ob log ps).pause = ps.pause
+Proof
+  simp[hup_step_def]
+QED
+
 Theorem pf_tail_spec:
   pf_tail lfd hw hs (w, ps) = SOME (rdy, (w', ps'), log, evs1) ∧
   WORD lfd lfdv ∧ NUM hw hwv ∧ LIST_TYPE WORD hs hsv ∧ L1P ps psv ⇒
@@ -320,13 +343,15 @@ Proof
   xlet ‘POSTv v. &L1ST b2 v * L0_EV w0 w2 (evs ++ pevs ++ fevs)’
   >- (xapp_spec l1_flush_spec >> xsimpl >> gvs[l1p_b_def] >> metis_tac[]) >>
   rpt (xlet_auto >- xsimpl) >>
-  xlet ‘POSTv v. &L1P ps3 v * L0_EV w0 w3 (evs ++ pevs ++ fevs ++ gevs)’
+  xlet ‘POSTv v. &(∃psv' lv. v = Conv NONE [psv'; lv] ∧ L1P ps3' psv' ∧ LIST_TYPE FLOG log lv) *
+                 L0_EV w0 w3 (evs ++ pevs ++ fevs ++ gevs)’
   >- (xapp_spec pf_fetch_spec >> xsimpl >> gvs[filter_in_def, set_b_def] >> metis_tac[]) >>
+  gvs[] >> xmatch >>
   rpt (xlet_auto >- xsimpl) >>
   xlet ‘POSTv v. &L1ST b4 v * L0_EV w0 w' (evs ++ pevs ++ fevs ++ gevs ++ cevs)’
-  >- (xapp_spec l1_reap_spec >> xsimpl >> gvs[l1p_b_def, closing_of_def] >> metis_tac[]) >>
+  >- (xapp_spec l1_reap_spec >> xsimpl >> gvs[l1p_b_def, closing_of_def, hup_step_b_def] >> metis_tac[]) >>
   rpt (xlet_auto >- xsimpl) >>
-  xcon >> xsimpl >> gvs[end_round_def]
+  xcon >> xsimpl >> gvs[end_round_def, hup_step_b_def, l1p_b_def]
 QED
 
 (* The round's guard: room in the handle counter for the round's actions *)

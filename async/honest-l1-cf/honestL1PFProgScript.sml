@@ -30,6 +30,7 @@ val _ = register_type “:l0_res”;
 val _ = register_type “:revents”;
 val _ = register_type “:l1st”;
 val _ = register_type “:l1p”;
+val _ = register_type “:fetched”;
 
 (* ------------------------------------------------------------------------
    Bytes and strings at the L0 boundary
@@ -236,6 +237,26 @@ Definition fetch_recv_upd_def:
     | Fail e _ => if l1_transient e then ps else ps with eof := f :: ps.eof
 End
 
+(* The fetch log entry of an accept, of a recv on f (as pf_fetch's) *)
+Definition fetch_acc_log_def:
+  fetch_acc_log out =
+    case l0_res_of out of
+    | Ok k => [FConn (n2w k)]
+    | Fail e _ => []
+End
+
+Definition fetch_recv_log_def:
+  fetch_recv_log f out =
+    case l0_res_of out of
+    | Ok k => if 0 < k then [FData f (TAKE k (DROP 13 out))] else [FEof f]
+    | Fail e _ => if l1_transient e then [] else [FReset f]
+End
+
+(* D19's hung-up step, with the outboxes of the state before the flush *)
+Definition hup_step_b_def:
+  hup_step_b hfs b0 log ps = hup_step hfs (outbox_of b0) log ps
+End
+
 (* An fd the flush skips, and the reap closes *)
 Definition quiet_fd_def:
   quiet_fd st f ⇔ outbox_of st f = [] ∨ MEM f st.gone
@@ -305,6 +326,15 @@ val r = tr pwrite_step_def;
 val r = tr psend_upd_def;
 val r = tr fetch_acc_upd_def;
 val r = tr fetch_recv_upd_def;
+val r = tr fetch_acc_log_def;
+val r = tr fetch_recv_log_def;
+val r = tr pf_hupwait_def;
+val r = tr hup_fds_def;
+val r = tr drop_out_def;
+val r = tr listTheory.nub_def;
+val r = tr listTheory.FOLDL;
+val r = tr hup_step_def;
+val r = tr hup_step_b_def;
 val r = tr quiet_fd_def;
 val r = tr l1p_b_def;
 val r = tr set_b_def;
@@ -383,14 +413,18 @@ Quote add_cakeml:
 
   fun pf_fetch lfd hw fs ps =
     case fs of
-      [] => ps
+      [] => (ps, [])
     | f :: rest =>
         if not (wants_input lfd hw ps f) then pf_fetch lfd hw rest ps
         else if f = lfd then
-          let val out = c_accept lfd in pf_fetch lfd hw rest (fetch_acc_upd ps out) end
+          let val out = c_accept lfd in
+            case pf_fetch lfd hw rest (fetch_acc_upd ps out) of
+              (ps2, log) => (ps2, fetch_acc_log out @ log)
+          end
         else
           let val out = c_recv f pf_chunk in
-            pf_fetch lfd hw rest (fetch_recv_upd f ps out)
+            case pf_fetch lfd hw rest (fetch_recv_upd f ps out) of
+              (ps2, log) => (ps2, fetch_recv_log f out @ log)
           end;
 
   fun l1_reap fs st =
@@ -406,10 +440,15 @@ Quote add_cakeml:
       val fes = pf_poll_set lfd hw ps hs
       val rv = l1_polls (poll_chunks fes)
       val b2 = l1_flush (writable_fds rv) (l1p_b ps)
-      val ps3 = pf_fetch lfd hw (filter_in (in_fds fes) (readable_fds rv)) (set_b ps b2)
-      val b4 = l1_reap (closing_of ps3) (l1p_b ps3)
-      val ps4 = end_round ps3 b4
-    in (pf_ready lfd ps4 hs, ps4) end;
+      val fl = pf_fetch lfd hw (filter_in (in_fds fes) (readable_fds rv)) (set_b ps b2)
+    in
+      case fl of (ps3a, log) =>
+      let
+        val ps3 = hup_step_b (hup_fds rv) (l1p_b ps) log ps3a
+        val b4 = l1_reap (closing_of ps3) (l1p_b ps3)
+        val ps4 = end_round ps3 b4
+      in (pf_ready lfd ps4 hs, ps4) end
+    end;
 
   fun step_pf st =
     case st of (lfd, hw, fds, ps, c) =>

@@ -1,0 +1,7 @@
+# The Level 2 CF library, completed (option C, design/33 §2.1): both2, map2,
+# depth-indexed recursion, declared events as any list of the interest.
+INCLUDES = ../../model/core ../../model/level2 ../../model/sched \
+           ../library ../../loop/blocking-l2
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

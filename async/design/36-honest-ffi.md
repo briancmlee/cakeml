@@ -1195,6 +1195,20 @@ and is client j of `psk`. The fetch log is `plog`.
   broke while pending (ECONNABORTED: its peer reset it) or was reset
   under EMFILE (`emfile_drops`, macOS).
 
+*Amendment, proposed while preparing the proof (awaiting the user's
+review).* L1 fetches on f only if f's inbox is empty and f is not paused.
+Two per-server obligations make that hold, and the theorem must state
+them:
+- **S3, the server reads what it is shown:** a handle that is ready with
+  inbox data is eventually read. It follows from the server's own v2
+  liveness, but it appears as a hypothesis of the generic theorem.
+- **S4, writes don't outrun the client:** if D(c) holds, f's outbox
+  eventually falls to ≤ hw.
+  - It holds for servers that write only in response to reads (echo,
+    HTTP, KV): while f is paused nothing new is read, so nothing new is
+    written.
+  - For a broadcast server, D7's slow-client drop is what makes it hold.
+
 *Corollary shape (per server, for example echo):* from `echo_live2 psk
 io` with R1-safe and R1-live, every byte delivered by a peer that
 drains is eventually written to that peer on the wire. The writes reach

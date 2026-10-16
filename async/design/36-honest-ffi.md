@@ -556,6 +556,25 @@ The citations were checked against the primary texts. The rules:
 | POLLERR/HUP/NVAL not requested | [P poll]: reported "even if the application did not set the corresponding bit" | yes | conforms |
 | accepted socket and O_NONBLOCK | [P accept]: implementation-defined | irrelevant: every call uses MSG_DONTWAIT | — |
 
+**Fairness assumptions (used only by R1-live, §6; approved, D11 and D12).**
+R1-safe and every safety result use none of them.
+
+- **[F1] Transient failures are not permanent.** For each call kind
+  (recv, accept, send, poll) and each fd or listener: if the call is
+  attempted infinitely often, it succeeds infinitely often.
+  - [P 2.3] lets errors happen "under circumstances other than those
+    described", so the model allows `transient` at any call.
+  - No standard promises progress. [F1] is therefore an assumption, in
+    the sense of [A].
+  - EINTR additionally needs a caught signal [P 2.10.14], and the
+    startup contract installs none.
+- **[F2] An empty send buffer takes a byte.** With nothing in flight, a
+  send of n > 0 bytes accepts at least one.
+  - [P 2.10.7]: send transfers "as much as is available", and with
+    nothing in flight the space is the whole buffer.
+  - [T §3.8.6] (flow control): the window is not the obstacle once the
+    peer has taken everything.
+
 ### 4.3 The probes and tests are conformance tests
 
 - **The checker** (`runnable/l0/tester/l0check.py`) replays a logged run
@@ -1061,8 +1080,8 @@ So R1 splits into two halves.
   | the server never polls the handle or listener | **S1:** the interest covers every open handle and the listener (asyncServer's `ifds` does by construction) | server obligation, proved per server like `hl_ok` |
   | the inbox stays full (no fetch while it is non-empty) | the server reads what it is shown. This follows from L2's own v2 liveness: what `sk` delivers is eventually read | free |
   | the accept queue stays full | the server accepts when the listener is ready (asyncServer does); one accept per round then drains the backlog first in, first out | server obligation (S1) |
-  | **transient errors forever:** the model lets EINTR/ENOBUFS/ENOMEM/ENFILE happen "at any time", so recv, accept or poll could fail on every try | **[F1] (new, trusted):** a run has only finitely many transient failures. EINTR needs a caught signal, which the startup contract does not install, and resource shortages are temporary | **L0 fairness assumption, for the user** |
-  | **pausing forever:** the outbox never drops below hw | the client keeps reading its responses (LDrain), **and [F2] (new, trusted):** with nothing in flight, the kernel accepts at least one byte (`0 < n ⇒ 0 < takes j h 0 n`) | client hypothesis per episode, plus an **L0 assumption, for the user** |
+  | **transient errors forever:** the model lets EINTR/ENOBUFS/ENOMEM/ENFILE happen "at any time", so recv, accept or poll could fail on every try | **[F1] (approved, weak form, D11):** per call kind and per fd/listener, a call attempted infinitely often succeeds infinitely often (§4.2) | **L0 fairness assumption (trusted)** |
+  | **pausing forever:** the outbox never drops below hw | the client keeps reading its responses (LDrain), **and [F2] (approved, D12):** with nothing in flight, the kernel accepts at least one byte (`0 < n ⇒ 0 < takes j h 0 n`) | client hypothesis per episode, plus an **L0 assumption (trusted)** |
   | **EMFILE forever:** the process sits at the fd limit | **[F3]:** liveness for *new* connections assumes fds free up, e.g. the open connections stay below the limit. Otherwise connections wait in the backlog, which is the real behaviour | hypothesis of the connection half |
   | the round stops | the loop runs forever (`Diverge`), and every round polls (`poll_chunks` polls at least once) | free |
 
@@ -1071,9 +1090,10 @@ So R1 splits into two halves.
   outbox stays ≤ hw), it applies to every episode. That is the honest
   statement: a client that never reads is backpressured, by design (D4).
 
-  R1-live comes after R1-safe. [F1] and [F2] are proposed additions to
-  the trusted L0 surface (§4.2), awaiting the user's decision. Without
-  them, only R1-safe and the transfer of L2's safety theorems hold.
+  R1-live comes after R1-safe. [F1] (weak form) and [F2] are approved
+  additions to the trusted L0 surface (§4.2; D11, D12). If R1-live
+  cannot go through with the weak [F1], the reason will be reported
+  before any change of form.
 
 **(R3) Per-wrapper lemmas** (model level, on L1's functional core; the
 cheap part). For example:
@@ -1217,6 +1237,9 @@ even if it is more work.**
 | D8 | Point (c) of §3.5 | **decided** |
 | D5′ | (D5 approved later the same day) the v1 runnables are retired; L1 and the refinement target the version-2 world for every shipped program (echo2, HTTP on the v2 handle layer, KV); the v1 programs stay as model-level theorems | **approved** |
 | D9 | The L0 model is anchored on the standards (POSIX.1-2024, RFC 9293/1122), with cited sections. Where they are loose: nondeterminism. A platform behaviour they forbid is a documented extension [X]. The probes are conformance tests (§4.2–4.3) | **decided** |
+| D10 | L1 prefetches (§6, option (A)): it fetches input into its own buffers in the round's tail and reports what they hold. It becomes *the* L1, built additively and then switched to; the lazy L1 is superseded. "If this is what a real server would do, we should do it" | **approved** |
+| D11 | **[F1]**, for R1-live only. A fairness assumption on transient failures, **per call kind and per fd/listener**: a call that is attempted infinitely often succeeds (does not fail transiently) infinitely often. Transient failures may recur forever, but never refuse permanently. The stronger "finitely many failures" was rejected as unrealistic for a long-running server (occasional ENOMEM/ENOBUFS forever). Using the stronger form needs a fresh decision | **approved (weak form)** |
+| D12 | **[F2]**, for R1-live only. With nothing in flight, send accepts at least one byte (`0 < n ⇒ 0 < takes j h 0 n`) | **approved** |
 
 §4.1 (the refused/error encoding) is approved with D1/D3, and close-v2
 implements it in the endpoint world.

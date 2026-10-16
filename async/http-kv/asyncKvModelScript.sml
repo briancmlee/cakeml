@@ -138,6 +138,16 @@ Proof
   rw[got_def] >> first_x_assum drule >> simp[]
 QED
 
+Theorem got_FILTER_fd[local]:
+  ∀E A. fits A E ∧ LENGTH E = LENGTH A ⇒
+        got (FILTER (λe. FST (FST e) = fd) E) ≼
+        MAP SND (FILTER (λp. FST (FST p) = fd) (ZIP (MAP FST E, A)))
+Proof
+  Induct >> simp[got_def] >> rpt gen_tac >> Cases_on ‘A’ >> simp[] >>
+  strip_tac >> gvs[fits_CONS] >> PairCases_on ‘h’ >> gvs[] >>
+  rw[got_def] >> first_x_assum drule >> simp[]
+QED
+
 Theorem prefix_MAP[local]:
   ∀l1 l2. l1 ≼ l2 ⇒ MAP f l1 ≼ MAP f l2
 Proof
@@ -163,34 +173,44 @@ Proof
   ‘MAP FST (kvs T0) = kv_queries lfd hh’ by simp[kv_queries_def, Abbr ‘T0’] >>
   ‘fits (FST (run_store kv_delta (λk. NONE) (kv_queries lfd hh))) (kvs T0) ∧
    LENGTH (kvs T0) = LENGTH (FST (run_store kv_delta (λk. NONE) (kv_queries lfd hh)))’
-    by (simp[fits_def] >> conj_tac >- metis_tac[LENGTH_MAP] >>
-        gvs[] >> metis_tac[LENGTH_MAP]) >>
+    by (qpat_x_assum ‘MAP FST (kvs T0) = kv_queries _ _’ (SUBST_ALL_TAC o SYM) >>
+        simp[fits_def]) >>
   ‘FILTER (λq. FST q = fd) (kv_queries lfd hh) =
    MAP FST (kvs (FILTER (on_fdk fd) T0))’
     by (qpat_x_assum ‘MAP FST (kvs T0) = _’ (SUBST1_TAC o SYM) >>
-        simp[kvs_FILTER_on_fdk, MAP_FILTER_FST] >>
-        simp[FILTER_MAP, combinTheory.o_DEF]) >>
+        simp[kvs_FILTER_on_fdk, FILTER_MAP, combinTheory.o_DEF]) >>
   qspecl_then [‘λfd. kv_handler (fd, "")’, ‘lfd’] mp_tac
     (Q.GENL [‘h’, ‘lfd’] server_with_k_isolates) >>
   impl_tac >- simp[kv_handler_serves] >>
   disch_then (qspec_then ‘ih’ mp_tac) >>
   simp[GSYM kv_inner_def] >> strip_tac >>
-  first_x_assum (qspec_then ‘fd’ strip_assume_tac) >>
+  qpat_x_assum ‘∀fd. FILTER _ _ = [] ∨ _’ (qspec_then ‘fd’ strip_assume_tac) >>
   qpat_x_assum ‘∀fd. EXISTS _ _ ⇒ _’ kall_tac
   >- (‘written fd (untag T0) = []’
         by metis_tac[writtenk_FILTER_on_fdk, readk_writtenk_simps] >>
-      gvs[]) >>
-  qspecl_then [‘fd’, ‘L’, ‘""’] mp_tac
-    (Q.GENL [‘fd’, ‘hh’, ‘buf’] kv_handler_serves) >>
+      gvs[kvs_def]) >>
+  qspecl_then [‘L’, ‘""’] strip_assume_tac kv_handler_serves >>
   qpat_x_assum ‘FILTER (on_fdk fd) T0 = _’ (assume_tac o SYM) >>
-  simp[] >> strip_tac >>
-  ‘queries (MAP FST (FILTER (on_fdk fd) T0)) = MAP FST (kvs (FILTER (on_fdk fd) T0))’
-    by simp[MAP_FST_kvs] >>
-  gvs[readk_FILTER_on_fdk, writtenk_FILTER_on_fdk] >>
-  irule IS_PREFIX_TRANS >> first_assum (irule_at Any) >>
-  simp[fd_answers_def] >> irule prefix_MAP >>
-  simp[kvs_FILTER_on_fdk] >>
-  qspecl_then [‘kvs T0’, ‘FST (run_store kv_delta (λk. NONE) (kv_queries lfd hh))’]
-    mp_tac (Q.GENL [‘E’, ‘A’] (INST [“P : num # brequest -> bool” |-> “λq : num # brequest. FST q = fd”] got_FILTER_fits)) >>
-  simp[]
+  ‘readk fd (trans (kv_handler (fd,"")) L) = read fd (untag T0)’
+    by metis_tac[readk_FILTER_on_fdk] >>
+  ‘writtenk fd (trans (kv_handler (fd,"")) L) = written fd (untag T0)’
+    by metis_tac[writtenk_FILTER_on_fdk] >>
+  ‘kvs (trans (kv_handler (fd,"")) L) = FILTER (λe. FST (FST e) = fd) (kvs T0)’
+    by metis_tac[kvs_FILTER_on_fdk] >>
+  ‘MAP FST (FILTER (λe. FST (FST e) = fd) (kvs T0)) =
+   FILTER (λq. FST q = fd) (kv_queries lfd hh)’
+    by (qpat_x_assum ‘MAP FST (kvs T0) = kv_queries _ _’ (SUBST1_TAC o SYM) >>
+        simp[FILTER_MAP, combinTheory.o_DEF]) >>
+  conj_tac
+  >- (qpat_x_assum ‘MAP SND (queries _) ≼ _’ mp_tac >>
+      REWRITE_TAC[GSYM MAP_FST_kvs] >> asm_rewrite_tac[] >> simp[]) >>
+  irule IS_PREFIX_TRANS >>
+  qexists_tac ‘MAP print_response (got (kvs (trans (kv_handler (fd,"")) L)))’ >>
+  conj_tac >>
+  TRY (qpat_x_assum ‘writtenk _ _ ≼ _’ mp_tac >> asm_rewrite_tac[] >> NO_TAC) >>
+  irule prefix_MAP >>
+  qpat_assum ‘kvs (trans _ _) = _’ (fn th => REWRITE_TAC[th]) >>
+  simp[fd_answers_def] >>
+  ‘kv_queries lfd hh = MAP FST (kvs T0)’ by simp[] >> pop_assum SUBST1_TAC >>
+  irule got_FILTER_fd >> simp[]
 QED

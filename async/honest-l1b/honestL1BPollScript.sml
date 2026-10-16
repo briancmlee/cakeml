@@ -159,7 +159,8 @@ Theorem sys_poll_idle:
                                            REPLICATE (13 + LENGTH fes) 0w)],
                 IO_event (ExtCall «sys_poll») (poll_conf fes)
                   (ZIP (REPLICATE (13 + LENGTH fes) 0w, out))) ∧
-        rv_quiet (poll_revents fes out)
+        rv_quiet (poll_revents fes out) ∧
+        ∃x. out = poll_out x fes ∧ ¬any_revents x fes
 Proof
   strip_tac >> drule poll_ok_conf >> strip_tac >>
   ‘LENGTH fes ≤ 4096’ by fs[poll_ok_def] >>
@@ -169,5 +170,18 @@ Proof
         drule WhileTheory.LESS_LEAST >> simp[]) >>
   simp[sys_poll_def, l0_do_def, l0_ffi_fn_def, tick_ticks] >>
   simp[l0_call_def, l0_hdr_def, l0_ticks_def] >>
-  irule rv_quiet_out >> simp[]
+  rpt conj_tac >> TRY (irule rv_quiet_out >> simp[] >> NO_TAC) >>
+  qexists_tac ‘l0_ticks «sys_poll» i (l0_tick «sys_poll» u)’ >> simp[]
+QED
+
+(* The entries' events are small; a blocking poll that does not fail is
+   well-formed *)
+Theorem sys_pollb_ok:
+  EVERY (λ(f, e). e < 256) fes ∧ LENGTH fes ≤ 4096 ∧ sys_pollb fes w ≠ NONE ⇒ poll_ok fes
+Proof
+  rw[sys_pollb_def, l0_ffi_fn_def, AllCaseEqs()] >>
+  ‘poll_entries (DROP 1 (pollb_conf fes)) = fes’
+    by (simp[pollb_conf_def] >> irule poll_entries_conf >> simp[]) >>
+  gvs[l0_call_def, AllCaseEqs()] >> gvs[poll_ok_def, EVERY_MEM, FORALL_PROD] >>
+  metis_tac[o_THM, FST]
 QED

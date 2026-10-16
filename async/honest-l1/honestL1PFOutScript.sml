@@ -1043,3 +1043,145 @@ Proof
   drule acct_len >> gvs[acct_def] >> strip_tac >>
   ‘LENGTH (evs_sent f evs) = 0’ by decide_tac >> gvs[]
 QED
+
+Theorem sys_ev_sent:
+  (sys_poll fes w = SOME (out, w', ev) ⇒ ∀f. ev_sent f ev = []) ∧
+  (sys_recv g k w = SOME (out, w', ev) ⇒ ∀f. ev_sent f ev = []) ∧
+  (sys_close g w = SOME (out, w', ev) ⇒ ∀f. ev_sent f ev = []) ∧
+  (sys_accept g w = SOME (out, w', ev) ⇒ ∀f. ev_sent f ev = [])
+Proof
+  rw[sys_poll_def, sys_recv_def, sys_close_def, sys_accept_def] >>
+  drule l0_do_cases >> rw[] >> simp[ev_sent_def]
+QED
+
+val chan_tac =
+  rpt gen_tac >> strip_tac >>
+  qpat_x_assum ‘∀f c. l0_chan_of w f = SOME c ⇒ _’ drule >> strip_tac >>
+  qpat_x_assum ‘∀f c. l0_chan_of w1 f = SOME c ⇒ _’ drule >> simp[];
+
+val fconn_tac =
+  qpat_x_assum ‘∀f. MEM (FConn f) log' ⇒ _’ drule >> strip_tac >>
+  ‘∀c. l0_chan_of w f ≠ SOME c’
+    by (rpt strip_tac >>
+        qpat_x_assum ‘∀f c. l0_chan_of w f = SOME c ⇒ _’ drule >> strip_tac >> gvs[]) >>
+  simp[] >> qexists_tac ‘c'’ >> simp[];
+
+(* The fetch sends nothing, keeps every channel, leaves L1's buffers of
+   output alone, and pre-accepts fresh fds whose channels have nothing sent *)
+Theorem pf_fetch_out:
+  ∀fs w ps w' ps' log evs.
+    pf_fetch lfd hw fs (w, ps) = SOME ((w', ps'), log, evs) ∧ winv w ∧ qfresh w ⇒
+    ps'.b = ps.b ∧
+    (∀f c. l0_chan_of w f = SOME c ⇒ l0_chan_of w' f = SOME c ∧ csent w' c = csent w c) ∧
+    (∀f. evs_sent f evs = []) ∧
+    (∀f. MEM f ps'.acq ⇔ MEM f ps.acq ∨ MEM (FConn f) log) ∧
+    (∀f. MEM (FConn f) log ⇒
+         (∃c. l0_chan_of w' f = SOME c ∧ csent w' c = []) ∧ ∀c. l0_chan_of w f ≠ SOME c)
+Proof
+  Induct >- simp[pf_fetch_def] >>
+  rpt gen_tac >> rename1 ‘pf_fetch _ _ (g :: fs)’ >> strip_tac >>
+  qpat_x_assum ‘pf_fetch _ _ _ _ = _’ mp_tac >>
+  simp[Once pf_fetch_def] >>
+  IF_CASES_TAC >- (strip_tac >> first_x_assum drule_all >> simp[]) >>
+  IF_CASES_TAC
+  >- (qpat_x_assum ‘g = lfd’ SUBST_ALL_TAC >>
+      Cases_on ‘sys_accept lfd w’ >> simp[] >> rename1 ‘_ = SOME x’ >>
+      PairCases_on ‘x’ >> rename1 ‘sys_accept _ _ = SOME (out, w1, ev)’ >> simp[] >>
+      pairarg_tac >> simp[] >>
+      simp[AllCaseEqs(), PULL_EXISTS] >> rpt gen_tac >> strip_tac >> gvs[] >>
+      ‘winv w1 ∧ qfresh w1’ by metis_tac[sys_winv, sys_qfresh] >>
+      first_x_assum drule_all >> strip_tac >>
+      ‘∀f c. l0_chan_of w f = SOME c ⇒ l0_chan_of w1 f = SOME c ∧ csent w1 c = csent w c’
+        by (rpt gen_tac >> strip_tac >> drule_all (cj 3 sys_csents) >> simp[]) >>
+      ‘∀f. ev_sent f ev = []’ by (drule (cj 4 sys_ev_sent) >> simp[]) >>
+      Cases_on ‘l0_res_of out’ >> gvs[]
+      >- (rename1 ‘l0_res_of out = Ok k’ >>
+          ‘∃c. l0_chan_of w1 (n2w k) = SOME c ∧ csent w1 c = []’
+            by (drule_all sys_accept_chan >> simp[]) >>
+          ‘¬MEM (n2w k) (l0_used w)’
+            by (qspecl_then [‘w’, ‘lfd’, ‘out’, ‘w1’, ‘ev’, ‘k’] mp_tac
+                  (Q.GENL [‘w’, ‘l’, ‘out’, ‘w'’, ‘ev’, ‘k’] sys_accept_fresh) >>
+                gvs[winv_def]) >>
+          rpt conj_tac >> TRY (chan_tac >> NO_TAC) >>
+          TRY (simp[DISJ_ASSOC] >> NO_TAC) >>
+          gen_tac >> strip_tac
+          >- (gvs[] >> qexists_tac ‘c’ >>
+              qpat_x_assum ‘∀f c. l0_chan_of w1 f = SOME c ⇒ _’ drule >> strip_tac >>
+              simp[] >> rpt strip_tac >> drule chan_used >> simp[])
+          >> fconn_tac)
+      >> rpt conj_tac >> TRY (chan_tac >> NO_TAC) >> TRY (rw[] >> gvs[] >> NO_TAC) >>
+      gen_tac >> strip_tac >> fconn_tac)
+  >> Cases_on ‘sys_recv g pf_chunk w’ >> simp[] >> rename1 ‘_ = SOME x’ >>
+  PairCases_on ‘x’ >> rename1 ‘sys_recv _ _ _ = SOME (out, w1, ev)’ >> simp[] >>
+  pairarg_tac >> simp[] >>
+  simp[AllCaseEqs(), PULL_EXISTS] >> rpt gen_tac >> strip_tac >> gvs[] >>
+  ‘winv w1 ∧ qfresh w1’ by metis_tac[sys_winv, sys_qfresh] >>
+  first_x_assum drule_all >> strip_tac >>
+  ‘∀f c. l0_chan_of w f = SOME c ⇒ l0_chan_of w1 f = SOME c ∧ csent w1 c = csent w c’
+    by (rpt gen_tac >> strip_tac >> drule_all (cj 2 sys_csents) >> simp[]) >>
+  ‘∀f. ev_sent f ev = []’ by (drule (cj 2 sys_ev_sent) >> simp[]) >>
+  ‘ps1.b = ps.b ∧ ps1.acq = ps.acq ∧ ∀f. ¬MEM (FConn f) fl'’
+    by (qpat_x_assum ‘_ = (ps1, fl')’ mp_tac >> rw[AllCaseEqs()] >> gvs[]) >>
+  gvs[] >> rpt conj_tac >> TRY (chan_tac >> NO_TAC) >> TRY (rw[] >> gvs[] >> NO_TAC) >>
+  gen_tac >> strip_tac >> fconn_tac
+QED
+
+Theorem set_outbox_fields[simp]:
+  (set_outbox f x b).tbl = b.tbl ∧ (set_outbox f x b).closing = b.closing ∧
+  (set_outbox f x b).gone = b.gone ∧ (set_outbox f x b).nxt = b.nxt
+Proof
+  simp[set_outbox_def]
+QED
+
+Theorem outbox_of_gone[simp]:
+  outbox_of (b with gone := x) f = outbox_of b f
+Proof
+  simp[outbox_of_def]
+QED
+
+(* Dropping an outbox (D19) keeps every account: a prefix is a prefix *)
+Theorem acct_drop:
+  acct w b f c out ⇒ acct w (drop_out b g) f c out
+Proof
+  rw[acct_def, drop_out_def, outbox_of_set_outbox, MEM_FILTER] >>
+  Cases_on ‘g = f’ >> gvs[] >>
+  Cases_on ‘MEM f b.gone’ >> gvs[] >>
+  qpat_x_assum ‘_ = out’ (SUBST1_TAC o SYM) >> simp[IS_PREFIX_APPEND3]
+QED
+
+Theorem okeys_drop:
+  okeys b ∧ (MEM g (MAP SND b.tbl) ∨ MEM g b.closing) ⇒ okeys (drop_out b g)
+Proof
+  rw[okeys_def, drop_out_def, outbox_of_set_outbox, MEM_FILTER] >>
+  Cases_on ‘f = g’ >> gvs[] >> first_x_assum irule >> gvs[]
+QED
+
+Theorem FOLDL_drop_out:
+  ∀l b. (FOLDL drop_out b l).tbl = b.tbl ∧ (FOLDL drop_out b l).closing = b.closing ∧
+        (∀w f c out. acct w b f c out ⇒ acct w (FOLDL drop_out b l) f c out) ∧
+        (okeys b ∧ EVERY (λg. MEM g (MAP SND b.tbl) ∨ MEM g b.closing) l ⇒
+         okeys (FOLDL drop_out b l))
+Proof
+  Induct >> simp[] >> rpt gen_tac >>
+  first_x_assum (qspec_then ‘drop_out b h’ strip_assume_tac) >>
+  ‘(drop_out b h).tbl = b.tbl ∧ (drop_out b h).closing = b.closing’
+    by simp[drop_out_def] >>
+  gvs[] >> rw[] >- metis_tac[acct_drop] >>
+  first_x_assum irule >> simp[] >> irule okeys_drop >> simp[]
+QED
+
+Theorem hup_out:
+  (hup_step hfs ob log ps).acq = ps.acq ∧
+  (hup_step hfs ob log ps).b.tbl = ps.b.tbl ∧
+  (hup_step hfs ob log ps).b.closing = ps.b.closing ∧
+  (∀w f c out. acct w ps.b f c out ⇒ acct w (hup_step hfs ob log ps).b f c out) ∧
+  (okeys ps.b ⇒ okeys (hup_step hfs ob log ps).b)
+Proof
+  simp[hup_step_def] >>
+  qmatch_goalsub_abbrev_tac ‘FOLDL drop_out ps.b dl’ >>
+  qspecl_then [‘dl’, ‘ps.b’] strip_assume_tac FOLDL_drop_out >> simp[] >>
+  strip_tac >> first_x_assum irule >> simp[] >>
+  simp[Abbr ‘dl’, EVERY_MAP, EVERY_FILTER, EVERY_MEM, FORALL_PROD] >>
+  rw[MEM_MAP, MEM_FILTER, EXISTS_PROD] >> gvs[MEM_FILTER, MEM_MAP, MEM_nub] >>
+  every_case_tac >> gvs[]
+QED

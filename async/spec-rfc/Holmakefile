@@ -1,0 +1,6 @@
+# The RFC 9112 framing reference and its agreement with HttpSpecBodies (a
+# trust item: checked agreement with the RFC, not used by the proofs).
+INCLUDES = ../spec ../world/sockets
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

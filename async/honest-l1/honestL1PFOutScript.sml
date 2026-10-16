@@ -1980,3 +1980,31 @@ Proof
   qexists_tac ‘F’ >> simp[] >>
   ASM_REWRITE_TAC [APPEND_NIL]
 QED
+
+(* One round, followed from an fd L1 holds or has pre-accepted at its start *)
+Theorem round_tk:
+  pround lfd hw hs (w, ps) acts = SOME (snap, (w', ps'), log, evs) ∧
+  pv_rel lfd cm ps s ∧ pown lfd ps ∧ winv w ∧ EVERY small_send evs ∧ out_rel cm w ps s ∧
+  (MEM f (MAP SND ps.b.tbl) ∨ MEM f ps.b.closing ∨ MEM f ps.acq) ∧ l0_chan_of w f = SOME c ⇒
+  MEM f (MAP FST cm) ∧
+  ∃rs hevs s1 hs1.
+    hacts lfd (s, hs_of ps) acts = SOME (rs, hevs, (s1, hs1)) ∧
+    ∃live. tk live w' ps' f c (csent w c ++ evs_sent f evs) (EL (cl cm f) s1.clients).outgoing
+Proof
+  disch_then (fn th => MAP_EVERY assume_tac (CONJUNCTS th)) >>
+  drule_all held_acct >> strip_tac >> simp[] >>
+  ‘c' = c’ by gvs[acct_def] >> gvs[] >>
+  qpat_x_assum ‘pround _ _ _ _ _ = _’ mp_tac >> simp[pround_def, AllCaseEqs()] >>
+  strip_tac >> PairCases_on ‘ws1’ >> gvs[] >>
+  rename1 ‘pacts _ _ _ = SOME (rs1, aevs, (w1, ps1))’ >>
+  drule_all pacts_hacts >> strip_tac >> gvs[] >>
+  ‘tk T w ps f c (csent w c) (EL (cl cm f) s.clients).outgoing’ by simp[tk_def] >>
+  ‘EVERY small_send aevs ∧ EVERY small_send tevs’ by fs[] >>
+  ‘¬T ⇒ ¬MEM f ps.acq’ by simp[] >>
+  drule_all pacts_tk >> strip_tac >>
+  ‘qfresh w’ by fs[out_rel_def] >>
+  drule_all pacts_winv >> strip_tac >>
+  drule_all pacts_qfresh >> strip_tac >>
+  drule_all tail_tk >> strip_tac >>
+  qexists_tac ‘live''’ >> fs[]
+QED

@@ -170,6 +170,7 @@ Theorem ev_accept:
   ∃w' hs'. ehdo lfd (w, hs) (EAccept l) = SOME (r, (w', hs')) ∧
            ev_rel lfd a cm es' w' ∧ eown lfd es' ∧ ehs_rel hs' es' ∧ wl' = wl ∧
            w'.chans = w.chans ∧ w'.alloc = w.alloc ∧ w'.env = w.env ∧ w'.clock = w.clock ∧
+           w'.hist = w.hist ∧
            es'.ctbl = es.ctbl ∧ es'.cst = es.cst ∧ es'.early = es.early ∧
            es'.settling = es.settling
 Proof
@@ -1183,4 +1184,121 @@ Proof
     (* EConnect *)
     gvs[edo_def, AllCaseEqs()] >> drule_all sys_connect_l0 >> strip_tac >> simp[] >>
     gvs[l0owne_def, l0own_def, l1hdl_hdl] >> metis_tac[]]
+QED
+
+(* A connect's fd is new to L1 *)
+Theorem edo_connect_fresh:
+  edo lfd hw (wl, es) (EConnect p) = SOME (r, (wl', es'), evs) ∧ r ≠ EConnected NONE ∧
+  l0_rely wl ∧ fds_lt wl ∧ l0owne lfd wl es ⇒
+  ∀f. es'.ctbl = (hdl lfd es.p.b.nxt, f) :: es.ctbl ⇒
+      ¬MEM f (lfd :: MAP SND es.p.b.tbl ++ es.p.b.closing ++ es.p.acq ++ MAP SND es.ctbl)
+Proof
+  strip_tac >> gvs[edo_def, AllCaseEqs()] >> drule_all sys_connect_l0 >> strip_tac >>
+  gvs[l0owne_def, l0own_def] >> metis_tac[]
+QED
+
+(* A connect handle still pending stays, with its fd, through any action *)
+Theorem edo_keeps_pending:
+  edo lfd hw (wl, es) a = SOME (r, (wl', es'), evs) ∧ eown lfd es ∧
+  ALOOKUP es.ctbl h = SOME f ∧ cstat_of es f = CPending ⇒
+  ALOOKUP es'.ctbl h = SOME f ∧ cstat_of es' f = CPending
+Proof
+  strip_tac >> Cases_on ‘a’ >| [
+    gvs[edo_def] >> PairCases_on ‘z’ >> gvs[cstat_of_def],
+    gvs[edo_def, AllCaseEqs()]
+    >- (PairCases_on ‘z’ >> gvs[cstat_of_def]) >>
+    PairCases_on ‘z’ >> gvs[] >> rename1 ‘ALOOKUP es.ctbl c = SOME g’ >>
+    ‘g ≠ f’ by (strip_tac >> gvs[]) >>
+    ‘c ≠ h’ by (strip_tac >> gvs[]) >>
+    simp[ec_del_def, ALOOKUP_ADELKEY, cstat_of_def] >> gvs[cstat_of_def],
+    gvs[edo_def, AllCaseEqs()] >> PairCases_on ‘z’ >> gvs[cstat_of_def],
+    gvs[edo_def, AllCaseEqs()] >>
+    ‘h ≠ l1hdl lfd es.p.b.nxt’
+      by (gvs[eown_def, l1hdl_hdl] >> res_tac >> gvs[] >>
+          irule hdl_fresh >> simp[]) >>
+    simp[cstat_of_def, ALOOKUP_ADELKEY] >> rw[] >> gvs[cstat_of_def]]
+QED
+
+(* ------------------------------------------------------------------------
+   A round's actions
+   ------------------------------------------------------------------------ *)
+
+(* The handles of a round's connects, in order *)
+Definition conn_hdls_def:
+  conn_hdls [] = [] ∧
+  conn_hdls (EConnected (SOME h) :: rs) = h :: conn_hdls rs ∧
+  conn_hdls (r :: rs) = conn_hdls rs
+End
+
+(* Their fds (the connect handles stay pending through the round) *)
+Definition rfds_def:
+  rfds es rs = MAP (λh. THE (ALOOKUP es.ctbl h)) (conn_hdls rs)
+End
+
+(* Their channels: numbered from k, in order (newest first, as cl reads) *)
+Definition cnew_def:
+  cnew k fs = REVERSE (ZIP (fs, GENLIST (λi. k + i) (LENGTH fs)))
+End
+
+Theorem cnew_thm:
+  cnew k [] = [] ∧ cnew k (f :: fs) = cnew (k + 1) fs ++ [(f, k)]
+Proof
+  simp[cnew_def] >>
+  ‘LENGTH fs + 1 = SUC (LENGTH fs)’ by simp[] >> pop_assum SUBST1_TAC >>
+  REWRITE_TAC[GENLIST_CONS] >> simp[combinTheory.o_DEF, ADD1] >>
+  ‘(λx. k + (x + 1)) = (λi. i + (k + 1))’ by simp[FUN_EQ_THM] >> simp[]
+QED
+
+
+Theorem edo_conn_hdls:
+  edo lfd hw (wl, es) act = SOME (r, ws', evs) ∧ (∀p. act ≠ EConnect p) ⇒ conn_hdls [r] = []
+Proof
+  Cases_on ‘act’ >> simp[edo_def] >> strip_tac >> gvs[AllCaseEqs()] >>
+  TRY (PairCases_on ‘z’) >> gvs[] >> TRY (Cases_on ‘z0’) >> simp[conn_hdls_def] >>
+  TRY (Cases_on ‘o'’) >> simp[conn_hdls_def]
+QED
+
+(* One action: the layer's action, with a connect's channel numbered next *)
+Theorem ev_act:
+  ev_rel lfd a cm es w ∧ eown lfd es ∧ ehs_rel hs es ∧
+  l0owne lfd wl es ∧ l0_rely wl ∧ fds_lt wl ∧
+  edo lfd hw (wl, es) act = SOME (r, (wl', es'), evs) ∧ r ≠ EConnected NONE ∧
+  (∀f. MEM f (rfds es' [r]) ⇒ ∀used. ¬MEM f used ⇒ w.alloc (LENGTH w.chans) used = f) ⇒
+  ∃w' hs'. ehdo lfd (w, hs) act = SOME (r, (w', hs')) ∧
+    ev_rel lfd a (cnew (LENGTH w.chans) (rfds es' [r]) ++ cm) es' w' ∧ eown lfd es' ∧
+    ehs_rel hs' es' ∧ l0owne lfd wl' es' ∧ l0_rely wl' ∧ fds_lt wl' ∧
+    w'.alloc = w.alloc ∧ w'.env = w.env ∧ w'.clock = w.clock ∧ w'.hist = w.hist ∧
+    LENGTH w'.chans = LENGTH w.chans + LENGTH (conn_hdls [r]) ∧
+    (∀h. MEM h (conn_hdls [r]) ⇒ ∃f. ALOOKUP es'.ctbl h = SOME f ∧ cstat_of es' f = CPending)
+Proof
+  strip_tac >> drule_all edo_l0 >> strip_tac >> simp[] >>
+  Cases_on ‘act’ >| [
+    (* EAccept *)
+    drule_all ev_accept >> strip_tac >>
+    ‘conn_hdls [r] = []’ by (qpat_x_assum ‘edo _ _ _ _ = _’ assume_tac >> drule edo_conn_hdls >> simp[]) >>
+    simp[rfds_def, cnew_thm] >> metis_tac[],
+    (* ERead *)
+    drule_all ev_read >> strip_tac >>
+    ‘conn_hdls [r] = []’ by (qpat_x_assum ‘edo _ _ _ _ = _’ assume_tac >> drule edo_conn_hdls >> simp[]) >>
+    simp[rfds_def, cnew_thm] >> metis_tac[],
+    (* EWrite *)
+    drule_all ev_write >> strip_tac >>
+    ‘conn_hdls [r] = []’ by (qpat_x_assum ‘edo _ _ _ _ = _’ assume_tac >> drule edo_conn_hdls >> simp[]) >>
+    simp[rfds_def, cnew_thm] >> metis_tac[],
+    (* EConnect *)
+    ‘r = EConnected (SOME (hdl lfd es.p.b.nxt))’
+      by gvs[edo_def, AllCaseEqs(), l1hdl_hdl] >>
+    imp_res_tac edo_connect_fresh >>
+    qpat_x_assum ‘edo _ _ _ _ = _’ assume_tac >>
+    drule_all ev_connect >> strip_tac >>
+    ‘rfds es' [r] = [f]’ by simp[rfds_def, conn_hdls_def] >>
+    ‘cstat_of es' f = CPending’ by gvs[edo_def, AllCaseEqs(), cstat_of_def] >>
+    ‘¬MEM f (lfd :: MAP SND es.p.b.tbl ++ es.p.b.closing ++ es.p.acq ++ MAP SND es.ctbl)’
+      by metis_tac[] >>
+    ‘ep_used w = lfd :: MAP FST w.open_fds’ by metis_tac[ev_used_len] >>
+    ‘¬MEM f (ep_used w)’ by (simp[] >> gvs[ev_rel_def] >> metis_tac[]) >>
+    ‘w.alloc (LENGTH w.chans) (ep_used w) = f’
+      by (qpat_x_assum ‘∀f. MEM f (rfds es' [r]) ⇒ _’ (qspec_then ‘f’ mp_tac) >> simp[]) >>
+    qpat_x_assum ‘_ ∧ _ ⇒ ∃w' hs'. _’ mp_tac >> impl_tac >- gvs[] >> strip_tac >>
+    gvs[conn_hdls_def, cnew_thm]]
 QED

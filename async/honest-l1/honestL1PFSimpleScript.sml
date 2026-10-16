@@ -3153,3 +3153,148 @@ Proof
   drule_then drule pround_link >> simp[] >>
   disch_then (qspecl_then [‘s’, ‘f’, ‘cm’, ‘c’] mp_tac) >> simp[]
 QED
+
+(* ========================================================================
+   G6. An accepted fd gets a handle (the server accepts, S2, and L1's
+   queue of accepted fds is first in, first out)
+   ======================================================================== *)
+
+(* The fds a fetch accepts were not in use when it started *)
+Theorem pf_fetch_conns:
+  ∀fs w ps w' ps' log evs.
+    pf_fetch lfd hw fs (w, ps) = SOME ((w', ps'), log, evs) ∧ winv w ⇒
+    EVERY (λg. ¬MEM g (l0_used w)) (log_conns log)
+Proof
+  Induct >- simp[pf_fetch_def, log_conns_def] >>
+  rpt gen_tac >> rename1 ‘h :: fs’ >> simp[Once pf_fetch_def] >>
+  reverse (Cases_on ‘wants_input lfd hw ps h’) >> simp[]
+  >- (strip_tac >> first_x_assum drule_all >> simp[]) >>
+  IF_CASES_TAC
+  >- (strip_tac >> gvs[AllCaseEqs()] >> pairarg_tac >> gvs[AllCaseEqs()] >>
+      rename1 ‘sys_accept _ w = SOME (out, wa, ev)’ >>
+      ‘winv wa’ by metis_tac[sys_winv] >>
+      first_x_assum drule_all >> strip_tac >>
+      ‘∀g. MEM g (l0_used w) ⇒ MEM g (l0_used wa)’
+        by (qpat_x_assum ‘sys_accept _ _ = _’ mp_tac >> simp[sys_accept_def] >>
+            strip_tac >> drule l0_do_used >> simp[]) >>
+      ‘l0_rely w ∧ fds_lt w’ by fs[winv_def] >>
+      Cases_on ‘l0_res_of out’ >> gvs[log_conns_def, EVERY_MEM] >> rw[] >> gvs[] >>
+      TRY (drule_all sys_accept_fresh >> simp[] >> NO_TAC) >>
+      metis_tac[])
+  >> strip_tac >> gvs[AllCaseEqs()] >> pairarg_tac >> gvs[AllCaseEqs()] >>
+  rename1 ‘sys_recv _ _ w = SOME (out, wa, ev)’ >>
+  ‘winv wa’ by metis_tac[sys_winv] >>
+  first_x_assum drule_all >> strip_tac >>
+  ‘l0_used wa = l0_used w’
+    by (qpat_x_assum ‘sys_recv _ _ _ = _’ mp_tac >> simp[sys_recv_def] >>
+        strip_tac >> drule l0_do_used >> simp[]) >>
+  every_case_tac >> gvs[log_conns_def]
+QED
+
+(* A round accepts no fd that was open, with its EOF not fetched, when the
+   round started *)
+Theorem pround_fresh:
+  pround lfd hw hs (w, ps) acts = SOME (snap, (w', ps'), log, evs) ∧
+  kinv p lfd sched w1 a cm D E w ∧ winv w ∧ sched_wf2 (sk_of p lfd sched w1) ∧
+  pv_rel lfd cm0 ps s ∧ pown lfd ps ∧ l0own lfd w ps ∧ chown ps w ∧ eown E ps w ∧
+  ALOOKUP w.open_fds f = SOME c ∧ ¬E c ⇒
+  ¬MEM f (log_conns log)
+Proof
+  simp[pround_def, AllCaseEqs()] >> strip_tac >> PairCases_on ‘ws1’ >>
+  gvs[pf_tail_def, AllCaseEqs()] >>
+  rename1 ‘pacts _ _ _ = SOME (rs, aevs, wa, pa)’ >>
+  mp_tac (Q.SPECL [‘acts’, ‘w’, ‘ps’, ‘s’, ‘rs’, ‘aevs’, ‘wa’, ‘pa’] pacts_kinv) >>
+  impl_tac >- simp[] >> strip_tac >>
+  mp_tac (Q.SPECL [‘acts’, ‘w’, ‘ps’, ‘s’, ‘rs’, ‘aevs’, ‘wa’, ‘pa’] pacts_keep) >>
+  impl_tac >- simp[] >> strip_tac >>
+  rename1 ‘l1_polls _ wa = SOME (rv, wb, pevs)’ >>
+  drule_all l1_polls_kinv >> strip_tac >>
+  rename1 ‘l1_flush _ (wb, pa.b) = SOME ((wc, bc), fevs)’ >>
+  drule_all l1_flush_kinv >> strip_tac >>
+  rename1 ‘pf_fetch _ _ _ _ = SOME ((wd, pd), log, gevs)’ >>
+  drule_all pf_fetch_conns >> strip_tac >>
+  ‘MEM f (l0_used wc)’ by (irule used_open_fds >> gvs[] >> metis_tac[]) >>
+  fs[EVERY_MEM] >> metis_tac[]
+QED
+
+Theorem run_fresh:
+  simple_run p lfd sched hw ifds m w1 ⇒
+  ∀k f c.
+    ALOOKUP (rworld lfd hw ifds m w1 k).open_fds f = SOME c ∧
+    ¬MEM (Eof2 c) (upto (parr lfd hw ifds m w1) k) ⇒
+    ¬MEM f (log_conns (rlog lfd hw ifds m w1 k))
+Proof
+  strip_tac >>
+  qpat_x_assum ‘simple_run _ _ _ _ _ _ _’ (strip_assume_tac o REWRITE_RULE [simple_run_def]) >>
+  rpt gen_tac >> strip_tac >>
+  ‘MEM lfd (l0_used w1)’ by simp[l0_used_def] >>
+  drule_all rinv_run >> disch_then (qspec_then ‘k’ mp_tac) >>
+  simp_tac std_ss [rinv_def] >> strip_tac >>
+  drule_all round_facts >> disch_then (qspec_then ‘k’ strip_assume_tac) >>
+  drule prun_round' >> disch_then (qspecl_then [‘ARB’, ‘k’] strip_assume_tac) >>
+  drule_then drule pround_fresh >> simp[] >>
+  disch_then (qspecl_then [‘s’, ‘f’, ‘cm’, ‘c’] mp_tac) >> simp[]
+QED
+
+Theorem upto_mono:
+  ∀d n. ∃l. upto g (n + d) = upto g n ++ l
+Proof
+  Induct >- (rw[] >> qexists_tac ‘[]’ >> simp[]) >>
+  rpt gen_tac >> first_x_assum (qspec_then ‘n’ strip_assume_tac) >>
+  qexists_tac ‘l ++ g (n + d)’ >> fs[ADD_CLAUSES, upto_SUC]
+QED
+
+Theorem upto_mem_mono:
+  MEM x (upto g n) ∧ n ≤ n' ⇒ MEM x (upto g n')
+Proof
+  strip_tac >> qspecl_then [‘n' − n’, ‘n’] strip_assume_tac (Q.GEN ‘g’ upto_mono |> Q.SPEC ‘g’) >>
+  ‘n + (n' − n) = n'’ by decide_tac >> gvs[]
+QED
+
+(* One round, seen from an accepted fd waiting for a handle *)
+Theorem fifo_step:
+  simple_run p lfd sched hw ifds m w1 ⇒
+  ∀k f c pre post.
+    (rstate lfd hw ifds m w1 k).acq = pre ++ f :: post ∧
+    ALOOKUP (rworld lfd hw ifds m w1 k).open_fds f = SOME c ∧
+    ¬MEM (Eof2 c) (upto (parr lfd hw ifds m w1) k) ⇒
+    MEM (Eof2 c) (upto (parr lfd hw ifds m w1) (SUC k)) ∨
+    (ALOOKUP (rworld lfd hw ifds m w1 (SUC k)).open_fds f = SOME c ∧
+     (MEM f (MAP SND (rstate lfd hw ifds m w1 (SUC k)).b.tbl) ∨
+      ∃pre' post'. (rstate lfd hw ifds m w1 (SUC k)).acq = pre' ++ f :: post' ∧
+                   LENGTH pre' ≤ LENGTH pre ∧
+                   (MEM (Accept lfd) (new_actions (log_of m) (rhist lfd hw ifds m w1 k)) ⇒
+                    LENGTH pre' < LENGTH pre)))
+Proof
+  strip_tac >> rpt gen_tac >> strip_tac >>
+  drule run_link >> disch_then drule_all >> strip_tac >>
+  drule run_fresh >> disch_then drule_all >> strip_tac >>
+  qpat_x_assum ‘simple_run _ _ _ _ _ _ _’ (strip_assume_tac o REWRITE_RULE [simple_run_def]) >>
+  ‘MEM lfd (l0_used w1) ∧ linv lfd w1’ by simp[l0_used_def, linv_def] >>
+  ‘∀k. own (rstate lfd hw ifds m w1 k) (rworld lfd hw ifds m w1 k)’
+    by (drule_all own_run >> simp[]) >>
+  ‘∀k. rinv p lfd sched w1 hw ifds m k’ by (drule_all rinv_run >> simp[]) >>
+  drule_all run_lfd >> disch_then (qspec_then ‘k’ strip_assume_tac) >>
+  drule_all round_facts >> disch_then (qspec_then ‘k’ strip_assume_tac) >>
+  simp[upto_SUC] >>
+  reverse (Cases_on ‘MEM (Eof2 c) (parr lfd hw ifds m w1 k)’) >> simp[] >> gvs[] >>
+  qpat_x_assum ‘∀k. rinv _ _ _ _ _ _ _ k’ (qspec_then ‘SUC k’ mp_tac) >>
+  simp_tac std_ss [rinv_def, eown_def] >> strip_tac >>
+  ‘¬MEM f (rstate lfd hw ifds m w1 (SUC k)).b.closing’
+    by (strip_tac >> res_tac >> gvs[upto_SUC]) >>
+  ‘MEM f (MAP SND (rstate lfd hw ifds m w1 (SUC k)).b.tbl) ∨
+   MEM f (rstate lfd hw ifds m w1 (SUC k)).acq’
+    by (qpat_x_assum ‘∀k. own _ _’ (qspec_then ‘SUC k’ mp_tac) >> simp[own_def] >>
+        metis_tac[]) >>
+  simp[] >>
+  ‘ALL_DISTINCT (rstate lfd hw ifds m w1 k).acq’ by fs[pown_def, ALL_DISTINCT_APPEND] >>
+  gvs[MEM_APPEND] >>
+  Cases_on ‘d ≤ LENGTH pre’
+  >- (disj2_tac >> qexistsl_tac [‘DROP d pre’, ‘post ++ log_conns (rlog lfd hw ifds m w1 k)’] >>
+      simp[DROP_APPEND] >> ‘d − LENGTH pre = 0’ by simp[] >>
+      ‘d − (LENGTH pre + 1) = 0’ by simp[] >> simp[] >>
+      rw[] >> res_tac >> decide_tac)
+  >> gvs[DROP_APPEND, NOT_LESS_EQUAL] >>
+  ‘d − LENGTH pre = SUC (d − LENGTH pre − 1)’ by simp[] >>
+  gvs[DROP_def, ALL_DISTINCT_APPEND] >> imp_res_tac MEM_DROP_IMP >> gvs[]
+QED

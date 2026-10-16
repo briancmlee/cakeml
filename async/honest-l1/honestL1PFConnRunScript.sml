@@ -584,3 +584,55 @@ Proof
     by (irule revs_len_mono >> simp[]) >>
   qpat_x_assum ‘∀d. d ≤ LENGTH _’ (qspec_then ‘N1 + i’ assume_tac) >> decide_tac
 QED
+
+(* ------------------------------------------------------------------------
+   In the version-2 world: an accepted fd is a Connect2 of its round, under
+   a new client number
+   ------------------------------------------------------------------------ *)
+
+Theorem arrs_mono:
+  ∀l cm k as cm' k'. arrs lfd (cm, k) l = (as, (cm', k')) ⇒
+                     k ≤ k' ∧ ∀x. MEM x cm ⇒ MEM x cm'
+Proof
+  Induct >> simp[arrs_def] >> Cases >> simp[arrs_def] >> rpt gen_tac >>
+  pairarg_tac >> gvs[] >> PairCases_on ‘ck’ >> strip_tac >> gvs[] >>
+  first_x_assum drule >> simp[]
+QED
+
+Theorem arrs_conn:
+  ∀l cm k as cm' k'. arrs lfd (cm, k) l = (as, (cm', k')) ∧ MEM (FConn g) l ⇒
+                     MEM (Connect2 lfd) as ∧ ∃c. MEM (g, c) cm' ∧ k ≤ c ∧ c < k'
+Proof
+  Induct >> simp[arrs_def] >> Cases >> simp[arrs_def] >> rpt gen_tac >>
+  pairarg_tac >> gvs[] >> PairCases_on ‘ck’ >> strip_tac >> gvs[]
+  >- (drule arrs_mono >> strip_tac >> gvs[] >> qexists_tac ‘k’ >> simp[])
+  >> first_x_assum drule_all >> strip_tac >> simp[] >>
+  rename1 ‘MEM (g, c1) _’ >> qexists_tac ‘c1’ >> simp[]
+QED
+
+Theorem live_conn_psk:
+  run_ok lfd hw ifds m w0 ∧ winv w0 ∧ linv lfd w0 ∧ MEM lfd (l0_used w0) ∧
+  (∀n. SND (pcm lfd hw ifds m w0 n) + 1 < dimword (:64)) ∧
+  F1 lfd hw ifds m w0 ∧ S1 lfd hw ifds m w0 ∧ S2 lfd hw ifds m w0 ∧
+  MEM j0 (qof (rworld lfd hw ifds m w0 n0) lfd) ⇒
+  (∃k g c. n0 ≤ k ∧ MEM (FConn g) (rlog lfd hw ifds m w0 k) ∧
+           ALOOKUP (rworld lfd hw ifds m w0 (SUC k)).open_fds g = SOME j0 ∧
+           MEM (Connect2 lfd) (parr lfd hw ifds m w0 k) ∧
+           MEM (g, c) (FST (pcm lfd hw ifds m w0 (SUC k))) ∧
+           SND (pcm lfd hw ifds m w0 k) ≤ c) ∨
+  (∃k. n0 ≤ k ∧ j0 < LENGTH (rworld lfd hw ifds m w0 (SUC k)).chans ∧
+       (EL j0 (rworld lfd hw ifds m w0 (SUC k)).chans).broken) ∨
+  accepts_fail lfd hw ifds m w0
+Proof
+  strip_tac >> drule_all live_conn >> strip_tac >> simp[] >>
+  gvs[resolved_def]
+  >- (disj1_tac >> qexistsl_tac [‘k’, ‘g’] >> simp[] >>
+      Cases_on ‘pcm lfd hw ifds m w0 k’ >> rename1 ‘_ = (cm, ck)’ >>
+      Cases_on ‘arrs lfd (cm, ck) (rlog lfd hw ifds m w0 k)’ >> rename1 ‘_ = (as, cmk)’ >>
+      PairCases_on ‘cmk’ >>
+      drule arrs_conn >> disch_then drule >> strip_tac >>
+      ‘parr lfd hw ifds m w0 k = as ∧ pcm lfd hw ifds m w0 (SUC k) = (cmk0, cmk1)’
+        by gvs[parr_def, pcm_def, plog_rlog] >>
+      simp[] >> qexists_tac ‘c’ >> simp[])
+  >> disj2_tac >> disj1_tac >> qexists_tac ‘k’ >> simp[]
+QED

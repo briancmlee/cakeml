@@ -1709,3 +1709,32 @@ Proof
   drule_all pdo_quiet >> strip_tac >> simp[wbytes_nil] >>
   fs[] >> metis_tac[]
 QED
+
+Theorem pacts_tk:
+  ∀acts w ps s rs evs w' ps' s' hs' hrs hevs live ts.
+    pacts lfd (w, ps) acts = SOME (rs, evs, (w', ps')) ∧
+    hacts lfd (s, hs_of ps) acts = SOME (hrs, hevs, (s', hs')) ∧
+    pv_rel lfd cm ps s ∧ pown lfd ps ∧ winv w ∧ EVERY small_send evs ∧
+    MEM f (MAP FST cm) ∧
+    tk live w ps f c ts (EL (cl cm f) s.clients).outgoing ∧ (¬live ⇒ ¬MEM f ps.acq) ⇒
+    ∃live'. tk live' w' ps' f c (ts ++ evs_sent f evs) (EL (cl cm f) s'.clients).outgoing ∧
+            (¬live' ⇒ ¬MEM f ps'.acq)
+Proof
+  Induct >> simp[pacts_def, hacts_def]
+  >- (rpt strip_tac >> gvs[] >> qexists_tac ‘live’ >> simp[]) >>
+  rpt gen_tac >> strip_tac >> gvs[AllCaseEqs()] >>
+  rename1 ‘pdo _ _ _ = SOME (r1, ws1, evs1)’ >> PairCases_on ‘ws1’ >>
+  rename1 ‘hdo _ _ _ = SOME (r2, st1, hevs1)’ >> PairCases_on ‘st1’ >>
+  drule_all pdo_hdo >> strip_tac >> gvs[] >>
+  ‘EVERY small_send evs1 ∧ EVERY small_send evs'’ by fs[] >>
+  drule_all pdo_tk >> strip_tac >>
+  drule_all pdo_winv >> strip_tac >>
+  drule hdo_out >> strip_tac >>
+  first_x_assum (qspec_then ‘cl cm f’ assume_tac) >>
+  ‘hwrote s (hs_of ps) h (cl cm f) = wbytes f ps.b h’ by metis_tac[hwrote_wbytes] >>
+  qpat_x_assum ‘hwrote _ _ _ _ = _’ (fn th => RULE_ASSUM_TAC (REWRITE_RULE [th])) >>
+  qpat_x_assum ‘tk live' _ _ _ _ _ _’ mp_tac >>
+  qpat_x_assum ‘(EL (cl cm f) _.clients).outgoing = _’ (SUBST1_TAC o SYM) >> strip_tac >>
+  first_x_assum drule_all >> strip_tac >>
+  qexists_tac ‘live''’ >> fs[]
+QED

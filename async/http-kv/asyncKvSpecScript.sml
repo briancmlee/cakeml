@@ -42,8 +42,11 @@ Theorem kv_delta_al_DELTA:
   DELTA (p:'ffi ffi_proj) kv_delta STORE_AL KQRY KANS kv_delta_al_v
 Proof
   rw[DELTA_def, STORE_AL_def] >>
-  xapp_spec (fetch "asyncKvProg" "kv_delta_al_v_thm") >>
-  FAIL_TAC "TODO: DELTA for the translated kv_delta_al (WIP)"
+  xapp_spec (fetch "asyncKvProg" "kv_delta_al_v_thm") >> xsimpl >>
+  qexistsl_tac [‘q’, ‘al’] >> simp[] >> rpt strip_tac >>
+  Cases_on ‘kv_delta_al al q’ >> gvs[PAIR_TYPE_def] >>
+  drule (fetch "asyncKvProg" "kv_delta_al_thm") >> disch_then (qspec_then ‘q’ mp_tac) >>
+  simp[] >> strip_tac >> gvs[] >> metis_tac[]
 QED
 
 (* ------------------------------------------------------------------------
@@ -60,8 +63,8 @@ val return_unit_tac =
   simp[COMP_IMP_COMPd];
 
 (* emit a, for a CakeML action value av *)
-fun emit_tac a =
-  ‘app p Async_emit_v [av] emp
+fun emit_tac a av =
+  ‘app p Async_emit_v [^av] emp
      (POSTv v. &COMP p KSACT KSRESP KSSNAP (emit ^a) v)’
     by (irule Async_emit_spec >> simp[]) >>
   qpat_x_assum ‘app _ Async_emit_v _ _ _’ xapp_spec >> xsimpl;
@@ -107,8 +110,8 @@ Proof
   Induct >> rpt strip_tac >> xcf_with_def (fetch "asyncKvProg" "sserver_with_k_v_def") >>
   simp_tac std_ss [Once kserver_with_k_unfold] >>
   xfun ‘k1’ >>
-  xlet ‘POSTv r. &COMP p KSACT UNIT_TYPE KSSNAP (sreadable lfd) r’
-  >- (xapp_spec ksreadable_spec >> simp[]) >>
+  xlet ‘POSTv r. &COMP p KSACT UNIT_TYPE KSSNAP (sreadable lfd) r’ >>
+  TRY (xapp_spec ksreadable_spec >> simp[] >> NO_TAC) >>
   qmatch_goalsub_abbrev_tac ‘bind (sreadable lfd) G’
   >- (‘app p Async_bind_v [r; k1] emp
          (POSTv v. &COMPd p KSACT UNIT_TYPE KSSNAP 0 (bind (sreadable lfd) G) v)’
@@ -125,7 +128,7 @@ Proof
         xlet ‘POSTv av. &KSACT (Sock (Accept (n2w lfd))) av’
         >- (xcon >> xsimpl >> simp[KACT_def]) >>
         xlet ‘POSTv ev. &COMP p KSACT KSRESP KSSNAP (emit (Sock (Accept (n2w lfd)))) ev’
-        >- emit_tac “Sock (Accept (n2w lfd)) : (sact, num # brequest) kact” >>
+        >- emit_tac “Sock (Accept (n2w lfd)) : (sact, num # brequest) kact” “av : v” >>
         qmatch_goalsub_abbrev_tac ‘bind (emit _) G2’ >>
         ‘∀res resv. KSRESP res resv ⇒
            returns p k2 [resv] (COMPd p KSACT UNIT_TYPE KSSNAP n (G2 res))’
@@ -218,7 +221,7 @@ Proof
       xlet ‘POSTv av. &KSACT (Kv (fd, req)) av’
       >- (xcon >> xsimpl >> simp[KACT_def]) >>
       xlet ‘POSTv ev. &COMP p KSACT KSRESP KSSNAP (emit (Kv (fd, req))) ev’
-      >- emit_tac “Kv (fd, req) : (sact, num # brequest) kact” >>
+      >- emit_tac “Kv (fd, req) : (sact, num # brequest) kact” “av : v” >>
       qmatch_goalsub_abbrev_tac ‘bind (emit _) G’ >>
       ‘app p Async_bind_v [ev; k1] emp
          (POSTv v. &COMPd p KSACT UNIT_TYPE KSSNAP n (bind (emit (Kv (fd, req))) G) v)’
@@ -238,10 +241,10 @@ Proof
             xlet ‘POSTv av0. &SACT (Write (n2w fd) bs) av0’
             >- (xcon >> xsimpl >> gs[SACT_def, Abbr ‘bs’, bytes_str_chars,
                                      sprint_response_thm]) >>
-            xlet ‘POSTv av. &KSACT (Sock (Write (n2w fd) bs)) av’
+            xlet ‘POSTv aw. &KSACT (Sock (Write (n2w fd) bs)) aw’
             >- (xcon >> xsimpl >> simp[KACT_def]) >>
             xlet ‘POSTv ev2. &COMP p KSACT KSRESP KSSNAP (emit (Sock (Write (n2w fd) bs))) ev2’
-            >- emit_tac “Sock (Write (n2w fd) bs) : (sact, num # brequest) kact” >>
+            >- emit_tac “Sock (Write (n2w fd) bs) : (sact, num # brequest) kact” “aw : v” >>
             ‘app p Async_bind_v [ev2; k2] emp
                (POSTv v. &COMPd p KSACT UNIT_TYPE KSSNAP (n - 1)
                    (bind (emit (Sock (Write (n2w fd) bs)))
@@ -270,7 +273,7 @@ Proof
             xlet ‘POSTv av. &KSACT (Sock (Read (n2w fd) bufsz)) av’
             >- (xcon >> xsimpl >> simp[KACT_def]) >>
             xlet ‘POSTv ev. &COMP p KSACT KSRESP KSSNAP (emit (Sock (Read (n2w fd) bufsz))) ev’
-            >- emit_tac “Sock (Read (n2w fd) bufsz) : (sact, num # brequest) kact” >>
+            >- emit_tac “Sock (Read (n2w fd) bufsz) : (sact, num # brequest) kact” “av : v” >>
             qmatch_goalsub_abbrev_tac ‘bind (emit _) G2’ >>
             ‘∀res resv. KSRESP res resv ⇒
                returns p k2 [resv]

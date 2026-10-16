@@ -40,6 +40,12 @@ Proof
   simp[]
 QED
 
+Theorem prefix_DROP_eq[local]:
+  a ≼ b ⇒ b = a ++ DROP (LENGTH a) b
+Proof
+  rw[IS_PREFIX_APPEND] >> simp[DROP_LENGTH_APPEND]
+QED
+
 (* MAIN: the inner history, one snapshot at a time from the front *)
 Theorem inner_hist_CONS:
   wf m ⇒
@@ -69,12 +75,20 @@ Proof
   ‘new_actions (log_of m) (w' :: ih) = new_actions (log_of m') ih’
     by (Cases_on ‘ih’ using SNOC_CASES
         >- simp[new_actions_def, log_of_def, Abbr ‘a0’] >>
-        simp[SNOC_APPEND] >> ONCE_REWRITE_TAC[GSYM (CONJUNCT2 APPEND)] >>
-        simp[new_actions_SNOC, log_of_def, DROP_DROP_T] >>
-        (* TODO (WIP): finish, see HANDOFF-httpkv *)
-        FAIL_TAC "WIP") >>
-  FAIL_TAC "WIP"
-
+        ‘LENGTH a0 ≤ LENGTH (m (w'::l)).actions’ by simp[] >>
+        simp[SNOC_APPEND, new_actions_SNOC, log_of_def, DROP_DROP_T] >>
+        ONCE_REWRITE_TAC[GSYM (CONJUNCT2 APPEND)] >>
+        REWRITE_TAC[new_actions_SNOC, log_of_def]) >>
+  qabbrev_tac ‘acts = new_actions (log_of m') ih’ >>
+  ‘(m (w' :: ih)).actions = a0 ++ (m' ih).actions’
+    by (simp[] >> irule prefix_DROP_eq >> simp[]) >>
+  qpat_x_assum ‘∀p. (m' p).actions = _’ kall_tac >>
+  ‘∃old. (m' ih).actions = old ++ acts’
+    by (simp[Abbr ‘acts’] >> irule log_new_actions >>
+        simp[Abbr ‘m'’, wf_suspended]) >>
+  simp[store_answers_def, run_store_APPEND_FST, run_store_APPEND_SND, Abbr ‘s1’,
+       Abbr ‘bs’, first_answers_def, Abbr ‘a0’] >>
+  simp[DROP_APPEND, DROP_LENGTH_TOO_LONG]
 QED
 
 (* MAIN: with_store, polled once *)
@@ -145,9 +159,10 @@ Theorem inner_hist_relabel[local]:
       inner_hist δ s0 m (MAP (snap_map fe fr) h)
 Proof
   Induct_on ‘h’ using SNOC_INDUCT >> simp[SNOC_APPEND, inner_hist_SNOC] >>
-  rpt gen_tac >> pop_assum (SUBST1_TAC o SYM) >>
-  simp[new_actions_relabel, relabel_def, store_answers_def, snap_map_def,
-       merge_kfa]
+  rpt strip_tac >>
+  simp[new_actions_relabel, relabel_def, store_answers_def, snap_map_def, merge_kfa,
+       log_of_relabel] >>
+  simp[snapshot_component_equality]
 QED
 
 (* MAIN: relabelling commutes with with_store *)

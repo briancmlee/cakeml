@@ -1,0 +1,44 @@
+
+$ curl -s -i http://127.0.0.1:7870/
+HTTP/1.0 200 OK
+Content-Length: 42
+
+Hello from a verified CakeML HTTP server!
+
+$ curl -s -i -d hello http://127.0.0.1:7870/echo
+HTTP/1.0 200 OK
+Content-Length: 5
+
+hello
+$ curl -s -i --data-binary @- http://127.0.0.1:7870/echo   # a body that looks like a request
+HTTP/1.0 200 OK
+Content-Length: 19
+
+GET /a HTTP/1.0
+
+
+$ head -c 20000 /dev/zero | tr '\0' x | curl -s --data-binary @- http://127.0.0.1:7870/echo | wc -c   # a 20 kB body, many reads
+   20000
+
+$ time curl -s -i -A '<146-character User-Agent>' -d hello http://127.0.0.1:7870/echo   # long header value (linear-time parsing)
+HTTP/1.0 200 OK
+Content-Length: 5
+
+hello  (took 0.051 s)
+
+$ curl -s -i -d ignored http://127.0.0.1:7870/other
+HTTP/1.0 404 Not Found
+Content-Length: 0
+
+
+$ printf 'POST /echo HTTP/1.1\r\nContent-Length: 3\r\n\r\nabcGET / HTTP/1.0\r\n\r\n' | nc -w 1 127.0.0.1 7870   # pipelined after a body
+HTTP/1.0 200 OK
+Content-Length: 3
+
+abcHTTP/1.0 200 OK
+Content-Length: 42
+
+Hello from a verified CakeML HTTP server!
+
+$ printf 'POST /echo HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n3\r\nabc\r\n0\r\n\r\n' | nc -w 1 127.0.0.1 7870   # chunked: out of scope
+  (no response: Transfer-Encoding makes the request invalid)

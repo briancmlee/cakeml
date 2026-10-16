@@ -1,0 +1,7 @@
+# The option C HTTP-bodies server, exported (see asyncOCHttpExportScript.sml).
+INCLUDES = ../../option-c-loop ../../programs/echo ../../world/composed \
+           $(CAKEMLDIR)/semantics $(CAKEMLDIR)/basis
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif
+EXTRA_CLEANS = http_quiet.sexp

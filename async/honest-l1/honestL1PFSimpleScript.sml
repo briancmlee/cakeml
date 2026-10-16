@@ -1073,3 +1073,108 @@ Proof
   ‘ps1.acq = ps.acq’ by (every_case_tac >> fs[] >> rveq >> simp[]) >>
   fs[] >> metis_tac[]
 QED
+
+(* ========================================================================
+   E. A round
+   ======================================================================== *)
+
+(* L1's handles and queued fds are open channel fds *)
+Definition chown_def:
+  chown (ps : l1p) (w : l0world) ⇔
+    ∀f. MEM f (MAP SND ps.b.tbl) ∨ MEM f ps.acq ⇒ ∃c. ALOOKUP w.open_fds f = SOME c
+End
+
+Theorem deliver_open_fds[simp]:
+  (l0_deliver w a).open_fds = w.open_fds
+Proof
+  Cases_on ‘a’ >> rw[l0_deliver_def, upd_lchan_def] >> every_case_tac >> simp[]
+QED
+
+Theorem FOLDL_deliver_open_fds[simp]:
+  ∀as w. (FOLDL l0_deliver w as).open_fds = w.open_fds
+Proof
+  Induct >> simp[]
+QED
+
+Theorem ticks_open_fds[simp]:
+  ∀k w. (l0_tick nm w).open_fds = w.open_fds ∧ (l0_ticks nm k w).open_fds = w.open_fds
+Proof
+  Induct >> simp[l0_ticks_def, l0_tick_def]
+QED
+
+(* Polls and sends keep the open fds *)
+Theorem sys_quiet_open:
+  (sys_poll fes w = SOME (out, w', ev) ⇒ w'.open_fds = w.open_fds) ∧
+  (sys_send f bs w = SOME (out, w', ev) ⇒ w'.open_fds = w.open_fds)
+Proof
+  rw[sys_poll_def, sys_send_def] >> drule l0_do_cases >> strip_tac >> gvs[] >>
+  gvs[l0_call_def, AllCaseEqs()] >> TRY (pairarg_tac >> gvs[]) >>
+  gvs[l0_send_def, AllCaseEqs(), upd_lchan_def]
+QED
+
+Theorem sys_close_open:
+  sys_close f w = SOME (out, w', ev) ∧ ALOOKUP w.open_fds g = SOME c ∧ g ≠ f ⇒
+  ALOOKUP w'.open_fds g = SOME c
+Proof
+  strip_tac >> drule sys_close_wkeep >> simp[wkeep_def]
+QED
+
+Theorem adelkey_snd:
+  ∀l. ALL_DISTINCT (MAP SND l) ∧ ALOOKUP l c = SOME f ∧ MEM g (MAP SND (ADELKEY c l)) ⇒
+      MEM g (MAP SND l) ∧ g ≠ f
+Proof
+  Induct >> simp[FORALL_PROD, ADELKEY_def] >> rpt gen_tac >> strip_tac >>
+  gvs[AllCaseEqs(), MEM_MAP, MEM_FILTER, EXISTS_PROD] >> rw[] >> gvs[] >>
+  TRY (metis_tac[]) >>
+  imp_res_tac ALOOKUP_MEM >> metis_tac[]
+QED
+
+(* One action of the server *)
+Theorem pdo_kinv:
+  pdo lfd (w, ps) act = SOME (r, (w', ps'), evs) ∧
+  kinv p lfd sched w1 a cm D E w ∧ winv w ∧ sched_wf2 (sk_of p lfd sched w1) ∧
+  pown lfd ps ∧ chown ps w ⇒
+  kinv p lfd sched w1 a cm D E w' ∧ winv w' ∧ chown ps' w'
+Proof
+  Cases_on ‘act’ >> simp[pdo_def] >> strip_tac
+  >- ((* Accept *)
+      gvs[AllCaseEqs()] >> fs[chown_def] >> metis_tac[MEM])
+  >- ((* Read *)
+      qpat_x_assum ‘option_CASE _ _ _ = _’ mp_tac >>
+      Cases_on ‘ALOOKUP ps.b.tbl c’ >> simp[] >- (strip_tac >> gvs[]) >>
+      rename1 ‘ALOOKUP ps.b.tbl c = SOME f’ >>
+      IF_CASES_TAC >- (strip_tac >> gvs[chown_def] >> metis_tac[]) >>
+      reverse IF_CASES_TAC >- (strip_tac >> gvs[]) >>
+      ‘f ≠ lfd ∧ ¬MEM f ps.acq ∧ ALL_DISTINCT (MAP SND ps.b.tbl)’
+        by (imp_res_tac ALOOKUP_MEM >> fs[pown_def, ALL_DISTINCT_APPEND, MEM_MAP] >>
+            metis_tac[SND]) >>
+      IF_CASES_TAC
+      >- (simp[l1_close_def] >> Cases_on ‘sys_close f w’ >> simp[] >>
+          rename1 ‘sys_close f w = SOME z’ >> PairCases_on ‘z’ >> simp[] >>
+          strip_tac >> rveq >> rpt conj_tac
+          >- metis_tac[kinv_sys_quiet]
+          >- metis_tac[sys_winv]
+          >> simp[chown_def, forget_def, set_outbox_def] >> rpt strip_tac
+          >- (drule_all adelkey_snd >> strip_tac >>
+              ‘∃c'. ALOOKUP w.open_fds f' = SOME c'’ by fs[chown_def] >>
+              metis_tac[sys_close_open])
+          >> ‘f' ≠ f’ by (strip_tac >> gvs[]) >>
+          ‘∃c'. ALOOKUP w.open_fds f' = SOME c'’ by fs[chown_def] >>
+          metis_tac[sys_close_open])
+      >> strip_tac >> gvs[chown_def] >> rpt strip_tac >>
+      TRY (imp_res_tac MEM_SND_ADELKEY_sub) >> metis_tac[])
+  >> (* Write *)
+  PairCases_on ‘z’ >> gvs[] >>
+  qpat_x_assum ‘l1do _ _ _ = _’ mp_tac >>
+  simp[l1do_def] >> Cases_on ‘ALOOKUP ps.b.tbl c’ >> simp[] >- (strip_tac >> gvs[]) >>
+  rename1 ‘ALOOKUP ps.b.tbl c = SOME f’ >>
+  IF_CASES_TAC >- (strip_tac >> gvs[]) >>
+  IF_CASES_TAC >- (strip_tac >> gvs[chown_def, set_outbox_def] >> metis_tac[]) >>
+  Cases_on ‘sys_send f l w’ >> simp[] >>
+  rename1 ‘sys_send f l w = SOME z’ >> PairCases_on ‘z’ >> simp[] >>
+  strip_tac >> rveq >> rpt conj_tac
+  >- metis_tac[kinv_sys_quiet]
+  >- metis_tac[sys_winv]
+  >> drule (CONJUNCT2 sys_quiet_open) >> strip_tac >>
+  fs[chown_def, set_outbox_def] >> metis_tac[]
+QED

@@ -82,7 +82,7 @@ Theorem csent_ops:
   (l0_recv g n w = (r, d, w') ⇒ (∀f. l0_chan_of w' f = l0_chan_of w f) ∧ ∀c. csent w' c = csent w c) ∧
   (l0_shutdown g w = (r, w') ⇒ (∀f. l0_chan_of w' f = l0_chan_of w f) ∧ ∀c. csent w' c = csent w c) ∧
   (l0_connerr g w = (y, w') ⇒ (∀f. l0_chan_of w' f = l0_chan_of w f) ∧ ∀c. csent w' c = csent w c) ∧
-  (l0_close g w = (r, w') ∧ g ≠ f ⇒ l0_chan_of w' f = l0_chan_of w f ∧ ∀c. csent w' c = csent w c)
+  (l0_close g w = (r, w') ⇒ (g ≠ f ⇒ l0_chan_of w' f = l0_chan_of w f) ∧ ∀c. csent w' c = csent w c)
 Proof
   rpt conj_tac >> strip_tac
   >- (gvs[l0_listen_def, AllCaseEqs()])
@@ -215,4 +215,132 @@ Proof
   drule_at (Pos last) csent_call >> disch_then (qspecl_then [‘f’, ‘c’] mp_tac) >>
   impl_tac >- (fs[] >> metis_tac[]) >>
   strip_tac >> simp[ev_sent_def, MAP_SND_ZIP_REPLICATE] >> rw[]
+QED
+
+(* ------------------------------------------------------------------------
+   L1's calls and one fd's account
+   ------------------------------------------------------------------------ *)
+
+(* A send event (if any) of fewer than 2^64 bytes: its recorded count is
+   the kernel's (an explicit, observed hypothesis on the trace) *)
+Definition small_send_def:
+  small_send (IO_event n conf bs) ⇔ (n = ExtCall «sys_send» ⇒ LENGTH conf < 8 + 256 ** 8)
+End
+
+(* f's account: the kernel took what the server wrote, up to f's outbox;
+   a prefix of it once the outbox was dropped *)
+Definition acct_def:
+  acct w b f c out ⇔
+    l0_chan_of w f = SOME c ∧
+    (¬MEM f b.gone ⇒ csent w c ++ outbox_of b f = out) ∧
+    (MEM f b.gone ⇒ csent w c ≼ out)
+End
+
+Theorem sys_send_csent:
+  sys_send g bs w = SOME (out, w', ev) ∧ winv w ∧ small_send ev ∧ l0_chan_of w f = SOME c ⇒
+  l0_chan_of w' f = SOME c ∧
+  csent w' c = csent w c ++ ev_sent f ev ∧
+  ev_sent f ev = (if g = f then (case l0_res_of out of Ok k => TAKE k bs | Fail _ _ => [])
+                  else [])
+Proof
+  rw[sys_send_def] >>
+  ‘LENGTH out = 13’
+    by (gvs[l0_do_def, AllCaseEqs(), winv_def] >> drule_all l0_ffi_fn_length >> simp[]) >>
+  drule l0_do_cases >> strip_tac >>
+  ‘LENGTH bs < 256 ** 8’ by gvs[small_send_def] >>
+  qpat_x_assum ‘l0_do _ _ _ _ = _’ assume_tac >>
+  drule_at (Pos last) csent_do >> disch_then (qspecl_then [‘f’, ‘c’] mp_tac) >>
+  impl_tac >- fs[] >> strip_tac >> simp[] >>
+  gvs[ev_sent_def, taken_def, MAP_SND_ZIP_REPLICATE] >>
+  ‘LENGTH (fd_bytes g) = 8’ by simp[] >>
+  simp[TAKE_APPEND1, DROP_APPEND1, TAKE_LENGTH_ID_rwt, DROP_LENGTH_NIL_rwt] >> rw[]
+QED
+
+(* The calls other than sends (and a close of f) keep f's channel and sent *)
+Theorem sys_csent:
+  winv w ∧ l0_chan_of w f = SOME c ⇒
+  (sys_recv g k w = SOME (out, w', ev) ∨ sys_accept g w = SOME (out, w', ev) ∨
+   sys_poll fes w = SOME (out, w', ev) ∨ (g ≠ f ∧ sys_close g w = SOME (out, w', ev))) ⇒
+  l0_chan_of w' f = SOME c ∧ csent w' c = csent w c ∧ ev_sent f ev = []
+Proof
+  rpt strip_tac >> gvs[sys_recv_def, sys_accept_def, sys_poll_def, sys_close_def] >>
+  drule_at (Pos last) csent_do >> disch_then (qspecl_then [‘f’, ‘c’] mp_tac) >>
+  simp[] >> strip_tac >> drule l0_do_cases >> strip_tac >> gvs[ev_sent_def]
+QED
+
+Theorem acct_keep:
+  acct w b f c out ∧ l0_chan_of w' f = SOME c ∧ csent w' c = csent w c ⇒ acct w' b f c out
+Proof
+  simp[acct_def]
+QED
+
+Theorem acct_after_send:
+  acct w b f c out ∧ ¬MEM f b.gone ∧ l0_chan_of w' f = SOME c ∧
+  csent w' c = csent w c ++ (case r of Ok k => TAKE k (outbox_of b f) | Fail _ _ => []) ⇒
+  acct w' (after_send f r b) f c out
+Proof
+  rw[acct_def, after_send_def] >> every_case_tac >> gvs[outbox_of_set_outbox, set_outbox_def] >>
+  rw[] >> gvs[MEM_FILTER, IS_PREFIX_APPEND] >> metis_tac[APPEND_ASSOC]
+QED
+
+Theorem acct_after_send_other:
+  acct w b f c out ∧ g ≠ f ⇒ acct w (after_send g r b) f c out
+Proof
+  rw[acct_def, after_send_def] >> every_case_tac >> gvs[outbox_of_set_outbox, set_outbox_def] >>
+  gvs[MEM_FILTER] >> fs[outbox_of_def]
+QED
+
+(* The flush: f's account is kept, and f's sent grows by the flush's sends
+   on f *)
+Theorem l1_flush_acct:
+  ∀fs w b w' b' evs.
+    l1_flush fs (w, b) = SOME ((w', b'), evs) ∧ winv w ∧ EVERY small_send evs ∧
+    acct w b f c out ⇒
+    acct w' b' f c out ∧ csent w' c = csent w c ++ evs_sent f evs
+Proof
+  Induct >> simp[l1_flush_def] >> rpt gen_tac >> strip_tac >>
+  qpat_x_assum ‘(if _ then _ else _) = _’ mp_tac >> IF_CASES_TAC >> strip_tac
+  >- (first_x_assum drule_all >> simp[]) >>
+  gvs[AllCaseEqs()] >>
+  rename1 ‘sys_send g _ w = SOME (out1, w1, ev)’ >>
+  ‘l0_chan_of w f = SOME c’ by gvs[acct_def] >>
+  drule_all sys_send_csent >> strip_tac >>
+  ‘winv w1’ by metis_tac[sys_winv] >>
+  ‘acct w1 (after_send g (l0_res_of out1) b) f c out’
+    by (Cases_on ‘g = f’ >> gvs[]
+        >- (irule acct_after_send >> simp[] >> qexists_tac ‘w’ >> simp[] >>
+            every_case_tac >> simp[])
+        >> irule acct_after_send_other >> simp[] >> irule acct_keep >> simp[] >>
+        qexists_tac ‘w’ >> simp[]) >>
+  first_x_assum drule_all >> strip_tac >> simp[]
+QED
+
+Theorem close_chans_len:
+  l0_close g w = (r, w') ⇒ LENGTH w'.chans = LENGTH w.chans
+Proof
+  ‘∀q w. LENGTH (FOLDL (λw j. upd_lchan j (break_lchan E_CONNRESET F) w) w q).chans =
+         LENGTH w.chans’ by (Induct >> simp[upd_lchan_def]) >>
+  rw[l0_close_def, AllCaseEqs()] >> simp[close_fd_def] >> every_case_tac >>
+  simp[upd_lchan_def]
+QED
+
+(* A close (of any fd) keeps every channel's sent *)
+Theorem sys_close_csent:
+  winv w ∧ c < LENGTH w.chans ∧ sys_close g w = SOME (out, w', ev) ⇒
+  c < LENGTH w'.chans ∧ csent w' c = csent w c ∧ ev_sent f ev = []
+Proof
+  rw[sys_close_def] >> drule l0_do_cases >> strip_tac >> gvs[ev_sent_def] >>
+  drule csent_tick >> disch_then (qspec_then ‘«sys_close»’ strip_assume_tac) >>
+  qpat_x_assum ‘l0_call _ _ _ _ = _’ mp_tac >> simp[l0_call_def] >>
+  pairarg_tac >> simp[] >> strip_tac >> gvs[] >>
+  drule close_chans_len >> strip_tac >>
+  imp_res_tac csent_ops >> gvs[csent_def]
+QED
+
+Theorem l1_close_csent:
+  l1_close g (w, st) = SOME ((w', st'), evs) ∧ winv w ∧ c < LENGTH w.chans ⇒
+  c < LENGTH w'.chans ∧ csent w' c = csent w c ∧ evs_sent f evs = [] ∧
+  st' = forget g st
+Proof
+  rw[l1_close_def, AllCaseEqs()] >> drule_all sys_close_csent >> simp[]
 QED

@@ -133,6 +133,7 @@ Definition dworld_def:
     <| listening := [(lfd, a, [])]; chans := []; open_fds := [];
        reserved := sk.reserved; alloc := sk.alloc;
        takes := (λj b n. n); calls := v2_calls;
+       nosock := (λi. F); nconnects := 0;
        env := (λn h. MAP (tr lfd a) (fut_step sk.future n) ++
                      GENLIST Drain (nconn sk (SUC n)));
        clock := 0; hist := [] |>

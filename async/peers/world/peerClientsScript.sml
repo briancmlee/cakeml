@@ -201,6 +201,7 @@ Definition slow_world_def:
   slow_world k =
     <| listening := []; chans := []; open_fds := []; reserved := [];
        alloc := (λj used. 5w); takes := (λj b n. n); calls := all_calls;
+       nosock := (λi. F); nconnects := 0;
        env := (λn h. if n = k then [Settle 0 T] else []); clock := 0; hist := [] |>
 End
 
@@ -232,4 +233,35 @@ Proof
   qspecl_then [‘k’, ‘w0’] mp_tac slow_ticks >> simp[] >>
   strip_tac >> simp[ep_tick_def] >>
   fs[slow_world_def, ep_deliver_def, upd_chan_def, new_chan_def, LUPDATE_def]
+QED
+
+(* ------------------------------------------------------------------------
+   Bite: a connect can fail with no socket (peerWorld's nosock, as
+   L0's EMFILE or a transient error).  It opens no episode, so a client
+   must handle it (retry, or give up); here the first connect fails and
+   the retry gets a socket
+   ------------------------------------------------------------------------ *)
+
+Definition retry_world_def:
+  retry_world = slow_world 0 with nosock := (λi. i = 0)
+End
+
+Definition nosock_trace_def:
+  nosock_trace a =
+    [IO_event (ExtCall «sock_connect») (n2w8 a) (ZIP (REPLICATE 13 0w, l0_result 10 0))]
+End
+
+Theorem failed_connect_then_retry:
+  ∃w1 w2.
+    ep_ffi_fn «sock_connect» (n2w8 a) (REPLICATE 13 0w) retry_world =
+      SOME (l0_result 10 0, w1) ∧
+    w1.chans = [] ∧ w1.open_fds = [] ∧ opened_fds (nosock_trace a) = [] ∧
+    ep_ffi_fn «sock_connect» (n2w8 a) (REPLICATE 13 0w) w1 =
+      SOME (l0_result 3 5, w2) ∧
+    LENGTH w2.chans = 1 ∧ (EL 0 w2.chans).status = Connecting ∧ w2.open_fds = [(5w, 0)]
+Proof
+  simp[ep_ffi_fn_def, ep_call_def, retry_world_def, slow_world_def, all_calls_def,
+       LENGTH_n2w8, ep_connect_def, ep_alloc_def, ep_used_def, new_chan_def,
+       nosock_trace_def, opened_fds_def, event_opened_def, event_accepted_def,
+       l0_result_def, MAP_ZIP]
 QED

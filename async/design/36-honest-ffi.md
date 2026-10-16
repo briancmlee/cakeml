@@ -1189,6 +1189,20 @@ and is client j of `psk`. The fetch log is `plog`.
   by a break (`LBreak … F`), is a prefix of client j's data in the
   first n steps of `psk`. If c's peer closes or c breaks, then `Eof2 j`
   is eventually in `psk`.
+  *Formal shape (agreed, in two parts).* **(A) kernel → L1:** for round
+  n0, open handle h with fd f bound to channel c, no EOF recorded by L1
+  on f, and B = c's kernel inbox at n0: eventually B is a prefix of the
+  FData payloads L1 fetched on f from n0 on, or the episode ended (L1
+  logged FEof f or FReset f). An orderly peer EOF cannot end the episode
+  before B is fetched, because recv returns the inbox's data before it
+  reports EOF; only a break (`LBreak … F`, which flushes the inbox) can,
+  whether L1 then reads it as FReset or as FEof. So "episode ended" never
+  hides lost data on a clean close. **(B) L1 → `psk`:** the FData
+  payloads on f from its accept round on are exactly client j's `Data2`
+  bytes in `psk` (j = `cl (pcm a) f`), and FEof/FReset on f become
+  `Eof2 j` (R1-safe's `arrs`/`pv_rel`). Together they give the text above.
+  *Done:* `fetch_progress` (honestL1PFLive): L1 eventually fetches on an
+  open handle's fd with input pending.
 - **(live-conn)** Assume [F3]. Every connection that reaches the
   listener's backlog (`LIncoming` on its port) is eventually a
   `Connect2` in `psk`, unless it is dropped. It is dropped only if it

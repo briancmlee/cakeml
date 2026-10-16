@@ -672,3 +672,90 @@ Proof
     by (simp[ADD1, rlogs_add] >> simp[rlogs_def]) >>
   drule_all stream_step >> strip_tac >> gvs[ADD_CLAUSES]
 QED
+
+(* ------------------------------------------------------------------------
+   Live-data, part (A): what f's kernel inbox holds at round n0 is
+   eventually fetched by L1, in order, unless the episode ends (design/36
+   §6; an orderly EOF cannot end it first, as recv returns the inbox's data
+   before reporting EOF: only a break that flushed the inbox can)
+   ------------------------------------------------------------------------ *)
+
+Theorem stream_progress:
+  run_ok lfd hw ifds m w0 ∧ winv w0 ∧ MEM lfd (l0_used w0) ∧
+  (∀n. SND (pcm lfd hw ifds m w0 n) + 1 < dimword (:64)) ∧
+  F1 lfd hw ifds m w0 ∧ S1 lfd hw ifds m w0 ∧ S3 lfd hw ifds m w0 ∧
+  S4 lfd hw ifds m w0 f ⇒
+  ∀R n0 h. ALOOKUP (rstate lfd hw ifds m w0 n0).b.tbl h = SOME f ∧
+           ¬MEM f (rstate lfd hw ifds m w0 n0).eof ∧ fl (rworld lfd hw ifds m w0 n0) f R ⇒
+           ∃d. fend f (rlogs lfd hw ifds m w0 n0 d) ∨ R ≼ fdata f (rlogs lfd hw ifds m w0 n0 d)
+Proof
+  strip_tac >> gen_tac >> completeInduct_on ‘LENGTH R’ >> rw[] >>
+  Cases_on ‘R = []’ >- (qexists_tac ‘0’ >> simp[]) >>
+  ‘fds_lt w0’ by gvs[winv_def] >>
+  ‘fkeep lfd h f (rstate lfd hw ifds m w0 n0)’ by (drule_all fkeep_run >> simp[]) >>
+  ‘pend (rworld lfd hw ifds m w0 n0) f’ by metis_tac[fl_pend] >>
+  ‘∃k. n0 ≤ k ∧ fetched_at lfd hw ifds m w0 k f’ by (drule_all fetch_progress >> metis_tac[]) >>
+  (* the first fetch on f *)
+  ‘∃k. (n0 ≤ k ∧ fetched_at lfd hw ifds m w0 k f) ∧
+       ∀j. j < k ⇒ ¬(n0 ≤ j ∧ fetched_at lfd hw ifds m w0 j f)’
+    by (ho_match_mp_tac WOP >> metis_tac[]) >>
+  (* nothing changes up to round k' *)
+  ‘fl (rworld lfd hw ifds m w0 k') f R ∧ fkeep lfd h f (rstate lfd hw ifds m w0 k') ∧
+   fdata f (rlogs lfd hw ifds m w0 n0 (k' − n0)) = [] ∧
+   ¬fend f (rlogs lfd hw ifds m w0 n0 (k' − n0))’
+    by (mp_tac stay_rounds >> impl_tac >- simp[] >>
+        disch_then (qspec_then ‘k' − n0’ mp_tac) >> impl_tac
+        >- (simp[] >> rpt strip_tac >>
+            qpat_x_assum ‘∀j. j < k' ⇒ _’ (qspec_then ‘j’ mp_tac) >> simp[]) >>
+        simp[]) >>
+  ‘rlogs lfd hw ifds m w0 n0 (k' − n0 + 1) =
+   rlogs lfd hw ifds m w0 n0 (k' − n0) ++ rlog lfd hw ifds m w0 k'’
+    by (simp[rlogs_add] >> simp[rlogs_def]) >>
+  drule_all stream_step >> strip_tac
+  >- (qexists_tac ‘k' − n0 + 1’ >> simp[])
+  >- (qexists_tac ‘k' − n0 + 1’ >> simp[]) >>
+  Cases_on ‘fend f (rlog lfd hw ifds m w0 k')’
+  >- (qexists_tac ‘k' − n0 + 1’ >> simp[]) >>
+  (* data was fetched: R shrank *)
+  drule prun_round' >> disch_then (qspecl_then [‘f’, ‘k'’] strip_assume_tac) >>
+  ‘∃bs. MEM (FData f bs) (rlog lfd hw ifds m w0 k')’
+    by (qpat_x_assum ‘fetched_at _ _ _ _ _ k' f ⇔ _’
+          (fn th => qpat_x_assum ‘fetched_at _ _ _ _ _ k' f’ (assume_tac o EQ_MP th)) >>
+        qpat_x_assum ‘fetched _ _’ mp_tac >> simp[fetched_fend]) >>
+  ‘winv (rworld lfd hw ifds m w0 k')’ by (drule_all winv_run >> simp[]) >>
+  drule_all pround_data >> strip_tac >>
+  ‘bs ≠ []’ by (strip_tac >> gvs[]) >>
+  ‘fdata f (rlog lfd hw ifds m w0 k') ≠ []’ by metis_tac[fdata_nonnil] >>
+  ‘LENGTH R' < LENGTH R’ by (gvs[] >> Cases_on ‘fdata f (rlog lfd hw ifds m w0 k')’ >> gvs[]) >>
+  ‘ALOOKUP (rstate lfd hw ifds m w0 (SUC k')).b.tbl h = SOME f ∧
+   ¬MEM f (rstate lfd hw ifds m w0 (SUC k')).eof’
+    by (qpat_x_assum ‘fkeep _ _ _ (rstate _ _ _ _ _ (SUC k'))’ mp_tac >> simp[fkeep_def]) >>
+  qpat_x_assum ‘∀m'. m' < LENGTH R ⇒ _’ (qspec_then ‘LENGTH R'’ mp_tac) >>
+  impl_tac >- simp[] >>
+  disch_then (qspec_then ‘R'’ mp_tac) >> simp[] >>
+  disch_then (qspecl_then [‘SUC k'’, ‘h’] mp_tac) >> simp[] >> strip_tac >>
+  qexists_tac ‘k' − n0 + 1 + d’ >>
+  ‘rlogs lfd hw ifds m w0 n0 (k' − n0 + 1 + d) =
+   rlogs lfd hw ifds m w0 n0 (k' − n0 + 1) ++ rlogs lfd hw ifds m w0 (SUC k') d’
+    by (simp[rlogs_add] >> simp[ADD1]) >>
+  gvs[]
+QED
+
+(* Live-data (A) on c's kernel inbox: f's channel j's inbox at round n0 is
+   eventually a prefix of what L1 fetched on f from n0 on, unless L1 logged
+   EOF or a reset on f first *)
+Theorem live_data_kernel:
+  run_ok lfd hw ifds m w0 ∧ winv w0 ∧ MEM lfd (l0_used w0) ∧
+  (∀n. SND (pcm lfd hw ifds m w0 n) + 1 < dimword (:64)) ∧
+  F1 lfd hw ifds m w0 ∧ S1 lfd hw ifds m w0 ∧ S3 lfd hw ifds m w0 ∧
+  S4 lfd hw ifds m w0 f ⇒
+  ∀n0 h j. ALOOKUP (rstate lfd hw ifds m w0 n0).b.tbl h = SOME f ∧
+           ¬MEM f (rstate lfd hw ifds m w0 n0).eof ∧
+           l0_chan_of (rworld lfd hw ifds m w0 n0) f = SOME j ⇒
+           ∃d. fend f (rlogs lfd hw ifds m w0 n0 d) ∨
+               (EL j (rworld lfd hw ifds m w0 n0).chans).inbox ≼
+               fdata f (rlogs lfd hw ifds m w0 n0 d)
+Proof
+  strip_tac >> rpt strip_tac >> mp_tac stream_progress >> impl_tac >- simp[] >>
+  disch_then irule >> simp[fl_def, front_def] >> metis_tac[]
+QED

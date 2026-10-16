@@ -65,3 +65,25 @@ with `main2 u = run_h (3, [3], ([], 0), proto_server b_parse bresp_demo 3)`.
   handler, and a v2 story for the store. It is out of scope here.
 - honest-ffi's L1 (design/36 §5) targets these v2 programs. The
   handle-layer interface (`asyncHLModel`) is kept unchanged.
+
+## KV on v2 (PR #131) and a tracked TODO
+
+`kv-v2/asyncKv2Model.kv2_model` gives HttpKvSpec2's three clauses for the
+handle loop's run of `kv_server`.
+
+**TODO (tracked; land before the final series' KV layer): unify
+`kv-v2/asyncKv2Safe.kv2_safe` with `http-kv/asyncKvSafe.kv_comp_safe`.**
+Both are the same order construction with different projections:
+- per fd (`bytes_read_from c`, `bytes_written_to c`, keys `word64`);
+- per episode (`ep_read j`, `ep_written j`, keys `num`, bridged by
+  `asyncKv2Bridge`).
+
+The plan is one theorem over a generic key view. Its parameters:
+- the projections RD and WR, monotone in the trace prefix;
+- the key renaming between model fds and keys;
+- the round-boundary bridge.
+
+Then `kv_safe` and `kv_safe2` (and `is_order` / `is_order2`, `precedes` /
+`precedes2`, `commits_at` / `commits_at2`) are instances. Until then,
+`asyncKv2Safe` is a near-copy of `asyncKvSafe` and `asyncKvLabel`, marked
+in its header.

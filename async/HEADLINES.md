@@ -543,7 +543,7 @@ echo_episodes_closes io   ⇔ ∀evs j. LPREFIX (fromList evs) io ∧ ep_eof_rea
 ---
 
 <a id="7-peers"></a>
-## 7. Peers: clients, proxies, backpressure (L2) — partly ⏳
+## 7. Peers: clients, proxies, backpressure (L2), partly ⏳
 
 The peer world (`peerWorld`, `peerFair`) is POSIX-shaped:
 - channels come from accept or connect;
@@ -551,7 +551,7 @@ The peer world (`peerWorld`, `peerFair`) is POSIX-shaped:
 - fds are reused;
 - the environment is reactive, backpressure is a world parameter, and connects are three-way.
 
-Each server has one rely/guarantee spec over all worlds:
+Specs in this world have the rely/guarantee form:
 
 ```
 rg_spec cls guar (prog : dec list) ⇔
@@ -559,9 +559,17 @@ rg_spec cls guar (prog : dec list) ⇔
       ∃io. semantics_prog (init_state (ep_ffi w)) init_env prog (Diverge io) ∧ guar w io
 ```
 
-**Linked to L1:** `v2_instance_thm` (the lifetimes world is an exact instance of the peer world) and `echo2_sym_equiv_thm` (the lifetimes echo spec and the peer-world echo spec agree).
+**Scope.** The servers' peer-world specs hold in the SIMPLE CLASS ONLY:
 
-**Proved:**
+    cls w = ep_server_world v2_calls lfd a w ∧ no_backpressure w ∧ open_loop w   (∧ nonsat lfd a w for the converse)
+
+They do not hold over all peer worlds. Our servers write with the full `«sock_write»`, and under backpressure a full write that doesn't fit is a misuse (it fails). So a server spec over every peer world is **false** for `echo_episodes_prog`, `http_prog` and `kv_prog`. Backpressure, fd limits and errors are meant to be absorbed by L3's verified wrappers (section 8), not by the servers.
+
+**Linked to L1 (proved):**
+- `v2_instance_thm`: the lifetimes world is an exact instance of the peer world;
+- `echo2_sym_equiv_thm`, in the simple class: the peer-world echo spec there is equivalent to the lifetimes echo spec (the converse also needs `nonsat`).
+
+**Also proved:**
 - fd discipline (`echo_prog_disciplined`, `echo2_prog_disciplined`);
 - buffer closure:
   ```
@@ -572,18 +580,36 @@ rg_spec cls guar (prog : dec list) ⇔
 - the bites `never_polls_bite` and `refusal_bite`.
 
 **⏳ Stated, not proved:**
-- the HTTP and KV spec equivalences;
-- `v1_instance_disc`;
-- `client_server_compose`.
+- the HTTP and KV spec equivalences. These are expected to need `nonsat` and `ticks_forever`. For KV, `kv_live_rounds`' round bound must be restated in peer-world ticks;
+- `v1_instance_disc`: the core world as an instance, for fd-disciplined programs with a bounded number of connects;
+- `client_server_compose`;
+- `http_prog_disciplined` for the series' `http_prog`. The old generic lemma should apply to the protocol skeleton, but this is not yet checked.
 
 L2's statements are shown with their spike names; they are renamed when L2 is folded.
 
 <a id="8-kernel"></a>
-## 8. The real kernel (L3) — ⏳
+## 8. The real kernel (L3), ⏳
 
-**Linked to L1 and L0** by design/36's refinement R1–R4: verified CakeML wrappers (L1 FFI) over a minimal, honest C FFI (L0: one syscall per call, a total errno table) implement the lifetimes and core worlds. Every headline above then becomes a corollary on the real kernel. The L0 C, its world and the L1 wrapper core are proved; R1 and R2 are in progress.
+**Plan** (design/36): a minimal, honest C FFI (L0: one syscall per call, a total errno table), verified CakeML wrappers over it (the L1 FFI), and a refinement (R1–R4) from the kernel to the **lifetimes** world. Proved so far: the L0 C, its world, the L1 wrapper core and its never-fails invariant. R1 (safe) is at model level; R2–R4 are open.
 
----
+**What is expected to transfer, and in what form.** Not "every headline":
+
+| headline | reaches the kernel? | form | needs |
+|---|---|---|---|
+| `echo_episodes_prog_spec` (L1) | planned | safety; liveness *eventually* | R1/R4 under the fairness assumptions F1, F2, D(c), S1–S4, F3 and D16; a startup contract for the listener fd; fewer than 2^64 connections; a "listen failed" disjunct |
+| HTTP and KV on the lifetimes world | planned, once their L1 proofs exist | the same | the same |
+| L0 headlines (`echo_prog_spec`, `http_prog_spec`, `kv_spec`, `echo_blocking_quiet`, `http_blocking_quiet`) | **no** | — | the core-world runnables are retired (D5′); `echo_live` in the core world is false at a 256-fd limit |
+| round bounds (`chat_spec_timely`, `kv_live_rounds`, `server_v_live` within N rounds) | only as *eventually* | — | the delay from kernel arrival to L1's fetch is unbounded |
+| quiescence (QuietSpec) | **open** | — | a blocking variant of R1, and the HUP problem: `poll(2)` always reports POLLHUP/POLLERR, so a paused or closing fd can make a blocking poll return at once forever |
+| chat | **open** | — | dropping slow clients (D7) changes its spec; chat is never quiescent |
+
+"No server proof changes" holds at the **model level** only. At the whole-program level, each server's CakeML main theorem is re-based on the L1 loop's translation chain.
+
+**Statements to write first** (from the transfer-claim review):
+1. `l1pf_simple`, the new R2 for the prefetching L1. In simple worlds with at most one connect per tick and small data, the abstract world equals `sk_of w0`; otherwise it is an explicit *delay* of it. The trace relation is a fetch-placement relation, not a renaming.
+2. `l0_echo2_spec`, the R4 template for the echo with close and fd reuse. It includes the hypotheses `reserved_ok`, fewer than 2^64 connections, and a listen-failure disjunct.
+3. `quiet_on_kernel`: the blocking-variant transfer, with its side condition on paused, closing and HUP fds, or an L1 change that keeps such fds out of the blocking set. Plus its bite, `hup_spin_bite`.
+4. The class stated in each L2 headline (above), and this table kept current.
 
 <a id="9-trusted"></a>
 ## 9. What is trusted
@@ -615,7 +641,7 @@ Nothing else is trusted: the async library, its CF refinement, the event loops, 
 <a id="10-pending"></a>
 ## 10. Not yet proved (⏳)
 
-- **The honest FFI's L1 wrappers and refinement** (design/36): the theorems above, restated on the real kernel's semantics (section 8).
+- **The real kernel (L3):** R2–R4 and the whole-program corollaries for the lifetimes-world headlines (section 8). The L0 headlines are not planned to transfer; quiescence and round bounds are open.
 - **HTTP in the lifetimes world (L1):** HttpSpec with close and fd reuse. The spec is written; the program proof is at the CakeML step.
 - **KV safety** (`kv_prog_safe`; the model-level `kv_comp_safe` is proved, and the CakeML side is in progress) and the combined `kv_spec 3w kv_prog`. Liveness is proved (section 6b). The KV spec is approved (75af705c3).
 - **Peers (L2):** the HTTP and KV spec equivalences, `v1_instance_disc`, `client_server_compose` (section 7).

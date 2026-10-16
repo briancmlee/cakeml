@@ -135,6 +135,26 @@ Proof
   >- (disj1_tac >> simp[MEM_EL] >> metis_tac[])
 QED
 
+Theorem TAKE_prefix_mono[local]:
+  ∀l a b. a ≤ b ⇒ TAKE a l ≼ TAKE b l
+Proof
+  Induct >> simp[] >> rpt gen_tac >> Cases_on ‘a’ >> Cases_on ‘b’ >> simp[]
+QED
+
+Theorem answered_mono[local]:
+  answered rss order x e1 ∧ e1 ≼ e2 ⇒ answered rss order x e2
+Proof
+  PairCases_on ‘x’ >> rw[answered_def] >>
+  metis_tac[bytes_written_to_prefix, IS_PREFIX_TRANS]
+QED
+
+Theorem started_mono[local]:
+  started rss x e1 ∧ e1 ≼ e2 ⇒ started rss x e2
+Proof
+  PairCases_on ‘x’ >> rw[started_def] >>
+  metis_tac[bytes_read_from_prefix, IS_PREFIX_TRANS]
+QED
+
 (* MAIN: commit points by position give real time *)
 Theorem commits_at_real_time:
   is_order rss order ∧ commits_at rss order evs pj ⇒
@@ -146,27 +166,21 @@ Proof
   CCONTR_TAC >>
   ‘j ≤ i’ by simp[] >>
   ‘pj j ≤ pj i’ by fs[commits_at_def] >>
-  qpat_x_assum ‘precedes _ _ _ _ _’ mp_tac >>
-  simp[precedes_answered_started] >> rpt strip_tac >>
-  ‘evs1 = TAKE (LENGTH evs1) evs’ by (gvs[IS_PREFIX_APPEND] >> simp[TAKE_LENGTH_APPEND]) >>
+  ‘¬answered rss order (EL i order) (TAKE (pj i) evs) ∧
+   started rss (EL j order) (TAKE (pj j) evs)’ by fs[commits_at_def] >>
+  qpat_x_assum ‘precedes _ _ _ _ _’
+    (strip_assume_tac o REWRITE_RULE [precedes_answered_started]) >>
+  ‘evs1 = TAKE (LENGTH evs1) evs’
+    by (qpat_x_assum ‘evs1 ≼ evs’ mp_tac >> rw[IS_PREFIX_APPEND] >>
+        simp[TAKE_LENGTH_APPEND]) >>
   qabbrev_tac ‘k = LENGTH evs1’ >>
   ‘pj i < k’
     by (CCONTR_TAC >>
-        ‘TAKE k evs ≼ TAKE (pj i) evs’
-          by (simp[IS_PREFIX_APPEND] >> qexists_tac ‘TAKE (pj i - k) (DROP k evs)’ >>
-              simp[GSYM TAKE_SUM, TAKE_TAKE_MIN, MIN_DEF]) >>
-        ‘answered rss order (EL i order) (TAKE (pj i) evs)’ suffices_by
-          (fs[commits_at_def] >> metis_tac[]) >>
-        Cases_on ‘EL i order’ >> gvs[answered_def] >>
-        metis_tac[bytes_written_to_prefix, IS_PREFIX_TRANS]) >>
+        ‘TAKE k evs ≼ TAKE (pj i) evs’ by (irule TAKE_prefix_mono >> simp[]) >>
+        metis_tac[answered_mono]) >>
   ‘k < pj j’
     by (CCONTR_TAC >>
-        ‘TAKE (pj j) evs ≼ TAKE k evs’
-          by (simp[IS_PREFIX_APPEND] >> qexists_tac ‘TAKE (k - pj j) (DROP (pj j) evs)’ >>
-              simp[GSYM TAKE_SUM, TAKE_TAKE_MIN, MIN_DEF]) >>
-        ‘¬started rss (EL j order) (TAKE (pj j) evs)’ suffices_by
-          (fs[commits_at_def] >> metis_tac[]) >>
-        Cases_on ‘EL j order’ >> gvs[started_def] >>
-        metis_tac[bytes_read_from_prefix, IS_PREFIX_TRANS]) >>
+        ‘TAKE (pj j) evs ≼ TAKE k evs’ by (irule TAKE_prefix_mono >> simp[]) >>
+        metis_tac[started_mono]) >>
   decide_tac
 QED

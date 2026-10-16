@@ -660,7 +660,8 @@ L2's names are final (provisional, as accepted by the user); `design/NAMES.md` m
    - socket errors are reported as "readable".
 
    The model has none of these behaviours, so the theorems don't see them. A redesign is in progress (L3, section 8): a minimal, honest FFI (about one syscall per call), verified CakeML wrappers that absorb the raw semantics, and refinement proofs so the theorems about the lifetimes world (close and fd reuse) carry over.
-5. **The RFC reference** `spec-rfc/rfc9112Framing`. It is trusted only as a reading aid: the agreement theorems check HttpSpec against it.
+5. **L3 only (drafts, layers L3-01 and L3-02):** the honest L0 C (`runnable/l0/socket_ffi_l0.c`), its result header (`honestL0`), the standards-cited L0 world and its rely (`honestL0World`, `honestL0Rely`), and the raw-trace echo spec `honestEchoL0Spec` (`echo_safe_l0`). **That spec sits in layer L3-02, not L3-01, because it needs `fds_lt`; it is trusted surface all the same.**
+6. **The RFC reference** `spec-rfc/rfc9112Framing`. It is trusted only as a reading aid: the agreement theorems check HttpSpec against it.
 
 Nothing else is trusted: the async library, its CF refinement, the event loops, the scheduler and the protocol pipeline are all proved.
 

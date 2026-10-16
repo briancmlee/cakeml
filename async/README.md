@@ -99,6 +99,7 @@ had an independent review.
 | `spec/QuietSpec` | the blocking `select` (selecting on a non-socket fails); quiet worlds; sleeping; `echo_quiet`, `http_quiet` |
 | `world/sockets/socketWorld`, `socketFair` | the socket world and the fairness of schedules (`sched_wf`) |
 | L1 only: `lifetimes/world/lifetimeWorld`, `lifetimeFair`, `lifetimes/spec/EchoEpisodesSpec` | the world with close and fd reuse, and the per-episode spec |
+| L3 only (drafts): `runnable/l0/socket_ffi_l0.c`, `kernel/surface/honestL0`, `honestL0World`, `honestL0Rely` (L3-01), **and `kernel/spec/honestEchoL0Spec` (in layer L3-02, but trusted surface: it needs `fds_lt` from L3-02)** | the honest L0 C, its result header, the standards-cited L0 world and its rely; the raw-trace echo spec `echo_safe_l0` |
 | CakeML | the source semantics (`semantics_prog`) and its I/O events |
 | `runnable/socket_ffi.c` | the C side of the socket calls, which must implement the socket model (see "Honest limitations") |
 

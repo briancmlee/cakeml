@@ -1,16 +1,16 @@
 (*
-  CF specs for the actions/responses library of asyncCfActProg:
+  CF specs for the actions/responses library of libProg:
   return, poll, wait, never, emit, skip and bind, each against the HOL
   model's own definition (async/model).
 *)
-Theory asyncCfActSpec
+Theory libSpec
 Ancestors
-  asyncCore asyncLevel1 asyncChoose asyncCfActModel asyncCfActProg
+  asyncCore asyncLevel1 asyncChoose libModel libProg
   ml_translator ListProg
 Libs
   preamble basis ml_translatorLib cfTacticsLib ml_progLib basisFunctionsLib
 
-val _ = translation_extends "asyncCfActProg"
+val _ = translation_extends "libProg"
 
 (* Build a value made of nested constructors, e.g. ([], Done x) *)
 val xcons = rpt (xlet_auto >- (xcon >> xsimpl)) >> xcon >> xsimpl;

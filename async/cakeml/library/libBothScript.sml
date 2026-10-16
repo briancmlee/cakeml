@@ -9,16 +9,16 @@
 
   This is the model's both (async/model), with its positional routing
   (par_views) reduced, for one snapshot, to TAKE/DROP at LENGTH acts1
-  (asyncCfActBothModel).
+  (libBothModel).
 *)
-Theory asyncCfActBoth
+Theory libBoth
 Ancestors
-  asyncCore asyncLevel1 asyncChoose asyncCfActModel asyncCfActBothModel
-  asyncCfActProg asyncCfActSpec ml_translator ListProg
+  asyncCore asyncLevel1 asyncChoose libModel libBothModel
+  libProg libSpec ml_translator ListProg
 Libs
   preamble basis ml_translatorLib cfTacticsLib ml_progLib basisFunctionsLib
 
-val _ = translation_extends "asyncCfActProg"
+val _ = translation_extends "libProg"
 
 Quote add_cakeml:
   fun both c1 c2 =

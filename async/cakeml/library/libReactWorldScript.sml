@@ -22,9 +22,9 @@
   says that the actions in the trace are the model's action log on that
   history.
 *)
-Theory asyncCfReactWorld
+Theory libReactWorld
 Ancestors
-  asyncCore asyncLevel1 asyncChoose asyncCfActModel
+  asyncCore asyncLevel1 asyncChoose libModel
   cfFFIType cfHeapsBase cfDiv ffi llist
 Libs
   preamble

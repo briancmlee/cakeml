@@ -17,9 +17,9 @@
   ready byte, then polls the computation with the snapshot
   <| ready := {b}; now := 0; results := the responses |>.
 *)
-Theory asyncCfActWorld
+Theory libWorld
 Ancestors
-  asyncCore asyncLevel1 asyncChoose asyncCfActModel
+  asyncCore asyncLevel1 asyncChoose libModel
   cfFFIType cfHeapsBase cfDiv ffi llist
 Libs
   preamble

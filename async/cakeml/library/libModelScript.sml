@@ -1,5 +1,5 @@
 (*
-  Model-side lemmas for the actions/responses CF layer (asyncCfActProg).
+  Model-side lemmas for the actions/responses CF layer (libProg).
 
   The CakeML representation (see async/design/05-cf-actions.md) polls a
   computation once per round and gets back (actions, residual).  The
@@ -13,7 +13,7 @@
    - prepend A g: g, with the actions A emitted before its first round;
    - skipping k g: g, with the first k results of its first snapshot removed.
 *)
-Theory asyncCfActModel
+Theory libModel
 Ancestors
   list rich_list asyncCore asyncLevel1 asyncChoose
 Libs

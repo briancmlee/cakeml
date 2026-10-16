@@ -8,7 +8,7 @@
   same value.  This is what lets us prove a coinductive representation
   predicate from its finite approximations (see asyncCfProgScript.sml).
 *)
-Theory asyncCfDet
+Theory libDet
 Ancestors
   set_sep cfApp cfHeapsBase cfStore evaluate evaluateProps
 Libs

@@ -1,5 +1,5 @@
 (*
-  Model-side lemmas for choose in the CF layer (asyncCfChoose): what
+  Model-side lemmas for choose in the CF layer (libChoose): what
   choose m1 m2 is before its first poll, and after one more poll.
 
   With k = LENGTH (m1 []).actions, w1 = take_snap k w and w2 = skip_snap k w
@@ -11,10 +11,10 @@
                                     INR (m1', y);
    - neither finished:              after w, choose is choose m1' m2'.
 *)
-Theory asyncCfChooseModel
+Theory libChooseModel
 Ancestors
-  list rich_list asyncCore asyncLevel1 asyncChoose asyncCfActModel
-  asyncCfActBothModel
+  list rich_list asyncCore asyncLevel1 asyncChoose libModel
+  libBothModel
 Libs
   preamble
 

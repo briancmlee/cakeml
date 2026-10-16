@@ -9,21 +9,21 @@
   the library's combinators whose hypotheses are themselves only up to
   depth n: this theory proves them for poll, skip, bind and both.
 
-  STEPAd n is the n-th approximation of asyncCfActProg's STEPA, which
+  STEPAd n is the n-th approximation of libProg's STEPA, which
   additionally fixes the shape (Done with a related result, or Pending) at
   the bottom level.  That shape is what the CakeML code inspects (bind's
   case split, skip, both's case split), so with it the combinators
   preserve every depth, including 0.  (cf-actions' STEPAn 0 is T, which is
   too weak for that.)
 *)
-Theory asyncM4Approx
+Theory libApprox
 Ancestors
-  asyncCore asyncLevel1 asyncChoose asyncCfActModel asyncCfActBothModel
-  asyncCfActProg asyncCfActSpec asyncCfActBoth ml_translator ListProg
+  asyncCore asyncLevel1 asyncChoose libModel libBothModel
+  libProg libSpec libBoth ml_translator ListProg
 Libs
   preamble basis ml_translatorLib cfTacticsLib ml_progLib basisFunctionsLib
 
-val _ = translation_extends "asyncCfActBoth"
+val _ = translation_extends "libBoth"
 
 (* Build a value made of nested constructors, e.g. ([], Done x) *)
 val xcons = rpt (xlet_auto >- (xcon >> xsimpl)) >> xcon >> xsimpl;

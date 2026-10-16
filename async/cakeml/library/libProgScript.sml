@@ -22,9 +22,9 @@
   predicate STEPA, and prove CF specs for all six functions.
   See async/design/05-cf-actions.md.
 *)
-Theory asyncCfActProg
+Theory libProg
 Ancestors
-  asyncCore asyncLevel1 asyncChoose asyncCfActModel asyncCfDet
+  asyncCore asyncLevel1 asyncChoose libModel libDet
   ml_translator basisProg[qualified]
 Libs
   preamble ml_translatorLib cfTacticsLib ml_progLib basisFunctionsLib

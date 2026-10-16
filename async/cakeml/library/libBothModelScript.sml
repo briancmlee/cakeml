@@ -1,12 +1,12 @@
 (*
-  Model-side lemmas for both (asyncCfActBoth): what  both m1 m2  is after
+  Model-side lemmas for both (libBoth): what  both m1 m2  is after
   one more poll, and when both sides have already finished.
   The routing (par_views) reduces, for one snapshot, to TAKE/DROP of its
   results at the number of actions the left side emitted in its first round.
 *)
-Theory asyncCfActBothModel
+Theory libBothModel
 Ancestors
-  list rich_list asyncCore asyncLevel1 asyncChoose asyncCfActModel
+  list rich_list asyncCore asyncLevel1 asyncChoose libModel
 Libs
   preamble
 

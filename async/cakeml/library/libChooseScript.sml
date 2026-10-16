@@ -19,17 +19,17 @@
   The loser is an ordinary computation value (a pair), so the result
   relation of choose holds COMP for it.  This is the model's choose
   (async/model/asyncChooseScript.sml), via the one-poll lemmas of
-  asyncCfChooseModel.
+  libChooseModel.
 *)
-Theory asyncCfChoose
+Theory libChoose
 Ancestors
-  asyncCore asyncLevel1 asyncChoose asyncCfActModel asyncCfActBothModel
-  asyncCfChooseModel asyncCfActProg asyncCfActSpec ml_translator ListProg
+  asyncCore asyncLevel1 asyncChoose libModel libBothModel
+  libChooseModel libProg libSpec ml_translator ListProg
   std_prelude
 Libs
   preamble basis ml_translatorLib cfTacticsLib ml_progLib basisFunctionsLib
 
-val _ = translation_extends "asyncCfActProg"
+val _ = translation_extends "libProg"
 
 Quote add_cakeml:
   fun choose c1 c2 =

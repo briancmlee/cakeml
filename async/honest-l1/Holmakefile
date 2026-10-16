@@ -1,0 +1,5 @@
+# L1: the verified wrapper layer over the L0 world (design/36 §5).
+INCLUDES = ../honest-l0 ../honest-ffi ../ffi-spike ../model ../cf-actions ../m3-assembly
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

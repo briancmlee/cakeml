@@ -313,6 +313,19 @@ Proof
   drule_at (Pos last) winv_do >> simp[]
 QED
 
+Theorem after_send_fields[simp]:
+  (after_send g r st).tbl = st.tbl ∧ (after_send g r st).nxt = st.nxt ∧
+  (after_send g r st).closing = st.closing
+Proof
+  rw[after_send_def] >> every_case_tac >> rw[set_outbox_def]
+QED
+
+Theorem after_send_le:
+  LENGTH (outbox_of (after_send g r st) f) ≤ LENGTH (outbox_of st f)
+Proof
+  Cases_on ‘f = g’ >> simp[after_send_shrinks] >> simp[Once outbox_of_after_send]
+QED
+
 Theorem l1_close_f:
   l1_close g (w, st) = SOME ((w', st'), evs) ∧ winv w ∧ pend w f ∧ g ≠ f ⇒
   winv w' ∧ pend w' f ∧ st'.tbl = st.tbl ∧ st'.nxt = st.nxt ∧
@@ -553,6 +566,41 @@ Proof
   first_x_assum drule_all >> simp[]
 QED
 
+Theorem l1_flush_f:
+  ∀fs w st w' st' evs.
+    l1_flush fs (w, st) = SOME ((w', st'), evs) ∧ winv w ∧ pend w f ⇒
+    winv w' ∧ pend w' f ∧ st'.tbl = st.tbl ∧ st'.nxt = st.nxt ∧
+    st'.closing = st.closing ∧
+    LENGTH (outbox_of st' f) ≤ LENGTH (outbox_of st f) ∧
+    EVERY (λev. ev_name ev = ExtCall «sys_send») evs
+Proof
+  Induct >> simp[l1_flush_def] >> rpt gen_tac >> rw[] >>
+  TRY (first_x_assum drule_all >> simp[] >> NO_TAC) >>
+  gvs[AllCaseEqs()] >> rename1 ‘sys_send _ _ _ = SOME (out, w1, ev)’ >>
+  ‘winv w1 ∧ pend w1 f ∧ ev_name ev = ExtCall «sys_send»’
+    by (gvs[sys_send_def] >> rpt conj_tac
+        >- (drule_at (Pos last) winv_do >> simp[])
+        >- (drule_at (Pos last) pend_do >> simp[])
+        >> drule l0_do_cases >> rw[] >> simp[ev_name_def]) >>
+  first_x_assum drule_all >> strip_tac >> gvs[] >>
+  irule LESS_EQ_TRANS >> goal_assum drule >> simp[after_send_le]
+QED
+
+Theorem l1_reap_f:
+  ∀fs w st w' st' evs.
+    l1_reap fs (w, st) = SOME ((w', st'), evs) ∧ winv w ∧ pend w f ∧ ¬MEM f fs ⇒
+    winv w' ∧ pend w' f ∧ st'.tbl = st.tbl ∧ st'.nxt = st.nxt ∧
+    (∀x. MEM x st'.closing ⇒ MEM x st.closing) ∧
+    outbox_of st' f = outbox_of st f ∧
+    EVERY (λev. ev_name ev = ExtCall «sys_close») evs
+Proof
+  Induct >> simp[l1_reap_def] >> rpt gen_tac >> strip_tac >> gvs[] >>
+  qpat_x_assum ‘(if _ then _ else _) = _’ mp_tac >> IF_CASES_TAC >> strip_tac
+  >- (gvs[AllCaseEqs()] >> Cases_on ‘ws’ >> drule l1_close_f >> disch_then (qspec_then ‘f’ mp_tac) >> simp[] >> strip_tac >>
+      first_x_assum drule_all >> strip_tac >> gvs[MEM_FILTER])
+  >> first_x_assum drule_all >> simp[]
+QED
+
 (* ------------------------------------------------------------------------
    WORK IN PROGRESS (kept as a comment until proved; the statements are
    the plan for R1-live's round step, design/36 §6; the *_winv lemmas
@@ -566,28 +614,6 @@ Theorem l1_polls_f:
     EVERY (λev. ev_name ev = ExtCall «sys_poll») evs ∧
     (∀c. MEM c chs ∧ MEM f (MAP FST c) ⇒ EXISTS (ev_on «sys_poll» f) evs) ∧
     (∀ev. MEM ev evs ∧ ev_on «sys_poll» f ev ∧ ¬retried ev ⇒ MEM f (readable_fds rv))
-Proof
-  cheat
-QED
-
-Theorem l1_flush_f:
-  ∀fs w st w' st' evs.
-    l1_flush fs (w, st) = SOME ((w', st'), evs) ∧ winv w ∧ pend w f ⇒
-    winv w' ∧ pend w' f ∧ st'.tbl = st.tbl ∧ st'.nxt = st.nxt ∧
-    st'.closing = st.closing ∧
-    LENGTH (outbox_of st' f) ≤ LENGTH (outbox_of st f) ∧
-    EVERY (λev. ev_name ev = ExtCall «sys_send») evs
-Proof
-  cheat
-QED
-
-Theorem l1_reap_f:
-  ∀fs w st w' st' evs.
-    l1_reap fs (w, st) = SOME ((w', st'), evs) ∧ winv w ∧ pend w f ∧ ¬MEM f fs ⇒
-    winv w' ∧ pend w' f ∧ st'.tbl = st.tbl ∧ st'.nxt = st.nxt ∧
-    (∀x. MEM x st'.closing ⇒ MEM x st.closing) ∧
-    outbox_of st' f = outbox_of st f ∧
-    EVERY (λev. ev_name ev = ExtCall «sys_close») evs
 Proof
   cheat
 QED

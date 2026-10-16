@@ -37,7 +37,7 @@ Proof
   strip_tac >> drule l0_do_cases >> rw[hgrows_def] >> simp[]
 QED
 
-Theorem hgrows_sys[local]:
+Theorem hgrows_sys:
   (sys_accept l w = SOME (out, w', ev) ⇒ hgrows w w' 1) ∧
   (sys_recv f k w = SOME (out, w', ev) ⇒ hgrows w w' 1) ∧
   (sys_send f bs w = SOME (out, w', ev) ⇒ hgrows w w' 1) ∧
@@ -48,14 +48,14 @@ Proof
   metis_tac[hgrows_do]
 QED
 
-Theorem hgrows_close[local]:
+Theorem hgrows_close:
   l1_close f (w, st) = SOME ((w', st'), evs) ⇒ hgrows w w' (LENGTH evs)
 Proof
   rw[l1_close_def, AllCaseEqs()] >> TRY (PairCases_on ‘v’) >> gvs[] >>
   metis_tac[hgrows_sys]
 QED
 
-Theorem hgrows_l1do[local]:
+Theorem hgrows_l1do:
   l1do lfd (w, st) a = SOME (r, (w', st'), evs) ⇒ hgrows w w' (LENGTH evs)
 Proof
   Cases_on ‘a’ >> rw[l1do_def, AllCaseEqs()] >> gvs[] >>
@@ -66,7 +66,7 @@ Proof
   metis_tac[hgrows_trans, ADD1, ADD_COMM]
 QED
 
-Theorem hgrows_pdo[local]:
+Theorem hgrows_pdo:
   pdo lfd (w, ps) a = SOME (r, (w', ps'), evs) ⇒ hgrows w w' (LENGTH evs)
 Proof
   Cases_on ‘a’ >> rw[pdo_def, AllCaseEqs()] >> gvs[] >>

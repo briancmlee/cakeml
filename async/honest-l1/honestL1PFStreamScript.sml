@@ -184,3 +184,35 @@ Proof
   gvs[AllCaseEqs(), l0_alloc_def] >>
   simp[l0_chan_of_def, upd_lchan_def, EL_LUPDATE] >> gvs[l0_chan_of_def]
 QED
+
+Theorem prefix_take:
+  R ≼ l ⇒ R ≼ TAKE k l ∨ ∃R'. R = TAKE k l ++ R' ∧ R' ≼ DROP k l
+Proof
+  rw[IS_PREFIX_APPEND] >> Cases_on ‘LENGTH R ≤ k’
+  >- (disj1_tac >> qexists_tac ‘TAKE (k - LENGTH R) l'’ >> simp[TAKE_APPEND])
+  >> disj2_tac >> qexists_tac ‘DROP k R’ >> simp[TAKE_APPEND, DROP_APPEND] >>
+  ‘k − LENGTH R = 0’ by simp[] >> simp[]
+QED
+
+(* A recv on f takes its bytes from the front of f's kernel inbox: a
+   recv with data returns a prefix of R or all of R and a further part of
+   it remains at the front; any other recv leaves fl as it was *)
+Theorem recv_fl:
+  fl w f R ∧ noconn w ∧ l0_rely w ∧ 0 < n ∧ l0_recv f n w = (r, d, w') ⇒
+  (fl w' f R ∧ ∀k. r = Ok k ⇒ k = 0) ∨
+  (∃k. r = Ok k ∧ 0 < k ∧ (R ≼ d ∨ ∃R'. R = d ++ R' ∧ fl w' f R'))
+Proof
+  rw[fl_def, front_def, flushed_def] >>
+  gvs[l0_recv_def, AllCaseEqs(), noconn_def] >>
+  TRY (‘j < LENGTH w.chans’ by gvs[l0_chan_of_def, AllCaseEqs()] >> gvs[]) >>
+  TRY (simp[fail_def] >> NO_TAC) >>
+  TRY (disj1_tac >> simp[fail_def, l0_chan_of_def, upd_lchan_def, EL_LUPDATE] >>
+       gvs[l0_chan_of_def, AllCaseEqs()] >> NO_TAC) >>
+  ‘0 < w.ch.short j w.hist (LENGTH (EL j w.chans).inbox)’
+    by (gvs[l0_rely_def] >> Cases_on ‘(EL j w.chans).inbox’ >> gvs[]) >>
+  disj2_tac >> simp[] >>
+  drule prefix_take >>
+  disch_then (qspec_then ‘MIN n (w.ch.short j w.hist (LENGTH (EL j w.chans).inbox))’
+              strip_assume_tac) >> simp[] >>
+  gvs[l0_chan_of_def, upd_lchan_def, EL_LUPDATE, AllCaseEqs()]
+QED

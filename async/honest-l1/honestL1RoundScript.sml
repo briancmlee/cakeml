@@ -318,3 +318,51 @@ Proof
       drule_all poll_pairs_mem >> strip_tac >> gvs[l1v2_rel_def] >> metis_tac[])
   >> gvs[fds_lt_def]
 QED
+
+(* ------------------------------------------------------------------------
+   A whole round
+   ------------------------------------------------------------------------ *)
+
+(* The pairs polled, from a handle table (the handle layer's) *)
+Definition pairs_of_def:
+  pairs_of lfd (tbl : (word64 # word64) list) hfds =
+    FLAT (MAP (λh. case ALOOKUP tbl h of
+                   | SOME f => [(h, f)]
+                   | NONE => if h = lfd then [(lfd, lfd)] else []) hfds)
+End
+
+Theorem poll_pairs_of:
+  poll_pairs lfd st hfds = pairs_of lfd st.tbl hfds
+Proof
+  simp[poll_pairs_def, pairs_of_def]
+QED
+
+Theorem round_step:
+  simple_v2 p lfd sched w ∧ l0_rely w ∧ l1v2_rel p lfd sched (w, st) (s, hs) ∧
+  rdy_ok lfd polp w st ∧ fds_lt w ∧ hacts_disc lfd polp (s, hs) acts ∧
+  LENGTH (l0_used w) + LENGTH acts < 2147483647 ∧
+  hdln (w2n lfd) (st.nxt + LENGTH acts) < dimword (:64) ∧ w2n lfd < 2147483648 ∧
+  hacts lfd (s, hs) acts = SOME (rs, hevs, (s1, hs1)) ∧
+  LENGTH (hpoll_fds lfd hs1 hfds) ≤ 4096 ⇒
+  ∃w' st' evs.
+    l1round lfd hw hfds (w, st) acts =
+      SOME (ssnap (FST (hpoll lfd hs1 hfds s1)) rs, (w', st'), evs) ∧
+    drops (MAP l0_v2_event evs) (hevs ++ [spoll2_event (hpoll_fds lfd hs1 hfds) s1]) ∧
+    simple_v2 p lfd sched w' ∧ l0_rely w' ∧
+    l1v2_rel p lfd sched (w', st') (SND (hpoll lfd hs1 hfds s1), hs1) ∧
+    rdy_ok lfd (pairs_of lfd hs1.tbl hfds) w' st' ∧ fds_lt w' ∧
+    st'.nxt ≤ st.nxt + LENGTH acts ∧ LENGTH (l0_used w') ≤ LENGTH (l0_used w) + LENGTH acts
+Proof
+  strip_tac >> drule_all acts_step >> strip_tac >> gvs[] >>
+  ‘st'.tbl = hs'.tbl’ by gvs[l1v2_rel_def] >>
+  drule_all tail_step >> disch_then (qspec_then ‘hw’ strip_assume_tac) >>
+  gvs[] >>
+  simp[l1round_def, hpoll_def] >>
+  pairarg_tac >> gvs[sock_poll2_def] >>
+  rpt conj_tac
+  >- (irule drops_APPEND >> simp[])
+  >- metis_tac[simple_v2_same]
+  >- (irule l0_rely_ch >> qexists_tac ‘w'’ >> simp[])
+  >- gvs[poll_pairs_of]
+  >> gvs[]
+QED

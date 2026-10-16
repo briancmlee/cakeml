@@ -203,6 +203,80 @@ lemmas would need revisiting. I don't recommend it.
 
 No new combinator or semantics change is needed with (A).
 
+## 5. Decision: shared state as a pure effect handler (`with_store`)
+
+Approved by the user (2026-10-15). This replaces §4's (A), "the loop
+performs Kv on a ref".
+
+**What it is.** `with_store δ s0 m` (`http-kv/asyncWithStore`) is a library
+combinator.
+- Its argument `m` may emit `Sock a` (socket actions) and `Kv q`
+  (queries).
+- `with_store` emits only `m`'s `Sock` actions.
+- It answers `m`'s queries itself, on a store that starts as `s0` and is
+  updated by `δ`. A round's queries are answered in the next snapshot, at
+  their positions among the round's results, exactly as the world answers
+  socket actions.
+
+It is an ordinary computation, a function of its history. The history `m`
+sees (`inner_hist`) is the outer history with the store's answers merged
+in. In CakeML (`asyncKvProg`), the store is an argument of the residual's
+closure, passed on round by round. There are no refs, and every spec stays
+`emp`.
+
+**Why, rather than the loop performing Kv on a ref (or as a loop
+argument).** Everything from M3 down is reused unchanged:
+- M3/M4 speak a socket vocabulary in which each action is exactly one FFI
+  socket call: `sact`, `sock_do`, `act_event`, `grounds`, `asyncM4SockInv`,
+  the loop's `perform`/`run_i` and their specs.
+- The trace bridge (`asyncRunOkGen`'s `gen_rounds_bytes`/`gen_fresh`) is
+  generic in the computation.
+- A Kv action performed by the loop is no socket call and produces no FFI
+  event. So it would have needed a variant of every one of those
+  theories, several thousand lines, whether the store sat in a ref or in a
+  loop argument.
+
+With `with_store`, the program still only emits socket actions. `both`,
+`server_with` and the per-connection handlers are unchanged in kind:
+`server_with_k` is `server_with` with Sock/Kv tags.
+
+**How it differs from §4's rejected (B)** ("a store computation that
+handlers message"). (B) needs communication between two computations
+running under `both`, which `both` does not have. `with_store` is not a
+second computation running beside the handlers. It is a wrapper around
+the whole server: an effect handler for one kind of action, in the
+algebraic-effects sense. No new kind of composition is needed.
+
+**The linearization point** is the model round in which `with_store`
+answers a query. The global order of all queries is the order in which it
+answered them (`kv_answers`: every answer is the store's answer at its
+position in that order).
+
+**MAIN lemmas of `with_store`** (`asyncWithStore`, `asyncWithStoreStep`):
+
+| lemma | says |
+|---|---|
+| `wf_with_store` | preserves well-formedness |
+| `with_store_agree`, `nonexpansive_with_store` | preserves the guardedness bookkeeping of `fix` |
+| `new_actions_with_store` | each round, emits `m`'s Sock actions |
+| `trans_with_store` | its transcript is `m`'s on the inner history, without the Kv entries |
+| `kv_answers` | every answer `m` got is `run_store δ s0` over all queries, at its position |
+| `with_store_suspended` | polled once, it is `with_store` of `m` polled once, on the store after the round's queries (what the CakeML code does) |
+| `relabel_with_store` | relabelling commutes with it |
+
+**The order construction** (`asyncKvSafe`'s `kv_comp_safe`, with
+`asyncKvOrder`/`asyncKvLabel`) is as planned in §4:
+- A query first answered in round k commits at the start of round k's
+  events.
+- A complete request not queried yet commits at the end of the point
+  `evs`.
+- Commit points give real time (`commits_at_real_time`).
+
+The "timestamped bridge" turned out not to need a new trace lemma. It
+uses the existing `gen_rounds_bytes` at every round k ≤ n, together with
+`kv_server_serves` (the per-connection invariant) at every history `TAKE
+k`.
+
 ## Assumptions made
 
 1. The store starts empty. Keys are paths. GET ignores any body. POST

@@ -1,8 +1,12 @@
 # 28: Request bodies (Content-Length): spec and feasibility
 
-Status: **step 1 (spec) is done and proved. Step 2 (this note) concludes
-it is feasible, with no blocking issue.** Branch `spike/http-bodies`,
-stacked on `spike/http-liveness` (which has `http_prog_h_spec`).
+Status: **done.** `http_prog_b_spec : ⊢ http_spec_b 3w demo_files
+http_prog_b` is proved, with only the `DISK_THM` tag (no oracles, no
+axioms) and no cheats; `Holmake -j1` is green in `async/http-bodies/`. The
+program runs, and plain `curl -d` works (§5). Branch `spike/http-bodies`,
+stacked on `spike/http-liveness` (which has `http_prog_h_spec`). The
+feasibility analysis of §2 held: the per-connection machine and the drain
+argument carried over unchanged.
 
 ## 1. The spec (done)
 
@@ -80,8 +84,11 @@ The handler's `hok` (it only touches its own fd) is a 5-line port.
 1. **Method.** `"GET "` or `"POST "`: a prefix of either is incomplete,
    anything else is invalid.
 2. **Request line and header lines.** As `parse_hrequest`, reusing
-   `split_path`, the version constants and `parse_headers` (proved in
-   asyncHttpParseH).
+   `split_path`, `split_at` and the version constants. The header lines
+   are parsed by its own `parse_bheaders` (asyncHttpParseB): the H
+   parser's body before spike/http-nobody (#48) made it reject the
+   body-framing headers. It matches `valid_bheader`, so the bodies
+   pipeline does not depend on asyncHttpParseH's `parse_headers`.
 3. **On `HDone hs rest`:**
    - any `Transfer-Encoding`, or two or more `Content-Length` headers →
      invalid;
@@ -137,7 +144,71 @@ the rest mostly porting. The dominant risk is build time and memory: the
 machine is at its limit, so I use `-j1`. The proof structure is not a
 risk.
 
-## 3. Assumptions made
+## 4. What was built (step 3)
+
+| theory (`async/http-bodies/`) | contents |
+|---|---|
+| `asyncHttpParseB` | `parse_brequest` (method, request line, headers, framed body); `parse_bprint`, `parse_bcomplete`, `parse_bextend`, `parse_all_brequests`, `parse_all_b_mono` (39 proofs) |
+| `asyncHttpParseBExt` | `parse_brequest_invalid_ext`, `parse_binvalid` (the hardest lemma, ~150 lines, reusing asyncHttpParseHExt) |
+| `asyncHttpServerB`, `asyncHttpSafeB`, `asyncHttpSockModelB` | model server, `http_comp_safe_b`, socket-vocabulary unfolding |
+| `asyncHttpSockProgB`, `asyncHttpSockSpecB` | the CakeML program (`brespond` with `brespond_thm`; the parser translated) and its CF specs |
+| `asyncHttpMainB`, `asyncHttpSemanticsB`, `asyncHeadlineB` | main, the export (64 declarations), `http_semantics_prog_bodies`, `http_prog_b_safe` |
+| `asyncHttpMachineB`, `asyncHttpDrainB`, `asyncHttpLiveB`, `asyncHttpSpecB` | liveness: mechanical ports of http-liveness-h; `http_prog_b_spec` |
+
+### Linear-time parsing (a bug found on the way, in all HTTP servers)
+
+`split_at` (asyncHttpParseH) and `split_path` (asyncHttpParse) evaluate
+their recursive call twice (`FST` and `SND` of it), so they take time
+exponential in the distance to the separator.
+
+- **Symptom:** a 33-character header value already takes 2^33 steps.
+  curl -d's `Content-Type: application/x-www-form-urlencoded` made the
+  server spin at 100% CPU forever.
+- **Proofs unaffected:** the theorems are about values, and liveness is
+  "eventually", so no theorem is wrong.
+- **Other servers:** the header-tolerant and strict running servers have
+  the same problem with long header values, such as browser User-Agents.
+- **Fix:** `split_at2` (asyncHttpSockProgH, from spike/http-h-linear)
+  and `split_path2` (asyncHttpSockProg) share the recursive call and are
+  proved equal to the originals (`split_at2_eq`, `split_path2_eq`).
+  asyncHttpSockProgB adds `parse_bheaders2`, the bodies header parser
+  written with `split_at2` (`parse_bheaders2_eq`), and `bline2`
+  (`bline2_eq`), and translates `parse_brequest` through them
+  (`parse_brequest_lin`). No theorem about the parser changes; only the
+  compiled code becomes linear.
+
+Originally this branch carried its own `split_at2`/`split_path2`. After
+merging spike/http-h-linear (#54, which includes #48) it reuses the
+ancestors' versions and keeps only the bodies-specific
+`parse_bheaders2`.
+
+**Translator notes:**
+- `toLower` has no basis translation. It is translated in
+  asyncHttpSockProgH, with its `CHR` side condition discharged, and
+  reused here.
+- `FOLDL` has no translation, so `dec_fold` is translated through
+  `dec_acc`.
+- An unguarded `ORD c - 48` gives a precondition; it is guarded instead.
+
+## 5. Running it
+
+```
+cd async/http-bodies
+Holmake          # writes http_server_b.sexp
+make demo        # writes http-bodies-demo-transcript.txt
+```
+
+The transcript shows:
+- `curl -d hello …/echo` answered with `hello`;
+- a body that is literally `GET /a HTTP/1.0\r\n\r\n`, echoed back as
+  data;
+- a 20 kB body (many reads) echoed in full;
+- a request with a 146-character User-Agent, answered in about 0.04 s;
+- POST to another path answered with 404;
+- a request following a body on the same connection, answered;
+- `Transfer-Encoding: chunked` rejected (no response).
+
+## 6. Assumptions made
 
 1. **The Content-Length value must be canonical decimal** (as
    `num_to_dec_string` prints it: no leading zeros, no whitespace).
@@ -150,9 +221,50 @@ risk.
    cheap: the response is computed from the parsed request, and it makes
    a nice `curl -d` demo.
 5. **Methods are GET and POST only.**
-6. **Own header validity (`valid_bheader`)**: today's character rules,
+6. **Own header validity (`valid_bheader`)**: header names are RFC 9110
+   tokens (`tchar`; SPEC CHANGE, user-approved, after a review found that
+   "Content-Length\t: 19" was a valid ordinary header that did not frame a
+   body); values have no CR or LF. Earlier: character rules only,
    decoupled from HttpSpecHeaders' `valid_header` (spike/http-nobody
-   restricts it).
+   restricts it). The parser follows suit: its own `parse_bheaders`
+   (option R1), not asyncHttpParseH's `parse_headers`.
 7. **Copies, not generalization**, as in 24 and 26: the bodies pipeline
    is a `_b` copy with the new parser. The H and strict pipelines stay
    untouched.
+
+## 7. Spec change: header names are RFC 9110 tokens (user-approved)
+
+- **Finding:** "Content-Length\t: 19" was a valid ordinary header. It
+  framed no body, so liveness forced the server to answer the 19 body
+  bytes as a second request, and every RFC-conforming behaviour (lenient,
+  strict silent, 400) was rejected.
+- **Fix:** `tchar`, and `valid_bheader` requires `EVERY tchar n`.
+  - New bites: `whitespace_names_invalid` (tab, space, vertical tab) and
+    `broken_tab_header` (answering the body as a request violates safety).
+  - The compatibility lemmas with HttpSpecHeaders now assume token names.
+    HttpSpecHeaders itself is unchanged, since its parser lives lower in
+    the stack.
+- **Parser:** `parse_bheaders`/`parse_bheaders2` reject a non-token name
+  (`HBad`).
+- **Re-proved:** `http_prog_b_spec`'s statement is unchanged. The demo has
+  a tab-header case, which gets no response.
+- **Known limitation, documented in the spec:** `Expect: 100-continue` is
+  not supported.
+
+## 8. Spec change: RFC character sets for paths and field values (APPROVED by the user, 2026-10-16)
+
+- **Finding H-CHARS (low severity):** a compliance gap, not a framing
+  issue. A TAB or non-ASCII character in a path, or NUL in a header
+  value, was valid. RFC 9112 frames no message for these, and RFC 9110
+  §5.5 requires rejecting NUL, yet liveness forced a 200/404 answer.
+- **Fix:** `uri_char` (RFC 3986 characters; `valid_brequest` adds
+  `EVERY uri_char p`) and `field_char` (VCHAR / obs-text / SP / HTAB;
+  `valid_bheader` values).
+  - New bite: `rfc_chars_bites`.
+  - The parser rejects other characters, and the CakeML program
+    translates both predicates.
+  - `http_prog_b_spec` is unchanged and re-proved. The demo has a
+    tab-in-path case, which gets no response.
+- **Rollback:** this is a separate commit, and reverting it restores §7's
+  spec.
+

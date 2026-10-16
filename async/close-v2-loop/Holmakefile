@@ -1,0 +1,7 @@
+# close-v2 (b): the handle-layer event loop in the version-2 world.
+INCLUDES = ../model ../cf-spike ../cf-actions ../cf-reactive ../ffi-spike \
+           ../m3-assembly ../m4-server ../m4-common ../spec ../m4-safety \
+           ../socket-v2 ../socket-v2-cf
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

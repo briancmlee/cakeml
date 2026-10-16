@@ -10,8 +10,9 @@
   - Requests read back uniquely (print_hrequest_unique), so a run's
     reads decompose into requests in at most one way.
   - Broken servers: letting a header change the response, answering
-    before the blank line that ends the headers, and never answering each
-    violate the spec.
+    before the blank line that ends the headers, answering a request that
+    carries a body-framing header (Content-Length; there are no request
+    bodies in this subset), and never answering each violate the spec.
   - Non-vacuity: in the fair world where one client sends a request with a
     header, the ideal trace (read it, write its response) is safe and live.
 *)
@@ -264,6 +265,82 @@ Proof
   simp[sent_upto_one_client] >> conj_tac >- EVAL_TAC >>
   rw[] >> Cases_on ‘LPREFIX (fromList evs) io’ >> simp[] >> res_tac >>
   simp[] >> EVAL_TAC
+QED
+
+(* ------------------------------------------------------------------------
+   No request bodies
+   ------------------------------------------------------------------------ *)
+
+(* MAIN (no bodies): body-framing headers are not valid header lines, in
+   any letter case; ordinary headers are *)
+Theorem body_headers_invalid:
+  ¬valid_header ("Content-Length", "0") ∧
+  ¬valid_header ("content-length", "0") ∧
+  ¬valid_header ("Transfer-Encoding", "chunked") ∧
+  ¬valid_header ("TRANSFER-ENCODING", "chunked") ∧
+  valid_header ("Host", "x") ∧ valid_header ("Content-Type", "text/plain")
+Proof
+  EVAL_TAC
+QED
+
+(* a GET carrying Content-Length (with an empty body) *)
+Overload rcl = “GetH "/a" "1.1" [("Content-Length", "0")]”
+
+(* No valid request is a prefix of it: the only header name it could
+   start with is Content-Length *)
+Theorem no_valid_prefix_rcl[local]:
+  valid_hrequest r ∧ print_hrequest r ++ x = print_hrequest rcl ⇒ F
+Proof
+  Cases_on ‘r’ >> rename1 ‘GetH p v hs’ >>
+  REWRITE_TAC[valid_hrequest_def, valid_path_def, print_hrequest_def] >>
+  strip_tac >>
+  ‘p = "/a" ∧ "HTTP/" ++ v ++ "\r\n" ++ FLAT (MAP print_header hs) ++ "\r\n" ++ x =
+              "HTTP/1.1\r\nContent-Length: 0\r\n\r\n"’
+    by (irule split_char >> qexists_tac ‘#" "’ >>
+        conj_tac >- (fs[EVERY_MEM] >> metis_tac[]) >>
+        conj_tac >- EVAL_TAC >>
+        qpat_x_assum ‘_ = _’ mp_tac >> simp[print_header_def]) >>
+  ‘FLAT (MAP print_header hs) ++ "\r\n" ++ x = "Content-Length: 0\r\n\r\n"’
+    by (qpat_x_assum ‘valid_version v’ mp_tac >> rw[valid_version_def] >>
+        qpat_x_assum ‘_ = "HTTP/1.1\r\nContent-Length: 0\r\n\r\n"’ mp_tac >>
+        simp[]) >>
+  Cases_on ‘hs’ >> fs[] >>
+  PairCases_on ‘h’ >> fs[print_header_def, valid_header_def] >>
+  ‘h0 = "Content-Length"’
+    by (qspecl_then [‘h0’, ‘"Content-Length"’] mp_tac
+          (INST_TYPE [alpha |-> “:char”] split_char |> Q.INST [‘c’ |-> ‘#":"’]) >>
+        disch_then (qspecl_then
+          [‘" " ++ h1 ++ "\r\n" ++ FLAT (MAP print_header t) ++ "\r\n" ++ x’,
+           ‘" 0\r\n\r\n"’] mp_tac) >>
+        impl_tac
+        >- (rpt conj_tac
+            >- (fs[EVERY_MEM] >> strip_tac >> res_tac >> fs[])
+            >- EVAL_TAC >>
+            qpat_x_assum ‘_ = "Content-Length: 0\r\n\r\n"’ mp_tac >> simp[]) >>
+        simp[]) >>
+  qpat_x_assum ‘¬body_header _’ mp_tac >> simp[] >> EVAL_TAC
+QED
+
+Theorem no_full_hrequest_rcl[local]:
+  no_full_hrequest (hrequests [rcl])
+Proof
+  rw[no_full_hrequest_def, IS_PREFIX_APPEND] >> strip_tac >>
+  fs[hrequests_CONS] >> drule bytes_split >> strip_tac >>
+  metis_tac[no_valid_prefix_rcl]
+QED
+
+(* MAIN (bite): a server that answers a GET carrying a body-framing header
+   (here Content-Length) violates safety: the subset has no request
+   bodies, so such a request is never answered *)
+Theorem broken_answers_body_request:
+  starts_with [rd c1 (hrequests [rcl]) 100;
+               wr c1 (bytes (print_response (Ok "hi")))] io ⇒
+  ¬http_safe_h site io
+Proof
+  rw[http_safe_h_def] >>
+  qexistsl [‘[rd c1 (hrequests [rcl]) 100; wr c1 (bytes (print_response (Ok "hi")))]’,
+            ‘c1’, ‘[]’, ‘hrequests [rcl]’] >>
+  simp[no_full_hrequest_rcl] >> EVAL_TAC
 QED
 
 (* ------------------------------------------------------------------------

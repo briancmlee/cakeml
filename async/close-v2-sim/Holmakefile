@@ -1,0 +1,9 @@
+# close-v2 (c): the simulation (handle loop in the v2 world vs the v1 loop
+# in the renamed v1 world) and echo_spec2 3w echo2_prog.
+INCLUDES = ../model ../cf-spike ../cf-actions ../cf-reactive ../ffi-spike \
+           ../m3-assembly ../m4-server ../m4-common ../spec ../m4-safety \
+           ../runnable ../machine-code ../m4-echospec ../m4-liveness \
+           ../m4-echospec-live ../socket-v2 ../socket-v2-cf ../close-v2-loop
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

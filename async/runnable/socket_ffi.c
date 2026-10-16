@@ -14,6 +14,14 @@
   | sock_read   | ffi_sock_read    | connection fd (8)     | status (0 data, 1 would block, |
   |             |                  |                       |   2 EOF), 8-byte count, data   |
   | sock_write  | ffi_sock_write   | fd (8) ++ data        | unused                         |
+  | sock_close  | ffi_sock_close2  | connection fd (8)     | unused                         |
+
+  sock_close is only used by the version-2 programs (EchoSpec2, the world
+  of async/socket-v2/socketV2FFIScript.sml), whose four other calls have
+  the same encodings.  In that world the kernel gives an accepted
+  connection the lowest free fd, as POSIX accept does; with fds 0, 1, 2
+  open and the listener on 3, this is the model's lowest_free with
+  reserved = [0; 1; 2], as long as the program opens no other fds.
 
   fds are 8-byte big-endian numbers (fd_bytes).  The model's readiness
   (is_ready): a listener with a pending connection, or a connection with
@@ -41,8 +49,10 @@
      operation since the last poll and the same ready set for IDLE_ROUNDS
      polls in a row.  Then it waits (at most IDLE_WAIT_MS) for an fd that
      was not ready to become ready.  Otherwise the loop would spin.
-   - closing: the model has no close, so fds are never closed.  A closed
-     connection stays ready (EOF) and stays in the loop's interest list.
+   - closing: the version-1 model has no close, so version-1 programs
+     never close fds; a closed connection stays ready (EOF) and stays in
+     the loop's interest list.  Version-2 programs close a connection with
+     sock_close (a plain close(2)) and the fd may then be reused.
 */
 #include <arpa/inet.h>
 #include <errno.h>
@@ -186,4 +196,12 @@ void ffisock_write(unsigned char *c, long clen, unsigned char *a, long alen) {
     else if (w < 0 && (errno == EBADF || errno == ENOTSOCK)) die("sock_write");
     else break;                    /* e.g. EPIPE: the peer has gone */
   }
+}
+
+/* ffi_sock_close2: close the connection fd in c[0..8); the model fails
+   on anything but an open connection, and so does close(2) on a non-fd */
+void ffisock_close(unsigned char *c, long clen, unsigned char *a, long alen) {
+  if (clen != 8) { errno = EINVAL; die("sock_close: lengths"); }
+  busy = 1;
+  if (close((int)get_fd(c)) < 0 && errno != EINTR) die("sock_close");
 }

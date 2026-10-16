@@ -290,6 +290,24 @@ Proof
   gvs[on_fdk_def, lift_def, sock_pair_def, is_accept_def, on_fd_def]
 QED
 
+Theorem untag_sing[local]:
+  untag [(Sock a, SOME (SockR r))] = [(a, SOME r)]
+Proof
+  simp[untag_def]
+QED
+
+Theorem untag_sing_kv[local]:
+  untag [(Sock a, SOME (KvR b))] = [(a, NONE)]
+Proof
+  simp[untag_def]
+QED
+
+Theorem untag_CONS[local]:
+  untag (x :: l) = untag [x] ++ untag l
+Proof
+  simp[untag_def]
+QED
+
 (* MAIN: outside the store, the server accepts only on the listener lfd,
    and reads or writes a connection fd only after the response
    Accepted fd. *)
@@ -335,7 +353,8 @@ Proof
       >> ‘p0 = [(Accept lfd, SOME (Accepted fd))]’ by simp[Abbr ‘p0’, untag_def]
       >> conj_tac
       >- (‘accepts_on lfd (untag (trans (both (h fd) (server_with_k h lfd)) h2'))’
-            suffices_by simp[accepts_on_def, is_accept_def] >>
+            suffices_by (disch_then mp_tac >> ONCE_REWRITE_TAC[untag_CONS] >>
+                         simp[accepts_on_def, is_accept_def, untag_def]) >>
           ONCE_REWRITE_TAC[GSYM accepts_on_FILTER] >>
           REWRITE_TAC[GSYM untag_FILTER] >>
           ‘FILTER (lift is_accept) (trans (both (h fd) (server_with_k h lfd)) h2') =
@@ -343,7 +362,8 @@ Proof
             by (simp[Abbr ‘R’] >> irule trans_both_filter_right >>
                 irule handler_no_accept_k >> metis_tac[]) >>
           pop_assum SUBST1_TAC >> simp[untag_FILTER, accepts_on_FILTER])
-      >> gen_tac >> simp[acc_first_def, accepts_def]
+      >> gen_tac >> ONCE_REWRITE_TAC[untag_CONS] >> REWRITE_TAC[untag_sing]
+      >> simp[acc_first_def, accepts_def]
       >> Cases_on ‘fd' = fd’ >> simp[]
       >> ONCE_REWRITE_TAC[GSYM acc_first_FILTER]
       >> REWRITE_TAC[GSYM untag_FILTER]
@@ -353,6 +373,10 @@ Proof
                irule handler_touches_k >> metis_tac[])
       >> pop_assum SUBST1_TAC >> simp[untag_FILTER, acc_first_FILTER])
   >> gvs[] >> first_x_assum (qspec_then ‘h2'’ mp_tac) >> simp[] >> strip_tac
-  >> Cases_on ‘p0’ >> gvs[] >>
-  gvs[accepts_on_def, acc_first_def]
+  >> ONCE_REWRITE_TAC[untag_CONS]
+  >> fs[markerTheory.Abbrev_def]
+  >> Cases_on ‘res’
+  >> TRY (rename1 ‘SockR r0’ >> Cases_on ‘r0’)
+  >> gvs[untag_sing, untag_sing_kv, accepts_on_def, acc_first_def, accepts_def,
+         is_accept_def, on_fd_def]
 QED

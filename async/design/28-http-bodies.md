@@ -221,10 +221,50 @@ The transcript shows:
    cheap: the response is computed from the parsed request, and it makes
    a nice `curl -d` demo.
 5. **Methods are GET and POST only.**
-6. **Own header validity (`valid_bheader`)**: today's character rules,
+6. **Own header validity (`valid_bheader`)**: header names are RFC 9110
+   tokens (`tchar`; SPEC CHANGE, user-approved, after a review found that
+   "Content-Length\t: 19" was a valid ordinary header that did not frame a
+   body); values have no CR or LF. Earlier: character rules only,
    decoupled from HttpSpecHeaders' `valid_header` (spike/http-nobody
    restricts it). The parser follows suit: its own `parse_bheaders`
    (option R1), not asyncHttpParseH's `parse_headers`.
 7. **Copies, not generalization**, as in 24 and 26: the bodies pipeline
    is a `_b` copy with the new parser. The H and strict pipelines stay
    untouched.
+
+## 7. Spec change: header names are RFC 9110 tokens (user-approved)
+
+- **Finding:** "Content-Length\t: 19" was a valid ordinary header. It
+  framed no body, so liveness forced the server to answer the 19 body
+  bytes as a second request, and every RFC-conforming behaviour (lenient,
+  strict silent, 400) was rejected.
+- **Fix:** `tchar`, and `valid_bheader` requires `EVERY tchar n`.
+  - New bites: `whitespace_names_invalid` (tab, space, vertical tab) and
+    `broken_tab_header` (answering the body as a request violates safety).
+  - The compatibility lemmas with HttpSpecHeaders now assume token names.
+    HttpSpecHeaders itself is unchanged, since its parser lives lower in
+    the stack.
+- **Parser:** `parse_bheaders`/`parse_bheaders2` reject a non-token name
+  (`HBad`).
+- **Re-proved:** `http_prog_b_spec`'s statement is unchanged. The demo has
+  a tab-header case, which gets no response.
+- **Known limitation, documented in the spec:** `Expect: 100-continue` is
+  not supported.
+
+## 8. Spec change: RFC character sets for paths and field values (APPROVED by the user, 2026-10-16)
+
+- **Finding H-CHARS (low severity):** a compliance gap, not a framing
+  issue. A TAB or non-ASCII character in a path, or NUL in a header
+  value, was valid. RFC 9112 frames no message for these, and RFC 9110
+  §5.5 requires rejecting NUL, yet liveness forced a 200/404 answer.
+- **Fix:** `uri_char` (RFC 3986 characters; `valid_brequest` adds
+  `EVERY uri_char p`) and `field_char` (VCHAR / obs-text / SP / HTAB;
+  `valid_bheader` values).
+  - New bite: `rfc_chars_bites`.
+  - The parser rejects other characters, and the CakeML program
+    translates both predicates.
+  - `http_prog_b_spec` is unchanged and re-proved. The demo has a
+    tab-in-path case, which gets no response.
+- **Rollback:** this is a separate commit, and reverting it restores §7's
+  spec.
+

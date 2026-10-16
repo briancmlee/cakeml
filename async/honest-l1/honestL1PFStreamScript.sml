@@ -545,6 +545,12 @@ Proof
   ‘fkeep lfd h f (pa with b := b2)’ by (irule fkeep_b_same >> fs[]) >>
   drule_all pf_fetch_winv >> strip_tac >>
   drule_all pf_fetch_stream >> strip_tac >> simp[] >>
+  qabbrev_tac ‘ps3 = hup_step (hup_fds rv) (outbox_of pa.b) log ps3'’ >>
+  ‘fkeep lfd h f ps3’ by simp[Abbr ‘ps3’] >>
+  ‘ps3'.b.closing = ps3.b.closing’ by simp[Abbr ‘ps3’] >>
+  pop_assum (fn th => RULE_ASSUM_TAC (REWRITE_RULE [th])) >>
+  ‘ps3'.pause = ps3.pause’ by simp[Abbr ‘ps3’] >>
+  pop_assum (fn th => REWRITE_TAC [th]) >>
   ‘¬MEM f ps3.b.closing’ by (qpat_x_assum ‘fkeep _ _ _ ps3’ mp_tac >> simp[fkeep_def]) >>
   drule_all l1_reap_fl >> strip_tac >>
   drule_all l1_reap_f >> strip_tac >>

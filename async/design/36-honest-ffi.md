@@ -1222,8 +1222,23 @@ and is client j of `psk`. The fetch log is `plog`.
   j = `cl (pcm n0) f`: eventually `Eof2 j` is among `psk`'s arrivals from
   step n0 on, or c's kernel inbox at n0 is a prefix of client j's `Data2`
   bytes there. Hypotheses: the run's side conditions, `winv w0`, [F1]
-  (D11′), S1, S3, S4 for f. The D16 corollary (hard errors only on a real
-  break) and live-conn ([F3]) remain.
+  (D11′), S1, S3, S4 for f. The D16 corollary and live-conn are proved
+  too (below and honestL1PFConnRun).
+  **D16 corollary (proved, honestL1PFD16, fd75f3319):** hypothesis HD16 f
+  (`HD16_def`, on the fetch log and f's channel at round boundaries): if
+  round k's fetch log has `FReset f`, f's channel at the end of round k
+  is broken with an empty inbox (`flushed`). Then `live_data_d16`: f's
+  kernel input R at round n0 is eventually a prefix of what L1 fetched
+  on f, or ∃k ≥ n0 with f flushed. `live_data_psk_d16` gives the same in
+  psk, as client data. An orderly EOF needs no hypothesis (`recv_zero`:
+  L0 returns 0 only with an empty inbox). *Wording refined (agreed with
+  the coordinator, 2026-10-17):* the approved wording "every byte c's peer
+  delivered is eventually in psk" is refined to "... unless the
+  connection genuinely broke and the kernel discarded unread data". Real
+  TCP may discard received-but-unread data on an RST (the model's LBreak
+  with keep = F), so the unrefined statement is false for real
+  connections. The corollary still excludes exactly what D16 is about:
+  a spurious hard error ending the episode early.
   *Formal shapes for live-conn (agreed).* **[F3]:** infinitely often some
   fd below the limit is free (`∀n. ∃n' ≥ n. ∃x < fd_limit. n2w x ∉
   l0_used (rworld n')`). It is a condition on the run, on what the process
@@ -1249,11 +1264,51 @@ and is client j of `psk`. The fetch log is `plog`.
   ECONNABORTED from L1's accepts on lfd really dropped a queued
   connection" (stated on the run's observed events and the listener's
   queue where possible), (c) is gone: j0 is accepted or dropped.
-  **EMFILE needs no new assumption:** while no accept succeeds, nothing
-  allocates an fd (L1 makes no connects or listens), so the set of used
-  fds only shrinks. A fd that [F3] finds free therefore stays free until
-  the next retry, whose accept then cannot fail with EMFILE (in L0,
-  EMFILE comes only when `l0_alloc` finds no fd below the limit).
+  *Refinement while proving (agreed with the coordinator):* the main
+  form needs no [F3]. If j0 is never resolved, pops stop after finitely
+  many (j0's position is finite), and L1 keeps accepting (S1, S2, the
+  pause countdown, [F1] on lfd's poll), so every later accept fails,
+  which is (c). [F3] moves to the corollary, whose hypotheses are:
+  (H1) every failed accept on lfd whose error is not `l1_transient`,
+  EMFILE or ENFILE removed a connection from the queue (the observed
+  event plus the queue before and after); this covers ECONNABORTED and
+  Linux's pending network errors. (H2) [F3]. (H3) the weak, **joint**
+  form: if L1 attempts accept on lfd infinitely often, infinitely many
+  attempts fail neither with an `l1_transient` error nor with ENFILE
+  (this is [F1]'s accept clause with ENFILE added, as a hypothesis). It
+  must be joint: two separate weak forms ("infinitely many accepts not
+  transient", from [F1], and "infinitely many not ENFILE") are both
+  met by a run alternating EINTR, ENFILE, EINTR, ..., where every accept
+  fails and j0 waits forever. It is still a weak form, which allows
+  recurring ENFILE and EINTR (the user's rule: fairness only in weak
+  "infinitely often" forms that do not exclude realistic runs).
+  *Correction (2026-10-17, before proving the corollary):* the
+  paragraph that stood here said "EMFILE needs no new assumption ... in
+  L0, EMFILE comes only when `l0_alloc` finds no fd below the limit".
+  That was wrong. L0's world choice `transient` may return any error
+  but EAGAIN, EMFILE included, and it cannot be limited to accepts
+  because it does not see the call kind. So the model allows spurious
+  EMFILE, and H1 + [F3] + H3 would not imply the corollary (a run where
+  every accept gets a spurious EMFILE). **The corollary's hypotheses
+  are now (agreed with the coordinator, no new trust):** (H1) as above,
+  stated on the observed event plus the listener's queue at round
+  boundaries: if round k has an accept on lfd that fails with an error
+  outside {`l1_transient`, EMFILE, ENFILE} and the queue is not empty,
+  some channel queued at round k is no longer queued at round k+1.
+  (H3′) the joint weak form with EMFILE added: if L1 attempts accept on
+  lfd infinitely often, infinitely many attempts fail with none of
+  `l1_transient`, ENFILE, EMFILE. [F3] is dropped from the corollary:
+  H3′ excludes only runs where j0 cannot be accepted anyway (the process
+  at its limit forever, or spurious EMFILE forever). [F3] together with
+  "no spurious EMFILE forever" implies H3′.
+  **Proved (honestL1PFConnRun, 5d0d1c269):** `live_conn`, the main form,
+  from [F1], S1, S2 (L1's accepted fds are eventually asked for) and
+  the run's hypotheses, with `linv lfd w0` (lfd is a listener and no
+  connection's fd); and `live_conn_psk`, where an accepted j0 is a
+  `Connect2 lfd` in its round's arrivals under a new client number;
+  and `live_conn_cor` (255d198d7), the corollary from H1 (`H1_def`) and
+  H3′ (`H3_def`, errors in `kept_err`): accepted or dropped. All in
+  honestL1PFConnRun, Holmake green, no cheats.
 - **(live-conn)** Assume [F3]. Every connection that reaches the
   listener's backlog (`LIncoming` on its port) is eventually a
   `Connect2` in `psk`, unless it is dropped. It is dropped only if it
@@ -1595,8 +1650,10 @@ even if it is more work.**
 | D15 | R1-live gains S3 (the server reads what it is shown) and S4 (if the peer drains, the outbox eventually falls to ≤ hw) as per-server obligations, not trusted. They are discharged per server: echo, HTTP and KV from their v2 liveness and reply-only writes; chat via D7 | **approved** |
 | D16 | Spurious hard errors (the L0 model allows any error but EAGAIN as a transient failure, [P 2.3]): (live-data) holds **unless L1 observed a hard error on c**, in which case the episode ended (`Eof2 j`). No new trust. Plus a corollary with the condition as an explicit **hypothesis**: if hard errors on c occur only when the connection really broke, every byte c's peer delivered is eventually in `psk` | **approved** |
 | D11′ | **[F1] restated on observed outcomes** (replaces D11's world-choice form; does not add to it). Per call kind and per fd: a call on f made infinitely often does not return a *retried* outcome infinitely often. Retried = an `l1_transient` error (EAGAIN, EINTR, ENOBUFS, ENOMEM) for recv, accept and send; any failure for poll (L1 retries every failed poll next round). Reason: the weakest single assumption, and no extra narrowing of POSIX. It covers both the world's transient choice and a broken channel's transient-looking errors (`broken_recv`, an `LBreak` error), with no trusted "broken errors are never transient" fact. Stated on the run's IO-event trace (the observed results) | **approved (user, via coordinator)** |
-| D17 | Running out of fds at accept. **ENFILE is retried** (only EMFILE pauses). **While the process is out of fds, L1 retries accept after a backoff** of `pf_backoff` rounds (a model constant; no proof uses its value), as real servers pause accepting and retry, instead of waiting for a close. No "no spurious EMFILE" hypothesis. In the model: `pause` in the PF state; L1 polls the listener only when `pause = 0`. Stated honestly in §5/§6: at a real fd limit on macOS, each retry's EMFILE may reset one queued connection (`emfile_drops`), which live-conn's "dropped" case covers. EMFILE needs no new assumption (§6): while no accept succeeds, no fd is allocated, so a fd that [F3] finds free stays free until the next retry. The CakeML L1 loop and its CF spec follow the model | **decided (user, via coordinator)** |
+| D17 | Running out of fds at accept. **ENFILE is retried** (only EMFILE pauses). **While the process is out of fds, L1 retries accept after a backoff** of `pf_backoff` rounds (a model constant; no proof uses its value), as real servers pause accepting and retry, instead of waiting for a close. No "no spurious EMFILE" hypothesis. In the model: `pause` in the PF state; L1 polls the listener only when `pause = 0`. Stated honestly in §5/§6: at a real fd limit on macOS, each retry's EMFILE may reset one queued connection (`emfile_drops`), which live-conn's "dropped" case covers. *Corrected 2026-10-17:* this row said EMFILE needs no new assumption; that was wrong, because L0's `transient` may be a spurious EMFILE (§6). The corollary uses H3′ (EMFILE in the joint weak set) instead of [F3]. The CakeML L1 loop and its CF spec follow the model | **decided (user, via coordinator)** |
 | D18 | Spurious accept errors (the analogue of D16 for the listener). **live-conn, main form (no new trust):** j0 is (a) accepted, (b) dropped (broken or aborted, or an EMFILE reset), or (c) L1's accepts on lfd fail (retried) infinitely often. **Corollary** under the explicit hypothesis "every ECONNABORTED on lfd's accept really dropped a queued connection" (on observed events plus the queue where possible; otherwise on world choices, with the reason): accepted or dropped. [F1]'s retried set for accept stays as in D11′. Rationale, for consistency with D11′/D16/D17: never add trusted kernel facts that narrow POSIX's looseness; weaken the main theorem honestly, and give the strong form as a corollary under an explicit hypothesis | **decided (user, via coordinator)** |
+
+| D19 | Hung-up fds (user decision, option 2; via async-spike's L3-00 Q-L3-1). On POLLHUP for a connection fd L1 holds, L1 fetches what is left. (a) If the input ends with a hard error (`FReset`: the connection really broke), its outbox is dropped and the fd is marked gone, so it is closed. (b) If it ends with EOF (a half-close; the fd may still be writable), L1 keeps flushing and closes when drained, but after `pf_hupwait` consecutive rounds with a non-empty outbox and no send progress (a named constant, like `pf_backoff`) the outbox is dropped. An empty outbox or any progress resets the count. Model: `hups` in the PF state, `hup_step` between the fetch and the reap. No HUP disjunct anywhere: no hung-up fd is polled forever. The cost on the output side: liveness assumes the peer reads within `pf_hupwait` rounds of the hang-up. *Correction:* the first framing said a hung-up fd is always unwritable. That is wrong for a half-close: the L0 model, like platforms, may report POLLHUP after the peer's FIN alone, and the fd stays writable, so dropping at once would lose replies to half-closing clients | **decided (user, via coordinator)** |
 
 **Principle (user):** OS assumptions are justified by POSIX and the RFCs
 only, never by any platform's behaviour. The probes are tests, not

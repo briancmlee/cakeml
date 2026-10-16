@@ -440,6 +440,16 @@ Proof
   simp[pv_rel_def, pown_def, l0own_def, inb_of_def]
 QED
 
+Theorem rel_hup[simp]:
+  (pv_rel lfd cm (hup_step hfs ob log ps) s ⇔ pv_rel lfd cm ps s) ∧
+  (pown lfd (hup_step hfs ob log ps) ⇔ pown lfd ps) ∧
+  (l0own lfd w (hup_step hfs ob log ps) ⇔ l0own lfd w ps) ∧
+  hs_of (hup_step hfs ob log ps) = hs_of ps ∧
+  inb_of (hup_step hfs ob log ps) f = inb_of ps f
+Proof
+  simp[pv_rel_def, pown_def, l0own_def, hs_of_def, inb_of_def]
+QED
+
 Theorem lowest_fd_fresh:
   fds_lt w ∧ w.fd_limit ≤ 2 ** 31 ⇒ ¬MEM (lowest_fd w) (l0_used w)
 Proof
@@ -537,6 +547,17 @@ Definition arrs_def:
   arrs lfd (cm, k) (FReset f :: l) =
     (let (as, ck) = arrs lfd (cm, k) l in (Eof2 (cl cm f) :: as, ck))
 End
+
+(* The client count grows by the log's accepted connections (FConn) *)
+Theorem arrs_count:
+  ∀l cm k as cm' k'.
+    arrs lfd (cm, k) l = (as, (cm', k')) ⇒
+    k' = k + LENGTH (FILTER (λx. ∃g. x = FConn g) l)
+Proof
+  Induct >> simp[arrs_def] >> Cases >> simp[arrs_def] >> rpt gen_tac >>
+  pairarg_tac >> gvs[] >> PairCases_on ‘ck’ >> strip_tac >> gvs[] >>
+  first_x_assum drule >> simp[]
+QED
 
 (* Delivering arrivals keeps the world's allocation *)
 Theorem deliver2_alloc[simp]:
@@ -1115,7 +1136,10 @@ Proof
   PairCases_on ‘y’ >> rename1 ‘l1_flush _ _ = SOME ((w2, b2), fevs)’ >> gvs[] >>
   qmatch_asmsub_abbrev_tac ‘pf_fetch _ _ fs (w2, ps2)’ >>
   Cases_on ‘pf_fetch lfd hw fs (w2, ps2)’ >> gvs[] >> rename1 ‘_ = SOME z’ >>
-  PairCases_on ‘z’ >> rename1 ‘pf_fetch _ _ _ _ = SOME ((w3, ps3), log3, gevs)’ >> gvs[] >>
+  PairCases_on ‘z’ >> rename1 ‘pf_fetch _ _ _ _ = SOME ((w3, ps3f), log3, gevs)’ >> gvs[] >>
+  qabbrev_tac ‘ps3 = hup_step (hup_fds rv) (outbox_of ps.b) log3 ps3f’ >>
+  ‘ps3f.b.closing = ps3.b.closing ∧ ps3f.pause = ps3.pause’ by simp[Abbr ‘ps3’] >>
+  pop_assum (fn th => RULE_ASSUM_TAC (REWRITE_RULE [th]) >> REWRITE_TAC [th]) >>
   Cases_on ‘l1_reap ps3.b.closing (w3, ps3.b)’ >> gvs[] >> rename1 ‘_ = SOME u’ >>
   PairCases_on ‘u’ >> rename1 ‘l1_reap _ _ = SOME ((w4, b4), cevs)’ >> gvs[] >>
   drule_all l1_polls_l0 >> strip_tac >>
@@ -1128,13 +1152,16 @@ Proof
   ‘l0_rely w2’ by simp[] >>
   ‘k' + 1 < dimword (:64)’ by simp[] >>
   drule_all fetch_rel >> strip_tac >>
+  ‘pv_rel lfd cm' ps3 (FOLDL deliver2 s as) ∧ pown lfd ps3 ∧ l0own lfd w3 ps3 ∧
+   ps3.b.tbl = ps3f.b.tbl ∧ ps3.b.nxt = ps3f.b.nxt ∧ ps3.b.closing = ps3f.b.closing ∧
+   ps3.pause = ps3f.pause’ by simp[Abbr ‘ps3’] >>
   drule_all l1_reap_l0 >> strip_tac >>
   ‘pown lfd (ps3 with b := b4)’ by (irule pown_closing_filter >> simp[] >> metis_tac[]) >>
   ‘pv_rel lfd cm' (ps3 with b := b4) (FOLDL deliver2 s as)’ by simp[pv_rel_b] >>
   simp[hpoll_def, sock_poll2_def, tick2_def, FOLDL_deliver2_future] >>
   ‘hs_of (ps3 with b := b4) = hs_of ps’ by gvs[hs_of_def, Abbr ‘ps2’] >>
-  ‘ps3 with <| b := b4; pause := ps3.pause − 1 |> =
-   (ps3 with b := b4) with pause := ps3.pause − 1’ by simp[] >>
+  ‘ps3 with <| b := b4; pause := ps3f.pause − 1 |> =
+   (ps3 with b := b4) with pause := ps3f.pause − 1’ by simp[] >>
   pop_assum SUBST1_TAC >>
   simp[] >> rpt conj_tac
   >- (qpat_x_assum ‘hs_of _ = hs_of ps’ (SUBST1_TAC o SYM) >>
@@ -1385,11 +1412,13 @@ QED
    m in the version-2 world psk built from L1's own run, round by round; the
    relation pv_rel (L1's buffers are the world's state) and the invariants
    hold throughout *)
-Theorem l1pf_refines_hl:
+(* As l1pf_refines_hl, with the bound on the client count only for the
+   rounds up to N (for a run looked at up to round N) *)
+Theorem l1pf_refines_hl_upto:
   l0_rely w0 ∧ fds_lt w0 ∧ MEM lfd (l0_used w0) ∧
-  (∀n. SND (pcm lfd hw ifds m w0 n) + 1 < dimword (:64)) ⇒
+  (∀n'. n' ≤ N ⇒ SND (pcm lfd hw ifds m w0 n') + 1 < dimword (:64)) ⇒
   ∀n h ws evs logs.
-    prounds lfd hw ifds m (w0, pinit) n = SOME (h, ws, evs, logs) ⇒
+    n ≤ N ∧ prounds lfd hw ifds m (w0, pinit) n = SOME (h, ws, evs, logs) ⇒
     hhist lfd ifds m (psk lfd hw ifds m w0) n = h ∧
     SND (hst lfd ifds m (psk lfd hw ifds m w0) n) = hs_of (SND ws) ∧
     pv_rel lfd (FST (pcm lfd hw ifds m w0 n)) (SND ws)
@@ -1414,7 +1443,8 @@ Proof
   rpt BasicProvers.VAR_EQ_TAC >>
   rename1 ‘prounds _ _ _ _ _ n = SOME (h0, ws0, evs0, logs0)’ >>
   rename1 ‘pround _ _ _ _ _ = SOME (snap, ws1, log, revs)’ >>
-  first_x_assum drule >> strip_tac >>
+  ‘n ≤ N’ by simp[] >>
+  first_x_assum drule_all >> strip_tac >>
   ‘hacts_of lfd ifds m (psk lfd hw ifds m w0) n = new_actions (log_of m) h0’
     by simp[hacts_of_def] >>
   PairCases_on ‘ws0’ >> rename1 ‘prounds _ _ _ _ _ n = SOME (h0, (w, ps), evs0, logs0)’ >>
@@ -1436,7 +1466,7 @@ Proof
     by (rw[] >> irule run_alloc_eq >> simp[] >> qexists_tac ‘SUC n’ >> simp[]) >>
   ‘LHD s.future = SOME as’ by simp[] >>
   ‘ck1 + 1 < dimword (:64)’
-    by (qpat_assum ‘∀n'. SND (pcm _ _ _ _ _ n') + 1 < _’ (mp_tac o Q.SPEC ‘SUC n’) >>
+    by (qpat_assum ‘∀n'. _ ≤ N ⇒ SND (pcm _ _ _ _ _ n') + 1 < _’ (mp_tac o Q.SPEC ‘SUC n’) >>
         qpat_assum ‘pcm _ _ _ _ _ (SUC n) = _’ (fn th => REWRITE_TAC [th]) >>
         simp[]) >>
   drule_all round_rel >> strip_tac >>
@@ -1445,6 +1475,29 @@ Proof
     by simp[hacts_tot_def] >>
   drule hround_step >> strip_tac >> simp[] >>
   gvs[] >> AP_THM_TAC >> AP_TERM_TAC >> simp[FUN_EQ_THM, ADD_CLAUSES]
+QED
+
+Theorem l1pf_refines_hl:
+  l0_rely w0 ∧ fds_lt w0 ∧ MEM lfd (l0_used w0) ∧
+  (∀n. SND (pcm lfd hw ifds m w0 n) + 1 < dimword (:64)) ⇒
+  ∀n h ws evs logs.
+    prounds lfd hw ifds m (w0, pinit) n = SOME (h, ws, evs, logs) ⇒
+    hhist lfd ifds m (psk lfd hw ifds m w0) n = h ∧
+    SND (hst lfd ifds m (psk lfd hw ifds m w0) n) = hs_of (SND ws) ∧
+    pv_rel lfd (FST (pcm lfd hw ifds m w0 n)) (SND ws)
+      (FST (hst lfd ifds m (psk lfd hw ifds m w0) n)) ∧
+    LENGTH (FST (hst lfd ifds m (psk lfd hw ifds m w0) n)).clients =
+      SND (pcm lfd hw ifds m w0 n) ∧
+    (FST (hst lfd ifds m (psk lfd hw ifds m w0) n)).alloc = run_alloc lfd hw ifds m w0 ∧
+    (FST (hst lfd ifds m (psk lfd hw ifds m w0) n)).future =
+      LGENLIST (λi. parr lfd hw ifds m w0 (n + i)) NONE ∧
+    pown lfd (SND ws) ∧ l0own lfd (FST ws) (SND ws) ∧
+    l0_rely (FST ws) ∧ fds_lt (FST ws)
+Proof
+  strip_tac >> rpt gen_tac >> strip_tac >>
+  mp_tac (Q.SPEC ‘n’ (Q.GEN ‘N’ l1pf_refines_hl_upto)) >>
+  impl_tac >- fs[] >>
+  disch_then (qspecl_then [‘n’, ‘h’, ‘ws’, ‘evs’, ‘logs’] mp_tac) >> simp[]
 QED
 
 (* ------------------------------------------------------------------------

@@ -64,7 +64,8 @@ QED
 Theorem qof_simple[simp]:
   qof (w with hist := h) l = qof w l ∧ qof (w with clock := c) l = qof w l ∧
   qof (w with chans := cs) l = qof w l ∧ qof (w with open_fds := ofs) l = qof w l ∧
-  qof (w with reserved := rs) l = qof w l ∧ qof (upd_lchan j g w) l = qof w l
+  qof (w with reserved := rs) l = qof w l ∧ qof (upd_lchan j g w) l = qof w l ∧
+  qof (w with <| listeners := ls; open_fds := ofs |>) l = qof (w with listeners := ls) l
 Proof
   simp[qof_def, upd_lchan_def]
 QED
@@ -120,4 +121,27 @@ Proof
             rw[] >> gvs[]) >>
       simp[])
   >> gvs[l0_accept_def, AllCaseEqs()] >> simp[qof_def, FILTER_AFUPDKEY_other]
+QED
+
+(* An accept on the listener: the queue is unchanged, or its head is popped
+   and either accepted (opened under the new fd) or dropped (it is broken) *)
+Theorem accept_queue:
+  l0_accept l w = (r, w') ⇒
+  qof w' l = qof w l ∨
+  ∃j q'. qof w l = j :: q' ∧ qof w' l = q' ∧
+         ((∃k. r = Ok (w2n k) ∧ ALOOKUP w'.open_fds k = SOME j) ∨
+          ((∀k. r ≠ Ok k) ∧ (j < LENGTH w.chans ⇒ (EL j w'.chans).broken)))
+Proof
+  rw[l0_accept_def] >>
+  Cases_on ‘FILTER (λ(l',p,q). l' = l) w.listeners’ >> gvs[] >>
+  PairCases_on ‘h’ >> gvs[] >>
+  ‘h0 = l’ by (‘MEM (h0, h1, h2) (FILTER (λ(l',p,q). l' = l) w.listeners)’ by simp[] >>
+               fs[MEM_FILTER]) >>
+  pop_assum SUBST_ALL_TAC >>
+  ‘∀g. qof (w with listeners := AFUPDKEY l (K (h1, g)) w.listeners) l = g’
+    by (gen_tac >> drule FILTER_AFUPDKEY_same >>
+        disch_then (qspec_then ‘K (h1, g)’ strip_assume_tac) >> simp[qof_def]) >>
+  ‘qof w l = h2’ by simp[qof_def] >>
+  gvs[AllCaseEqs(), l0_alloc_def, fail_def] >>
+  simp[upd_lchan_def, EL_LUPDATE, break_lchan_def] >> rw[] >> gvs[]
 QED

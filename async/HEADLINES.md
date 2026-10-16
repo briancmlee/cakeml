@@ -631,7 +631,7 @@ L2's statements are shown with their spike names; they are renamed when L2 is fo
    - accept failures such as running out of file descriptors are reported as "would block";
    - socket errors are reported as "readable".
 
-   The model has none of these behaviours, so the theorems don't see them. A redesign is in progress (L3, section 8): a minimal, honest FFI (about one syscall per call), verified CakeML wrappers that absorb the raw semantics, and refinement proofs so the existing theorems carry over.
+   The model has none of these behaviours, so the theorems don't see them. A redesign is in progress (L3, section 8): a minimal, honest FFI (about one syscall per call), verified CakeML wrappers that absorb the raw semantics, and refinement proofs so the theorems about the lifetimes world (close and fd reuse) carry over.
 5. **The RFC reference** `spec-rfc/rfc9112Framing`. It is trusted only as a reading aid: the agreement theorems check HttpSpec against it.
 
 Nothing else is trusted: the async library, its CF refinement, the event loops, the scheduler and the protocol pipeline are all proved.

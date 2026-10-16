@@ -583,8 +583,7 @@ End
    requested events (int16) *)
 Definition pe_fd_def:
   pe_fd (e : word8 list) : word64 =
-    n2w (w2n (EL 0 e) + 256 * w2n (EL 1 e) + 65536 * w2n (EL 2 e) +
-         16777216 * w2n (EL 3 e))
+    w2w (EL 0 e) || (w2w (EL 1 e) << 8) || (w2w (EL 2 e) << 16) || (w2w (EL 3 e) << 24)
 End
 
 Definition pe_events_def:
@@ -611,6 +610,22 @@ Definition abi_rev_def:
             (if r.rerr then 8 else 0) + (if r.rhup then 16 else 0) +
             (if r.rnval then 32 else 0)) : word8; 0w]
 End
+
+(* The revents field (2 bytes) read back as the model's revents *)
+Definition abi_revents_def:
+  abi_revents (bs : word8 list) =
+    <| rin := word_bit 0 (HD bs); rout := word_bit 2 (HD bs); rerr := word_bit 3 (HD bs);
+       rhup := word_bit 4 (HD bs); rnval := word_bit 5 (HD bs) |>
+End
+
+Theorem abi_revents_abi_rev[simp]:
+  abi_revents (abi_rev b) = byte_revents b
+Proof
+  simp[abi_rev_def, abi_revents_def] >>
+  qabbrev_tac ‘r = byte_revents b’ >>
+  simp[honestL0Theory.revents_component_equality] >>
+  rpt (IF_CASES_TAC >> simp[]) >> EVAL_TAC
+QED
 
 (* A completed poll: the count, the pad bytes as they were, each entry's fd
    and events as they were and its revents *)

@@ -313,6 +313,18 @@ Definition client_spec'_def:
   - The environment stays open loop. A history-keyed environment would make
     plain `ep_rely` hold, but it needs the handle layer to record its calls
     and costs `open_loop`, so it was not chosen.
+- **The client must handle a failed connect** (decision, user via the
+  coordinator, 2026-10-16: option (b)). endpointWorld gains a world choice
+  `nosock`, keyed by the connect's number `nconnects`. A connect it marks
+  gets no socket (code 10, as L0's EMFILE or a transient error) and opens
+  no episode. So `client_guar'` must not assume that its N connects all
+  open:
+  - its liveness is conditioned on the episodes that did open, or
+  - the client retries, and the spec says what it does on a failure (give
+    up, or retry within a bound).
+  E1 (close-v2, PR #156) is stated meanwhile under `no_socketless` (no
+  socketless connect in the run). It is restated without that restriction
+  once the endpointWorld PR for (b) lands.
 
 ### 2.6 The no-deadlock lemma
 

@@ -3030,3 +3030,126 @@ Proof
   last_x_assum drule >> disch_then drule >> simp[] >>
   TRY (impl_tac >- metis_tac[]) >> strip_tac >> simp[] >> rw[] >> gvs[]
 QED
+
+(* The server's actions close only fds whose EOF was fetched *)
+Theorem pdo_keep:
+  pdo lfd (w, ps) act = SOME (r, (w', ps'), evs) ∧ eown E ps w ∧
+  ALOOKUP w.open_fds f = SOME c ∧ ¬E c ⇒ ALOOKUP w'.open_fds f = SOME c
+Proof
+  Cases_on ‘act’ >> simp[pdo_def] >> strip_tac
+  >- gvs[AllCaseEqs()]
+  >- (qpat_x_assum ‘option_CASE _ _ _ = _’ mp_tac >>
+      Cases_on ‘ALOOKUP ps.b.tbl c'’ >> simp[] >- (strip_tac >> gvs[]) >>
+      rename1 ‘ALOOKUP ps.b.tbl h = SOME g’ >>
+      IF_CASES_TAC >- (strip_tac >> gvs[]) >>
+      reverse IF_CASES_TAC >- (strip_tac >> gvs[]) >>
+      IF_CASES_TAC
+      >- (simp[l1_close_def] >> Cases_on ‘sys_close g w’ >> simp[] >>
+          rename1 ‘sys_close g w = SOME z’ >> PairCases_on ‘z’ >> simp[] >>
+          strip_tac >> rveq >>
+          ‘g ≠ f’ by (strip_tac >> gvs[eown_def] >> metis_tac[]) >>
+          metis_tac[sys_close_open])
+      >> strip_tac >> gvs[])
+  >> PairCases_on ‘z’ >> gvs[] >>
+  qpat_x_assum ‘l1do _ _ _ = _’ mp_tac >>
+  simp[l1do_def] >> rw[AllCaseEqs()] >> gvs[] >>
+  drule (CONJUNCT2 sys_quiet_open) >> simp[]
+QED
+
+Theorem pacts_keep:
+  ∀acts w ps s rs evs w' ps'.
+    pacts lfd (w, ps) acts = SOME (rs, evs, (w', ps')) ∧ pv_rel lfd cm0 ps s ∧ pown lfd ps ∧
+    kinv p lfd sched w1 a cm D E w ∧ winv w ∧ sched_wf2 (sk_of p lfd sched w1) ∧
+    chown ps w ∧ eown E ps w ∧ ALOOKUP w.open_fds f = SOME c ∧ ¬E c ⇒
+    ALOOKUP w'.open_fds f = SOME c
+Proof
+  Induct >> simp[pacts_def] >> rpt gen_tac >> strip_tac >> gvs[AllCaseEqs()] >>
+  rename1 ‘pdo _ _ _ = SOME (r1, ws1, evs1)’ >> PairCases_on ‘ws1’ >>
+  drule_all pdo_hdo >> strip_tac >>
+  drule_all pdo_kinv >> strip_tac >>
+  drule_all pdo_keep >> strip_tac >>
+  first_x_assum drule_all >> simp[]
+QED
+
+(* MAIN (G5): a round, seen from an open fd whose EOF was not fetched *)
+Theorem pround_link:
+  pround lfd hw hs (w, ps) acts = SOME (snap, (w', ps'), log, evs) ∧
+  kinv p lfd sched w1 a cm D E w ∧ winv w ∧ sched_wf2 (sk_of p lfd sched w1) ∧
+  pv_rel lfd cm0 ps s ∧ pown lfd ps ∧ l0own lfd w ps ∧ chown ps w ∧ eown E ps w ∧
+  ALOOKUP w.open_fds f = SOME c ∧ ¬E c ∧ arrs lfd (cm, a) log = (as, (cm', a')) ⇒
+  data_of c as = fdata f log ∧ (MEM (Eof2 c) as ⇔ fend f log) ∧
+  (∀bs. MEM (FData f bs) log ⇒ bs ≠ []) ∧
+  (ALOOKUP w'.open_fds f = SOME c ∨ MEM (Eof2 c) as)
+Proof
+  simp[pround_def, AllCaseEqs()] >> strip_tac >> PairCases_on ‘ws1’ >>
+  gvs[pf_tail_def, AllCaseEqs()] >>
+  rename1 ‘pacts _ _ _ = SOME (rs, aevs, wa, pa)’ >>
+  mp_tac (Q.SPECL [‘acts’, ‘w’, ‘ps’, ‘s’, ‘rs’, ‘aevs’, ‘wa’, ‘pa’] pacts_kinv) >>
+  impl_tac >- simp[] >> strip_tac >>
+  mp_tac (Q.SPECL [‘acts’, ‘w’, ‘ps’, ‘s’, ‘rs’, ‘aevs’, ‘wa’, ‘pa’] pacts_keep) >>
+  impl_tac >- simp[] >> strip_tac >>
+  drule_all pacts_hacts >> strip_tac >>
+  ‘l0_rely w ∧ fds_lt w’ by gvs[winv_def] >>
+  drule_all pacts_l0 >> strip_tac >>
+  rename1 ‘l1_polls _ wa = SOME (rv, wb, pevs)’ >>
+  drule_all l1_polls_kinv >> strip_tac >>
+  drule_all l1_polls_l0 >> strip_tac >>
+  rename1 ‘l1_flush _ (wb, pa.b) = SOME ((wc, bc), fevs)’ >>
+  drule_all l1_flush_kinv >> strip_tac >>
+  ‘l0_rely wb’ by gvs[winv_def] >>
+  drule_all l1_flush_l0 >> strip_tac >>
+  rename1 ‘pf_fetch _ _ _ _ = SOME ((wd, pd), log, gevs)’ >>
+  qmatch_asmsub_abbrev_tac ‘pf_fetch _ _ fs _’ >>
+  ‘∀g. MEM g fs ∧ g ≠ lfd ⇒ ∃c. ALOOKUP wc.open_fds g = SOME c’
+    by (rw[Abbr ‘fs’, MEM_FILTER] >> drule in_fds_poll_set >> strip_tac >> gvs[] >>
+        fs[chown_def] >> metis_tac[]) >>
+  ‘ALOOKUP wc.open_fds f = SOME c’ by gvs[] >>
+  drule_all pf_fetch_link >> strip_tac >> simp[] >>
+  ‘eown E (pa with b := bc) wc’ by (fs[eown_def] >> metis_tac[]) >>
+  ‘eused (pa with b := bc) wc’
+    by (simp[eused_def] >> rpt strip_tac
+        >- (‘MEM f' (MAP SND pa.b.tbl)’ by (fs[pown_def] >> metis_tac[]) >>
+            ‘∃c. ALOOKUP wa.open_fds f' = SOME c’ by fs[chown_def] >>
+            gvs[] >> metis_tac[used_open_fds])
+        >> gvs[l0own_def]) >>
+  drule_all kinv_fetch >> strip_tac >> gvs[] >>
+  drule pf_fetch_b >> strip_tac >>
+  rename1 ‘l1_reap _ (wd, _) = SOME ((we, be), cevs)’ >>
+  drule l1_reap_wkeep >> strip_tac >>
+  Cases_on ‘MEM f pd.b.closing’
+  >- (disj2_tac >> fs[eown_def] >> metis_tac[])
+  >> disj1_tac >> fs[wkeep_def] >> first_x_assum irule >>
+  simp[hup_step_fields] >> metis_tac[]
+QED
+
+(* The run's hypotheses for R2′ (simple worlds) *)
+Definition simple_run_def:
+  simple_run p lfd sched hw ifds m w1 ⇔
+    simple_v2 p lfd sched w1 ∧ (∀h. ¬w1.ch.emfile_drops h) ∧ sched_wf2 (sk_of p lfd sched w1) ∧
+    winv w1 ∧ w1.listeners = [(lfd, p, [])] ∧ w1.chans = [] ∧ w1.open_fds = [] ∧
+    run_ok lfd hw ifds m w1 ∧ (∀n. SND (pcm lfd hw ifds m w1 n) + 1 < dimword (:64))
+End
+
+Theorem run_link:
+  simple_run p lfd sched hw ifds m w1 ⇒
+  ∀k f c.
+    ALOOKUP (rworld lfd hw ifds m w1 k).open_fds f = SOME c ∧
+    ¬MEM (Eof2 c) (upto (parr lfd hw ifds m w1) k) ⇒
+    data_of c (parr lfd hw ifds m w1 k) = fdata f (rlog lfd hw ifds m w1 k) ∧
+    (MEM (Eof2 c) (parr lfd hw ifds m w1 k) ⇔ fend f (rlog lfd hw ifds m w1 k)) ∧
+    (∀bs. MEM (FData f bs) (rlog lfd hw ifds m w1 k) ⇒ bs ≠ []) ∧
+    (ALOOKUP (rworld lfd hw ifds m w1 (SUC k)).open_fds f = SOME c ∨
+     MEM (Eof2 c) (parr lfd hw ifds m w1 k))
+Proof
+  strip_tac >> qpat_x_assum ‘simple_run _ _ _ _ _ _ _’ (strip_assume_tac o REWRITE_RULE [simple_run_def]) >>
+  rpt gen_tac >> strip_tac >>
+  ‘MEM lfd (l0_used w1)’ by simp[l0_used_def] >>
+  drule_all rinv_run >> disch_then (qspec_then ‘k’ mp_tac) >>
+  simp_tac std_ss [rinv_def] >> strip_tac >>
+  drule_all round_facts >> disch_then (qspec_then ‘k’ strip_assume_tac) >>
+  drule prun_round' >> disch_then (qspecl_then [‘ARB’, ‘k’] strip_assume_tac) >>
+  drule pcm_SUC >> disch_then (qspec_then ‘k’ assume_tac) >>
+  Cases_on ‘pcm lfd hw ifds m w1 k’ >> Cases_on ‘pcm lfd hw ifds m w1 (SUC k)’ >> fs[] >>
+  drule_then drule pround_link >> simp[] >>
+  disch_then (qspecl_then [‘s’, ‘f’, ‘cm’, ‘c’] mp_tac) >> simp[]
+QED

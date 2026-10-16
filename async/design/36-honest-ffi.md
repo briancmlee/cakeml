@@ -796,6 +796,38 @@ abstract one, renamed:
   - and drops `sys_listen`.
 - `sk_of w0` is the v2 world with w0's schedule.
 
+**R2, made precise by phase 4** (the plan for phase 6). The simple-world
+refinement holds round by round under four side conditions, each found
+while building L1:
+
+1. **Open loop.** `simple0` plus `open_loop`: the environment ignores the
+   calls, as version 2's schedule does. The version-2 world `sk_of w0` takes
+   its `future` from the environment's arrivals at successive polls.
+2. **One poll per round:** at most 4096 polled fds. L1 chunks larger
+   polls, and each chunk is a step of time that the handle layer's single
+   poll does not have.
+3. **Reads within the interest.** A server Read of a handle outside the
+   round's polled interest gets "would block" from L1 with no syscall, but
+   possibly data from version 2. Our servers read only after waiting for
+   readiness (`asyncServer`'s `handler`). R2 assumes this (`reads_interest`),
+   and it is proved per server. R1 (general) needs no such hypothesis,
+   because regrouping covers it.
+4. **No outbox, no closing.** In `simple0` every send is taken whole
+   (`write_simple`), so flush and reap never act. EOF closes at once, as
+   the handle layer's auto-close does.
+
+Under these, R2's relation is: the handle tables agree (`l1hdl` = `hdl`);
+L1's outboxes are empty and its `closing` list is empty; L0 channel j is
+version-2 client j (inbox = incoming, peer_eof = peer_closed, sent =
+outgoing, open fds and listeners the same). The events then rename
+one-to-one:
+- `sys_recv` ↦ `sock_read`;
+- `sys_send` ↦ `sock_write`;
+- `sys_accept` ↦ `sock_accept`;
+- `sys_close` ↦ `sock_close`;
+- `sys_poll` ↦ `sock_poll`, where the flag is IN, and HUP/ERR imply IN in
+  `simple0`.
+
 **(R3) Per-wrapper lemmas** (model level, on L1's functional core; the
 cheap part). For example:
 

@@ -82,3 +82,24 @@ Next: phase 4, the L1 functional core (extend honestL1 to the L0 world, v2 only 
 - Next:
   - R1: general worlds, with regrouping;
   - then sys_connect and its L1 wrapper (a moonshot dependency).
+
+## Phase 7 (R1: the prefetching L1), branch spike/honest-r1 (on spike/honest-refine)
+
+- Finding: R1 is false for the lazy L1 (design/36 §6, C1–C5). User decision D10: the prefetching L1 becomes THE L1, built additively.
+- `async/honest-l1/`:
+  - honestL1PFModel: the prefetching L1.
+  - honestL1PFRefine: 104 theorems, including **l1pf_refines_hl** (R1-safe in any L0 world) and **psk_server_world** (the world built from L1's run satisfies server_world2). No cheats.
+  - design/36 §6 has "R1-safe, as built".
+- User decisions: D11 [F1] in the weak fairness form; D12 [F2]. Both are recorded in §4.2 and §9, and are used only by R1-live.
+- Next:
+  - R1-live (fetch completeness under [F1]/[F2]);
+  - switch the servers over (L1 CakeML code for the PF model, its CF spec);
+  - sys_connect.
+- Gotchas:
+  - In the LSP, the first start after a restart often fails with "theory honestL0 is sealed" (dependency loads fail). Restarting again fixes it.
+  - The goal walker times out (10 s) on big proof states. Replacing `gvs[AllCaseEqs()]` with explicit Cases_on/PairCases_on keeps states small.
+  - `simp` uses a kept assumption to rewrite an `mp_tac`'d copy of itself to T (`qpat_assum … mp_tac >> simp[Once def]` does nothing). Unfold a copy with ONCE_REWRITE_RULE instead.
+  - `ASM_REWRITE_TAC` with a ∀-hypothesis also rewrites its own instance to T.
+  - `rw` / `strip_tac` split goal conjunctions before `irule IH`, and then `irule` of the whole IH fails.
+  - `metis_tac` looped (minutes, GBs) several times on big assumption sets. Prefer drule/qspecl_then.
+  - `hst` and `o` are constants: do not use them as variable names.

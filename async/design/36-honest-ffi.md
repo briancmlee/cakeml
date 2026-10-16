@@ -556,6 +556,25 @@ The citations were checked against the primary texts. The rules:
 | POLLERR/HUP/NVAL not requested | [P poll]: reported "even if the application did not set the corresponding bit" | yes | conforms |
 | accepted socket and O_NONBLOCK | [P accept]: implementation-defined | irrelevant: every call uses MSG_DONTWAIT | — |
 
+**Fairness assumptions (used only by R1-live, §6; approved, D11 and D12).**
+R1-safe and every safety result use none of them.
+
+- **[F1] Transient failures are not permanent.** For each call kind
+  (recv, accept, send, poll) and each fd or listener: if the call is
+  attempted infinitely often, it succeeds infinitely often.
+  - [P 2.3] lets errors happen "under circumstances other than those
+    described", so the model allows `transient` at any call.
+  - No standard promises progress. [F1] is therefore an assumption, in
+    the sense of [A].
+  - EINTR additionally needs a caught signal [P 2.10.14], and the
+    startup contract installs none.
+- **[F2] An empty send buffer takes a byte.** With nothing in flight, a
+  send of n > 0 bytes accepts at least one.
+  - [P 2.10.7]: send transfers "as much as is available", and with
+    nothing in flight the space is the whole buffer.
+  - [T §3.8.6] (flow control): the window is not the obstacle once the
+    peer has taken everything.
+
 ### 4.3 The probes and tests are conformance tests
 
 - **The checker** (`runnable/l0/tester/l0check.py`) replays a logged run
@@ -895,6 +914,300 @@ Still open:
 - R1 for general worlds, with regrouping;
 - the per-server proofs of `hl_ok`.
 
+**R1: a finding before proving (phase 7, 2026-10-16). R1 is false for
+the current L1, and the fix (for decision) is a prefetching L1.**
+
+R1 asks for exact history equality with *some* v2 world. The v2 world's
+readiness is **exact and sticky**:
+- a listener is ready iff a client is pending, and then an accept
+  succeeds;
+- a connection is ready iff it has unread data or EOF, and stays ready
+  until it is read.
+
+The current L1 reports what the kernel's poll said and learns the truth
+only at the later syscall. Each of these runs has no v2 counterpart,
+whatever the regrouping:
+
+| # | L0 run | L1 tells L2 | v2 must say |
+|---|---|---|---|
+| C1 | listener reported ready; `accept` gives ECONNABORTED, EMFILE or a transient error | `Accepted NONE` | `Accepted (SOME _)`, because ready means pending |
+| C2 | fd reported ready; `recv` gives EINTR, ENOBUFS or EAGAIN | `Got NONE` | data or EOF |
+| C3 | ready; `Read h 100` gets 10 bytes (fewer than available, or more arrive later); a second `Read h 100` in the same round gets new bytes | data twice | the first short read emptied `incoming`, so the second is `Got NONE` |
+| C4 | ready and unread; L2 then writes past the high-water mark, so the next poll leaves the fd out | not ready | ready (its data is still there) |
+| C5 | the poll fails (EINTR) | nothing ready | the previous ready fds are still ready |
+
+§5.2's regrouping argument overlooked stickiness and failing accepts.
+C3 also defeats "place the data at the poll", because v2's `TAKE n`
+pins down where each short read ends.
+
+**Options:**
+
+- **(A) A prefetching L1. Recommended.** L1 pulls input into its own
+  buffers in the round's tail, then reports from the buffers.
+  - After the poll, for each fd reported IN/HUP/ERR, not paused, and with
+    an empty buffer, L1 makes one `recv` of a fixed chunk:
+    - data goes into the fd's inbox;
+    - 0 bytes, or a hard error, sets `eof` (the episode ends, as now);
+    - a transient error does nothing.
+  - For a readable listener (not exhausted), L1 makes one `accept`;
+    success appends the fd to L1's accept queue.
+  - L2 is told: ready iff the inbox is non-empty, `eof` is set, or the
+    accept queue is non-empty.
+  - `Read h n` is `TAKE n` of the inbox; `Accept` pops the queue; neither
+    makes a syscall.
+  - This is v2's semantics exactly. R1 becomes a plain forward
+    simulation, with no regrouping and no discipline:
+    - v2 client j = the j-th connection L1 accepted;
+    - `incoming` = its inbox; `peer_closed` = `eof`;
+    - the schedule's step n = what round n's tail fetched (the world is
+      defined from L1's deterministic run, which does not depend on
+      it);
+    - `alloc j used` = the kernel's fd for j if it is not in `used`,
+      else `lowest_free used`. This satisfies `alloc_ok`, and in the
+      run the kernel's fd is never in v2's `used`, since v2's open fds
+      are among the kernel's.
+  - C1–C5 are absorbed below the buffers. Each inbox is bounded by one
+    chunk, because L1 fetches only into an empty inbox.
+  - Pausing becomes "don't fetch", and in v2 terms that is just a later
+    arrival.
+  - Cost: the L1 model, honestL1Props/Simple/Inv, and R2 must be
+    re-proved. R2 should get easier: the history is equal as before, and
+    the raw trace is the tail's fetches.
+- **(B) A weaker abstract world**, v2 plus spurious readiness and
+  failing accepts. L2's existing theorems would not apply unchanged,
+  which is the point of §5.2. Rejected.
+- **(C) Keep the lazy L1 and assume C1–C5 away.** That gives R2-plus,
+  not R1.
+
+**Decision (user, 2026-10-16): (A).** "If this is what a real server
+would do, we should do it." Prefetching buffered readers are the norm:
+OCaml Async's `Reader`, libuv's `uv_read_start`, Netty. The prefetching
+L1 becomes *the* L1.
+- It is built additively in new theories (`honestL1PF*`, starting with
+  `honestL1PFModel`), and the servers then switch over to it.
+- The lazy L1 (`honestL1Model`…`honestL1Round`, PRs #107/#110/#132)
+  stays for the record and is superseded.
+
+**The prefetching L1, precisely** (`honestL1PFModel`):
+
+- **Backpressure.** L1 fetches only within the program's current poll
+  interest.
+  - A connection fd is fetched only if its handle is in the interest,
+    its inbox is empty, it has no EOF, and it is not paused (outbox ≤
+    hw, D4).
+  - The listener is fetched only if it is in the interest, its accept
+    queue is empty, and it is not exhausted. So there is **at most one
+    accept per round per listener**, and a server that stops polling its
+    listener stops accepting: there are no eager accepts behind its
+    back.
+  - An fd that the poll asked about only for output (paused, or
+    closing) is never fetched, even if it reports HUP/ERR.
+- **Bounds.**
+  - Each inbox holds at most one chunk (`pf_chunk` = 64 KiB), because a
+    fetch fills only an empty inbox.
+  - Each listener's accept queue holds at most one fd.
+  - L1's input memory is therefore at most `pf_chunk` × (connections in
+    the interest). With 4096 connections that is 256 MiB in the worst
+    case. The chunk is a constant of the model and can be lowered.
+  - **Relation to D4 pausing:** pausing stops *fetching*. A paused fd
+    keeps its at most one chunk, and stays ready until the server reads
+    it. For servers that write only in response to reads, the outbox is
+    still bounded by hw plus the responses to one chunk.
+- **Reset vs EOF.** L1 keeps the distinction.
+  - The fetch log records `FEof f` (an orderly FIN: recv returned 0)
+    separately from `FReset f` (a hard error such as ECONNRESET), and
+    the raw error is in the trace.
+  - The server's vocabulary, `Got`, has only EOF, so both read as EOF,
+    and both are `Eof2` in the version-2 world.
+  - A richer L1 interface can expose the difference later at no cost to
+    this one.
+- **Syscall-level cost** (what differs from the lazy L1, on the wire and
+  in the trace):
+  - **Extra calls.** L1 makes at most one recv per round per
+    interest-readable connection with an empty inbox, and at most one
+    accept per round per listener. A recv happens whether or not the
+    server reads that round; the server's Reads make no syscalls. When
+    the server keeps up, the recv count is about the same as before (one
+    per chunk received, plus the final 0 or error).
+  - **Prefetched, never served.** A connection L1 accepted but the
+    server never Accepted is visible only as an fd in L1's queue. The
+    client already saw an established connection before any accept,
+    since the kernel completes the handshake, so the wire is unchanged.
+    If the program exits, the kernel closes the fd like any other: FIN,
+    or RST if unread bytes remain in the kernel. Without the prefetch,
+    the connection would have been reset from the backlog at exit.
+  - **FIN, not RST.** Fetched bytes leave the kernel's receive buffer.
+    If the program exits, or an fd is closed while L1's inbox still
+    holds unread bytes, the kernel's receive buffer may be empty. The
+    close then sends **FIN** where the lazy L1 (bytes still in the
+    kernel) would have caused an **RST** (RFC 1122 §4.2.2.13; RFC 9293
+    §3.6). This is documented behaviour; both are within the standards.
+  - **EMFILE.** One failing accept per exhaustion: the listener is not
+    polled until L1 closes an fd, and the pending connection waits in
+    the kernel's backlog. It is not dropped. The server is told
+    "ready" only when L1's queue holds an fd, so it never sees a failed
+    Accept.
+
+**R1's two halves.** The v2 world `sk` is built from the run's own fetch
+log:
+- the schedule's step n is round n's fetches;
+- `alloc` returns the kernel's fd for each client;
+- `reserved = []`.
+
+So R1 splits into two halves.
+
+- **R1-safe (forward simulation).** L1's history equals the handle
+  layer's in `sk`, round by round. `sk` is well formed (`sched_wf2`,
+  `alloc_ok`), so it satisfies `server_world2`, and L2's *safety*
+  theorems transfer as they are.
+- **R1-live (fetch completeness).** L2's liveness is relative to `sk`.
+  For example, `echo_live2 sk io` promises to echo what client j sent
+  *in `sk`*, which here means what L1 fetched. To transfer liveness to
+  the real clients, R1 must show that L1 eventually fetches what the
+  kernel delivers:
+  - **(data)** for an accepted connection: every byte its peer delivered
+    that a recv could return is eventually in some round's `FData`, and
+    its EOF or break eventually gives `FEof`/`FReset`;
+  - **(connections)** every connection pending on the listener is
+    eventually `FConn`. The exceptions: it is aborted (ECONNABORTED: the
+    peer reset it, so no service is owed), or it is reset under EMFILE
+    (`emfile_drops`, macOS).
+
+  Where starvation could come from, and what removes it:
+
+  | source | removed by | kind |
+  |---|---|---|
+  | the server never polls the handle or listener | **S1:** the interest covers every open handle and the listener (asyncServer's `ifds` does by construction) | server obligation, proved per server like `hl_ok` |
+  | the inbox stays full (no fetch while it is non-empty) | the server reads what it is shown. This follows from L2's own v2 liveness: what `sk` delivers is eventually read | free |
+  | the accept queue stays full | the server accepts when the listener is ready (asyncServer does); one accept per round then drains the backlog first in, first out | server obligation (S1) |
+  | **transient errors forever:** the model lets EINTR/ENOBUFS/ENOMEM/ENFILE happen "at any time", so recv, accept or poll could fail on every try | **[F1] (approved, weak form, D11):** per call kind and per fd/listener, a call attempted infinitely often succeeds infinitely often (§4.2) | **L0 fairness assumption (trusted)** |
+  | **pausing forever:** the outbox never drops below hw | the client keeps reading its responses (LDrain), **and [F2] (approved, D12):** with nothing in flight, the kernel accepts at least one byte (`0 < n ⇒ 0 < takes j h 0 n`) | client hypothesis per episode, plus an **L0 assumption (trusted)** |
+  | **EMFILE forever:** the process sits at the fd limit | **[F3]:** liveness for *new* connections assumes fds free up, e.g. the open connections stay below the limit. Otherwise connections wait in the backlog, which is the real behaviour | hypothesis of the connection half |
+  | the round stops | the loop runs forever (`Diverge`), and every round polls (`poll_chunks` polls at least once) | free |
+
+  The resulting L0-level liveness is L2's v2 liveness, restricted to
+  episodes whose client keeps reading. For servers that never pause (the
+  outbox stays ≤ hw), it applies to every episode. That is the honest
+  statement: a client that never reads is backpressured, by design (D4).
+
+  R1-live comes after R1-safe. [F1] (weak form) and [F2] are approved
+  additions to the trusted L0 surface (§4.2; D11, D12). If R1-live
+  cannot go through with the weak [F1], the reason will be reported
+  before any change of form.
+
+**R1-safe, as built (`async/honest-l1/honestL1PFRefine`, branch
+`spike/honest-r1`).** The theorems, model level, no cheats:
+
+    l1pf_refines_hl :
+      l0_rely w0 ∧ fds_lt w0 ∧ MEM lfd (l0_used w0) ∧
+      (∀n. SND (pcm lfd hw ifds m w0 n) + 1 < 2^64) ⇒
+      ∀n h ws evs logs.
+        prounds lfd hw ifds m (w0, pinit) n = SOME (h, ws, evs, logs) ⇒
+        hhist lfd ifds m (psk lfd hw ifds m w0) n = h ∧ …(the relation and invariants)
+
+    psk_server_world : (same hypotheses) ⇒
+      (psk …).listening = [(lfd, [])] ∧ (psk …).clients = [] ∧
+      (psk …).open_fds = [] ∧ alloc_ok (psk …).alloc ∧ sched_wf2 (psk …)
+
+In words: in **any** L0 world, every run of the prefetching L1 is
+round-for-round the handle layer's run (asyncHLModel, unchanged) in one
+version-2 world `psk`. That world satisfies `server_world2`, the
+hypothesis of the v2 server theorems.
+
+- **The world `psk`** is built from L1's own run, which does not depend
+  on it:
+  - client j is the j-th connection L1 fetched (`pcm`, the client map);
+  - the schedule's step n is what round n fetched (`parr`: `FConn` ↦
+    `Connect2 lfd`, `FData f bs` ↦ `Data2 j bs`, `FEof`/`FReset f` ↦
+    `Eof2 j`, where j is f's client);
+  - `alloc` returns the kernel's fd for each client (`run_alloc`; else
+    `lowest_free`, so `alloc_ok` holds);
+  - `reserved = []`.
+- **The relation `pv_rel`:**
+  - L1's inbox and EOF flag for an open handle's fd are its client's
+    `incoming` and `peer_closed`;
+  - L1's accept queue is the listener's pending clients;
+  - the v2 open fds are the handles' fds.
+- **Invariants:**
+  - `pown`: L1's fds (listener, handles, closing, queued) are distinct,
+    handles are distinct and issued, and only open handles have input;
+  - `l0own`: those fds are open in the L0 world. With `fds_lt` and the
+    rely's fd limit, this makes **every accepted fd fresh**
+    (`sys_accept_fresh`).
+- **Proof structure:**
+  - actions: `pdo_hdo`; Accept is a pop from the queue, Read is TAKE n,
+    and EOF auto-close maps to a lingering close against v2's immediate
+    close;
+  - the fetch: `fetch_rel`, and `step_ok2` for its arrivals;
+  - the snapshot: `ready_eq`;
+  - the round's tail: `tail_rel`;
+  - one round: `round_rel`;
+  - the run: induction.
+  - `sched_wf2` concerns the world *left alone*. It agrees with the
+    handle layer's world on all that `step_ok2` reads (`wagree`), since
+    the program's actions never change listeners, counts or
+    `peer_closed`.
+- **Hypotheses beyond the L0 rely:**
+  - the listener is open;
+  - fewer than 2^64 − 1 connections over the run. This is v2's own
+    fairness bound (`arrival_ok2`), restated on L1's run.
+- **Not yet:** R1-live (fetch completeness; [F1] weak, [F2]); connecting
+  to `semantics_prog`; the switch-over of the servers to this L1.
+
+**R1-live, the statement (for review; not yet proved).** R1-safe makes
+L2's liveness theorems true *of `psk`*: what client j sent in `psk` is
+served. R1-live says `psk` misses nothing the kernel delivered, so the
+promise reaches the real peers.
+
+*Setting.* An infinite L1 run in L0 world w0. A prerequisite, not yet
+built, is the PF analogue of `lrun_ok_thm`: the run never fails, given
+the handle-layer conditions. Each channel c that L1 accepted has an fd f
+and is client j of `psk`. The fetch log is `plog`.
+
+*Hypotheses:*
+- **[F1] (D11, weak fairness, trusted):** for each call kind (recv,
+  accept, send, poll) and each fd or listener, if the run makes that
+  call infinitely often, it succeeds (no transient error) infinitely
+  often.
+- **[F2] (D12, trusted):** `0 < n ⇒ 0 < w0.ch.takes j h 0 n`.
+- **S1 (server, interest):** at every round, the poll interest contains
+  every open handle and the listener. This is the asyncServer shape,
+  proved per server.
+- **S2 (server, accepting):** if the listener is reported ready at some
+  round, the server issues `Accept lfd` at some later round. Also
+  proved per server.
+- **D(c) (the peer of c drains):** whenever c has bytes in flight, an
+  `LDrain` for c eventually arrives. This is per episode, not trusted:
+  it is the condition under which service is owed (D4 backpressure).
+- **[F3] (fds free up):** infinitely often, an accept attempt finds the
+  lowest fd below the limit. This is needed only for the connection
+  part.
+
+*Conclusions:*
+- **(live-data)** If D(c) holds, then for every L0 step k there is a
+  round n such that `peer_sent` of c at step k, less any bytes flushed
+  by a break (`LBreak … F`), is a prefix of client j's data in the
+  first n steps of `psk`. If c's peer closes or c breaks, then `Eof2 j`
+  is eventually in `psk`.
+- **(live-conn)** Assume [F3]. Every connection that reaches the
+  listener's backlog (`LIncoming` on its port) is eventually a
+  `Connect2` in `psk`, unless it is dropped. It is dropped only if it
+  broke while pending (ECONNABORTED: its peer reset it) or was reset
+  under EMFILE (`emfile_drops`, macOS).
+
+*Corollary shape (per server, for example echo):* from `echo_live2 psk
+io` with R1-safe and R1-live, every byte delivered by a peer that
+drains is eventually written to that peer on the wire. The writes reach
+the wire because flushes progress under [F2] and D(c).
+
+*Why it should hold:*
+- A byte in c's kernel inbox makes c's next unpaused poll report IN.
+- L1 then recvs, or retries after a transient failure ([F1]).
+- c is unpaused eventually because its outbox drains ([F2] with D(c)).
+- The inbox is emptied by L2's reads. Under S1, the v2 liveness
+  forces those reads, because `psk` delivered the data.
+- The accept queue is emptied by S2.
+
 **(R3) Per-wrapper lemmas** (model level, on L1's functional core; the
 cheap part). For example:
 
@@ -1037,6 +1350,9 @@ even if it is more work.**
 | D8 | Point (c) of §3.5 | **decided** |
 | D5′ | (D5 approved later the same day) the v1 runnables are retired; L1 and the refinement target the version-2 world for every shipped program (echo2, HTTP on the v2 handle layer, KV); the v1 programs stay as model-level theorems | **approved** |
 | D9 | The L0 model is anchored on the standards (POSIX.1-2024, RFC 9293/1122), with cited sections. Where they are loose: nondeterminism. A platform behaviour they forbid is a documented extension [X]. The probes are conformance tests (§4.2–4.3) | **decided** |
+| D10 | L1 prefetches (§6, option (A)): it fetches input into its own buffers in the round's tail and reports what they hold. It becomes *the* L1, built additively and then switched to; the lazy L1 is superseded. "If this is what a real server would do, we should do it" | **approved** |
+| D11 | **[F1]**, for R1-live only. A fairness assumption on transient failures, **per call kind and per fd/listener**: a call that is attempted infinitely often succeeds (does not fail transiently) infinitely often. Transient failures may recur forever, but never refuse permanently. The stronger "finitely many failures" was rejected as unrealistic for a long-running server (occasional ENOMEM/ENOBUFS forever). Using the stronger form needs a fresh decision | **approved (weak form)** |
+| D12 | **[F2]**, for R1-live only. With nothing in flight, send accepts at least one byte (`0 < n ⇒ 0 < takes j h 0 n`) | **approved** |
 
 §4.1 (the refused/error encoding) is approved with D1/D3, and close-v2
 implements it in the endpoint world.

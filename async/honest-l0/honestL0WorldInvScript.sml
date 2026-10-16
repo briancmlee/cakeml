@@ -363,6 +363,25 @@ QED
    No channel is connecting (true of every run without sys_connect)
    ------------------------------------------------------------------------ *)
 
+(* Pending input on f survives every call but a recv or close on f *)
+Theorem pend_call:
+  pend w f ∧ l0wf w ∧ (∀x. MEM x (l0_used w) ⇒ w2n x < w.fd_limit) ∧
+  w.fd_limit ≤ 2 ** 31 ∧
+  ¬((n = «sys_recv» ∨ n = «sys_close») ∧ bytes_fd conf = f) ∧
+  l0_call n conf bytes w = SOME (FFIreturn bytes' w') ⇒ pend w' f
+Proof
+  rw[l0_call_def] >> gvs[AllCaseEqs()] >>
+  rpt (pairarg_tac >> gvs[]) >>
+  imp_res_tac pend_simple_ops >>
+  TRY (drule_then irule pend_ticks) >>
+  TRY (irule pend_recv_other >> metis_tac[]) >>
+  TRY (irule pend_close_other >> metis_tac[]) >>
+  TRY (qpat_x_assum ‘l0_accept _ _ = _’ mp_tac >> rpt strip_tac >>
+       drule_at (Pos last) pend_accept >> simp[] >> NO_TAC) >>
+  qpat_x_assum ‘l0_connect _ _ = _’ mp_tac >> rpt strip_tac >>
+  drule_at (Pos last) pend_connect >> simp[]
+QED
+
 Definition noconn_def:
   noconn w ⇔ ∀j. j < LENGTH w.chans ⇒ ¬(EL j w.chans).connecting
 End

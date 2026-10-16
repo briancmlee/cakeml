@@ -65,7 +65,8 @@ Write-up and decisions for review: `35-endpoint-world.md`.
   (PR #136, spike/echo-sym-disc: endpointV1Disc/Echo/Http/Kv).
 - PROVED: the echo ⇒ direction, endpointV1EchoConv.endpoint_of_echo_spec_le and
   echo_sym_equiv_disc_thm (spike/v1-conv), with nonsat1 (user decision 2026-10-16, design/35).
-- IN PROGRESS: the HTTP-b and KV ⇒ directions, spike/v1-conv. Exact next steps are in
-  async/endpoint-world/NOTES-v1conv.md.
+- PROVED: the HTTP-b and KV ⇒ directions, endpointV1HttpConv / endpointV1KvConv
+  (http_sym_equiv_disc_thm, kv_sym_equiv_disc_thm), spike/v1-conv. Whole endpoint-world
+  Holmake green. Notes: async/endpoint-world/NOTES-v1conv.md.
 - KV v2: kv_prog2_spec proved (spike/kv-v2, PR #131).
 - Low priority: HttpKvSpec2Bite R1/R2 from the spec review (~/.cache/spec-review-2/kv2/REPORT.md).

@@ -42,7 +42,11 @@ ECHO ⇒ DONE (endpointV1EchoConv, LSP 15/15; see the build log for Holmake):
   Shared refactors: endpointV2Sim.polls_rely/v2of_props_polls; endpointEcho2Conv
   rely_on/rclass/live2_ticks/endpoint_of_live2 (old statements unchanged).
 
-Next: HTTP-b and KV ⇒. endpoint_of_live2/live2_ticks are echo-specific (echo_live2,
+DONE (all three ⇒, whole endpoint-world Holmake green): endpointV2Hide, endpointV2Accept,
+endpointV1ConvRun (shared), endpointV1ReqConv (HTTP/KV liveness), endpointV1EchoConv,
+endpointV1HttpConv, endpointV1KvConv. The text below is the plan as it was.
+
+Was next: HTTP-b and KV ⇒. endpoint_of_live2/live2_ticks are echo-specific (echo_live2,
 ext1 sends [0w]): generalise over the liveness relation P and ext1's request bytes, so
 the new client sends a valid full request; then copy the echo route per server.
 

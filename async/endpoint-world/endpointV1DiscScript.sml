@@ -78,6 +78,12 @@ Proof
   simp[]
 QED
 
+Theorem v1_run_ok_tr:
+  v1_run_ok lfd a sk prog io ⇒ v1_tr lfd sk.sched sk (v2of1 lfd sk) prog io
+Proof
+  rw[v1_run_ok_def, v1_tr_def] >> fs[v2of1_def]
+QED
+
 Theorem v1_run_trace[local]:
   v1_run_ok lfd a sk prog io ∧ LPREFIX (fromList evs) io ⇒
   EVERY v1_event evs ∧

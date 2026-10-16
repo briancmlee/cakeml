@@ -405,3 +405,10 @@ Proof
   qpat_x_assum ‘∀m j. _ ⇒ conn_fd _ _ = _’ (qspecl_then [‘0’, ‘j’] mp_tac) >>
   simp[sched_conns_def]
 QED
+
+(* The hypotheses of v1_trace, as one *)
+Definition v1_tr_def:
+  v1_tr lfd ll0 s1 s2 prog io ⇔
+    semantics_prog (init_state (socket_ffi s1)) init_env prog (Diverge io) ∧
+    fd_disciplined lfd io ∧ v12rel lfd ll0 s1 s2 ∧ sched_wf s1 ∧ s2.open_fds = []
+End

@@ -1898,3 +1898,66 @@ Proof
         first_x_assum irule >> simp[]) >>
   qpat_x_assum ‘∀f'. MEM f' (fconns log) ⇒ _’ drule >> simp[]
 QED
+
+(* The poll's answer: L1's ready handles are the layer's, and its settled
+   handles the layer's *)
+Theorem ev_rdy:
+  ev_rel lfd a cm es w ∧ eown lfd es ∧ ehs_rel hs es ⇒
+  (∀h. (case ALOOKUP hs.tbl h of
+        | SOME f => MEM h hs.settling ∧ chan_status w f ≠ SOME Connecting
+        | NONE => F) ⇔
+       MEM h es.settling ∧
+       (case ALOOKUP es.ctbl h of
+        | SOME f => cstat_of es f ≠ CPending
+        | NONE => ALOOKUP es.p.b.tbl h ≠ NONE)) ∧
+  ∀h. (case ALOOKUP es.ctbl h of
+       | SOME f => cstat_of es f = CRefused ∨
+                   (MEM h es.settling ∧ cstat_of es f ≠ CPending)
+       | NONE => MEM h (pf_ready lfd es.p [h]) ∨
+                 (MEM h es.settling ∧ ALOOKUP es.p.b.tbl h ≠ NONE)) ⇔
+      (case ALOOKUP hs.tbl h of
+       | SOME f => ep_readable w f ∨
+                   (MEM h hs.settling ∧ chan_status w f ≠ SOME Connecting)
+       | NONE => if h = lfd then ep_readable w h else T)
+Proof
+  strip_tac >>
+  ‘lfd ∉ set (MAP FST w.open_fds)’
+    by (strip_tac >> gvs[ev_rel_def, eown_def]) >>
+  ‘w.listening = [(lfd, a, MAP (cl cm) es.p.acq)]’ by gvs[ev_rel_def] >>
+  ‘∀h. ALOOKUP hs.tbl h =
+       case ALOOKUP es.p.b.tbl h of SOME f => SOME f | NONE => ALOOKUP es.ctbl h’
+    by gvs[ehs_rel_def] >>
+  ‘∀h. MEM h hs.settling ⇔ MEM h es.settling ∧ ALOOKUP hs.tbl h ≠ NONE’
+    by gvs[ehs_rel_def] >>
+  ‘∀h f. ALOOKUP es.p.b.tbl h = SOME f ⇒ ALOOKUP es.ctbl h = NONE’
+    by (rpt strip_tac >> gvs[eown_def, ALL_DISTINCT_APPEND, ALOOKUP_NONE] >>
+        metis_tac[ALOOKUP_SOME_MEM_FST]) >>
+  ‘∀h f. ALOOKUP es.p.b.tbl h = SOME f ⇒
+         chan_status w f = SOME Up ∧ (ep_readable w f ⇔ inb_of es.p f ≠ [] ∨ MEM f es.p.eof)’
+    by (rpt gen_tac >> strip_tac >> drule_all ev_rel_tbl >> strip_tac >>
+        ‘f ≠ lfd’ by (strip_tac >> gvs[eown_def] >> metis_tac[ALOOKUP_SOME_MEM_SND]) >>
+        simp[chan_status_def, ep_readable_def]) >>
+  ‘∀h f. ALOOKUP es.ctbl h = SOME f ⇒
+         chan_status w f = SOME (if cstat_of es f = CRefused then Refused else Connecting) ∧
+         (ep_readable w f ⇔ cstat_of es f = CRefused) ∧ cstat_of es f ≠ CUp’
+    by (rpt gen_tac >> strip_tac >> drule_all ev_rel_ctbl >> strip_tac >>
+        ‘f ≠ lfd ∧ cstat_of es f ≠ CUp’
+          by (gvs[eown_def, ALL_DISTINCT_APPEND] >> res_tac >> simp[] >>
+              strip_tac >> gvs[] >> metis_tac[ALOOKUP_SOME_MEM_SND]) >>
+        simp[chan_status_def, ep_readable_def] >> rw[]) >>
+  ‘ep_readable w lfd ⇔ es.p.acq ≠ []’
+    by (simp[ep_readable_def, ep_chan_of_def] >>
+        ‘ALOOKUP w.open_fds lfd = NONE’ by gvs[ALOOKUP_NONE] >> simp[]) >>
+  ‘∀h. MEM h (pf_ready lfd es.p [h]) ⇔
+       case ALOOKUP es.p.b.tbl h of
+       | SOME f => inb_of es.p f ≠ [] ∨ MEM f es.p.eof
+       | NONE => if h = lfd then es.p.acq ≠ [] else T’
+    by (simp[pf_ready_def] >> rw[] >> CASE_TAC >> simp[]) >>
+  conj_tac >> gen_tac >>
+  Cases_on ‘ALOOKUP es.p.b.tbl h’ >> Cases_on ‘ALOOKUP es.ctbl h’ >> simp[] >>
+  TRY (res_tac >> gvs[] >> NO_TAC) >>
+  TRY (Cases_on ‘h = lfd’ >> simp[] >> NO_TAC) >>
+  rename1 ‘ALOOKUP es.ctbl h = SOME g’ >>
+  qpat_x_assum ‘∀h f. ALOOKUP es.ctbl h = SOME f ⇒ chan_status _ _ = _ ∧ _’ drule >>
+  strip_tac >> simp[] >> Cases_on ‘cstat_of es g’ >> gvs[]
+QED

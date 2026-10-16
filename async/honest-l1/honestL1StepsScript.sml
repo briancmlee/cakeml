@@ -436,7 +436,7 @@ QED
    channel's input and EOF *)
 Theorem rdy_ok_same:
   rdy_ok lfd polp w st ∧ w'.open_fds = w.open_fds ∧ w'.listeners = w.listeners ∧
-  (∀k. (EL k w'.chans).inbox = (EL k w.chans).inbox ∧
+  (∀k. ((EL k w.chans).inbox = [] ⇒ (EL k w'.chans).inbox = []) ∧
        (EL k w'.chans).peer_eof = (EL k w.chans).peer_eof) ⇒
   rdy_ok lfd polp w' st
 Proof
@@ -485,6 +485,105 @@ Proof
         Cases_on ‘bs’ >> simp[ADELKEY_def, honestL1ModelTheory.l1st_component_equality]) >>
   ‘«sys_send» ≠ «sys_recv» ∧ «sys_send» ≠ «sys_poll»’ by EVAL_TAC >>
   simp[l0_v2_event_def, TAKE_DROP_fd_bytes] >>
+  gvs[l1v2_rel_def, npolls_snoc, l0_used_def] >>
+  rpt conj_tac
+  >- (irule core_rel_upd >> simp[] >> gvs[chan_rel_def])
+  >- simp[update_client_def]
+  >- (simp[upd_lchan_def] >> metis_tac[])
+  >- (irule rdy_ok_same >> qexists_tac ‘w’ >>
+      simp[upd_lchan_def, EL_LUPDATE] >> rw[])
+  >> simp[upd_lchan_def]
+QED
+
+(* ------------------------------------------------------------------------
+   Read
+   ------------------------------------------------------------------------ *)
+
+Theorem wb_read_none[simp]:
+  wb_event (act_event (Read f n) (Got NONE))
+Proof
+  simp[wb_event_def] >> metis_tac[]
+QED
+
+Theorem tbl_open_chan:
+  l1v2_rel p lfd sched (w, st) (s, hs) ∧ ALOOKUP st.tbl h = SOME f ⇒
+  ∃j. ALOOKUP w.open_fds f = SOME j ∧ j < LENGTH w.chans ∧ ¬(EL j w.chans).closed ∧
+      chan_rel (EL j w.chans) (EL j s.clients) ∧ client_of s f = SOME j
+Proof
+  rw[l1v2_rel_def, core_rel_def] >>
+  ‘ALOOKUP s.open_fds f ≠ NONE’ by metis_tac[] >>
+  Cases_on ‘ALOOKUP s.open_fds f’ >> gvs[] >>
+  imp_res_tac LIST_REL_LENGTH >> gvs[LIST_REL_EL_EQN, client_of_def] >> metis_tac[]
+QED
+
+(* A polled handle whose fd was not readable: L1 makes no call; the handle
+   layer's read would block *)
+Theorem read_skip:
+  l1v2_rel p lfd sched (w, st) (s, hs) ∧ rdy_ok lfd polp w st ∧
+  0 < n ∧ n < 256 ** 8 ∧ ALOOKUP st.tbl h = SOME f ∧ MEM (h, f) polp ∧
+  ¬MEM f st.rdy ⇒
+  l1do lfd (w, st) (Read h n) = SOME (Got NONE, (w, st), []) ∧
+  hdo lfd (s, hs) (Read h n) = SOME (Got NONE, (s, hs), [act_event (Read f n) (Got NONE)]) ∧
+  drops (MAP l0_v2_event []) [act_event (Read f n) (Got NONE)]
+Proof
+  strip_tac >> drule_all tbl_open_chan >> strip_tac >>
+  ‘st.gone = [] ∧ st.tbl = hs.tbl’ by gvs[l1v2_rel_def] >>
+  ‘(EL j w.chans).inbox = [] ∧ ¬(EL j w.chans).peer_eof’ by (gvs[rdy_ok_def] >> metis_tac[]) >>
+  gvs[chan_rel_def] >>
+  simp[l1do_def, hdo_def, sock_read2_def] >> metis_tac[drops_wb, wb_read_none]
+QED
+
+Theorem LENGTH_enc_res_ok13[local]:
+  LENGTH (enc_res (Ok n)) = 13
+Proof
+  simp[enc_res_def, LENGTH_n2w8]
+QED
+
+(* A readable fd with input: one recv, the data version 2's read returns *)
+Theorem read_data_step:
+  simple_v2 p lfd sched w ∧ l0_rely w ∧ l1v2_rel p lfd sched (w, st) (s, hs) ∧
+  rdy_ok lfd polp w st ∧ fds_small w ∧ 0 < n ∧ n < 256 ** 8 ∧
+  ALOOKUP st.tbl h = SOME f ∧ MEM f st.rdy ∧ ALOOKUP w.open_fds f = SOME j ∧
+  (EL j w.chans).inbox ≠ [] ⇒
+  ∃w' s' evs.
+    l1do lfd (w, st) (Read h n) =
+      SOME (Got (SOME (TAKE n (EL j w.chans).inbox)), (w', st), evs) ∧
+    hdo lfd (s, hs) (Read h n) =
+      SOME (Got (SOME (TAKE n (EL j w.chans).inbox)), (s', hs), MAP l0_v2_event evs) ∧
+    l1v2_rel p lfd sched (w', st) (s', hs) ∧ rdy_ok lfd polp w' st ∧
+    l0_used w' = l0_used w ∧ w'.env = w.env ∧ w'.ch = w.ch ∧ w'.fd_limit = w.fd_limit
+Proof
+  strip_tac >> drule_all tbl_open_chan >> strip_tac >> gvs[] >>
+  ‘st.gone = [] ∧ st.tbl = hs.tbl’ by gvs[l1v2_rel_def] >>
+  ‘w2n f < 2147483648’ by metis_tac[fds_small_tbl] >>
+  ‘l0_tick «sys_recv» w = w with clock := w.clock + 1’
+    by (drule tick_simple_v2 >> disch_then irule >> EVAL_TAC) >>
+  ‘l0_recv f n (w with clock := w.clock + 1) =
+     (Ok (MIN n (LENGTH (EL j w.chans).inbox)), TAKE n (EL j w.chans).inbox,
+      upd_lchan j (λc. c with inbox := DROP n c.inbox) (w with clock := w.clock + 1))’
+    by (mp_tac (Q.INST [‘w’ |-> ‘w with clock := w.clock + 1’] l0_recv_data) >>
+        gvs[simple_v2_def, simple0_def, l0_chan_of_def]) >>
+  qabbrev_tac ‘inb = (EL j w.chans).inbox’ >>
+  qabbrev_tac ‘k = MIN n (LENGTH inb)’ >>
+  ‘0 < k ∧ k < 256 ** 8’ by (unabbrev_all_tac >> Cases_on ‘(EL j w.chans).inbox’ >>
+                             gvs[MIN_DEF]) >>
+  ‘∀rest. l0_res_of (enc_res (Ok k) ++ rest) = Ok k’ by simp[l0_res_of_ok_app] >>
+  ‘LENGTH (TAKE n inb) = k’ by simp[Abbr ‘k’, LENGTH_TAKE_MIN] >>
+  ‘TAKE k (TAKE n inb) = TAKE n inb’ by metis_tac[TAKE_LENGTH_ID] >>
+  simp[l1do_def, sys_recv_def, l0_do_def, l0_ffi_fn_def, l0_call_def, l0_hdr_def,
+       fd_ok_def] >>
+  qmatch_goalsub_abbrev_tac ‘l0_res_of out’ >>
+  ‘l0_res_of out = Ok k’ by (simp[Abbr ‘out’] >> metis_tac[APPEND_ASSOC]) >>
+  ‘LENGTH out = n + 13’ by (simp[Abbr ‘out’, LENGTH_enc_res_ok13] >> simp[Abbr ‘k’, MIN_DEF]) >>
+  ‘TAKE k (DROP 13 out) = TAKE n inb’
+    by (simp[Abbr ‘out’] >> REWRITE_TAC[GSYM APPEND_ASSOC] >>
+        simp[DROP_APPEND, LENGTH_enc_res_ok13, TAKE_APPEND] >>
+        simp[DROP_LENGTH_TOO_LONG, LENGTH_enc_res_ok13]) >>
+  simp[hdo_def, sock_read2_def] >>
+  gvs[chan_rel_def] >>
+  ‘«sys_recv» ≠ «sys_poll»’ by EVAL_TAC >>
+  simp[l0_v2_event_def, MAP_SND_ZIP_REPLICATE, recv_view_def] >>
+  Cases_on ‘TAKE n s.clients❲j❳.incoming’ >> gvs[] >>
   gvs[l1v2_rel_def, npolls_snoc, l0_used_def] >>
   rpt conj_tac
   >- (irule core_rel_upd >> simp[] >> gvs[chan_rel_def])

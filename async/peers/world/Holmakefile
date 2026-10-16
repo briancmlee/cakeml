@@ -1,0 +1,11 @@
+# L2 (peers) 01: the peer world, its rely, the spec forms and the server specs
+INCLUDES = ../../lifetimes/spec \
+           ../../lifetimes/world \
+           ../../servers/http \
+           ../../servers/http-model \
+           ../../spec \
+           ../../world/sockets \
+           $(CAKEMLDIR)/semantics
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

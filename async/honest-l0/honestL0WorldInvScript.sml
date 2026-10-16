@@ -234,3 +234,127 @@ Proof
   rw[l0_ffi_fn_def, AllCaseEqs()] >> simp[] >>
   irule l0wf_call >> metis_tac[l0wf_tick]
 QED
+
+(* ------------------------------------------------------------------------
+   Pending input persists: fd f's channel has unread data, EOF or a break
+   until a recv on f (or a close of f)
+   ------------------------------------------------------------------------ *)
+
+Definition pend_def:
+  pend w f ⇔
+    ∃j. l0_chan_of w f = SOME j ∧
+        ((EL j w.chans).inbox ≠ [] ∨ (EL j w.chans).peer_eof ∨ (EL j w.chans).broken)
+End
+
+Theorem pend_deliver:
+  pend w f ⇒ pend (l0_deliver w a) f
+Proof
+  Cases_on ‘a’ >> rw[l0_deliver_def] >> every_case_tac >>
+  gvs[pend_def, l0_chan_of_def, upd_lchan_def, EL_LUPDATE, EL_APPEND1, AllCaseEqs()] >>
+  rw[] >> gvs[break_lchan_def] >> rw[]
+QED
+
+Theorem pend_tick:
+  pend w f ⇒ pend (l0_tick n w) f
+Proof
+  simp[l0_tick_def] >>
+  ‘∀as w. pend w f ⇒ pend (FOLDL l0_deliver w as) f’
+    by (Induct >> simp[] >> metis_tac[pend_deliver]) >>
+  rw[] >> first_x_assum irule >> gvs[pend_def, l0_chan_of_def]
+QED
+
+Theorem pend_ticks:
+  ∀k w. pend w f ⇒ pend (l0_ticks n k w) f
+Proof
+  Induct >> simp[l0_ticks_def] >> metis_tac[pend_tick]
+QED
+
+(* Distinct fds have distinct channels *)
+Theorem open_chan_ne:
+  l0wf w ∧ ALOOKUP w.open_fds f = SOME j ∧ ALOOKUP w.open_fds g = SOME k ∧ f ≠ g ⇒ j ≠ k
+Proof
+  rw[l0wf_def, used_chans_def, ALL_DISTINCT_APPEND] >>
+  imp_res_tac ALOOKUP_MEM >> strip_tac >> gvs[] >>
+  ‘∀l. ALL_DISTINCT (MAP SND l) ∧ MEM (f, j) l ∧ MEM (g, j) l ⇒ f = g’
+    by (Induct >> simp[FORALL_PROD] >> rw[] >> gvs[MEM_MAP] >> metis_tac[SND]) >>
+  metis_tac[]
+QED
+
+(* The lowest fd is free when every used fd is below a limit ≤ 2^31 *)
+Theorem lowest_fd_free_lim:
+  (∀x. MEM x (l0_used w) ⇒ w2n x < w.fd_limit) ∧ w.fd_limit ≤ 2 ** 31 ⇒
+  ¬MEM (lowest_fd w) (l0_used w)
+Proof
+  rw[lowest_fd_def] >> numLib.LEAST_ELIM_TAC >> conj_tac
+  >- (qexists_tac ‘2 ** 31’ >> strip_tac >> first_x_assum drule >> simp[]) >>
+  rw[]
+QED
+
+Theorem pend_simple_ops:
+  (pend w f ∧ l0_listen p w = (x, w') ⇒ pend w' f) ∧
+  (pend w f ∧ l0_send g bs w = (r, w') ⇒ pend w' f) ∧
+  (pend w f ∧ l0_shutdown g w = (r, w') ⇒ pend w' f) ∧
+  (pend w f ∧ l0_connerr g w = (y, w') ⇒ pend w' f)
+Proof
+  rpt conj_tac >>
+  rw[l0_listen_def, l0_send_def, l0_shutdown_def, l0_connerr_def, AllCaseEqs()] >>
+  gvs[pend_def, l0_chan_of_def, upd_lchan_def, EL_LUPDATE] >> rw[] >> gvs[]
+QED
+
+Theorem pend_recv_other:
+  pend w f ∧ l0wf w ∧ g ≠ f ∧ l0_recv g n w = (r, d, w') ⇒ pend w' f
+Proof
+  rw[l0_recv_def] >> every_case_tac >> gvs[] >>
+  rename1 ‘l0_chan_of w g = SOME k’ >>
+  ‘∃j. l0_chan_of w f = SOME j’ by gvs[pend_def] >>
+  ‘j ≠ k’ by (gvs[l0_chan_of_def, AllCaseEqs()] >> metis_tac[open_chan_ne]) >>
+  gvs[pend_def, l0_chan_of_def, upd_lchan_def, EL_LUPDATE, AllCaseEqs()]
+QED
+
+Theorem pend_FOLDL_break:
+  ∀q w. pend w f ⇒ pend (FOLDL (λw j. upd_lchan j (break_lchan e F) w) w q) f
+Proof
+  Induct >> simp[] >> rpt strip_tac >> first_x_assum irule >>
+  gvs[pend_def, l0_chan_of_def, upd_lchan_def, EL_LUPDATE, AllCaseEqs()] >>
+  rw[break_lchan_def] >> rw[]
+QED
+
+Theorem pend_close_other:
+  pend w f ∧ g ≠ f ∧ l0_close g w = (r, w') ⇒ pend w' f
+Proof
+  rw[l0_close_def, AllCaseEqs()] >> gvs[] >>
+  simp[close_fd_def] >> every_case_tac >> gvs[] >>
+  TRY (irule pend_FOLDL_break >> gvs[pend_def, l0_chan_of_def] >> NO_TAC) >>
+  gvs[pend_def, l0_chan_of_def, upd_lchan_def, EL_LUPDATE, ALOOKUP_ADELKEY,
+      AllCaseEqs()] >> rpt IF_CASES_TAC >> gvs[]
+QED
+
+Theorem pend_accept:
+  pend w f ∧ l0wf w ∧ (∀x. MEM x (l0_used w) ⇒ w2n x < w.fd_limit) ∧ w.fd_limit ≤ 2 ** 31 ∧
+  l0_accept l w = (r, w') ⇒ pend w' f
+Proof
+  strip_tac >>
+  ‘¬MEM (lowest_fd w) (l0_used w)’ by (irule lowest_fd_free_lim >> simp[]) >>
+  ‘MEM f (l0_used w)’
+    by (gvs[pend_def, l0_chan_of_def, AllCaseEqs(), l0_used_def] >>
+        imp_res_tac ALOOKUP_MEM >> simp[MEM_MAP] >> metis_tac[FST]) >>
+  ‘lowest_fd w ≠ f’ by (strip_tac >> gvs[]) >>
+  gvs[l0_accept_def, AllCaseEqs(), l0_alloc_def] >>
+  gvs[pend_def, l0_chan_of_def, upd_lchan_def, EL_LUPDATE, AllCaseEqs()] >>
+  rw[break_lchan_def] >> rw[]
+QED
+
+Theorem pend_connect:
+  pend w f ∧ (∀x. MEM x (l0_used w) ⇒ w2n x < w.fd_limit) ∧ w.fd_limit ≤ 2 ** 31 ∧
+  l0_connect p w = (r, v, w') ⇒ pend w' f
+Proof
+  strip_tac >>
+  ‘¬MEM (lowest_fd w) (l0_used w)’ by (irule lowest_fd_free_lim >> simp[]) >>
+  ‘MEM f (l0_used w)’
+    by (gvs[pend_def, l0_chan_of_def, AllCaseEqs(), l0_used_def] >>
+        imp_res_tac ALOOKUP_MEM >> simp[MEM_MAP] >> metis_tac[FST]) >>
+  ‘lowest_fd w ≠ f’ by (strip_tac >> gvs[]) >>
+  gvs[l0_connect_def, AllCaseEqs(), l0_alloc_def] >>
+  gvs[pend_def, l0_chan_of_def, upd_lchan_def, EL_LUPDATE, EL_APPEND1, AllCaseEqs()] >>
+  rw[] >> gvs[EL_APPEND1]
+QED

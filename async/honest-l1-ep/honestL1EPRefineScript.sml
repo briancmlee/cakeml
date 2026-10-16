@@ -21,7 +21,7 @@
 Theory honestL1EPRefine
 Ancestors
   honestL1EPModel honestL1PFRefine honestL1PFModel honestL1Model honestL1Steps
-  socketV2FFI ffiSpikeSocketFFI Marshalling
+  socketV2FFI ffiSpikeSocketFFI Marshalling endpointSpecForms endpointFair
   honestL1Inv honestL0Rely honestL0World honestL0
   endpointHLModel endpointWorld asyncHLModel asyncCore asyncLevel1 asyncM3World
   llist alist
@@ -2450,4 +2450,50 @@ Proof
   qpat_x_assum ‘ev_rel _ _ cm' ws1 w2’ mp_tac >>
   qpat_x_assum ‘cm' = _’ (fn th => rewrite_tac[th]) >>
   rewrite_tac[APPEND_ASSOC]
+QED
+
+(* E1, interim form (a): every run of L1 whose responses include no
+   socketless connect is refined by the endpoint handle layer, in the world
+   built from that run *)
+Theorem l1ep_refines_ehl:
+  l0_rely w0 ∧ fds_lt w0 ∧ MEM lfd (l0_used w0) ∧
+  (∀n. SND (ecm lfd hw ifds m w0 n) + 1 < dimword (:64)) ⇒
+  ∀n h ws evs logs.
+    erounds lfd hw ifds m (w0, einit) n = SOME (h, ws, evs, logs) ∧
+    no_socketless h ⇒
+    ehhist lfd ifds m (pew lfd a hw ifds m w0 calls) n = h ∧
+    ehs_rel (SND (ehst lfd ifds m (pew lfd a hw ifds m w0 calls) n)) (SND ws) ∧
+    ev_rel lfd a (FST (ecm lfd hw ifds m w0 n)) (SND ws)
+      (FST (ehst lfd ifds m (pew lfd a hw ifds m w0 calls) n)) ∧
+    LENGTH (FST (ehst lfd ifds m (pew lfd a hw ifds m w0 calls) n)).chans =
+      SND (ecm lfd hw ifds m w0 n) ∧
+    eown lfd (SND ws) ∧ l0owne lfd (FST ws) (SND ws) ∧
+    l0_rely (FST ws) ∧ fds_lt (FST ws)
+Proof
+  strip_tac >> rpt gen_tac >> strip_tac >>
+  mp_tac (Q.SPEC ‘n’ (Q.GEN ‘N’ l1ep_refines_ehl_upto)) >>
+  impl_tac >- fs[] >>
+  disch_then (qspecl_then [‘n’, ‘h’, ‘ws’, ‘evs’, ‘logs’] mp_tac) >> simp[]
+QED
+
+Theorem erun_alloc_ok:
+  alloc_ok (erun_alloc lfd hw ifds m w0)
+Proof
+  rw[alloc_ok_def] >>
+  ‘¬MEM (lowest_free used) used’
+    by (mp_tac (Q.INST [‘l’ |-> ‘used’] lowest_n_bound) >> simp[lowest_free_def]) >>
+  rw[erun_alloc_def]
+QED
+
+(* The world built from the run is a server world on lfd, open loop, with
+   no backpressure and a sane allocator *)
+Theorem pew_props:
+  ep_server_world calls lfd a (pew lfd a hw ifds m w0 calls) ∧
+  no_backpressure (pew lfd a hw ifds m w0 calls) ∧
+  open_loop (pew lfd a hw ifds m w0 calls) ∧
+  alloc_ok (pew lfd a hw ifds m w0 calls).alloc ∧
+  takes_ok (pew lfd a hw ifds m w0 calls).takes
+Proof
+  simp[pew_def, ep_server_world_def, no_backpressure_def, open_loop_def,
+       takes_ok_def, erun_alloc_ok]
 QED

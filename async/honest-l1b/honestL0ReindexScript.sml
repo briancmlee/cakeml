@@ -385,3 +385,25 @@ Proof
   Cases_on ‘l0_call n conf bytes (l0_tick n w)’ >> simp[lift_res_def] >>
   rename1 ‘SOME r’ >> Cases_on ‘r’ >> simp[lift_res_def, lift_def, reindex_def]
 QED
+
+(* lift ignores the world's own history *)
+Theorem lift_hist[simp]:
+  lift tr h' (v with hist := X) = lift tr h' v
+Proof
+  simp[lift_def, reindex_def]
+QED
+
+(* MAIN: the FFI call in the lifted world is the lifted call, after the
+   step of time, in w; the lifted history records the call *)
+Theorem lift_ffi_fn_call:
+  tr h' = w.hist ⇒
+  l0_ffi_fn n conf bytes (lift tr h' w) =
+  lift_res tr (h' ++ [(n, conf, bytes)]) (l0_call n conf bytes (l0_tick n w))
+Proof
+  strip_tac >> simp[l0_ffi_fn_def] >>
+  drule_then (fn th => simp[th]) lift_tick >>
+  ‘tr h' = (l0_tick n w).hist’ by simp[tick_hist_eq] >>
+  drule_then (fn th => simp[th]) lift_call >>
+  Cases_on ‘l0_call n conf bytes (l0_tick n w)’ >> simp[lift_res_def] >>
+  rename1 ‘SOME r’ >> Cases_on ‘r’ >> simp[lift_res_def, lift_def, reindex_def]
+QED

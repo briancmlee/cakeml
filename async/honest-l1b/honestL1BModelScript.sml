@@ -6,9 +6,12 @@
   A round is idle iff
    - the server's actions are [] and it is not busy (bz h: for a stateful
      server, a store query is pending; option C's busy test);
+   - nothing is ready for the server (else the PF L1 would tell it so in
+     every round);
    - L1 has nothing only the clock would end: the listener is not paused,
-     every hung-up fd (D19's hups) has an empty outbox and a zero count, and
-     every closing fd still has bytes to flush (none is due to be reaped);
+     every hung-up fd (D19's hups) is still held, with an empty outbox and
+     a zero count, and every closing fd still has bytes to flush (none is
+     due to be reaped);
    - the poll set fits one poll (at most 4096 entries).
   An idle round's poll waits until something in the poll set is ready, or
   forever: then the program is asleep (brounds stops, BAsleep).  Every
@@ -85,8 +88,9 @@ End
 
 Definition pf_idle_def:
   pf_idle lfd hw ps hs ⇔
-    ps.pause = 0 ∧
-    EVERY (λ(f, n). outbox_of ps.b f = [] ∧ n = 0) ps.hups ∧
+    ps.pause = 0 ∧ pf_ready lfd ps hs = [] ∧
+    EVERY (λ(f, n). outbox_of ps.b f = [] ∧ n = 0 ∧
+                    (MEM f (MAP SND ps.b.tbl) ∨ MEM f ps.b.closing)) ps.hups ∧
     EVERY (λf. outbox_of ps.b f ≠ [] ∧ ¬MEM f ps.b.gone) ps.b.closing ∧
     LENGTH (pf_poll_set lfd hw ps hs) ≤ 4096
 End
@@ -140,3 +144,54 @@ Definition brounds_def:
         | SOME (BRound snap ws' log revs) =>
             SOME (BRun (h ++ [snap]) ws' (evs ++ revs) (logs ++ [log]))
 End
+
+(* ------------------------------------------------------------------------
+   An idle round whose poll reports nothing changes nothing
+   ------------------------------------------------------------------------ *)
+
+Theorem l1_reap_idle[local]:
+  ∀fs w b. EVERY (λf. outbox_of b f ≠ [] ∧ ¬MEM f b.gone) fs ⇒
+           l1_reap fs (w, b) = SOME ((w, b), [])
+Proof
+  Induct >> simp[l1_reap_def]
+QED
+
+Theorem hup_step_idle[local]:
+  EVERY (λ(f, n). outbox_of ps.b f = [] ∧ n = 0 ∧
+                  (MEM f (MAP SND ps.b.tbl) ∨ MEM f ps.b.closing)) ps.hups ⇒
+  hup_step [] ob [] ps = ps
+Proof
+  rw[hup_step_def] >>
+  ‘FILTER (λ(f,n). MEM f (MAP SND ps.b.tbl) ∨ MEM f ps.b.closing) ps.hups = ps.hups’
+    by (simp[FILTER_EQ_ID] >> fs[EVERY_MEM, FORALL_PROD] >> metis_tac[]) >>
+  ‘MAP (λ(f,n). if outbox_of ps.b f = [] ∨ LENGTH (outbox_of ps.b f) < LENGTH (ob f)
+                then (f,0) else (f,n + 1)) ps.hups = ps.hups’
+    by (irule LIST_EQ >> rw[EL_MAP] >> Cases_on ‘EL x ps.hups’ >> simp[] >>
+        fs[EVERY_EL] >> first_x_assum drule >> simp[]) >>
+  simp[] >>
+  ‘FILTER (λ(f,n). pf_hupwait ≤ n) ps.hups = []’
+    by (simp[FILTER_EQ_NIL] >> fs[EVERY_MEM, FORALL_PROD, pf_hupwait_def] >>
+        metis_tac[DECIDE “¬(8n ≤ 0)”]) >>
+  ‘FILTER (λ(f,n). n < pf_hupwait) ps.hups = ps.hups’
+    by (simp[FILTER_EQ_ID] >> fs[EVERY_MEM, FORALL_PROD, pf_hupwait_def] >>
+        metis_tac[DECIDE “0n < 8”]) >>
+  simp[l1p_component_equality]
+QED
+
+(* MAIN: in an idle state, a poll that reports nothing leaves L1 as it was;
+   the server is told nothing *)
+Theorem pf_after_idle:
+  pf_idle lfd hw ps hs ∧
+  EVERY (λ(f, r). ¬r.rin ∧ ¬r.rout ∧ ¬r.rerr ∧ ¬r.rhup) rv ⇒
+  pf_after lfd hw hs ps fes (rv, w1, pevs) = SOME ([], (w1, ps), [], pevs)
+Proof
+  rw[pf_idle_def, pf_after_def] >>
+  ‘writable_fds rv = [] ∧ readable_fds rv = [] ∧ hup_fds rv = []’
+    by (simp[writable_fds_def, readable_fds_def, hup_fds_def, FILTER_EQ_NIL] >>
+        fs[EVERY_MEM, FORALL_PROD] >> metis_tac[]) >>
+  simp[l1_flush_def, pf_fetch_def] >>
+  ‘ps with b := ps.b = ps’ by simp[l1p_component_equality] >>
+  simp[hup_step_idle, l1_reap_idle] >>
+  ‘ps with <| b := ps.b; pause := 0 |> = ps’ by simp[l1p_component_equality] >>
+  simp[]
+QED

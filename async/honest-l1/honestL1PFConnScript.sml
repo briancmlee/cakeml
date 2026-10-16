@@ -88,3 +88,36 @@ Proof
   qspecl_then [‘w’] strip_assume_tac (Q.GEN ‘w’ qof_tick) >>
   first_x_assum (qspec_then ‘l0_tick nm w’ strip_assume_tac) >> simp[]
 QED
+
+Theorem qof_FOLDL_upd[simp]:
+  ∀q w. qof (FOLDL (λw j. upd_lchan j g w) w q) l = qof w l
+Proof
+  Induct >> simp[]
+QED
+
+Theorem qof_ops:
+  (l0_listen p w = (x, w') ⇒ qof w' l = qof w l) ∧
+  (l0_send g bs w = (r, w') ⇒ qof w' l = qof w l) ∧
+  (l0_recv g n w = (r, d, w') ⇒ qof w' l = qof w l) ∧
+  (l0_shutdown g w = (r, w') ⇒ qof w' l = qof w l) ∧
+  (l0_connerr g w = (y, w') ⇒ qof w' l = qof w l) ∧
+  (g ≠ l ∧ l0_close g w = (r, w') ⇒ qof w' l = qof w l) ∧
+  (g ≠ l ∧ l0_accept g w = (r, w') ⇒ qof w' l = qof w l)
+Proof
+  rpt conj_tac >> strip_tac
+  >- (gvs[l0_listen_def, AllCaseEqs()] >> simp[qof_def, FILTER_APPEND] >>
+      Cases_on ‘FILTER (λ(l',p,q). l' = l) w.listeners’ >> simp[] >>
+      TRY (PairCases_on ‘h’ >> simp[]) >> rw[])
+  >- (gvs[l0_send_def, AllCaseEqs()])
+  >- (gvs[l0_recv_def, AllCaseEqs()])
+  >- (gvs[l0_shutdown_def, AllCaseEqs()])
+  >- (gvs[l0_connerr_def, AllCaseEqs()])
+  >- (gvs[l0_close_def, close_fd_def, AllCaseEqs()] >>
+      simp[qof_def] >>
+      ‘FILTER (λ(l',p,q). l' = l) (FILTER (λ(l,p,q). l ≠ g) w.listeners) =
+       FILTER (λ(l',p,q). l' = l) w.listeners’
+        by (qspec_tac (‘w.listeners’, ‘ls’) >> Induct >> simp[FORALL_PROD] >>
+            rw[] >> gvs[]) >>
+      simp[])
+  >> gvs[l0_accept_def, AllCaseEqs()] >> simp[qof_def, FILTER_AFUPDKEY_other]
+QED

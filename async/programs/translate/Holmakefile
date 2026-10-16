@@ -1,0 +1,32 @@
+# The async translator (design/44) on the final L0 layout: INCLUDES = the dirs of all ancestors (as programs/kv, plus ../kv).
+INCLUDES = ../kv \
+           ../../cakeml/approx \
+           ../../cakeml/library \
+           ../../headline \
+           ../../loop/polling \
+           ../../model/core \
+           ../../model/level2 \
+           ../echo \
+           ../echo-live \
+           ../http-pb \
+           ../proto \
+           ../../servers/closed-loop \
+           ../../servers/echo \
+           ../../servers/http \
+           ../../servers/http-model \
+           ../../servers/kv \
+           ../../servers/kv-live \
+           ../../servers/library-liveness \
+           ../../servers/proto \
+           ../../servers/proto-inst \
+           ../../servers/relabel \
+           ../../servers/skeleton \
+           ../../spec \
+           ../../world/clock \
+           ../../world/composed \
+           ../../world/sockets \
+           ../../world/sockets-cf \
+           $(CAKEMLDIR)/semantics
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

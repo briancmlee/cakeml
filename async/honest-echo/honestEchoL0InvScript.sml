@@ -391,3 +391,91 @@ Proof
   simp[hrd_def, hread_def] >> rpt strip_tac >>
   rewrite_tac[APPEND_ASSOC] >> gvs[]
 QED
+
+(* ------------------------------------------------------------------------
+   The round's tail: poll, flush, fetch, hung-up drops, reap
+   ------------------------------------------------------------------------ *)
+
+(* A poll changes no state of L1's and no episode *)
+Theorem l1_polls_in:
+  ∀chunks w rv w' evs.
+    l1_polls chunks w = SOME (rv, w', evs) ∧ l0_rely w ⇒
+    l0_rely w' ∧ l0_ep_st es evs = es ∧ ∀j. ep_rd j es evs = []
+Proof
+  Induct >> simp[l1_polls_def, ep_fold_def] >> rpt gen_tac >> strip_tac >>
+  gvs[AllCaseEqs()] >>
+  drule_all sys_poll_event >> strip_tac >>
+  ‘l0_rely w1’ by (gvs[sys_poll_def] >> metis_tac[l0_do_rely]) >>
+  first_x_assum drule_all >> strip_tac >>
+  PairCases_on ‘es’ >> gvs[ep_fold_def, l0_ep_step_def]
+QED
+
+(* A flush sends (receiving nothing) and changes outboxes and gone only *)
+Theorem l1_flush_in:
+  ∀fs w b w' b' evs.
+    l1_flush fs (w, b) = SOME ((w', b'), evs) ∧ l0_rely w ⇒
+    l0_rely w' ∧ b'.tbl = b.tbl ∧ b'.nxt = b.nxt ∧ b'.closing = b.closing ∧
+    l0_ep_st es evs = es ∧ ∀j. ep_rd j es evs = []
+Proof
+  Induct >> simp[l1_flush_def, ep_fold_def] >> rpt gen_tac >> strip_tac >>
+  gvs[AllCaseEqs()] >>
+  TRY (first_x_assum drule_all >> simp[] >> NO_TAC) >>
+  drule_all sys_send_event >> strip_tac >>
+  ‘l0_rely w''’ by (gvs[sys_send_def] >> metis_tac[l0_do_rely]) >>
+  first_x_assum drule_all >> strip_tac >>
+  PairCases_on ‘es’ >> gvs[ep_fold_def, l0_ep_step_def]
+QED
+
+(* D19's hung-up step drops outboxes only *)
+Theorem hup_step_in:
+  own_ok lfd es (hup_step hfs ob log ps) = own_ok lfd es ps ∧
+  inbp lfd (hup_step hfs ob log ps) = inbp lfd ps
+Proof
+  ‘(hup_step hfs ob log ps).b.tbl = ps.b.tbl ∧ (hup_step hfs ob log ps).b.nxt = ps.b.nxt ∧
+   (hup_step hfs ob log ps).b.closing = ps.b.closing ∧
+   (hup_step hfs ob log ps).acq = ps.acq ∧ (hup_step hfs ob log ps).inb = ps.inb’
+    by simp[hup_step_def, FOLDL_drop_out] >>
+  drule own_ok_cong >> simp[]
+QED
+
+(* Forgetting an fd that is no handle's and not pending *)
+Theorem own_forget:
+  own_ok lfd (k, opn) (ps with b := b) ∧ ¬MEM f (MAP SND b.tbl) ∧ ¬MEM f ps.acq ⇒
+  own_ok lfd (k, opn) (ps with b := forget f b) ∧
+  own_ok lfd (k, ADELKEY f opn) (ps with b := forget f b)
+Proof
+  strip_tac >>
+  ‘∀h x. MEM (h, x) b.tbl ⇒ x ≠ f’ by (rpt strip_tac >> gvs[MEM_MAP, EXISTS_PROD]) >>
+  ‘∀i. i < LENGTH ps.acq ⇒ EL i ps.acq ≠ f’ by metis_tac[MEM_EL] >>
+  gvs[own_ok_def, ep_ok_ADELKEY, ALOOKUP_ADELKEY, MEM_FILTER] >>
+  rpt strip_tac >> res_tac >> gvs[] >> metis_tac[]
+QED
+
+(* The reap closes fds L1 no longer hands out (closing ones, or ones it
+   has forgotten): the other episodes' fds stay owned *)
+Theorem l1_reap_in:
+  ∀fs w b w' b' evs opn.
+    l1_reap fs (w, b) = SOME ((w', b'), evs) ∧ l0_rely w ∧
+    own_ok lfd (k, opn) (ps with b := b) ∧
+    (∀f. MEM f fs ⇒ ¬MEM f (MAP SND b.tbl) ∧ ¬MEM f ps.acq) ⇒
+    l0_rely w' ∧ b'.tbl = b.tbl ∧ b'.nxt = b.nxt ∧
+    FST (l0_ep_st (k, opn) evs) = k ∧ own_ok lfd (l0_ep_st (k, opn) evs) (ps with b := b') ∧
+    ∀j. ep_rd j (k, opn) evs = []
+Proof
+  Induct >> simp[l1_reap_def, ep_fold_def] >> rpt gen_tac >> strip_tac >>
+  gvs[AllCaseEqs()] >>
+  TRY (first_x_assum (qspecl_then [‘w’, ‘b’, ‘w'’, ‘b'’, ‘evs’, ‘opn’] mp_tac) >>
+       impl_tac >- metis_tac[] >> simp[] >> NO_TAC) >>
+  qmatch_asmsub_rename_tac ‘l1_close h (w, b) = SOME (wsx, _)’ >>
+  PairCases_on ‘wsx’ >> drule l1_close_shape >> strip_tac >> gvs[] >>
+  drule_all sys_close_event >> strip_tac >>
+  ‘l0_rely wsx0’ by (gvs[sys_close_def] >> metis_tac[l0_do_rely]) >>
+  ‘¬MEM h (MAP SND b.tbl) ∧ ¬MEM h ps.acq’ by metis_tac[] >>
+  drule_all own_forget >> strip_tac >>
+  simp[ep_fold_APPEND, ep_fold_def, l0_ep_step_def] >>
+  Cases_on ‘l0_res_of out’ >> gvs[] >>
+  ((first_assum (qspecl_then [‘wsx0’, ‘forget h b’, ‘w'’, ‘b'’, ‘evs''’, ‘ADELKEY h opn’] mp_tac) >>
+    impl_tac >- (simp[] >> metis_tac[]) >> simp[] >> NO_TAC) ORELSE
+   (first_assum (qspecl_then [‘wsx0’, ‘forget h b’, ‘w'’, ‘b'’, ‘evs''’, ‘opn’] mp_tac) >>
+    impl_tac >- (simp[] >> metis_tac[]) >> simp[]))
+QED

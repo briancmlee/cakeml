@@ -551,3 +551,29 @@ Proof
   disj2_tac >> disj2_tac >> simp[] >>
   irule fkeep_b_same >> fs[]
 QED
+
+(* ------------------------------------------------------------------------
+   Every data entry of a fetch log is non-empty
+   ------------------------------------------------------------------------ *)
+
+Theorem sys_recv_len:
+  l0_rely w ∧ sys_recv f n w = SOME (out, w', ev) ⇒ LENGTH out = n + 13
+Proof
+  rw[sys_recv_def, l0_do_def, AllCaseEqs()] >> drule_all l0_ffi_fn_length >> simp[]
+QED
+
+Theorem pf_fetch_data:
+  ∀fs w ps w' ps' log evs.
+    pf_fetch lfd hw fs (w, ps) = SOME ((w', ps'), log, evs) ∧ winv w ⇒
+    ∀g. ¬MEM (FData g []) log
+Proof
+  Induct >> simp[pf_fetch_def] >> rpt gen_tac >> rw[] >>
+  TRY (first_x_assum drule_all >> simp[] >> NO_TAC) >>
+  gvs[AllCaseEqs()] >> pairarg_tac >> gvs[AllCaseEqs()] >>
+  rename1 ‘SOME (out, w1, ev)’ >>
+  ‘winv w1’ by metis_tac[sys_winv] >>
+  first_x_assum drule_all >> strip_tac >>
+  ‘l0_rely w’ by fs[winv_def] >>
+  TRY (drule_all sys_recv_len >> strip_tac) >>
+  ‘0 < pf_chunk’ by EVAL_TAC >> CCONTR_TAC >> gvs[] >> res_tac >> gvs[]
+QED

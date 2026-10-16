@@ -86,3 +86,31 @@ Proof
   strip_tac >> simp[] >>
   rpt conj_tac >> TRY (metis_tac[drops_APPEND] >> NO_TAC) >> decide_tac
 QED
+
+(* ------------------------------------------------------------------------
+   The poll
+   ------------------------------------------------------------------------ *)
+
+(* A polled fd (the listener or an open connection) is readable in L0's
+   sense exactly when version 2 reports it ready *)
+Theorem fd_readable_core:
+  core_rel p lfd w1 s1 ∧ (f = lfd ∨ ALOOKUP w1.open_fds f ≠ NONE) ⇒
+  ((byte_revents (fd_revents w1 (f, 1))).rin ∨ (byte_revents (fd_revents w1 (f, 1))).rhup ∨
+   (byte_revents (fd_revents w1 (f, 1))).rerr ⇔ is_ready2 s1 f) ∧
+  poll_flag (fd_revents w1 (f, 1)) = (if is_ready2 s1 f then 1w else 0w)
+Proof
+  strip_tac >> gvs[core_rel_def]
+  >- (simp[fd_revents_def, l0_chan_of_def, is_ready2_def, client_of_def, poll_flag_def,
+           no_revents_def] >>
+      rw[] >> gvs[])
+  >> Cases_on ‘ALOOKUP s1.open_fds f’ >> gvs[] >>
+  rename1 ‘ALOOKUP _ f = SOME j’ >>
+  ‘f ≠ lfd’ by (strip_tac >> gvs[]) >>
+  ‘j < LENGTH w1.chans ∧ ¬(EL j w1.chans).closed’ by metis_tac[] >>
+  ‘chan_rel (EL j w1.chans) (EL j s1.clients)’ by gvs[LIST_REL_EL_EQN] >>
+  gvs[chan_rel_def] >>
+  imp_res_tac LIST_REL_LENGTH >>
+  simp[fd_revents_def, l0_chan_of_def, chan_revents_def, is_ready2_def, client_of_def,
+       poll_flag_def] >>
+  rw[] >> gvs[] >> metis_tac[]
+QED

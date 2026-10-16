@@ -94,7 +94,8 @@ Definition core_rel_def:
     s.alloc = (λj used. lowest_free used) ∧
     LIST_REL chan_rel w.chans s.clients ∧
     (∀f j. ALOOKUP w.open_fds f = SOME j ⇒ j < LENGTH w.chans ∧ ¬(EL j w.chans).closed) ∧
-    (∀f1 f2 j. ALOOKUP w.open_fds f1 = SOME j ∧ ALOOKUP w.open_fds f2 = SOME j ⇒ f1 = f2)
+    (∀f1 f2 j. ALOOKUP w.open_fds f1 = SOME j ∧ ALOOKUP w.open_fds f2 = SOME j ⇒ f1 = f2) ∧
+    ALOOKUP w.open_fds lfd = NONE
 End
 
 Definition l1v2_rel_def:

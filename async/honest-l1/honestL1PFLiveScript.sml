@@ -13,6 +13,7 @@
 *)
 Theory honestL1PFLive
 Ancestors
+  honestL0WorldProps
   honestL1PFRound honestL1PFInv honestL1PFRefine honestL1PFModel honestL1Inv honestL1Model honestL0Rely honestL0World
   honestL0 asyncCore asyncLevel1 asyncM3World alist
 Libs

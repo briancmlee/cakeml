@@ -14,6 +14,7 @@
 *)
 Theory honestL1PFConnRun
 Ancestors
+  honestL0WorldProps
   honestL1PFConn honestL1PFClient honestL1PFLive honestL1PFRound honestL1PFRefine
   honestL1PFInv honestL1PFModel honestL1Model honestL0WorldInv honestL0World
   honestL0 asyncCore

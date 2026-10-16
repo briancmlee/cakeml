@@ -7,6 +7,7 @@
 *)
 Theory honestL1PFClient
 Ancestors
+  honestL0WorldProps
   honestL1PFStream honestL1PFLive honestL1PFRound honestL1PFRefine honestL1PFModel
   honestL1Model honestL0World honestL0 socketV2FFI asyncCore alist
 Libs

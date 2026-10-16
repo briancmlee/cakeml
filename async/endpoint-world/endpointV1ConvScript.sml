@@ -475,3 +475,50 @@ Proof
   simp[FOLDL_deliver1_sched, deliver2_future]) >>
   qpat_assum ‘∀m. _ ⇒ step_ok _ _’ (qspec_then ‘SUC m’ mp_tac) >> fs[]
 QED
+
+(* The connections of the renamed schedule: the clients' fds, in order *)
+Theorem rn2_sched_conns[local]:
+  ∀m n ll. sched_conns m (rn2_sched fdf n ll) =
+           GENLIST (λi. fdf (n + i)) (LENGTH (FILTER is_conn2 (arrivals2_upto m ll)))
+Proof
+  Induct >> simp[sched_conns_def, arrivals2_upto_def, rn2_sched_LHD] >>
+  rpt gen_tac >> Cases_on ‘LHD ll’ >> simp[] >>
+  rename1 ‘LHD ll = SOME st’ >>
+  imp_res_tac rn2_sched_LTL >> simp[] >>
+  simp[rn2_step_conns, rn2_step_count, FILTER_APPEND] >>
+  rw[LIST_EQ_REWRITE, EL_APPEND_EQN] >> AP_TERM_TAC >> decide_tac
+QED
+
+Theorem v1of2_conns:
+  sched_conns m (v1of2 lfd sk2).sched = GENLIST (F2 lfd sk2) (nconn sk2 m)
+Proof
+  simp[v1of2_def, rn2_sched_conns, nconn_def, LIST_EQ_REWRITE]
+QED
+
+(* MAIN: the version-1 world is a server world connecting at most M
+   clients, related to the version-2 world *)
+Theorem v1of2_props:
+  server_world2 lfd sk2 ∧ (∀n. nconn sk2 n ≤ M) ∧
+  LENGTH sk2.reserved + M + 3 < dimword (:64) ⇒
+  server_world lfd (v1of2 lfd sk2) ∧
+  (∀m. LENGTH (sched_conns m (v1of2 lfd sk2).sched) ≤ M) ∧
+  v12rel lfd (v1of2 lfd sk2).sched (v1of2 lfd sk2) sk2
+Proof
+  strip_tac >> drule_all v1of2_ticks >> strip_tac >>
+  simp[v1of2_conns] >> rpt conj_tac
+  >- (rewrite_tac[server_world_def, sched_wf_def] >>
+      conj_tac >- simp[v1of2_def] >> conj_tac >- simp[v1of2_def] >> metis_tac[]) >>
+  TRY (fs[] >> NO_TAC) >>
+  simp[v12rel_def] >> qexistsl_tac [‘[]’, ‘0’] >>
+  ‘rn1_sched [] (v1of2 lfd sk2).sched = sk2.future’ by metis_tac[v1of2_sched] >>
+  pop_assum (fn th => simp[v1of2_conns, th]) >> rpt conj_tac
+  >- fs[server_world2_def, v12core_def, v1of2_def]
+  >- (rpt strip_tac >>
+      mp_tac (Q.INST [‘ll’ |-> ‘(v1of2 lfd sk2).sched’] conn_fd_sched) >>
+      simp[v1of2_conns])
+  >- (rpt strip_tac >> simp[EL_GENLIST] >>
+      CONV_TAC (LHS_CONV (REWRITE_CONV [exp_used_def])) >>
+      simp[TAKE_GENLIST, MIN_DEF] >>
+      CONV_TAC (RHS_CONV (ONCE_REWRITE_CONV [cfd_alloc])) >> simp[exp_used_def, TAKE_GENLIST])
+  >> gen_tac >> qpat_x_assum ‘∀n. nconn _ _ ≤ _’ (qspec_then ‘m’ mp_tac) >> fs[]
+QED

@@ -182,14 +182,25 @@ Definition v1_disciplined_def:
               fd_disciplined lfd io
 End
 
-(* CLAIM (pending user decision): for an fd-disciplined program, a version-1
-   server world and an endpoint server world with version 1's calls, no
-   backpressure and the same fixed schedule (alloc giving each channel the
-   fd version 1's schedule chose) have the same behaviours *)
+(* The non-saturation hypothesis (approved 2026-10-16): the schedule
+   connects at most M clients in all *)
+Definition sched_connects_le_def:
+  sched_connects_le M ll ⇔
+    ∀n. LENGTH (FILTER (λa. ∃l c. a = Connect l c) (arrivals_upto n ll)) ≤ M
+End
+
+(* CLAIM (approved 2026-10-16; PROVED as endpointV1Inst's
+   v1_instance_disc_thm): for an fd-disciplined program, a version-1 server
+   world that connects at most M clients (M + 3 < 2^64: otherwise the
+   endpoint world runs out of fds where version 1 never does) and an
+   endpoint server world with version 1's calls, no backpressure and the
+   same fixed schedule (alloc giving each channel the fd version 1's
+   schedule chose) have the same behaviours *)
 Definition v1_instance_disc_def:
   v1_instance_disc ⇔
-    ∀lfd sk prog.
-      server_world lfd sk ∧ v1_disciplined lfd prog ⇒
+    ∀lfd sk prog M.
+      server_world lfd sk ∧ sched_connects_le M sk.sched ∧ M + 3 < dimword (:64) ∧
+      v1_disciplined lfd prog ⇒
       ∃a w. ep_server_world v1_calls lfd a w ∧ no_backpressure w ∧ open_loop w ∧
             ep_rely w ∧
             ∀b. semantics_prog (init_state (socket_ffi sk)) init_env prog b ⇔

@@ -17,7 +17,7 @@ Theory endpointV1Inst
 Ancestors
   llist lprefix_lub ffi semantics ffiAgreeUpto ffiSpikeSocketFFI ffiSpikeSocketFair
   EchoSpec socketV2FFI socketV2Fair EchoSpec2 endpointWorld endpointFair
-  endpointSpecForms endpointSemantics endpointInstances endpointV2Sim
+  endpointSpecForms endpointSemantics endpointInstances endpointServers endpointV2Sim
   endpointV1Sim endpointV1Run
 Libs
   preamble
@@ -67,8 +67,8 @@ QED
 (* For version 1's calls, a world with fewer calls answers alike *)
 Theorem ep_call_calls:
   MEM n v1_calls ∧ MEM n w.calls ∧ MEM n c ⇒
-  ep_call n conf bytes (w with calls := c) =
-  OPTION_MAP (λ(b, w'). (b, w' with calls := c)) (ep_call n conf bytes w)
+  ep_call n conf bys (w with calls := c) =
+  OPTION_MAP (λ(b, w'). (b, w' with calls := c)) (ep_call n conf bys w)
 Proof
   rw[v1_calls_def] >>
   simp[ep_call_def, ep_tick_calls, ep_accept_def, ep_alloc_def, ep_used_def,
@@ -77,16 +77,16 @@ Proof
   gvs[upd_chan_def]
 QED
 
-Theorem ep_ffi_fn_calls[local]:
+Theorem ep_ffi_fn_calls:
   MEM n v1_calls ∧ MEM n w.calls ⇒
-  ep_ffi_fn n conf bytes (w with calls := v1_calls) =
-  OPTION_MAP (λ(b, w'). (b, w' with calls := v1_calls)) (ep_ffi_fn n conf bytes w)
+  ep_ffi_fn n conf bys (w with calls := v1_calls) =
+  OPTION_MAP (λ(b, w'). (b, w' with calls := v1_calls)) (ep_ffi_fn n conf bys w)
 Proof
   strip_tac >> simp[ep_ffi_fn_def] >>
   ‘MEM n v1_calls’ by simp[] >>
   drule_all (Q.INST [‘c’ |-> ‘v1_calls’] ep_call_calls) >>
-  disch_then (qspecl_then [‘conf’, ‘bytes’] SUBST1_TAC) >>
-  Cases_on ‘ep_call n conf bytes w’ >> simp[] >> rename1 ‘SOME p’ >>
+  disch_then (qspecl_then [‘conf’, ‘bys’] SUBST1_TAC) >>
+  Cases_on ‘ep_call n conf bys w’ >> simp[] >> rename1 ‘SOME p’ >>
   PairCases_on ‘p’ >> simp[]
 QED
 
@@ -98,8 +98,8 @@ Proof
   every_case_tac >> simp[] >> rpt (pairarg_tac >> gvs[])
 QED
 
-Theorem ep_ffi_fn_calls_same[local]:
-  ep_ffi_fn n conf bytes w = SOME (b, w') ⇒ w'.calls = w.calls
+Theorem ep_ffi_fn_calls_same:
+  ep_ffi_fn n conf bys w = SOME (b, w') ⇒ w'.calls = w.calls
 Proof
   rw[ep_ffi_fn_def, AllCaseEqs()] >> simp[] >>
   gvs[ep_call_def, AllCaseEqs(), ep_tick_def, ep_deliver_calls_same,
@@ -124,7 +124,7 @@ QED
    as the world with version 2's *)
 Theorem ep_answers_v1:
   ∀cs w. w.calls = v2_calls ∧
-         EVERY (λ(n, conf, bytes). ∃m. n = ExtCall m ∧ MEM m v1_calls) cs ⇒
+         EVERY (λ(n, conf, bys). ∃m. n = ExtCall m ∧ MEM m v1_calls) cs ⇒
          ffi_answers (ep_ffi (w with calls := v1_calls)) cs = ffi_answers (ep_ffi w) cs
 Proof
   Induct >> simp[ffi_answers_def, FORALL_PROD] >> rpt strip_tac >> gvs[] >>
@@ -138,25 +138,69 @@ Proof
   metis_tac[ep_ffi_fn_calls_same]
 QED
 
+(* MAIN: replaying version 1's events, the world with version 1's calls
+   is the world with version 2's, but for the calls offered *)
+Theorem ep_replay_v1:
+  ∀evs w. w.calls = v2_calls ∧ EVERY v1_event evs ⇒
+          ep_replay (w with calls := v1_calls) evs = ep_replay w evs with calls := v1_calls
+Proof
+  Induct >> simp[ep_replay_def] >> rpt gen_tac >> strip_tac >>
+  fs[v1_event_def] >> gvs[ep_replay_def] >>
+  ‘MEM m w.calls’ by simp[MEM_v1_v2] >>
+  drule_all ep_ffi_fn_calls >> disch_then (fn th => REWRITE_TAC[th]) >>
+  rename1 ‘ep_ffi_fn m cf (MAP FST bs) w’ >>
+  Cases_on ‘ep_ffi_fn m cf (MAP FST bs) w’ >> simp[] >>
+  rename1 ‘SOME p’ >> PairCases_on ‘p’ >> simp[] >>
+  first_x_assum irule >> simp[] >> metis_tac[ep_ffi_fn_calls_same]
+QED
+
+Theorem ep_views_v1:
+  w.calls = v2_calls ∧ EVERY v1_event evs ⇒
+  peer_sent_at (w with calls := v1_calls) evs c = peer_sent_at w evs c ∧
+  peer_reads_at (w with calls := v1_calls) evs c = peer_reads_at w evs c ∧
+  (ep_replay (w with calls := v1_calls) evs).clock = (ep_replay w evs).clock ∧
+  ep_chan (w with calls := v1_calls) evs j = ep_chan w evs j
+Proof
+  strip_tac >> simp[peer_sent_at_def, peer_reads_at_def, ep_replay_v1] >>
+  ‘∀n. ep_replay (w with calls := v1_calls) (TAKE n evs) =
+       ep_replay w (TAKE n evs) with calls := v1_calls’
+    by (gen_tac >> irule ep_replay_v1 >> simp[EVERY_TAKE]) >>
+  simp[ep_chan_def]
+QED
+
+(* MAIN: on a run of version 1's events, the endpoint guarantees of the
+   world with version 1's calls are those of the world with version 2's *)
+Theorem ep_guar_v1:
+  w.calls = v2_calls ∧ (∀evs. LPREFIX (fromList evs) io ⇒ EVERY v1_event evs) ⇒
+  (sym_live P (w with calls := v1_calls) io ⇔ sym_live P w io) ∧
+  (ticks_forever (w with calls := v1_calls) io ⇔ ticks_forever w io)
+Proof
+  strip_tac >>
+  ‘∀c. reads_fair (w with calls := v1_calls) io c ⇔ reads_fair w io c’
+    by (rw[reads_fair_def] >> metis_tac[ep_views_v1]) >>
+  rw[sym_live_def, ticks_forever_def, eventually_def] >>
+  metis_tac[ep_views_v1]
+QED
+
 (* ------------------------------------------------------------------------
    The rely, with version 1's calls
    ------------------------------------------------------------------------ *)
 
-Theorem ep_after_v1[local]:
+Theorem ep_after_v1:
   ∀cs w w1. w.calls = v2_calls ∧ ep_after (w with calls := v1_calls) cs = SOME w1 ⇒
             ∃w'. ep_after w cs = SOME w' ∧ w1 = w' with calls := v1_calls ∧
                  w'.calls = v2_calls
 Proof
   Induct >> simp[ep_after_def, FORALL_PROD] >> rpt gen_tac >> strip_tac >>
-  rename1 ‘ep_ffi_fn n conf bytes’ >>
+  rename1 ‘ep_ffi_fn n conf bys’ >>
   Cases_on ‘MEM n v1_calls’
   >- (‘MEM n w.calls’ by simp[MEM_v1_v2] >>
-      drule_all ep_ffi_fn_calls >> disch_then (qspecl_then [‘conf’, ‘bytes’] assume_tac) >>
-      gvs[] >> Cases_on ‘ep_ffi_fn n conf bytes w’ >> gvs[] >>
+      drule_all ep_ffi_fn_calls >> disch_then (qspecl_then [‘conf’, ‘bys’] assume_tac) >>
+      gvs[] >> Cases_on ‘ep_ffi_fn n conf bys w’ >> gvs[] >>
       rename1 ‘SOME p’ >> PairCases_on ‘p’ >> gvs[] >>
       ‘p1.calls = v2_calls’ by metis_tac[ep_ffi_fn_calls_same] >>
       qpat_x_assum ‘∀w w1. _’ irule >> simp[]) >>
-  ‘ep_ffi_fn n conf bytes (w with calls := v1_calls) = NONE’
+  ‘ep_ffi_fn n conf bys (w with calls := v1_calls) = NONE’
     by simp[ep_ffi_fn_def, ep_call_def] >>
   gvs[]
 QED
@@ -168,7 +212,7 @@ Proof
   simp[ep_arrival_ok_def]
 QED
 
-Theorem ep_rely_v1[local]:
+Theorem ep_rely_v1:
   ep_rely w ∧ w.calls = v2_calls ⇒ ep_rely (w with calls := v1_calls)
 Proof
   rw[ep_rely_def, ep_sched_ok_def] >>
@@ -191,11 +235,63 @@ Proof
   rpt gen_tac >> CASE_TAC >> simp[]
 QED
 
-(* The non-saturation hypothesis (agreed 2026-10-16): the schedule connects
-   at most M clients *)
-Definition sched_connects_le_def:
+(* endpointInstances' sched_connects_le counts the connects of the first n
+   steps, as sched_conns lists them *)
+Theorem sched_conns_count[local]:
+  ∀n ll. LENGTH (sched_conns n ll) =
+         LENGTH (FILTER (λa. ∃l c. a = Connect l c) (arrivals_upto n ll))
+Proof
+  ‘∀st. LENGTH (step_conns st) = LENGTH (FILTER (λa. ∃l c. a = Connect l c) st)’
+    by (Induct >> simp[step_conns_def] >> Cases >> simp[] >> fs[step_conns_def]) >>
+  Induct >> simp[sched_conns_def, arrivals_upto_def] >> rpt gen_tac >>
+  CASE_TAC >> simp[FILTER_APPEND]
+QED
+
+Theorem sched_connects_le_conns[local]:
   sched_connects_le M ll ⇔ ∀m. LENGTH (sched_conns m ll) ≤ M
-End
+Proof
+  simp[sched_connects_le_def, sched_conns_count]
+QED
+
+(* A bounded version-1 server world's version-2 world is related and is a
+   server world *)
+Theorem v2of1_server_world2:
+  server_world lfd sk ∧ sched_connects_le M sk.sched ∧ M + 3 < dimword (:64) ⇒
+  v12rel lfd sk.sched sk (v2of1 lfd sk) ∧ server_world2 lfd (v2of1 lfd sk)
+Proof
+  strip_tac >>
+  ‘v12rel lfd sk.sched sk (v2of1 lfd sk)’
+    by (irule v12rel_init >> fs[server_world_def, sched_connects_le_conns] >>
+        gen_tac >> first_x_assum (qspec_then ‘m’ mp_tac) >> decide_tac) >>
+  ‘sched_wf2 (v2of1 lfd sk)’ by metis_tac[v12rel_sched_wf2, server_world_def] >>
+  simp[server_world2_def] >> simp[v2of1_def, alloc1_ok]
+QED
+
+(* MAIN: a disciplined diverging version-1 run is a run in any endpoint
+   world, with version 1's calls, answering as the related version-2 world *)
+Theorem v1_ep_diverge:
+  semantics_prog (init_state (socket_ffi sk)) init_env prog (Diverge io) ∧
+  fd_disciplined lfd io ∧ v12rel lfd ll0 sk s2 ∧ sched_wf sk ∧ s2.open_fds = [] ∧
+  same_answers (socket2_ffi s2) (ep_ffi w) ∧ w.calls = v2_calls ⇒
+  semantics_prog (init_state (ep_ffi (w with calls := v1_calls))) init_env prog (Diverge io)
+Proof
+  strip_tac >>
+  ‘init_state (ep_ffi (w with calls := v1_calls)) =
+   init_state (socket_ffi sk) with ffi := ep_ffi (w with calls := v1_calls)’
+    by simp[ml_progTheory.init_state_def, semanticPrimitivesTheory.state_component_equality] >>
+  pop_assum SUBST1_TAC >> irule semantics_prog_upto >>
+  simp[ml_progTheory.init_state_def, socket_ffi_def, ep_ffi_def] >>
+  REWRITE_TAC[GSYM socket_ffi_def, GSYM ep_ffi_def, GSYM ml_progTheory.init_state_def] >>
+  rw[agree_upto_def] >>
+  ‘ffi_answers (socket_ffi sk) cs = ffi_answers (socket2_ffi s2) cs’
+    by (irule v12_agree >> metis_tac[]) >>
+  ‘ffi_answers (socket2_ffi s2) cs = ffi_answers (ep_ffi w) cs’
+    by fs[same_answers_def, GSYM run_calls_ffi_answers] >>
+  drule_all v1_clock_calls >> strip_tac >>
+  ‘EVERY (λ(n, conf, bys). ∃m. n = ExtCall m ∧ MEM m v1_calls) cs’
+    by metis_tac[replays_v1_calls] >>
+  drule_all ep_answers_v1 >> simp[]
+QED
 
 (* MAIN: for an fd-disciplined program, a version-1 server world that
    connects at most M clients (M + 3 < 2^64) and an endpoint server world
@@ -213,14 +309,9 @@ Theorem v1_instance_disc_thm:
 Proof
   rpt strip_tac >>
   fs[v1_disciplined_def] >> first_x_assum drule >> strip_tac >>
-  qabbrev_tac ‘s2 = v2of1 lfd sk’ >>
-  ‘v12rel lfd sk.sched sk s2’
-    by (simp[Abbr ‘s2’] >> irule v12rel_init >> fs[server_world_def, sched_connects_le_def] >>
-        gen_tac >> first_x_assum (qspec_then ‘m’ mp_tac) >> decide_tac) >>
-  ‘sched_wf2 s2’ by metis_tac[v12rel_sched_wf2, server_world_def] >>
-  ‘server_world2 lfd s2’
-    by (simp[server_world2_def] >> simp[Abbr ‘s2’, v2of1_def, alloc1_ok]) >>
-  drule v2_forward >> strip_tac >>
+  ‘v12rel lfd sk.sched sk (v2of1 lfd sk) ∧ server_world2 lfd (v2of1 lfd sk)’
+    by (irule v2of1_server_world2 >> simp[] >> qexists_tac ‘M’ >> simp[]) >>
+  qpat_x_assum ‘server_world2 _ _’ (strip_assume_tac o MATCH_MP v2_forward) >>
   qexistsl_tac [‘a’, ‘w with calls := v1_calls’] >>
   ‘w.calls = v2_calls’ by fs[ep_server_world_def] >>
   rpt conj_tac
@@ -229,22 +320,15 @@ Proof
   >- fs[open_loop_def]
   >- simp[ep_rely_v1] >>
   ‘semantics_prog (init_state (ep_ffi (w with calls := v1_calls))) init_env prog (Diverge io)’
-    by (‘init_state (ep_ffi (w with calls := v1_calls)) =
-         init_state (socket_ffi sk) with ffi := ep_ffi (w with calls := v1_calls)’
-          by simp[ml_progTheory.init_state_def,
-                  semanticPrimitivesTheory.state_component_equality] >>
-        pop_assum SUBST1_TAC >> irule semantics_prog_upto >>
-        simp[ml_progTheory.init_state_def, socket_ffi_def, ep_ffi_def] >>
-        REWRITE_TAC[GSYM socket_ffi_def, GSYM ep_ffi_def,
-                    GSYM ml_progTheory.init_state_def] >>
-        rw[agree_upto_def] >>
-        ‘ffi_answers (socket_ffi sk) cs = ffi_answers (socket2_ffi s2) cs’
-          by (irule v12_agree >> metis_tac[server_world_def]) >>
-        ‘ffi_answers (socket2_ffi s2) cs = ffi_answers (ep_ffi w) cs’
-          by fs[same_answers_def, GSYM run_calls_ffi_answers] >>
-        drule_all v1_clock_calls >> strip_tac >>
-        ‘EVERY (λ(n, conf, bytes). ∃m. n = ExtCall m ∧ MEM m v1_calls) cs’
-          by metis_tac[replays_v1_calls] >>
-        drule_all ep_answers_v1 >> simp[]) >>
+    by (irule v1_ep_diverge >> fs[server_world_def] >>
+        qexistsl_tac [‘lfd’, ‘sk.sched’, ‘v2of1 lfd sk’, ‘sk’] >> simp[v2of1_def]) >>
   metis_tac[diverge_only]
+QED
+
+(* MAIN: the approved claim *)
+Theorem v1_instance_disc_holds:
+  v1_instance_disc
+Proof
+  rw[v1_instance_disc_def] >> irule v1_instance_disc_thm >> simp[] >>
+  qexists_tac ‘M’ >> simp[]
 QED

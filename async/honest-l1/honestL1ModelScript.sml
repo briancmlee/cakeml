@@ -25,7 +25,8 @@
    - pausing: an fd whose outbox holds more than hw bytes is not polled for
      input (so L2 is not told it is readable).
 
-  A round: perform the computation's new actions; poll (no wait); flush
+  A round: perform the computation's new actions; poll (no wait; in chunks
+  of at most 4096 fds, the C's limit per call); flush
   the outboxes of the fds the poll found writable; close the closing fds
   whose outboxes are empty; give the computation the snapshot.
 
@@ -258,6 +259,15 @@ Definition l1_poll_set_def:
                (FILTER (λ(f, bs). bs ≠ [] ∧ ¬MEM f (MAP FST ins)) st.outbox)
 End
 
+(* The C polls at most 4096 fds per call (MAX_FDS; more is misuse), so L1
+   polls in chunks of at most 4096 entries *)
+Definition poll_chunks_def:
+  poll_chunks (l : 'a list) =
+    if l = [] then [] else TAKE 4096 l :: poll_chunks (DROP 4096 l)
+Termination
+  WF_REL_TAC ‘measure LENGTH’ >> rw[LENGTH_DROP] >> Cases_on ‘l’ >> gvs[]
+End
+
 (* The revents of the poll's entries; none if the poll failed *)
 Definition poll_revents_def:
   poll_revents fes out =
@@ -314,16 +324,26 @@ Definition l1_reap_def:
     else l1_reap fs (w, st)
 End
 
+(* Poll the entries chunk by chunk: the revents and the events *)
+Definition l1_polls_def:
+  l1_polls [] w = SOME ([], w, []) ∧
+  l1_polls (fes :: rest) w =
+    case sys_poll fes w of
+    | NONE => NONE
+    | SOME (out, w1, ev) =>
+        case l1_polls rest w1 of
+        | NONE => NONE
+        | SOME (rv, w2, evs) => SOME (poll_revents fes out ++ rv, w2, ev :: evs)
+End
+
 (* The round's poll, flush and closes: the ready handles, the next state
    and the events *)
 Definition l1_tail_def:
   l1_tail lfd hw hs (w, st) =
-    let fes = l1_poll_set lfd hw st hs in
-    case sys_poll fes w of
+    case l1_polls (poll_chunks (l1_poll_set lfd hw st hs)) w of
     | NONE => NONE
-    | SOME (out, w1, pev) =>
-        let rv = poll_revents fes out;
-            rdy = readable_fds rv;
+    | SOME (rv, w1, pevs) =>
+        let rdy = readable_fds rv;
             st1 = st with rdy := rdy in
           case l1_flush (writable_fds rv) (w1, st1) of
           | NONE => NONE
@@ -331,7 +351,7 @@ Definition l1_tail_def:
               case l1_reap st2.closing (w2, st2) of
               | NONE => NONE
               | SOME ((w3, st3), cevs) =>
-                  SOME (l1_ready lfd st rdy hs, (w3, st3), pev :: fevs ++ cevs)
+                  SOME (l1_ready lfd st rdy hs, (w3, st3), pevs ++ fevs ++ cevs)
 End
 
 (* ------------------------------------------------------------------------

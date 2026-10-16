@@ -302,6 +302,15 @@ Proof
   EVAL_TAC
 QED
 
+Theorem names_distinct[simp]:
+  «sys_poll» ≠ «sys_recv» ∧ «sys_poll» ≠ «sys_send» ∧ «sys_poll» ≠ «sys_close» ∧
+  «sys_poll» ≠ «sys_accept» ∧ «sys_recv» ≠ «sys_send» ∧ «sys_recv» ≠ «sys_close» ∧
+  «sys_recv» ≠ «sys_accept» ∧ «sys_send» ≠ «sys_close» ∧ «sys_send» ≠ «sys_accept» ∧
+  «sys_close» ≠ «sys_accept»
+Proof
+  EVAL_TAC
+QED
+
 Theorem sys_winv:
   (winv w ∧ sys_close g w = SOME (out, w', ev) ⇒ winv w') ∧
   (winv w ∧ sys_send g bs w = SOME (out, w', ev) ⇒ winv w') ∧
@@ -771,10 +780,50 @@ Proof
   strip_tac >> fs[fetched_def] >> rpt strip_tac >> gvs[] >> res_tac >> fs[]
 QED
 
-(* ------------------------------------------------------------------------
-   WORK IN PROGRESS (kept as a comment until proved; the statements are
-   the plan for R1-live's round step, design/36 §6; the *_winv lemmas
-   below loop on TRY metis_tac[] and need targeted tactics):
+Theorem l1_reap_names:
+  ∀fs w st w' st' evs.
+    l1_reap fs (w, st) = SOME ((w', st'), evs) ⇒
+    EVERY (λev. ev_name ev = ExtCall «sys_close») evs
+Proof
+  Induct >> simp[l1_reap_def] >> rpt gen_tac >> strip_tac >> gvs[] >>
+  qpat_x_assum ‘(if _ then _ else _) = _’ mp_tac >> IF_CASES_TAC >> strip_tac
+  >- (gvs[AllCaseEqs()] >> Cases_on ‘ws’ >> first_x_assum drule >> simp[] >>
+      gvs[l1_close_def, AllCaseEqs(), sys_close_def] >>
+      drule l0_do_cases >> rw[] >> simp[ev_name_def])
+  >> first_x_assum drule >> simp[]
+QED
+
+Theorem FLAT_poll_chunks:
+  ∀l. FLAT (poll_chunks l) = l
+Proof
+  gen_tac >> completeInduct_on ‘LENGTH l’ >> rw[] >>
+  simp[Once poll_chunks_def] >> IF_CASES_TAC >> simp[] >>
+  first_x_assum (qspec_then ‘LENGTH (DROP 4096 l)’ mp_tac) >> simp[] >>
+  disch_then (qspec_then ‘DROP 4096 l’ mp_tac) >> simp[]
+QED
+
+(* f's handle is in the interest and L1 wants input on f: the poll set lists
+   f, always for input *)
+Theorem pf_poll_set_f:
+  ALOOKUP ps.b.tbl h = SOME f ∧ (∀h'. ALOOKUP ps.b.tbl h' = SOME f ⇒ h' = h) ∧
+  f ≠ lfd ∧ MEM h hs ∧ wants_input lfd hw ps f ⇒
+  (∃e. MEM (f, e) (pf_poll_set lfd hw ps hs)) ∧
+  (∀e. MEM (f, e) (pf_poll_set lfd hw ps hs) ⇒ ODD e) ∧
+  EVERY (λ(g, e). e < 256) (pf_poll_set lfd hw ps hs)
+Proof
+  strip_tac >> simp[pf_poll_set_def] >> rpt conj_tac
+  >- (qexists_tac ‘1 + (if outbox_of ps.b f = [] then 0 else 2)’ >>
+      simp[MEM_FLAT, MEM_MAP, PULL_EXISTS] >> disj1_tac >> qexists_tac ‘h’ >>
+      rw[])
+  >- (rw[MEM_FLAT, MEM_MAP, MEM_FILTER, EXISTS_PROD] >> gvs[AllCaseEqs()] >>
+      every_case_tac >> gvs[] >> res_tac >> gvs[] >>
+      first_x_assum (qspecl_then [‘(if outbox_of ps.b f = [] then 0 else 2) + 1’,
+                                  ‘[(f, (if outbox_of ps.b f = [] then 0 else 2) + 1)]’]
+                     mp_tac) >>
+      simp[] >> qexists_tac ‘h’ >> simp[])
+  >> simp[EVERY_MEM, FORALL_PROD, MEM_FLAT, MEM_MAP, MEM_FILTER, PULL_EXISTS] >>
+  rw[] >> every_case_tac >> gvs[] >> rw[]
+QED
 
 Theorem pround_f:
   pround lfd hw hs (w, ps) acts = SOME (snap, (w', ps'), log, evs) ∧
@@ -786,7 +835,43 @@ Theorem pround_f:
   (∀ev. MEM ev evs ∧ ev_on «sys_recv» f ev ∧ ¬retried ev ⇒ fetched f log) ∧
   (¬fetched f log ⇒ pend w' f ∧ fkeep lfd h f ps')
 Proof
-  cheat
+  simp[pround_def, AllCaseEqs()] >> strip_tac >> PairCases_on ‘ws1’ >>
+  gvs[pf_tail_def, AllCaseEqs()] >>
+  drule_all pacts_f >> strip_tac >>
+  rename1 ‘pacts _ _ _ = SOME (rs, aevs, wa, pa)’ >>
+  qabbrev_tac ‘fes = pf_poll_set lfd hw pa hs’ >>
+  ‘inb_of pa f = [] ∧ ¬MEM f pa.eof ∧ f ≠ lfd ∧ ALOOKUP pa.b.tbl h = SOME f ∧
+   (∀h'. ALOOKUP pa.b.tbl h' = SOME f ⇒ h' = h) ∧ ¬MEM f pa.b.closing’
+    by (qpat_x_assum ‘fkeep _ _ _ pa’ mp_tac >> simp[fkeep_def]) >>
+  ‘wants_input lfd hw pa f’
+    by (simp[wants_input_def] >> fs[] >> metis_tac[LESS_EQ_TRANS]) >>
+  ‘(∃e. MEM (f, e) fes) ∧ (∀e. MEM (f, e) fes ⇒ ODD e) ∧
+   EVERY (λ(g, e). e < 256) fes’
+    by (qunabbrev_tac ‘fes’ >> match_mp_tac pf_poll_set_f >>
+        rpt conj_tac >> first_assum ACCEPT_TAC) >>
+  ‘∀c. MEM c (poll_chunks fes) ⇒ EVERY (λ(g, e). e < 256 ∧ (g = f ⇒ ODD e)) c’
+    by (‘EVERY (λ(g, e). e < 256 ∧ (g = f ⇒ ODD e)) fes’
+          by (gvs[EVERY_MEM, FORALL_PROD] >> rw[] >> res_tac) >>
+        drule poll_chunks_ok >> simp[EVERY_MEM] >> metis_tac[]) >>
+  drule_all l1_polls_f >> strip_tac >>
+  ‘EXISTS (ev_on «sys_poll» f) pevs’
+    by (‘MEM (f, e) (FLAT (poll_chunks fes))’ by simp[FLAT_poll_chunks] >>
+        gvs[MEM_FLAT] >> first_x_assum irule >> qexists_tac ‘l’ >>
+        simp[MEM_MAP] >> qexists_tac ‘(f, e)’ >> simp[]) >>
+  drule_all l1_flush_f >> strip_tac >>
+  ‘fkeep lfd h f (pa with b := b2) ∧ LENGTH (outbox_of b2 f) ≤ hw’
+    by (conj_tac >- (irule fkeep_b_same >> fs[]) >> metis_tac[LESS_EQ_TRANS]) >>
+  drule pf_fetch_f >> disch_then (drule_at Any) >> simp[] >> strip_tac >>
+  ‘MEM f (in_fds fes)’
+    by (simp[in_fds_def, MEM_MAP, MEM_FILTER, EXISTS_PROD] >> metis_tac[]) >>
+  drule l1_reap_names >> strip_tac >>
+  conj_tac
+  >- (rpt strip_tac >> imp_res_tac ev_on_name >> fs[EVERY_MEM] >> res_tac >> fs[] >>
+      ‘MEM f (readable_fds rv)’ by metis_tac[] >> fs[MEM_FILTER])
+  >> conj_tac
+  >- (rpt strip_tac >> imp_res_tac ev_on_name >> fs[EVERY_MEM] >> res_tac >> fs[])
+  >> strip_tac >> gvs[] >>
+  ‘¬MEM f ps3.b.closing’ by (qpat_x_assum ‘fkeep _ _ _ ps3’ mp_tac >> simp[fkeep_def]) >>
+  drule_all l1_reap_f >> strip_tac >> simp[] >>
+  irule fkeep_b_same >> fs[]
 QED
-
-   ------------------------------------------------------------------------ *)

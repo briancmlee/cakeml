@@ -166,7 +166,7 @@ Theorem prun_round:
       SOME (snap, (rworld lfd hw ifds m w0 (SUC n), rstate lfd hw ifds m w0 (SUC n)),
             log, rev) ∧
     revs lfd hw ifds m w0 (SUC n) = revs lfd hw ifds m w0 n ++ rev ∧
-    fetched_at lfd hw ifds m w0 n f = fetched f log
+    EL n (SND (SND (SND (prun lfd hw ifds m w0 (SUC n))))) = log
 Proof
   rpt strip_tac >> drule prun_some >> strip_tac >>
   first_assum (qspec_then ‘SUC n’ mp_tac) >> first_x_assum (qspec_then ‘n’ mp_tac) >>
@@ -174,7 +174,7 @@ Proof
   Cases_on ‘prun lfd hw ifds m w0 n’ >> rename1 ‘_ = (h, r)’ >> PairCases_on ‘r’ >>
   rename1 ‘_ = (h, (w, ps), evs, logs)’ >> rpt strip_tac >> gvs[AllCaseEqs()] >>
   PairCases_on ‘ws'’ >>
-  simp[rworld_def, rstate_def, revs_def, fetched_at_def] >>
+  simp[rworld_def, rstate_def, revs_def] >>
   drule prounds_logs >> strip_tac >>
   qpat_x_assum ‘_ = prun _ _ _ _ _ (SUC n)’ (SUBST1_TAC o SYM) >>
   simp[rhist_def, EL_APPEND_EQN]
@@ -191,7 +191,7 @@ Theorem winv_run:
   run_ok lfd hw ifds m w0 ∧ winv w0 ⇒ ∀n. winv (rworld lfd hw ifds m w0 n)
 Proof
   strip_tac >> Induct >- simp[rworld_def, prun_0] >>
-  drule prun_round >> disch_then (qspecl_then [‘ARB’, ‘n’] strip_assume_tac) >>
+  drule prun_round >> disch_then (qspec_then ‘n’ strip_assume_tac) >>
   drule_all pround_winv >> simp[]
 QED
 
@@ -201,7 +201,7 @@ Theorem revs_prefix:
   ∀k n. revs lfd hw ifds m w0 n ≼ revs lfd hw ifds m w0 (n + k)
 Proof
   strip_tac >> Induct >> simp[] >> gen_tac >>
-  drule prun_round >> disch_then (qspecl_then [‘ARB’, ‘n + k’] strip_assume_tac) >>
+  drule prun_round >> disch_then (qspec_then ‘n + k’ strip_assume_tac) >>
   first_x_assum (qspec_then ‘n’ assume_tac) >> simp[ADD_CLAUSES] >>
   irule IS_PREFIX_TRANS >> first_assum (irule_at Any) >> simp[IS_PREFIX_APPEND] >>
   qexists_tac ‘rev’ >> ONCE_REWRITE_TAC [ADD_COMM] >> simp[]
@@ -238,4 +238,122 @@ Proof
   qspecl_then [‘i’, ‘LENGTH (new_actions (log_of m) (hhist lfd ifds m (psk lfd hw ifds m w0) n)) +
                      r1.b.nxt’, ‘w2n lfd’] mp_tac (Q.GENL [‘j’, ‘k’, ‘n’] l1hdln_mono) >>
   simp[]
+QED
+
+(* ------------------------------------------------------------------------
+   Rounds and positions in the event trace
+   ------------------------------------------------------------------------ *)
+
+(* Round k's events and fetch log *)
+Definition rrev_def:
+  rrev lfd hw ifds m w0 k =
+    DROP (LENGTH (revs lfd hw ifds m w0 k)) (revs lfd hw ifds m w0 (SUC k))
+End
+
+Definition rlog_def:
+  rlog lfd hw ifds m w0 k = EL k (SND (SND (SND (prun lfd hw ifds m w0 (SUC k)))))
+End
+
+Theorem prun_round':
+  run_ok lfd hw ifds m w0 ⇒
+  ∀k. ∃snap.
+    pround lfd hw (ifds (rhist lfd hw ifds m w0 k))
+      (rworld lfd hw ifds m w0 k, rstate lfd hw ifds m w0 k)
+      (new_actions (log_of m) (rhist lfd hw ifds m w0 k)) =
+      SOME (snap, (rworld lfd hw ifds m w0 (SUC k), rstate lfd hw ifds m w0 (SUC k)),
+            rlog lfd hw ifds m w0 k, rrev lfd hw ifds m w0 k) ∧
+    revs lfd hw ifds m w0 (SUC k) = revs lfd hw ifds m w0 k ++ rrev lfd hw ifds m w0 k ∧
+    (fetched_at lfd hw ifds m w0 k f ⇔ fetched f (rlog lfd hw ifds m w0 k))
+Proof
+  rpt strip_tac >> drule prun_round >> disch_then (qspec_then ‘k’ strip_assume_tac) >>
+  ‘rrev lfd hw ifds m w0 k = rev’ by simp[rrev_def, DROP_LENGTH_APPEND] >>
+  ‘rlog lfd hw ifds m w0 k = log’ by gvs[rlog_def] >>
+  simp[fetched_at_def] >> gvs[rlog_def]
+QED
+
+Theorem revs_0[simp]:
+  revs lfd hw ifds m w0 0 = []
+Proof
+  simp[revs_def, prun_0]
+QED
+
+Theorem revs_grow:
+  run_ok lfd hw ifds m w0 ∧ a ≤ b ⇒
+  ∃l. revs lfd hw ifds m w0 b = revs lfd hw ifds m w0 a ++ l
+Proof
+  strip_tac >> drule revs_prefix >>
+  disch_then (qspecl_then [‘b - a’, ‘a’] mp_tac) >> simp[IS_PREFIX_APPEND]
+QED
+
+Theorem revs_len_mono:
+  run_ok lfd hw ifds m w0 ∧ a ≤ b ⇒
+  LENGTH (revs lfd hw ifds m w0 a) ≤ LENGTH (revs lfd hw ifds m w0 b)
+Proof
+  strip_tac >> drule_all revs_grow >> strip_tac >> simp[]
+QED
+
+(* An index means the same event in every long enough trace *)
+Theorem revs_EL:
+  run_ok lfd hw ifds m w0 ∧ i < LENGTH (revs lfd hw ifds m w0 a) ∧
+  i < LENGTH (revs lfd hw ifds m w0 b) ⇒
+  EL i (revs lfd hw ifds m w0 a) = EL i (revs lfd hw ifds m w0 b)
+Proof
+  strip_tac >> Cases_on ‘a ≤ b’
+  >- (‘∃l. revs lfd hw ifds m w0 b = revs lfd hw ifds m w0 a ++ l’
+        by (irule revs_grow >> simp[]) >> simp[EL_APPEND1])
+  >> ‘∃l. revs lfd hw ifds m w0 a = revs lfd hw ifds m w0 b ++ l’
+       by (irule revs_grow >> simp[]) >> simp[EL_APPEND1]
+QED
+
+(* Every event belongs to a round *)
+Theorem event_round:
+  run_ok lfd hw ifds m w0 ⇒
+  ∀n i. i < LENGTH (revs lfd hw ifds m w0 n) ⇒
+        ∃k. k < n ∧ LENGTH (revs lfd hw ifds m w0 k) ≤ i ∧
+            i < LENGTH (revs lfd hw ifds m w0 (SUC k)) ∧
+            MEM (EL i (revs lfd hw ifds m w0 n)) (rrev lfd hw ifds m w0 k)
+Proof
+  strip_tac >> Induct >> simp[] >> rpt strip_tac >>
+  drule prun_round' >> disch_then (qspecl_then [‘ARB’, ‘n’] strip_assume_tac) >>
+  Cases_on ‘i < LENGTH (revs lfd hw ifds m w0 n)’
+  >- (first_x_assum drule >> strip_tac >> qexists_tac ‘k’ >> gvs[EL_APPEND1])
+  >> qexists_tac ‘n’ >> gvs[EL_APPEND2] >> irule EL_MEM >> gvs[]
+QED
+
+(* ... and every event of a round has a position in it *)
+Theorem round_event:
+  run_ok lfd hw ifds m w0 ∧ MEM ev (rrev lfd hw ifds m w0 k) ⇒
+  ∃i. LENGTH (revs lfd hw ifds m w0 k) ≤ i ∧ i < LENGTH (revs lfd hw ifds m w0 (SUC k)) ∧
+      EL i (revs lfd hw ifds m w0 (SUC k)) = ev
+Proof
+  strip_tac >> drule prun_round' >> disch_then (qspecl_then [‘ARB’, ‘k’] strip_assume_tac) >>
+  gvs[MEM_EL] >> qexists_tac ‘LENGTH (revs lfd hw ifds m w0 k) + n’ >>
+  simp[EL_APPEND2]
+QED
+
+(* ------------------------------------------------------------------------
+   Progress
+   ------------------------------------------------------------------------ *)
+
+(* While nothing is fetched on f, its input stays pending and L1's view of
+   f is kept, from round to round *)
+Theorem keep_run:
+  run_ok lfd hw ifds m w0 ∧ winv w0 ⇒
+  ∀d n. pend (rworld lfd hw ifds m w0 n) f ∧ fkeep lfd h f (rstate lfd hw ifds m w0 n) ∧
+        (∀k. n ≤ k ∧ k < n + d ⇒ ¬fetched_at lfd hw ifds m w0 k f) ⇒
+        pend (rworld lfd hw ifds m w0 (n + d)) f ∧
+        fkeep lfd h f (rstate lfd hw ifds m w0 (n + d)) ∧
+        (inb_of (rstate lfd hw ifds m w0 n) f = [] ⇒
+         inb_of (rstate lfd hw ifds m w0 (n + d)) f = [])
+Proof
+  strip_tac >> drule_all winv_run >> strip_tac >>
+  Induct >> simp[] >> rpt gen_tac >> strip_tac >>
+  ‘¬fetched_at lfd hw ifds m w0 (n + d) f’
+    by (qpat_assum ‘∀k. _ ≤ k ∧ _ ⇒ _’ (qspec_then ‘n + d’ mp_tac) >> simp[]) >>
+  qpat_x_assum ‘∀n. pend _ _ ∧ _ ⇒ _’ (qspec_then ‘n’ mp_tac) >>
+  impl_tac >- (simp[] >> rpt strip_tac >> first_x_assum irule >> simp[]) >>
+  strip_tac >>
+  drule prun_round' >> disch_then (qspecl_then [‘f’, ‘n + d’] strip_assume_tac) >>
+  ‘winv (rworld lfd hw ifds m w0 (n + d))’ by simp[] >>
+  drule_all pround_f >> strip_tac >> gvs[ADD_CLAUSES]
 QED

@@ -228,3 +228,26 @@ theory	HttpKvSpecBite	KvSpecBite		spec
 theory	asyncKvLive	kvLive		kv-live
 theory	endpointWorld	peerWorld		endpoint-world
 theory	endpointFair	peerFair		endpoint-world
+# KV (spike/http-kv-impl 33cb07dd4, spike/kv-live)
+theory	asyncKvHandler	kvHandler		http-kv
+theory	asyncKvLabel	kvLabel		http-kv
+theory	asyncKvMain	kvMain		http-kv
+theory	asyncKvModel	kvModel		http-kv
+theory	asyncKvOrder	kvOrder		http-kv
+theory	asyncKvProg	kvProg		http-kv
+theory	asyncKvSafe	kvSafe		http-kv
+theory	asyncKvSemantics	kvSemantics		http-kv
+theory	asyncKvSockModel	kvSockModel		http-kv
+theory	asyncKvSpec	kvSockSpec		http-kv
+theory	asyncKvTraceLemmas	kvTraceLemmas		http-kv
+theory	asyncServerWithK	skeletonK		http-kv
+theory	asyncWithStore	withStore		http-kv
+theory	asyncWithStoreSpec	withStoreSpec		http-kv
+theory	asyncWithStoreStep	withStoreStep		http-kv
+theory	asyncKvLiveStore	kvLiveStore		kv-live
+theory	asyncKvProgSpec	kvHeadline		kv-live
+theory	asyncServerVKv	skeletonVKv		kv-live
+theory	asyncServerVLiveP	skeletonVLiveP		library-liveness
+theory	asyncProtoDrainV	protoDrainV		http-proto
+theory	asyncProtoLiveV	protoLiveV		http-proto
+theory	asyncProtoMachineV	protoMachineV		http-proto

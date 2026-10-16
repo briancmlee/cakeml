@@ -415,3 +415,82 @@ Proof
   TRY (qexists_tac ‘hs.nxt’ >> simp[] >> NO_TAC) >>
   res_tac >> gvs[] >> qexists_tac ‘i’ >> simp[]
 QED
+
+(* ------------------------------------------------------------------------
+   Write
+   ------------------------------------------------------------------------ *)
+
+Definition fds_small_def:
+  fds_small (w : l0world) ⇔ ∀f. MEM f (l0_used w) ⇒ w2n f < 2147483648
+End
+
+Theorem fds_small_tbl:
+  l1v2_rel p lfd sched (w, st) (s, hs) ∧ fds_small w ∧ ALOOKUP st.tbl h = SOME f ⇒
+  w2n f < 2147483648
+Proof
+  rw[l1v2_rel_def, fds_small_def] >> first_x_assum irule >> irule open_used >>
+  gvs[core_rel_def] >> metis_tac[]
+QED
+
+(* The round discipline only looks at open fds, the listener and each
+   channel's input and EOF *)
+Theorem rdy_ok_same:
+  rdy_ok lfd polp w st ∧ w'.open_fds = w.open_fds ∧ w'.listeners = w.listeners ∧
+  (∀k. (EL k w'.chans).inbox = (EL k w.chans).inbox ∧
+       (EL k w'.chans).peer_eof = (EL k w.chans).peer_eof) ⇒
+  rdy_ok lfd polp w' st
+Proof
+  rw[rdy_ok_def] >> metis_tac[]
+QED
+
+(* In the simple world a Write is the handle layer's write *)
+Theorem write_step:
+  simple_v2 p lfd sched w ∧ l0_rely w ∧ l1v2_rel p lfd sched (w, st) (s, hs) ∧
+  rdy_ok lfd polp w st ∧ fds_small w ∧ LENGTH bs < 256 ** 8 ⇒
+  ∃w' st' s' hs' evs evs'.
+    l1do lfd (w, st) (Write h bs) = SOME (Wrote, (w', st'), evs) ∧
+    hdo lfd (s, hs) (Write h bs) = SOME (Wrote, (s', hs'), evs') ∧
+    MAP l0_v2_event evs = evs' ∧
+    l1v2_rel p lfd sched (w', st') (s', hs') ∧ rdy_ok lfd polp w' st' ∧
+    l0_used w' = l0_used w ∧
+    w'.env = w.env ∧ w'.ch = w.ch ∧ w'.fd_limit = w.fd_limit
+Proof
+  strip_tac >> simp[l1do_def, hdo_def] >>
+  ‘st.tbl = hs.tbl ∧ st.gone = [] ∧ st.outbox = []’ by gvs[l1v2_rel_def] >>
+  Cases_on ‘ALOOKUP st.tbl h’ >> gvs[] >>
+  rename1 ‘ALOOKUP _ h = SOME f’ >>
+  ‘w2n f < 2147483648’ by metis_tac[fds_small_tbl] >>
+  ‘∃j. ALOOKUP w.open_fds f = SOME j ∧ j < LENGTH w.chans ∧ ¬(EL j w.chans).closed’
+    by (gvs[l1v2_rel_def, core_rel_def] >> Cases_on ‘ALOOKUP s.open_fds f’ >>
+        gvs[] >> metis_tac[]) >>
+  ‘chan_rel (EL j w.chans) (EL j s.clients)’ by gvs[l1v2_rel_def, core_rel_def, LIST_REL_EL_EQN] >>
+  ‘¬(EL j w.chans).broken ∧ ¬(EL j w.chans).shut’ by gvs[chan_rel_def] >>
+  ‘l0_tick «sys_send» w = w with clock := w.clock + 1’
+    by (drule tick_simple_v2 >> disch_then irule >> EVAL_TAC) >>
+  ‘outbox_of st f = []’ by simp[outbox_of_def] >>
+  simp[sys_send_def, l0_do_def, l0_ffi_fn_def, l0_call_def, l0_hdr_def, fd_ok_def,
+       l0_send_def, l0_chan_of_def] >>
+  ‘w.ch.transient w.hist = NONE ∧ ∀j h b n. w.ch.takes j h b n = n’
+    by gvs[simple_v2_def, simple0_def] >>
+  simp[] >>
+  ‘l0_res_ok (Ok (LENGTH bs))’ by simp[l0_res_ok_def] >>
+  simp[l0_res_of_enc, LENGTH_enc_res, MAP_SND_ZIP_REPLICATE] >>
+  ‘LENGTH s.clients = LENGTH w.chans ∧ w.open_fds = s.open_fds’
+    by gvs[l1v2_rel_def, core_rel_def, LIST_REL_EL_EQN] >>
+  simp[sock_write2_def, client_of_def] >>
+  IF_CASES_TAC >- gvs[] >>
+  ‘l0_res_of (enc_res (Ok (LENGTH bs))) = Ok (LENGTH bs)’ by simp[l0_res_of_enc] >>
+  ‘after_send f (Ok (LENGTH bs)) (set_outbox f bs st) = st’
+    by (simp[after_send_def, set_outbox_def, outbox_of_def] >>
+        Cases_on ‘bs’ >> simp[ADELKEY_def, honestL1ModelTheory.l1st_component_equality]) >>
+  ‘«sys_send» ≠ «sys_recv» ∧ «sys_send» ≠ «sys_poll»’ by EVAL_TAC >>
+  simp[l0_v2_event_def, TAKE_DROP_fd_bytes] >>
+  gvs[l1v2_rel_def, npolls_snoc, l0_used_def] >>
+  rpt conj_tac
+  >- (irule core_rel_upd >> simp[] >> gvs[chan_rel_def])
+  >- simp[update_client_def]
+  >- (simp[upd_lchan_def] >> metis_tac[])
+  >- (irule rdy_ok_same >> qexists_tac ‘w’ >>
+      simp[upd_lchan_def, EL_LUPDATE] >> rw[])
+  >> simp[upd_lchan_def]
+QED

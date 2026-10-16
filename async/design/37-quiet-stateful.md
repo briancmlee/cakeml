@@ -155,3 +155,14 @@ I start with A, B and C (model only, additive, in a sparse worktree on
 spike/option-c-int's layout, with `asyncWithStore` brought in from
 spike/kv-live as is). I'll open a PR per milestone, and none of it
 depends on the §4 decision.
+
+## 7. Temporary copies (to be replaced by a merge)
+
+`pk/quiet-store` holds two files copied as is, to avoid a branch
+dependency. Each is a **temporary copy, to be replaced by a merge**, so
+that the final series has one copy of each:
+
+- `asyncWithStoreScript.sml`: temporary copy of spike/kv-live's
+  `asyncWithStore`;
+- `asyncServerVKvScript.sml`: temporary copy of spike/kv-live's
+  `asyncServerVKv` @5a72181db.

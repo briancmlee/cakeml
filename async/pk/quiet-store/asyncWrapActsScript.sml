@@ -9,7 +9,7 @@
   listener is readable in the new snapshot, and reads g only when g is
   readable in it and g's handler has not finished (store_sv_new_actions).
 
-  KV's shape: the query handlers proto_handler_v sockV P ansq fin under
+  KV's shape: the query handlers proto_handler_v sockV P (ansq fd) (fin fd) under
   the store (store_proto_new_actions).
 
   MAIN: wrap_new_actions, store_sv_new_actions, store_proto_new_actions.
@@ -160,16 +160,16 @@ Theorem store_proto_new_actions:
   MEM a (NA (with_store δ s0
                (server_v (sockV : ((asyncServer$action, num # 'zq) kact, 'zb, num # 'zq,
                      ('zb, asyncServer$response) kres) vocab)
-                  (λfd. proto_handler_v sockV P ansq fin (fd, "")) lfd))
+                  (λfd. proto_handler_v sockV P (ansq fd) (fin fd) (fd, "")) lfd))
             (q ++ [s : (event, asyncServer$response) snapshot])) ⇒
   (∀l. a = Accept l ⇒ l = lfd ∧ Readable lfd ∈ s.ready) ∧
   ∀g. a = Read g ⇒
       Readable g ∈ s.ready ∧
       eofs g (trans (with_store δ s0
-                       (server_v sockV (λfd. proto_handler_v sockV P ansq fin (fd, "")) lfd))
+                       (server_v sockV (λfd. proto_handler_v sockV P (ansq fd) (fin fd) (fd, "")) lfd))
                     (q ++ [s])) <
       accs g (trans (with_store δ s0
-                       (server_v sockV (λfd. proto_handler_v sockV P ansq fin (fd, "")) lfd))
+                       (server_v sockV (λfd. proto_handler_v sockV P (ansq fd) (fin fd) (fd, "")) lfd))
                     (q ++ [s]))
 Proof
   strip_tac >> irule store_sv_new_actions >>

@@ -73,7 +73,7 @@ Proof
 QED
 
 (* trans_bind_cases, closed, so that qspecl_then instantiates its types *)
-Theorem trans_bind_cases_all[local]:
+Theorem trans_bind_cases_all:
   ∀m f h. wf m ∧ settled m ⇒
   (∀n. n ≤ LENGTH h ⇒ (m (TAKE n h)).result = NONE) ∧
   trans (bind m f) h = trans m h ∨
@@ -83,7 +83,7 @@ Proof
   rpt gen_tac >> MATCH_ACCEPT_TAC trans_bind_cases
 QED
 
-Theorem emit_split[local]:
+Theorem emit_split:
   ∀a f h.
   trans (bind (emit a) f) h = trans (emit a) h ∧
   (bind (emit a) f h).result = NONE ∨
@@ -186,7 +186,7 @@ QED
 
 (* MAIN: the EOF bookkeeping asyncSVActs asks of a handler *)
 Theorem proto_v_hcounts:
-  vocab_ok V ∧ vocab_qok V ⇒ hcounts_v V (λfd. proto_handler_v V P ansq fin (fd, buf))
+  vocab_ok V ∧ vocab_qok V ⇒ hcounts_v V (λfd. proto_handler_v V P (ansq fd) (fin fd) (fd, buf))
 Proof
   rw[hcounts_v_def] >> metis_tac[proto_v_counts]
 QED
@@ -279,7 +279,7 @@ QED
 
 (* MAIN: the action facts asyncSVActs asks of a handler *)
 Theorem proto_v_hacts:
-  vocab_ok V ∧ vocab_qok V ⇒ hacts_v V (λfd. proto_handler_v V P ansq fin (fd, buf))
+  vocab_ok V ∧ vocab_qok V ⇒ hacts_v V (λfd. proto_handler_v V P (ansq fd) (fin fd) (fd, buf))
 Proof
   rw[hacts_v_def, wf_proto_handler_v]
   >- (drule proto_v_init_actions >> strip_tac >> metis_tac[init_not_acc_read])
@@ -292,16 +292,16 @@ QED
    readable in it and g's handler has not finished *)
 Theorem proto_sv_new_actions:
   vocab_ok V ∧ vocab_qok V ∧
-  MEM a (NA (server_v V (λfd. proto_handler_v V P ansq fin (fd, "")) lfd) (q ++ [s])) ⇒
+  MEM a (NA (server_v V (λfd. proto_handler_v V P (ansq fd) (fin fd) (fd, "")) lfd) (q ++ [s])) ⇒
   (∀l. V.sact a = SOME (Accept l) ⇒ l = lfd ∧ Readable lfd ∈ s.ready) ∧
   ∀g. V.sact a = SOME (Read g) ⇒
       Readable g ∈ s.ready ∧
-      eofs_v V g (trans (server_v V (λfd. proto_handler_v V P ansq fin (fd, "")) lfd) (q ++ [s])) <
-      accs_v V g (trans (server_v V (λfd. proto_handler_v V P ansq fin (fd, "")) lfd) (q ++ [s]))
+      eofs_v V g (trans (server_v V (λfd. proto_handler_v V P (ansq fd) (fin fd) (fd, "")) lfd) (q ++ [s])) <
+      accs_v V g (trans (server_v V (λfd. proto_handler_v V P (ansq fd) (fin fd) (fd, "")) lfd) (q ++ [s]))
 Proof
   strip_tac >>
-  ‘hcounts_v V (λfd. proto_handler_v V P ansq fin (fd, "")) ∧
-   hacts_v V (λfd. proto_handler_v V P ansq fin (fd, ""))’
+  ‘hcounts_v V (λfd. proto_handler_v V P (ansq fd) (fin fd) (fd, "")) ∧
+   hacts_v V (λfd. proto_handler_v V P (ansq fd) (fin fd) (fd, ""))’
     by simp[proto_v_hcounts, proto_v_hacts] >>
   drule_all sv_new_actions >> simp[]
 QED

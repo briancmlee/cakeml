@@ -8,7 +8,7 @@ Departures from the proposal (§4), forced by the dependency graph:
 - `cakeml/level2` is in 06, not 05: it builds on `loop/blocking-l2`.
 - `loop/blocking` is in 07, not 06: it builds on the echo program's server model (`asyncM4SockServer`).
 - `loop/select-interest` is in 10, not 06: it builds on the HTTP Level 2 programs and the quiet echo theories.
-- The generic skeleton is split: model-level (`asyncServerWith`, `asyncServerWithUses`, `asyncSWProgress`, `asyncServerV`, `asyncServerVProgress`, with the strict HTTP model `asyncHttpParse`, `asyncHttpServer` that `asyncServerWithUses` instantiates) in 04 for isolation; socket-level (`asyncRunOkGen`, `asyncSWSock`) in 08 with library liveness.
+- The generic skeleton is split: model-level (`asyncServerWith`, `asyncSWProgress`, `asyncServerV`, `asyncServerVProgress`; and in `servers/http-model` the strict HTTP model `asyncHttpParse`, `asyncHttpServer` with `asyncServerWithUses`, whose no-misuse theorem has an HTTP instance) in 04 for isolation; socket-level (`asyncRunOkGen`, `asyncSWSock`) in 08 with library liveness.
 - `world/sockets` is split: the trusted model (`ffiSpikeSocketFFI`, `ffiSpikeSocketFair`) in 01; its CakeML module (`ffiSpikeSocketProg`, `ffiSpikeSocketProof`, `ffiSpikeSocketSelect`) in 06 as `world/sockets-cf`.
 
 ## final/01-trusted-surface: the trusted surface
@@ -39,9 +39,9 @@ Departures from the proposal (§4), forced by the dependency graph:
 |---|---|---|
 | `servers/closed-loop` | `asyncClosedLoop`, `asyncLiveness`, `asyncProgress`, `asyncWorld` | `servers/closed-loop` |
 | `servers/echo` | `asyncM4ServerUses`, `asyncServer`, `asyncServer2`, `asyncServerSafety` | `servers/echo` |
-| `servers/http-model` | `asyncHttpParse`, `asyncHttpServer` | `servers/http` |
+| `servers/http-model` | `asyncHttpParse`, `asyncHttpServer`, `asyncServerWithUses` | `servers/http` |
 | `servers/relabel` | `asyncM4Relabel`, `asyncM4RelabelDist` | `servers/relabel` |
-| `servers/skeleton` | `asyncSWProgress`, `asyncServerV`, `asyncServerVProgress`, `asyncServerWith`, `asyncServerWithUses` | `servers/http`, `servers/library-liveness`, `servers/skeleton` |
+| `servers/skeleton` | `asyncSWProgress`, `asyncServerV`, `asyncServerVProgress`, `asyncServerWith` | `servers/library-liveness`, `servers/skeleton` |
 
 ## final/05-cakeml-library: the library in CakeML
 

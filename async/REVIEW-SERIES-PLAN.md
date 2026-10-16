@@ -1,76 +1,102 @@
-# Review series plan: the async I/O work as 12 layered PRs
+# Review series plan (v2): the async I/O work as 14 layered PRs
 
-**Purpose.** About 30 stacked spike PRs record the order things were
-*discovered*. This series presents the same results in the order they
-would have been *designed*. The trusted statement comes first, then each
+**Purpose.** About 30 stacked spike PRs record the order in which things
+were *discovered*. This series presents the same results in the order
+they would have been *designed*: the trusted statement first, then each
 layer that proves it. Every PR is one coherent layer that builds on its
-own (`Holmake -j2` green, no cheats). You read the definitions and the ≤ 5
-statements each PR lists, and never the proofs.
+own (`Holmake -j1` green, no cheats). You read the definitions and the ≤ 5
+statements each PR lists, never the proofs.
 
-**What it is made of.** Branches `review/01-…` to `review/12-…`, each
-stacked on the previous one; `review/01` starts from `async-io`.
-- Files are moved into one layout (below). Theory names and statement
-  text are unchanged.
-- Dead ends are left out (see "Dropped").
-- Nothing is re-proved. Every theory is the latest spike version, moved
-  as-is; only Holmakefile `INCLUDES` change.
-- The spike branches and PRs stay untouched as the archive. You decide
-  later whether to close them.
+**v2.** This is the second cut of the series. The first, `review/01…12`
+(#34–#44, #68), is tagged `archive/review-v1-01` … `-12`; its PRs are
+annotated "Superseded by …" and left open. The v2 changes:
+- layer 01 gains QuietSpec, the tchar and RFC-character-set spec changes,
+  and the RFC 9112 agreement (`spec-rfc/`);
+- layers 09–11 are new: liveness from a library, HTTP as a protocol
+  instance, and quiescence with option C;
+- the copied HTTP pipelines are retired.
+
+The approved proposal is `REVIEW-SERIES-V2-PROPOSAL.md` (async-spike,
+outside the repository).
+
+**What it is made of.** Branches `review-v2/01-…` to `review-v2/14-…`,
+each stacked on the previous one.
+- Files are moved into one layout (below), and theory names are unchanged.
+- Nothing is re-proved except where a layer had to be rewired off a
+  retired theory; the PR says so where that happens.
+- Holmakefile `INCLUDES` are computed from each theory's ancestors.
+- The spike branches and PRs stay untouched as the archive.
+
+**Presentation, next.** By the user's decision, the final series will be
+organised by *concept*, with no version numbers. It will open with the
+headline theorems stated in full, followed by zoom levels: core,
+lifetimes, peers, real kernel. This v2 series is the snapshot that cut
+starts from; the proposal for it is separate.
 
 ## The layout
 
 ```
 async/
-  spec/                 TRUSTED: EchoSpec, HttpSpec, their bite (PR 1)
-  world/sockets/        TRUSTED: socket model + fairness (PR 1); CakeML Socket module (PR 6); select (PR 8)
-  world/clock/, world/composed/   the modular FFI world and whole-program divergence (PR 6)
-  model/core|level2|sched|examples   the async library's semantics, pure HOL (PRs 2–3)
-  servers/echo|closed-loop|relabel|http   servers written with the library, model-level properties (PRs 4, 9)
-  cakeml/library|approx  the library in CakeML with CF specs (PR 5)
-  loop/polling|blocking|blocking-l2   the event loops (PRs 6, 8)
-  programs/echo|echo-live|echo-blocking|http   whole programs and their trace theorems (PRs 7–9)
-  headline/             the final theorems, in the specs' own terms (PRs 7, 9)
-  runnable/             socket_ffi.c (TRUSTED), export, Makefiles, demos (PR 10)
-  design/               notes, reading guide (PR 11)
+  spec/                 TRUSTED: EchoSpec, HttpSpecBodies (+ HttpSpec, HttpSpecHeaders vocabulary), QuietSpec, bites (01)
+  spec-rfc/             the RFC 9112 reference and the agreement proofs (01)
+  world/sockets/        TRUSTED: socket model + fairness (01); CakeML Socket module (06); select (08)
+  world/clock/, world/composed/   the modular FFI world and whole-program divergence (06)
+  model/core|level2|sched|examples   the async library's semantics, pure HOL (02–03)
+  servers/echo|closed-loop|relabel   the echo server in the model (04)
+  cakeml/library|approx|level2   the library in CakeML with CF specs (05, 08)
+  loop/polling|blocking|blocking-l2   the event loops (06, 08)
+  programs/echo|echo-live|echo-blocking   the echo programs and their trace theorems (07–08)
+  servers/skeleton|library-liveness|http   liveness from the library (09)
+  servers/proto|proto-inst, programs/proto|http-pb   the generic protocol pipeline and the HTTP instance (10)
+  quiet/ffi|echo        quiescence: FFI agreement, the blocking echo (11)
+  servers/level2-proto|proto-stable, programs/http-level2|http-quiet, loop/select-interest   option C (11)
+  headline/             the final theorems, in the specs' own terms (07, 13)
+  runnable/             socket_ffi.c (TRUSTED), exports, Makefiles, demos, CPU tables (12)
   spec-v2/, world/sockets-v2(-cf)/, loop/handles/, programs/echo-v2/
-                        close and fd reuse: TRUSTED EchoSpec2 and v2 world, then its proof (PR 12)
+                        close and fd reuse: TRUSTED EchoSpec2 and the v2 world, then its proof (13)
+  design/, README.md, REVIEW-*.md   notes and reading guides (14)
 ```
 
 ## The series
 
-Sizes are the lines of HOL moved; reading time covers the listed
-statements only.
+| # | branch | PR | headline / content | from |
+|---|---|---|---|---|
+| 01 | `review-v2/01-spec` | #84 | the trusted surface; SPEC CHANGE commits: tchar 718c53c8d, H-CHARS 821f833cc; QuietSpec 330e59aef; spec-rfc 9840a1788 | v1 01; #55, #57 |
+| 02 | `review-v2/02-model-core` | #85 | the async model | v1 02 |
+| 03 | `review-v2/03-model-loops-level2-sched` | #86 | recursion, Level 2, no busy-waiting | v1 03 |
+| 04 | `review-v2/04-servers-model` | #87 | the echo server in the model | v1 04 |
+| 05 | `review-v2/05-cakeml-library` | #88 | the library in CakeML | v1 05 |
+| 06 | `review-v2/06-loop-and-plumbing` | #89 | sockets in CakeML, divergence, the event loop | v1 06 |
+| 07 | `review-v2/07-echo-program` | #90 | `echo_spec 3w echo_prog` | v1 07 |
+| 08 | `review-v2/08-blocking` | #91 | the blocking refinement; the Level 2 CF library (`cakeml/level2`) | v1 08; #81 |
+| 09 | `review-v2/09-library-liveness` | #92 | `server_with_live`, `server_v_live`, `server_v_live_ans` | #62, #70, #71, spike/proto-kv |
+| 10 | `review-v2/10-http-proto` | #100 | `http_spec_b 3w demo_files http_prog_pb` | #58, #74, #64, spike/proto-kv |
+| 11 | `review-v2/11-quiet-option-c` | #109 | `echo_quiet 3w echo_l_main`; `http_quiet_b 3w demo_files (SNOC (main_call «main») http_q_prog)` | #77, #81, #82, #93, spike/option-c-int |
+| 12 | `review-v2/12-runnable` | #112 | it runs; the option C server at 0% idle CPU | v1 10; spike/option-c-int |
+| 13 | `review-v2/13-close-v2` | #113 | `echo_spec2 3w echo2_prog` | v1 12 (#63) |
+| 14 | `review-v2/14-docs` | — | README, design notes, START-HERE, this plan | v1 11 |
 
-### 1. `review/01-spec`: the trusted surface (≈2,000 lines; 30–45 min)
-- **Claims:** what the servers must do, on raw socket I/O, and that this
-  bites.
+### 01. `review-v2/01-spec`: the trusted surface (45–60 min)
+- **Claims:** what the servers must do, on raw socket I/O, CPU included,
+  and that this bites.
 - **Own:**
   1. the socket world: `sockets`, `deliver1`, `tick`, the four
-     operations and their byte encodings (`ffiSpikeSocketFFI`);
-  2. fairness: `sched_wf` (`ffiSpikeSocketFair`);
-  3. `echo_spec` = `server_world` + `echo_safe` + `echo_live` (`EchoSpec`);
-  4. `http_spec_b` (`HttpSpecBodies`, the HTTP spec):
-     - requests are GET and POST, with Content-Length bodies (one
-       canonical decimal value; no Transfer-Encoding);
-     - `POST /echo` answers the body.
-     It reuses HttpSpec's paths, files and response printer, and
-     HttpSpecHeaders' header printer.
-  5. bite and non-vacuity: `broken_*`, `server_world_exists`,
-     `ideal_trace_safe_and_live`, `print_brequest_unique`,
-     `broken_body_as_request`, `broken_answers_before_body`,
-     `broken_never_answers_b`, `curl_post_request`,
-     `ideal_b_trace_safe_and_live`.
-- **Skip:** the proofs of the bite lemmas, and the fairness lemmas
-  (`ticks_*`, `*_shape`).
-  - Of `HttpSpec` and `HttpSpecHeaders`, read only the vocabulary
-    (`valid_path`, `handle`, `print_response`, `print_header`).
-  - Their own statements are the earlier stepping stones, archived:
-    `http_spec` (GET only, no headers) and `http_spec_h` (headers, no
-    bodies).
-- **From:** ffi-spike (socket FFI, Fair), spec/ (#18), HttpSpecHeaders
-  (#28, spike/http-headers), HttpSpecBodies (#55, spike/http-bodies).
+     operations and their byte encodings (`ffiSpikeSocketFFI`), and fairness
+     `sched_wf` (`ffiSpikeSocketFair`);
+  2. `echo_spec` = `server_world` + `echo_safe` + `echo_live` (`EchoSpec`);
+  3. `http_spec_b` (`HttpSpecBodies`):
+     - GET and POST, with Content-Length bodies;
+     - header names are RFC tokens (`tchar`), paths are RFC 3986
+       characters, and field values are RFC 9110 field characters;
+     - `POST /echo` answers the body;
+  4. `echo_quiet`, `http_quiet_b` (`QuietSpec`): the blocking `select`,
+     quiet worlds, and sleeping;
+  5. the bites and non-vacuity (`*Bite`), and the RFC agreement
+     (`rfc_frames_exactly_valid`, `rfc_subset_exact`).
+- **Skip:** the proofs of the bite lemmas, the fairness lemmas, and
+  `spec-rfc`'s proofs.
 
-### 2. `review/02-model-core`: the async model (≈2,690 lines; 45 min)
+### 02. `review-v2/02-model-core`: the async model (≈2,690 lines; 45 min)
 - **Claims:** computations on histories form a lawful monad, and `both`
   and `choose` lose nothing.
 - **Own** (REVIEW-GUIDE H1–H7):
@@ -84,7 +110,7 @@ statements only.
   guide) and `resume_*`.
 - **From:** model/asyncCore, asyncLevel1, asyncChoose (#1, #3).
 
-### 3. `review/03-model-loops-level2-sched`: recursion, no busy-waiting (≈3,040 lines; 45 min)
+### 03. `review-v2/03-model-loops-level2-sched`: recursion, no busy-waiting (≈3,040 lines; 45 min)
 - **Claims:** recursive computations are well-defined, Level 2 refines
   Level 1, everything is quiet, and the scheduler never busy-waits.
 - **Own:**
@@ -97,7 +123,7 @@ statements only.
   examples' unfolding lemmas.
 - **From:** model/ (#3, #6, #8).
 
-### 4. `review/04-servers-model`: the echo server in the model (≈3,770 lines; 40 min)
+### 04. `review-v2/04-servers-model`: the echo server in the model (≈3,770 lines; 40 min)
 - **Claims:** the concurrent echo server gives every client back exactly
   its own bytes, never busy-waits, and in a closed loop with fair clients
   echoes everything in bounded time.
@@ -113,7 +139,7 @@ statements only.
 - **From:** model/ (#9, #19), m4-server/asyncM4ServerUses and
   asyncM4Relabel (#17), m4-common/asyncM4RelabelDist (#25).
 
-### 5. `review/05-cakeml-library`: the library in CakeML (≈2,470 lines; 30 min)
+### 05. `review-v2/05-cakeml-library`: the library in CakeML (≈2,470 lines; 30 min)
 - **Claims:** the CakeML library implements the model, with no
   step-indexing: each poll returns a residual, and `STEPA`/`COMP` relate
   a value to a model computation.
@@ -128,7 +154,7 @@ statements only.
 - **From:** cf-actions (#10), cf-reactive (#14), cf-spike/asyncCfDet
   (#2/#5), m4-server/asyncM4Approx (#17).
 
-### 6. `review/06-loop-and-plumbing`: sockets in CakeML, divergence, the event loop (≈4,940 lines; 40 min)
+### 06. `review-v2/06-loop-and-plumbing`: sockets in CakeML, divergence, the event loop (≈4,940 lines; 40 min)
 - **Claims:** a CakeML program that loops forever on sockets has a
   `Diverge` semantics whose trace is the event loop's rounds. The loop's
   trace is the computation's action log on the history the socket world
@@ -146,7 +172,7 @@ statements only.
 - **From:** ffi-spike (#4, #11, #13), m3-assembly (#16), m4-common
   (#25, #30).
 
-### 7. `review/07-echo-program`: **`echo_spec 3w echo_prog`** (≈3,250 lines; 40 min)
+### 07. `review-v2/07-echo-program`: **`echo_spec 3w echo_prog`** (≈3,250 lines; 40 min)
 - **Claims:** the headline. The concrete CakeML echo program meets
   EchoSpec, unamended.
 - **Own:**
@@ -161,7 +187,7 @@ statements only.
   machine-code/asyncEchoSemantics (#24), m4-liveness (#30),
   m4-echospec, m4-echospec-live.
 
-### 8. `review/08-blocking`: the blocking refinement (≈5,640 lines; 35 min)
+### 08. `review-v2/08-blocking`: the blocking refinement (≈5,640 lines; 35 min)
 - **Claims:**
   - an event loop that sleeps in `select` is equivalent to polling
     (Level 2);
@@ -188,88 +214,51 @@ statements only.
   the liveness proof already has a theory of that name),
   ffiSpikeSocketSelect.
 
-### 9. `review/09-http`: HTTP, `http_spec_b 3w demo_files http_prog_b` (≈9,000 lines; 40 min)
-- **Claims:**
-  - a parser with Content-Length bodies, proved against the spec's own
-    printer;
-  - a generic accept/fork skeleton, verified once;
-  - the whole HTTP program meets HttpSpecBodies in full: it runs forever,
-    is safe, and answers every complete request.
-- **Own:**
-  1. `http_prog_b_spec : http_spec_b 3w demo_files http_prog_b` (headline,
-     `headline/asyncHttpSpecB`);
-  2. the parser against the printer (`asyncHttpParseB`);
-  3. `server_with_isolates` and `sserver_with_spec` (the skeleton, once);
-  4. `hmachine_live` (the handler as a machine answers every complete
-     request);
-  5. `http_live_b_rounds` (`http_live_b` of the loop's trace).
-- **Read if you want** (optional, not in the core five): the HTTP server
-  is quiet at Level 2, as layer 4 proves for echo
-  (`servers/http-quiet`): `erase_http_server2_h`, `wf2_http_server2_h`,
-  `http_server_no_busy_waiting`.
-- **Skip:**
-  - `gen_*` (the generic no-misuse argument), the depth specs, and the
-    translation plumbing;
-  - the generic socket-level accept progress (`asyncSWSock`, the
-    `server_with` analogue of the echo program's `conn_accepted`) and the
-    drain lemmas;
-  - the strict-subset and header-tolerant files (`asyncHttp*` without the
-    `B` suffix, and the `*H` files, `programs/http`, `programs/http-h`,
-    `headline/asyncHeadline*`, `asyncHttpSpecH`). The bodies proofs build
-    on them, but they are the archived stepping stones, not for review.
-    `http_prog_h_spec` stays proved.
-- **From:** http-model (#20), http-impl/asyncHttpImplProg (#22),
-  http-safety (#26), http-headers, http-liveness (http-liveness-h and
-  asyncSWProgress), http-bodies (#55), m4-server/asyncM4ServerProg (code
-  reused by the translation).
 
-### 10. `review/10-runnable`: it runs (no HOL to review; 15 min)
-- **Claims:** both servers compile with the release compiler and run, and
-  the blocking one idles at 0% CPU.
-- **Own:** `socket_ffi.c` (TRUSTED: the C side of the four calls plus
-  `select`; one mapping table to check against `ffiSpikeSocketFFI`). It
-  does exactly what the model says: `sock_poll` is one `poll(2)` with
-  timeout 0 (the earlier idle-wait heuristic is gone, #50).
-- **Skip:** the Makefiles, demo clients, the printer cross-check, the
-  generated `.sexp` files, and the machine-code scripts (`compile/`, not
-  built by default; blocked on memory, see note 22).
-- **From:** runnable (#23), blocking-runnable (#29), m4-blocking-live (#46),
-  no-idle-wait (#50), http-headers' and http-nobody's demo (#48),
-  machine-code/compile (#24).
+### 09. `review-v2/09-library-liveness`: liveness from a library (40 min)
+See #92: a server proves one per-handler obligation (`handler_live`), and
+`server_with_live` / `server_v_live` give every connection its owed
+output. Echo's liveness is re-derived through it (`echo_live_via_lib`).
 
-### 11. `review/11-docs`: README, design notes, START-HERE (15 min)
-- `async/README.md` (from README-DRAFT, updated: the headline is now
-  proved in full), `REVIEW-START-HERE.md`, and design notes 01–24, kept as
-  the "why" behind each layer, with a per-layer index.
-- HANDOFF notes, worker conventions and heap measurements stay on the
-  spike branches.
+### 10. `review-v2/10-http-proto`: HTTP as a protocol instance (45 min)
+See #100:
+- `proto_ok P` (four conditions on a framing protocol) and `proto_spec`;
+- `http_spec_b_proto`: HttpSpecBodies is `proto_spec` for `P_b`;
+- `proto_live_rounds`, and `proto_spec_of_semantics`;
+- the headline `http_prog_pb_spec`.
 
-### 12. `review/12-close-v2`: close and fd reuse (45 min)
-- **Claims:** `echo2_prog_spec : ⊢ echo_spec2 3w echo2_prog`. In a socket
-  world with `close` where accept returns the lowest free fd, the echo
-  program is safe and live per accepted connection (*episode*), even when
-  fd numbers are reused, and closes every connection whose EOF it read.
-- **Read (TRUSTED):** `spec-v2/EchoSpec2Script.sml` (`echo_spec2`,
-  `echo_safe2`, `echo_live2`, `echo_closes2`, episodes) and
-  `world/sockets-v2/socketV2FFIScript.sml` (`sock_close2`,
-  `lowest_free`), `socketV2FairScript.sml` (`sched_wf2`).
-- **Statements:**
-  1. `echo2_prog_spec` (headline/asyncHLEchoSpec2);
-  2. `broken_leaks_across_reuse` and `v1_misses_leak` (spec-v2/EchoSpec2Bite:
-     the new clause bites, and EchoSpec alone would miss the leak);
-  3. `broken_never_closes` (the closing clause bites);
-  4. `ideal2_trace_spec` and `server_world2_exists` (non-vacuity, with reuse);
-  5. `hrun_sim` (programs/echo-v2/asyncHLSimRun: round by round the handle
-     loop has the version-1 loop's history, which is how the v1 proofs are
-     reused unchanged).
-- **Skip:** the CF layer of the v2 socket module (`world/sockets-v2-cf`),
-  the handle loop's proofs, and the simulation lemmas (`asyncHLSim*`,
-  `asyncHLEpisodes`, `asyncHLEof`).
-- **From:** echospec2 (spec), close-v2-sim (#63, fbe3f0a71). Design note 25.
-  It touches nothing below it; the C side's `sock_close` is in PR 10.
+The copied HTTP pipelines (strict, headers, bodies) are retired to
+`archive/http-copies`.
 
-**Total:** ≈30,000 lines of HOL; about 6.5 hours of reading at the listed
-depth.
+### 11. `review-v2/11-quiet-option-c`: quiescence, and option C (45 min)
+See #109 and `quiet/README.md`:
+- `run_q_two_outcomes` (select on the declared interest);
+- `proto_stable`;
+- `echo_l_quiet`;
+- the headline `http_q_quiet`.
+
+### 12. `review-v2/12-runnable`: it runs (15 min)
+See #112. Read `runnable/socket_ffi.c` (TRUSTED). It has a known gap,
+which is being fixed (design/36, #94). The CPU tables are in
+`runnable/*/cpu-results.txt`.
+
+### 13. `review-v2/13-close-v2`: close and fd reuse (45 min)
+See #113: EchoSpec2 and the v2 world (TRUSTED for this layer),
+`echo2_prog_spec`, the bites, and `hrun_sim`.
+
+### 14. `review-v2/14-docs`: README, design notes, START-HERE (15 min)
+
+
+## Retired to `archive/` tags (not deleted)
+
+| tag | what | replaced by |
+|---|---|---|
+| `archive/review-v1-01` … `-12` | the first series | this series |
+| `archive/http-copies` (b0e77dbc7) | the copied HTTP pipelines: strict GET (`http_spec`), header-tolerant (`http_prog_h_spec`), bodies (`http_prog_b_spec`) | layer 10's instances |
+| `archive/http-quiet-53` | #53: the header-tolerant server at Level 2 | layer 11 (`server_with2` is lifted into `asyncServerWith2`) |
+| `archive/http-blocking-56` | #56: live-list HTTP select. It spins after an invalid request (85.4% CPU) | layer 11's option C (0.0%) |
+
+The first series' list of dropped scaffolding still applies:
 
 ## Dropped (superseded scaffolding; still on the spike branches)
 
@@ -287,39 +276,18 @@ depth.
 Kept but not headline: the clock world (the socket world is built on its
 lemmas), `asyncM4ServerProg` (the HTTP translation reuses its code).
 
-## In-flight work: where each lands
 
-- **HTTP liveness**: folded in. PR 9's headline is
-  `http_prog_h_spec : http_spec_h 3w demo_files http_prog_h`.
-- **header-tolerant HttpSpec**: adopted (your decision). It is PR 1's HTTP
-  spec. The strict HttpSpec's statement and results are archived; its
-  file stays as shared vocabulary.
-- **blocking fix**: folded in (`echo_live_spec`, PR 8).
-- **no request bodies** (HttpSpecHeaders, user-approved): folded into PR 1
-  (spec and bite) and PR 9 (the program and its proofs).
-- **`brun_two_outcomes`** (#49): folded into PR 8.
-- **no idle wait in the trusted C** (#50): folded into PR 10.
-- **HTTP quiet** (#53): folded into PR 9 as an optional statement group.
-- **HTTP bodies** (#55, user-approved): HttpSpecBodies is PR 1's HTTP spec
-  (a labelled SPEC CHANGE commit), and `http_prog_b_spec` is PR 9's
-  headline. The header-tolerant pipeline stays as a stepping stone.
-- **close / fd reuse (close-v2, #63)**: folded in as PR 12
-  (`review/12-close-v2`) on top: EchoSpec2 (spec first), the v2 world, the
-  handle layer and `echo2_prog_spec`. Below it, only `socket_ffi.c` (PR 10)
-  gains `sock_close`.
+## After the series
 
-Mechanics of folding in: a late result is committed on the layer's
-branch, then merged forward up the stack (`review/N` into `N+1`, …). That
-adds merge commits, never rewrites; each PR's diff stays its own layer.
+- **Next-steps PR** (statements for review, not in the series):
+  - the endpoint world (#67, #104);
+  - fd discipline (#78);
+  - buffer closure (#79);
+  - KV (#52, #73, #80, #95).
+- **Appendix** (linked, not reviewed): the chat server (#66, #72, #75, #76,
+  #83; bounded latency #97, #106).
 
-## Decisions for you (defaults used unless you say otherwise)
-
-1. **Theory names unchanged** (default). This keeps EchoSpec/HttpSpec
-   byte-identical (they import `ffiSpikeSocketFFI`), and every note and
-   spike reference stays valid. Renames (e.g. `ffiSpikeSocket*` →
-   `socket*`, `asyncM3*`/`asyncM4*` → layer names) can be one mechanical
-   commit at the end if you want them.
-2. **Dropped files**: not carried into the series (default). The
-   alternative is an `async/archive/` folder that is not built.
-3. **Close the spike PRs** after review, or leave them open: yours to
-   decide; nothing is touched.
+**Mechanics of folding in.** A late result is committed on its layer's
+branch, then merged forward up the stack (`review-v2/N` into `N+1`, …).
+That adds merge commits and never rewrites history, so each PR's diff stays
+its own layer.

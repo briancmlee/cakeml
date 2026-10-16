@@ -110,21 +110,33 @@ QED
    Printed replies
    ------------------------------------------------------------------------ *)
 
+Theorem TAKE_prefix_mono[local]:
+  ∀l a b. a ≤ b ⇒ TAKE a l ≼ TAKE b l
+Proof
+  Induct >> simp[] >> rpt gen_tac >> Cases_on ‘a’ >> Cases_on ‘b’ >> simp[]
+QED
+
+Theorem reply_bytes_prefix0[local]:
+  as1 ≼ as2 ⇒ reply_bytes as1 ≼ reply_bytes as2
+Proof
+  rw[IS_PREFIX_APPEND, reply_bytes_def] >> simp[bytes_APPEND]
+QED
+
 Theorem reply_bytes_TAKE:
   i < LENGTH R ∧ j ≤ i ∧ reply_bytes (TAKE (SUC i) R) ≼ x ⇒
   ¬(x ≼ reply_bytes (TAKE j R))
 Proof
   rpt strip_tac >>
-  ‘reply_bytes (TAKE (SUC i) R) ≼ reply_bytes (TAKE j R)’
-    by metis_tac[IS_PREFIX_TRANS] >>
-  ‘TAKE (SUC i) R = TAKE j R ++ (TAKE (i - j) (DROP j R) ++ [EL i R])’
-    by (simp[TAKE_SUC_EL] >> REWRITE_TAC[APPEND_ASSOC] >> AP_THM_TAC >> AP_TERM_TAC >>
-        ‘i = j + (i - j)’ by simp[] >>
-        pop_assum (fn th => CONV_TAC (LHS_CONV (ONCE_REWRITE_CONV [th]))) >>
-        simp[TAKE_SUM]) >>
-  gvs[reply_bytes_def, bytes_APPEND] >>
-  drule IS_PREFIX_LENGTH >> simp[] >>
-  Cases_on ‘print_response (EL i R)’ >> fs[print_response_NIL]
+  ‘TAKE (SUC i) R = TAKE i R ++ [EL i R]’ by simp[TAKE_SUC_EL] >>
+  ‘LENGTH (reply_bytes (TAKE j R)) ≤ LENGTH (reply_bytes (TAKE i R))’
+    by metis_tac[reply_bytes_prefix0, IS_PREFIX_LENGTH, TAKE_prefix_mono] >>
+  ‘LENGTH (reply_bytes (TAKE (SUC i) R)) =
+   LENGTH (reply_bytes (TAKE i R)) + LENGTH (print_response (EL i R))’
+    by (pop_assum kall_tac >> asm_rewrite_tac[] >>
+        simp[reply_bytes_def, bytes_APPEND, FLAT_APPEND]) >>
+  ‘0 < LENGTH (print_response (EL i R))’
+    by (Cases_on ‘print_response (EL i R)’ >> fs[print_response_NIL]) >>
+  imp_res_tac IS_PREFIX_LENGTH >> decide_tac
 QED
 
 Theorem reply_bytes_prefix:
@@ -153,17 +165,23 @@ QED
 Theorem fd_answers_prefix:
   G1 ≼ G2 ⇒ fd_answers fd G1 ≼ fd_answers fd G2
 Proof
-  rw[IS_PREFIX_APPEND, fd_answers_def] >>
-  simp[run_store_APPEND_FST, ZIP_APPEND, FILTER_APPEND]
+  rw[IS_PREFIX_APPEND, fd_answers_def] >> REWRITE_TAC[run_store_APPEND_FST] >>
+  qmatch_goalsub_abbrev_tac ‘ZIP (G1 ++ l, A1 ++ A2)’ >>
+  ‘ZIP (G1 ++ l, A1 ++ A2) = ZIP (G1, A1) ++ ZIP (l, A2)’
+    by (irule (GSYM ZIP_APPEND) >> simp[Abbr ‘A1’, Abbr ‘A2’, LENGTH_run_store]) >>
+  pop_assum SUBST1_TAC >> REWRITE_TAC[FILTER_APPEND, MAP_APPEND] >> metis_tac[]
+QED
+
+Theorem LENGTH_FILTER_ZIP_FST[local]:
+  ∀G A. LENGTH A = LENGTH G ⇒
+        LENGTH (FILTER (λp. FST (FST p) = fd) (ZIP (G, A))) =
+        LENGTH (FILTER (λq. FST q = fd) G)
+Proof
+  Induct >> simp[] >> rpt gen_tac >> Cases_on ‘A’ >> simp[] >> rw[]
 QED
 
 Theorem LENGTH_fd_answers:
   LENGTH (fd_answers fd G) = LENGTH (FILTER (λq. FST q = fd) G)
 Proof
-  simp[fd_answers_def] >>
-  ‘∀A. LENGTH A = LENGTH G ⇒
-       LENGTH (FILTER (λp. FST (FST p) = fd) (ZIP (G, A))) =
-       LENGTH (FILTER (λq. FST q = fd) G)’
-    suffices_by simp[] >>
-  Induct_on ‘G’ >> simp[] >> rpt gen_tac >> Cases_on ‘A’ >> simp[] >> rw[]
+  simp[fd_answers_def] >> irule LENGTH_FILTER_ZIP_FST >> simp[LENGTH_run_store]
 QED

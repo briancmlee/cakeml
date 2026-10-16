@@ -6,6 +6,9 @@
   A program that never closes a connection, and touches only the listener
   and the fds it has accepted, behaves in a lifetimes world sk exactly as
   in one core world, core_of sk: the same behaviour, the same I/O trace.
+  Both directions: a core run with these properties (which L0's results
+  give, e.g. fd discipline) is a run in the lifetimes world, and
+  conversely.
 
   core_of sk: without closes, the fd the kernel gives the j-th accept is
   determined (core_fd sk j: the allocation function applied to the fds
@@ -126,10 +129,11 @@ End
 
 Definition lifetime_core_link_def:
   lifetime_core_link ⇔
-    ∀lfd sk prog b.
-      server_world2 lfd sk ∧
-      semantics_prog (init_state (socket2_ffi sk)) init_env prog b ∧
-      run_ok lfd b ⇒
+    ∀lfd sk.
+      server_world2 lfd sk ⇒
       server_world lfd (core_of sk) ∧
-      semantics_prog (init_state (socket_ffi (core_of sk))) init_env prog b
+      ∀prog b.
+        run_ok lfd b ⇒
+        (semantics_prog (init_state (socket_ffi (core_of sk))) init_env prog b ⇔
+         semantics_prog (init_state (socket2_ffi sk)) init_env prog b)
 End

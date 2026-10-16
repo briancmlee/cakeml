@@ -200,7 +200,7 @@ QED
 Theorem recv_fl:
   fl w f R ∧ noconn w ∧ l0_rely w ∧ 0 < n ∧ l0_recv f n w = (r, d, w') ⇒
   (fl w' f R ∧ ∀k. r = Ok k ⇒ k = 0) ∨
-  (∃k. r = Ok k ∧ 0 < k ∧ (R ≼ d ∨ ∃R'. R = d ++ R' ∧ fl w' f R'))
+  (∃k. r = Ok k ∧ 0 < k ∧ LENGTH d = k ∧ (R ≼ d ∨ ∃R'. R = d ++ R' ∧ fl w' f R'))
 Proof
   rw[fl_def, front_def, flushed_def] >>
   gvs[l0_recv_def, AllCaseEqs(), noconn_def] >>
@@ -208,9 +208,23 @@ Proof
   TRY (simp[fail_def] >> NO_TAC) >>
   TRY (disj1_tac >> simp[fail_def, l0_chan_of_def, upd_lchan_def, EL_LUPDATE] >>
        gvs[l0_chan_of_def, AllCaseEqs()] >> NO_TAC) >>
-  ‘0 < w.ch.short j w.hist (LENGTH (EL j w.chans).inbox)’
-    by (gvs[l0_rely_def] >> Cases_on ‘(EL j w.chans).inbox’ >> gvs[]) >>
-  disj2_tac >> simp[] >>
+  TRY (disj1_tac >> gvs[fail_def, l0_chan_of_def, upd_lchan_def, EL_LUPDATE,
+                        AllCaseEqs()] >> NO_TAC) >>
+  TRY (simp[fail_def] >>
+       ‘l0_chan_of (upd_lchan j (λc. c with err := NONE) w) f = SOME j ∧
+        (EL j (upd_lchan j (λc. c with err := NONE) w).chans).inbox = (EL j w.chans).inbox ∧
+        (EL j (upd_lchan j (λc. c with err := NONE) w).chans).broken = (EL j w.chans).broken’
+         by gvs[l0_chan_of_def, upd_lchan_def, EL_LUPDATE, AllCaseEqs()] >>
+       gvs[] >> NO_TAC) >>
+  rename1 ‘l0_chan_of w f = SOME j’ >>
+  ‘0 < w.ch.short j w.hist (LENGTH (EL j w.chans).inbox) ∧
+   w.ch.short j w.hist (LENGTH (EL j w.chans).inbox) ≤ LENGTH (EL j w.chans).inbox’
+    by (‘0 < LENGTH (EL j w.chans).inbox’
+          by (Cases_on ‘(EL j w.chans).inbox’ >> fs[]) >>
+        qpat_x_assum ‘l0_rely _’ (strip_assume_tac o REWRITE_RULE [l0_rely_def]) >>
+        first_x_assum (qspecl_then [‘j’, ‘w.hist’, ‘LENGTH (EL j w.chans).inbox’] mp_tac) >>
+        simp[]) >>
+  disj2_tac >> simp[LENGTH_TAKE_EQ] >>
   drule prefix_take >>
   disch_then (qspec_then ‘MIN n (w.ch.short j w.hist (LENGTH (EL j w.chans).inbox))’
               strip_assume_tac) >> simp[] >>

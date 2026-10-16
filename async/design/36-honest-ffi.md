@@ -828,6 +828,73 @@ one-to-one:
 - `sys_poll` ↦ `sock_poll`, where the flag is IN, and HUP/ERR imply IN in
   `simple0`.
 
+**R2, as built (phase 6, `async/honest-l1/`, branch `spike/honest-refine`).**
+R2 is proved as a run theorem against close-v2's handle layer
+(asyncHLModel, unchanged), at the model level:
+
+    l1_refines_hl :
+      simple_v2 p lfd sched w0 ∧ l0_rely w0 ∧ fds_lt w0 ∧ w2n lfd < 2^31 ∧
+      l1v2_rel p lfd sched (w0, l1init) (s0, hinit) ∧ hl_ok lfd ifds m s0 ⇒
+      ∀n. ∃w st evs.
+        lrounds lfd hw ifds m (w0, l1init) n = SOME (hhist lfd ifds m s0 n, (w, st), evs) ∧
+        l1v2_rel p lfd sched (w, st) (hst lfd ifds m s0 n) ∧
+        drops (MAP l0_v2_event evs) (FLAT (GENLIST (hround_events lfd ifds m s0) n)) ∧
+        simple_v2 p lfd sched w ∧ l0_rely w ∧ fds_lt w ∧
+        rdy_ok lfd (polp_at lfd ifds m s0 n) w st
+
+L1 and the handle layer give **the same history** (the snapshots the
+server sees). The relation between their I/O traces is weaker than the
+one-to-one renaming that the draft above expected.
+
+- **Traces, `drops`.** L1's renamed events (`l0_v2_event`) are the
+  handle layer's events with some would-block events deleted. When the
+  discipline (below) says a Read or Accept would block, L1 answers
+  without a syscall, but the handle layer logs a `sock_read` or
+  `sock_accept` with an empty result. `drops` is inductive, and
+  `drops_APPEND` lets it compose round by round.
+- **The relation `l1v2_rel`** (honestL1Refine). It holds the table facts:
+  - L1's handle table equals the handle layer's;
+  - every handle has the form `l1hdl lfd i` with i < nxt.
+
+  It also holds `core_rel`, which says L0 channel j is v2 client j and
+  includes four invariants found while proving:
+  - the accept queue has no duplicates;
+  - queued channels are not open;
+  - open fds map to distinct channels;
+  - the listener is not a client fd.
+- **The discipline, per polled (handle, fd) pair: `rdy_ok`, `polp_at`.**
+  The draft's condition 3 ("reads within the interest") is not enough
+  as stated. The discipline must be tracked per (handle, fd) pair
+  polled at the end of the previous round, because a handle's fd can
+  be reused after a close.
+- **Polling with an empty interest.** L1 must poll even when the
+  interest is empty. `poll_chunks` now gives `[l]` for any l of at
+  most 4096 entries, including `[]`. Otherwise the handle layer's poll
+  of no fds would tick the world's clock and L1's would not.
+- **Side conditions, `hl_ok`.** These are assumptions about the server
+  running on the handle layer, round by round, in the style of
+  `hrun_ok`:
+  - the round discipline (`hacts_disc`: reads and accepts only on pairs
+    polled at the last poll);
+  - fewer than 2^31 − 1 fds in use;
+  - handle numbers that fit in 64 bits;
+  - at most 4096 polled fds.
+- **Proof structure.**
+  - Steps: `act_step` covers one action (accept, write, read; skip,
+    data, empty, EOF).
+  - Rounds: `acts_step` covers a round's actions; `tail_step` covers the
+    flush, reap and poll (no-ops in simple_v2 except the poll);
+    `round_step` covers a whole round.
+  - The run: `l1_refines_hl` follows by induction on n, using
+    `hround_SUC` to unfold one handle-layer round.
+  - Theories: honestL1Refine, honestL1Steps, honestL1Round. There are
+    no cheats.
+
+Still open:
+- connecting this to `semantics_prog`;
+- R1 for general worlds, with regrouping;
+- the per-server proofs of `hl_ok`.
+
 **(R3) Per-wrapper lemmas** (model level, on L1's functional core; the
 cheap part). For example:
 

@@ -1480,3 +1480,115 @@ Proof
         simp[EVERY_MEM, MEM_MAP, PULL_EXISTS] >> disch_then drule >> simp[]) >>
   qexists_tac ‘c’ >> fs[cext_def]
 QED
+
+(* ------------------------------------------------------------------------
+   One round, and the run
+   ------------------------------------------------------------------------ *)
+
+Theorem round_out:
+  pround lfd hw hs (w, ps) acts = SOME (snap, (w', ps'), log, evs) ∧
+  pv_rel lfd cm ps s ∧ pown lfd ps ∧ l0own lfd w ps ∧ winv w ∧
+  EVERY small_send evs ∧ out_rel cm w ps s ∧
+  arrs lfd (cm, LENGTH s.clients) log = (as, (cm', k')) ∧
+  (∀f j. MEM (f, j) cm' ∧ LENGTH s.clients ≤ j ⇒
+         ∀used. ¬MEM f used ⇒ s.alloc j used = f) ∧
+  LHD s.future = SOME as ∧ k' + 1 < dimword (:64) ⇒
+  ∃rs hevs s1.
+    hacts lfd (s, hs_of ps) acts = SOME (rs, hevs, (s1, hs_of ps')) ∧
+    out_rel cm' w' ps' (SND (hpoll lfd (hs_of ps') hs s1)) ∧ winv w'
+Proof
+  strip_tac >>
+  ‘l0_rely w ∧ fds_lt w’ by gvs[winv_def] >>
+  drule_all round_rel >> strip_tac >>
+  ‘winv w'’ by (drule_all pround_winv >> simp[]) >>
+  qexistsl_tac [‘rs’, ‘hevs’, ‘s1’] >> ASM_REWRITE_TAC [] >>
+  qpat_x_assum ‘pround _ _ _ _ _ = _’ mp_tac >> simp[pround_def, AllCaseEqs()] >>
+  strip_tac >> PairCases_on ‘ws1’ >> gvs[] >>
+  rename1 ‘pacts _ _ _ = SOME (rs1, aevs, (w1, ps1))’ >>
+  drule_all pacts_hacts >> strip_tac >> gvs[] >>
+  drule_all pacts_out >> strip_tac >>
+  drule_all pacts_winv >> strip_tac >>
+  drule hacts_world >> strip_tac >>
+  mp_tac (Q.INST [‘w’ |-> ‘w1’, ‘ps’ |-> ‘ps1’, ‘evs’ |-> ‘tevs’, ‘s’ |-> ‘s'’,
+                  ‘s'’ |-> ‘SND (hpoll lfd (hs_of ps') hs s')’,
+                  ‘k'’ |-> ‘LENGTH (SND (hpoll lfd (hs_of ps') hs s')).clients’] tail_out) >>
+  impl_tac >- fs[cext_hpoll] >> simp[]
+QED
+
+(* MAIN (R1-safe, output side), for the rounds up to N: on a run whose
+   sends each record their count (small_send, an explicit hypothesis on the
+   trace), in a world whose queued connections have nothing sent (qfresh),
+   every fd L1 holds has its account: what the kernel took on its channel,
+   then L1's outbox, is what the server wrote to its client in psk (a
+   prefix once the fd is gone) *)
+Theorem l1pf_refines_hl_out_upto:
+  winv w0 ∧ qfresh w0 ∧ MEM lfd (l0_used w0) ∧
+  (∀n'. n' ≤ N ⇒ SND (pcm lfd hw ifds m w0 n') + 1 < dimword (:64)) ⇒
+  ∀n h ws evs logs.
+    n ≤ N ∧ prounds lfd hw ifds m (w0, pinit) n = SOME (h, ws, evs, logs) ∧
+    EVERY small_send evs ⇒
+    out_rel (FST (pcm lfd hw ifds m w0 n)) (FST ws) (SND ws)
+      (FST (hst lfd ifds m (psk lfd hw ifds m w0) n)) ∧ winv (FST ws)
+Proof
+  strip_tac >>
+  ‘l0_rely w0 ∧ fds_lt w0’ by gvs[winv_def] >>
+  Induct
+  >- (simp[prounds_def, hst_def, hrounds_def, pcm_def, psk_def] >>
+      rw[] >> simp[out_rel_def, okeys_def, pinit_def, l1init_def, outbox_of_def]) >>
+  rpt gen_tac >> strip_tac >>
+  qpat_assum ‘prounds _ _ _ _ _ (SUC _) = _’
+    (strip_assume_tac o SIMP_RULE (srw_ss()) [AllCaseEqs()] o
+     ONCE_REWRITE_RULE [prounds_def]) >>
+  rpt BasicProvers.VAR_EQ_TAC >>
+  rename1 ‘prounds _ _ _ _ _ n = SOME (h0, ws0, evs0, logs0)’ >>
+  ‘n ≤ N’ by simp[] >>
+  RULE_ASSUM_TAC (REWRITE_RULE [EVERY_APPEND]) >>
+  qpat_x_assum ‘EVERY _ evs0 ∧ _’ strip_assume_tac >>
+  qpat_x_assum ‘∀h ws evs logs. _’ drule_all >> strip_tac >>
+  mp_tac (Q.INST [‘N’ |-> ‘N’] l1pf_refines_hl_upto) >> impl_tac >- simp[] >>
+  disch_then drule_all >> strip_tac >>
+  ‘hacts_of lfd ifds m (psk lfd hw ifds m w0) n = new_actions (log_of m) h0’
+    by simp[hacts_of_def] >>
+  PairCases_on ‘ws0’ >> rename1 ‘prounds _ _ _ _ _ n = SOME (h0, (w, ps), evs0, logs0)’ >>
+  PairCases_on ‘ws’ >> rename1 ‘pround _ _ _ _ _ = SOME (snap, (w', ps'), log, _)’ >>
+  gvs[] >>
+  Cases_on ‘hst lfd ifds m (psk lfd hw ifds m w0) n’ >> rename1 ‘_ = (s, hs)’ >> gvs[] >>
+  ‘plog lfd hw ifds m w0 n = log’
+    by (drule prounds_logs >> strip_tac >>
+        qpat_x_assum ‘prounds _ _ _ _ _ (SUC n) = _’ assume_tac >>
+        drule plog_EL >> disch_then (qspec_then ‘n’ mp_tac) >>
+        simp[EL_APPEND2]) >>
+  Cases_on ‘pcm lfd hw ifds m w0 n’ >> rename1 ‘pcm _ _ _ _ _ n = (cm, k)’ >> gvs[] >>
+  Cases_on ‘arrs lfd (cm, LENGTH s.clients) (plog lfd hw ifds m w0 n)’ >>
+  rename1 ‘_ = (as, ck)’ >> PairCases_on ‘ck’ >>
+  ‘pcm lfd hw ifds m w0 (SUC n) = (ck0, ck1) ∧ parr lfd hw ifds m w0 n = as’
+    by simp[pcm_def, parr_def] >>
+  ‘∀f j. MEM (f, j) ck0 ∧ LENGTH s.clients ≤ j ⇒
+         ∀used. ¬MEM f used ⇒ s.alloc j used = f’
+    by (rw[] >> irule run_alloc_eq >> simp[] >> qexists_tac ‘SUC n’ >> simp[]) >>
+  ‘LHD s.future = SOME as’ by simp[] >>
+  ‘ck1 + 1 < dimword (:64)’
+    by (qpat_assum ‘∀n'. _ ≤ N ⇒ SND (pcm _ _ _ _ _ n') + 1 < _’ (mp_tac o Q.SPEC ‘SUC n’) >>
+        qpat_assum ‘pcm _ _ _ _ _ (SUC n) = _’ (fn th => REWRITE_TAC [th]) >>
+        simp[]) >>
+  drule_all round_out >> strip_tac >>
+  ‘hacts_tot lfd (hst lfd ifds m (psk lfd hw ifds m w0) n)
+     (hacts_of lfd ifds m (psk lfd hw ifds m w0) n) = (rs, hevs, (s1, hs_of ps'))’
+    by simp[hacts_tot_def] >>
+  drule hround_step >> strip_tac >> simp[]
+QED
+
+Theorem l1pf_refines_hl_out:
+  winv w0 ∧ qfresh w0 ∧ MEM lfd (l0_used w0) ∧
+  (∀n. SND (pcm lfd hw ifds m w0 n) + 1 < dimword (:64)) ⇒
+  ∀n h ws evs logs.
+    prounds lfd hw ifds m (w0, pinit) n = SOME (h, ws, evs, logs) ∧
+    EVERY small_send evs ⇒
+    out_rel (FST (pcm lfd hw ifds m w0 n)) (FST ws) (SND ws)
+      (FST (hst lfd ifds m (psk lfd hw ifds m w0) n))
+Proof
+  strip_tac >> rpt gen_tac >> strip_tac >>
+  mp_tac (Q.SPEC ‘n’ (Q.GEN ‘N’ l1pf_refines_hl_out_upto)) >>
+  impl_tac >- fs[] >>
+  disch_then (qspecl_then [‘n’, ‘h’, ‘ws’, ‘evs’, ‘logs’] mp_tac) >> simp[]
+QED

@@ -806,14 +806,14 @@ Proof
 QED
 
 Theorem okeys_set_outbox:
-  okeys b ∧ MEM f (MAP SND b.tbl) ⇒ okeys (set_outbox f x b)
+  okeys b ∧ (MEM f (MAP SND b.tbl) ∨ MEM f b.closing) ⇒ okeys (set_outbox f x b)
 Proof
   rw[okeys_def, outbox_of_set_outbox] >> rw[set_outbox_def] >>
   Cases_on ‘f' = f’ >> gvs[] >> first_x_assum irule >> gvs[set_outbox_def]
 QED
 
 Theorem okeys_after_send:
-  okeys b ∧ MEM f (MAP SND b.tbl) ⇒ okeys (after_send f r b)
+  okeys b ∧ (MEM f (MAP SND b.tbl) ∨ MEM f b.closing) ⇒ okeys (after_send f r b)
 Proof
   rw[after_send_def] >> every_case_tac >> simp[] >>
   TRY (irule okeys_set_outbox >> simp[] >> NO_TAC) >>
@@ -927,4 +927,119 @@ Proof
   ‘(EL (cl cm f) s.clients).outgoing = []’ by (qpat_x_assum ‘out_rel _ _ _ _’ mp_tac >> simp[out_rel_def] >> metis_tac[]) >>
   ‘MEM f (MAP FST cm)’ by simp[] >>
   drule_all hwrote_wbytes >> simp[wbytes_nil]
+QED
+
+Theorem pacts_out:
+  ∀acts w ps s rs evs w' ps' s' hs' hrs hevs.
+    pacts lfd (w, ps) acts = SOME (rs, evs, (w', ps')) ∧
+    hacts lfd (s, hs_of ps) acts = SOME (hrs, hevs, (s', hs')) ∧
+    pv_rel lfd cm ps s ∧ pown lfd ps ∧ winv w ∧ EVERY small_send evs ∧
+    out_rel cm w ps s ⇒
+    out_rel cm w' ps' s'
+Proof
+  Induct >> simp[pacts_def, hacts_def] >> rpt gen_tac >> strip_tac >>
+  gvs[AllCaseEqs()] >>
+  rename1 ‘pdo _ _ _ = SOME (r1, ws1, evs1)’ >> PairCases_on ‘ws1’ >>
+  rename1 ‘hdo _ _ _ = SOME (r2, st1, hevs1)’ >> PairCases_on ‘st1’ >>
+  drule_all pdo_hdo >> strip_tac >> gvs[] >>
+  drule_all pdo_out >> strip_tac >>
+  drule_all pdo_winv >> strip_tac >>
+  first_x_assum drule_all >> simp[]
+QED
+
+(* ------------------------------------------------------------------------
+   The round's tail, stage by stage
+   ------------------------------------------------------------------------ *)
+
+Theorem acct_len:
+  acct w b f c out ⇒ LENGTH (csent w c) ≤ LENGTH out
+Proof
+  rw[acct_def] >> Cases_on ‘MEM f b.gone’ >> gvs[] >>
+  imp_res_tac IS_PREFIX_LENGTH >> rw[] >> simp[]
+QED
+
+Theorem l0_accept_chan:
+  l0_accept l w = (Ok k, w') ∧ qfresh w ⇒
+  ∃c. l0_chan_of w' (n2w k) = SOME c ∧ csent w' c = []
+Proof
+  rw[l0_accept_def] >> gvs[AllCaseEqs(), fail_def] >>
+  gvs[qfresh_def] >>
+  ‘MEM (v2, p, j :: q') (FILTER (λ(l', p, q). l' = l) w.listeners)’ by simp[] >>
+  ‘MEM (v2, p, j :: q') w.listeners’ by fs[MEM_FILTER] >>
+  ‘j < LENGTH w.chans ∧ csent w j = []’
+    by (qpat_x_assum ‘∀l p q j. _’ (qspecl_then [‘v2’, ‘p’, ‘j :: q'’, ‘j’] mp_tac) >>
+        simp[]) >>
+  qexists_tac ‘j’ >> gvs[l0_chan_of_def, csent_def]
+QED
+
+Theorem sys_accept_chan:
+  sys_accept l w = SOME (out, w', ev) ∧ l0_res_of out = Ok k ∧ winv w ∧ qfresh w ⇒
+  ∃c. l0_chan_of w' (n2w k) = SOME c ∧ csent w' c = []
+Proof
+  rw[sys_accept_def, l0_do_def, l0_ffi_fn_def, AllCaseEqs()] >>
+  gvs[l0_call_def, AllCaseEqs()] >> pairarg_tac >> gvs[] >>
+  ‘l0_rely (l0_tick «sys_accept» w)’
+    by (irule l0_rely_ch >> qexists_tac ‘w’ >> gvs[winv_def]) >>
+  drule_all honestL1InvTheory.l0_accept_res >> strip_tac >>
+  gvs[l0_res_of_enc] >>
+  ‘qfresh (l0_tick «sys_accept» w)’ by simp[qfresh_tick] >>
+  drule_all l0_accept_chan >> simp[]
+QED
+
+Theorem chan_used:
+  l0_chan_of w f = SOME c ⇒ MEM f (l0_used w)
+Proof
+  rw[l0_chan_of_def, l0_used_def, AllCaseEqs()] >> imp_res_tac ALOOKUP_MEM >>
+  simp[MEM_MAP, EXISTS_PROD] >> metis_tac[]
+QED
+
+Theorem sys_csents:
+  (winv w ∧ l0_chan_of w f = SOME c ∧ sys_poll fes w = SOME (out, w', ev) ⇒
+   l0_chan_of w' f = SOME c ∧ csent w' c = csent w c ∧ ev_sent f ev = []) ∧
+  (winv w ∧ l0_chan_of w f = SOME c ∧ sys_recv g k w = SOME (out, w', ev) ⇒
+   l0_chan_of w' f = SOME c ∧ csent w' c = csent w c ∧ ev_sent f ev = []) ∧
+  (winv w ∧ l0_chan_of w f = SOME c ∧ sys_accept g w = SOME (out, w', ev) ⇒
+   l0_chan_of w' f = SOME c ∧ csent w' c = csent w c ∧ ev_sent f ev = []) ∧
+  (winv w ∧ l0_chan_of w f = SOME c ∧ g ≠ f ∧ sys_close g w = SOME (out, w', ev) ⇒
+   l0_chan_of w' f = SOME c ∧ csent w' c = csent w c ∧ ev_sent f ev = [])
+Proof
+  rpt conj_tac >> strip_tac >> irule sys_csent >> simp[] >> metis_tac[]
+QED
+
+Theorem l1_polls_csent:
+  ∀chs w rv w' evs.
+    l1_polls chs w = SOME (rv, w', evs) ∧ winv w ∧ l0_chan_of w f = SOME c ⇒
+    l0_chan_of w' f = SOME c ∧ csent w' c = csent w c ∧ evs_sent f evs = []
+Proof
+  Induct >> simp[l1_polls_def] >> rpt gen_tac >> strip_tac >> gvs[AllCaseEqs()] >>
+  drule_all (cj 1 sys_csents) >> strip_tac >>
+  ‘winv w1’ by metis_tac[sys_winv] >>
+  first_x_assum drule_all >> simp[]
+QED
+
+Theorem l1_flush_keys:
+  ∀fs w b w' b' evs.
+    l1_flush fs (w, b) = SOME ((w', b'), evs) ∧ okeys b ⇒
+    okeys b' ∧ b'.tbl = b.tbl ∧ b'.closing = b.closing
+Proof
+  Induct >> simp[l1_flush_def] >> rpt gen_tac >> strip_tac >>
+  qpat_x_assum ‘(if _ then _ else _) = _’ mp_tac >> IF_CASES_TAC >> strip_tac
+  >- (first_x_assum drule_all >> simp[]) >>
+  gvs[AllCaseEqs()] >>
+  ‘okeys (after_send h (l0_res_of out) b)’
+    by (irule okeys_after_send >> gvs[okeys_def]) >>
+  first_x_assum drule_all >> simp[]
+QED
+
+(* A flush leaves an fd with nothing to send alone *)
+Theorem l1_flush_quiet:
+  l1_flush fs (w, b) = SOME ((w', b'), evs) ∧ winv w ∧ EVERY small_send evs ∧
+  l0_chan_of w f = SOME c ∧ outbox_of b f = [] ∧ ¬MEM f b.gone ⇒
+  l0_chan_of w' f = SOME c ∧ csent w' c = csent w c ∧ evs_sent f evs = []
+Proof
+  strip_tac >>
+  ‘acct w b f c (csent w c)’ by simp[acct_def] >>
+  drule_all l1_flush_acct >> strip_tac >>
+  drule acct_len >> gvs[acct_def] >> strip_tac >>
+  ‘LENGTH (evs_sent f evs) = 0’ by decide_tac >> gvs[]
 QED

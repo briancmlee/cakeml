@@ -107,3 +107,77 @@ Definition v2of1_def:
     <| listening := [(lfd, [])]; clients := []; open_fds := []; reserved := [];
        alloc := alloc1 sk.sched; future := rn1_sched [] sk.sched |>
 End
+
+(* ------------------------------------------------------------------------
+   The relation
+   ------------------------------------------------------------------------ *)
+
+(* cs: the connections so far, in connect order (client j is EL j cs); the
+   first k are accepted, on their own fds; the rest are pending, in order *)
+Definition v12core_def:
+  v12core lfd cs k (s1 : sockets) (s2 : sockets2) ⇔
+    ALL_DISTINCT cs ∧ ¬MEM lfd cs ∧ k ≤ LENGTH cs ∧
+    MAP FST s1.conns = REVERSE cs ∧
+    s1.listeners = [(lfd, DROP k cs)] ∧
+    s2.listening = [(lfd, GENLIST (λi. k + i) (LENGTH cs − k))] ∧
+    LENGTH s2.clients = LENGTH cs ∧
+    (∀j. j < LENGTH cs ⇒
+         ∃cn. ALOOKUP s1.conns (EL j cs) = SOME cn ∧
+              cn.incoming = (EL j s2.clients).incoming ∧
+              cn.peer_closed = (EL j s2.clients).peer_closed) ∧
+    s2.open_fds = REVERSE (GENLIST (λj. (EL j cs, j)) k) ∧ s2.reserved = []
+End
+
+Theorem ALOOKUP_conns_MEM[local]:
+  MAP FST l = REVERSE cs ⇒ (ALOOKUP l c ≠ NONE ⇔ MEM c cs)
+Proof
+  rw[ALOOKUP_NONE] >> metis_tac[MEM_REVERSE]
+QED
+
+Theorem findi_EL[local]:
+  ALL_DISTINCT cs ∧ j < LENGTH cs ⇒ findi (EL j cs) cs = j
+Proof
+  metis_tac[findi_EL]
+QED
+
+(* MAIN (arrivals): an effective version-1 arrival and its renaming keep
+   the relation *)
+Theorem v12core_deliver:
+  v12core lfd cs k s1 s2 ∧ arrival_ok s1 a ⇒
+  v12core lfd (FST (rn1_arr cs a)) k (deliver1 s1 a)
+              (deliver2 s2 (SND (rn1_arr cs a)))
+Proof
+  Cases_on ‘a’ >> simp[rn1_arr_def, arrival_ok_def] >> strip_tac
+  >- ((* a connection *)
+      rename [‘Connect l c’] >>
+      ‘l = lfd’ by (gvs[v12core_def, is_listener_def] >> Cases_on ‘lfd = l’ >> gvs[]) >>
+      ‘¬MEM c cs ∧ c ≠ lfd’
+        by (fs[v12core_def, is_listener_def, is_conn_def] >>
+            metis_tac[ALOOKUP_conns_MEM]) >>
+      fs[v12core_def, deliver1_def, deliver2_def, is_listener_def, is_conn_def,
+         AFUPDKEY_def, ALL_DISTINCT_APPEND, DROP_APPEND1] >>
+      rpt conj_tac >>
+      TRY (rw[LIST_EQ_REWRITE, EL_GENLIST] >> ‘x < LENGTH cs’ by decide_tac >>
+           simp[EL_APPEND1] >> NO_TAC) >>
+      TRY (rpt strip_tac >> Cases_on ‘j = LENGTH cs’
+           >- (‘LENGTH s2.clients = j’ by decide_tac >>
+               ‘(cs ++ [c])❲j❳ = c’ by gvs[EL_APPEND2] >>
+               ‘(s2.clients ++ [empty_conn])❲j❳ = empty_conn’ by gvs[EL_APPEND2] >>
+               simp[]) >>
+           ‘j < LENGTH cs’ by decide_tac >>
+           qpat_x_assum ‘∀j. j < LENGTH cs ⇒ _’ drule >> strip_tac >>
+           ‘j < LENGTH s2.clients’ by decide_tac >>
+           simp[EL_APPEND1] >> ‘EL j cs ≠ c’ by metis_tac[MEM_EL] >> simp[] >> NO_TAC) >>
+      ‘LENGTH cs + 1 − k = SUC (LENGTH cs − k)’ by decide_tac >>
+      pop_assum SUBST1_TAC >> simp[GENLIST, SNOC_APPEND] >> decide_tac)
+  (* data or EOF on a connection *)
+  >> rename1 ‘ALOOKUP s1.conns c = SOME cn’ >>
+  ‘MEM c cs’ by (fs[v12core_def] >> metis_tac[ALOOKUP_conns_MEM, NOT_NONE_SOME]) >>
+  ‘∃j. j < LENGTH cs ∧ c = EL j cs’ by metis_tac[MEM_EL] >>
+  ‘findi c cs = j’ by (fs[v12core_def] >> simp[findi_EL]) >>
+  fs[v12core_def, deliver1_def, deliver2_def] >>
+  first_assum (qspec_then ‘j’ mp_tac) >> simp[] >> strip_tac >> gvs[] >>
+  simp[update_client_def, MAP_FST_AFUPDKEY, AFUPDKEY_ALOOKUP] >>
+  rw[] >> first_x_assum drule >> strip_tac >> simp[EL_LUPDATE] >>
+  rw[] >> gvs[] >> metis_tac[ALL_DISTINCT_EL_IMP]
+QED

@@ -1442,6 +1442,7 @@ even if it is more work.**
 | D13 | The L0 connect model is trusted surface: the `connecting` state; the world choices `connect_now` and `pending_err`; the arrivals `LConnUp` / `LConnFail`; no revents while pending. Cited to [P connect]. Untested on macOS: the pending state was never observed (§6) | **approved** |
 | D14 | The R1-live statement (§6), with hypotheses [F1] (weak), [F2], S1, S2, D(c) and [F3]. [F3] (fds free up infinitely often) is an explicit hypothesis of the connection half of the theorem | **approved** |
 | D15 | R1-live gains S3 (the server reads what it is shown) and S4 (if the peer drains, the outbox eventually falls to ≤ hw) as per-server obligations, not trusted. They are discharged per server: echo, HTTP and KV from their v2 liveness and reply-only writes; chat via D7 | **approved** |
+| D16 | Spurious hard errors (the L0 model allows any error but EAGAIN as a transient failure, [P 2.3]): (live-data) holds **unless L1 observed a hard error on c**, in which case the episode ended (`Eof2 j`). No new trust. Plus a corollary with the condition as an explicit **hypothesis**: if hard errors on c occur only when the connection really broke, every byte c's peer delivered is eventually in `psk` | **approved** |
 
 §4.1 (the refused/error encoding) is approved with D1/D3, and close-v2
 implements it in the endpoint world.

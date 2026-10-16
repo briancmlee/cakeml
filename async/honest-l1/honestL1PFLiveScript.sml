@@ -357,3 +357,76 @@ Proof
   ‘winv (rworld lfd hw ifds m w0 (n + d))’ by simp[] >>
   drule_all pround_f >> strip_tac >> gvs[ADD_CLAUSES]
 QED
+
+(* If nothing is ever fetched on f from round n on (f open, no EOF in L1,
+   input pending), then from some round N on: every round polls f, a poll
+   on f that is not retried leads to a recv on f in the same round, and
+   every recv on f is retried *)
+Theorem late_rounds:
+  run_ok lfd hw ifds m w0 ∧ winv w0 ∧ MEM lfd (l0_used w0) ∧
+  (∀n. SND (pcm lfd hw ifds m w0 n) + 1 < dimword (:64)) ∧
+  S1 lfd hw ifds m w0 ∧ S3 lfd hw ifds m w0 ∧ S4 lfd hw ifds m w0 f ∧
+  ALOOKUP (rstate lfd hw ifds m w0 n).b.tbl h = SOME f ∧
+  ¬MEM f (rstate lfd hw ifds m w0 n).eof ∧ pend (rworld lfd hw ifds m w0 n) f ∧
+  (∀k. n ≤ k ⇒ ¬fetched_at lfd hw ifds m w0 k f) ⇒
+  ∃N. n ≤ N ∧
+      ∀k. N ≤ k ⇒
+          EXISTS (ev_on «sys_poll» f) (rrev lfd hw ifds m w0 k) ∧
+          (∀ev. MEM ev (rrev lfd hw ifds m w0 k) ∧ ev_on «sys_poll» f ev ∧ ¬retried ev ⇒
+                EXISTS (ev_on «sys_recv» f) (rrev lfd hw ifds m w0 k)) ∧
+          (∀ev. MEM ev (rrev lfd hw ifds m w0 k) ∧ ev_on «sys_recv» f ev ⇒ retried ev)
+Proof
+  strip_tac >>
+  ‘fds_lt w0’ by gvs[winv_def] >>
+  drule_all fkeep_run >> strip_tac >>
+  drule_all winv_run >> strip_tac >>
+  drule keep_run >> disch_then drule >> strip_tac >>
+  ‘∀d. pend (rworld lfd hw ifds m w0 (n + d)) f ∧
+       fkeep lfd h f (rstate lfd hw ifds m w0 (n + d))’
+    by (gen_tac >> first_assum (qspecl_then [‘h’, ‘f’, ‘d’, ‘n’] mp_tac) >> simp[]) >>
+  (* S4 from n, then S3 from there *)
+  qpat_x_assum ‘S4 _ _ _ _ _ _’ (mp_tac o REWRITE_RULE [S4_def]) >>
+  disch_then (qspec_then ‘n’ strip_assume_tac) >> rename1 ‘n ≤ n1’ >>
+  qpat_assum ‘S3 _ _ _ _ _’ (mp_tac o REWRITE_RULE [S3_def]) >>
+  disch_then (qspecl_then [‘n1’, ‘f’] strip_assume_tac) >> rename1 ‘n1 ≤ N’ >>
+  qexists_tac ‘N’ >> simp[] >> gen_tac >> strip_tac >>
+  (* round k *)
+  ‘∃d. k = n + d’ by (qexists_tac ‘k - n’ >> simp[]) >>
+  ‘∃e. k = N + e’ by (qexists_tac ‘k - N’ >> simp[]) >>
+  ‘inb_of (rstate lfd hw ifds m w0 k) f = []’
+    by (‘∃d'. N = n + d'’ by (qexists_tac ‘N - n’ >> simp[]) >>
+        qpat_assum ‘∀h f d n. _’ (qspecl_then [‘h’, ‘f’, ‘e’, ‘N’] mp_tac) >> impl_tac
+        >- (rpt conj_tac
+            >- (qpat_assum ‘∀d. pend _ _ ∧ _’ (qspec_then ‘d'’ mp_tac) >> fs[])
+            >- (qpat_assum ‘∀d. pend _ _ ∧ _’ (qspec_then ‘d'’ mp_tac) >> fs[])
+            >> rpt strip_tac >> qpat_assum ‘∀k. n ≤ k ⇒ _’ (qspec_then ‘k'’ mp_tac) >>
+            fs[]) >>
+        simp[]) >>
+  ‘pend (rworld lfd hw ifds m w0 k) f ∧ fkeep lfd h f (rstate lfd hw ifds m w0 k)’
+    by (qpat_assum ‘∀d. pend _ _ ∧ _’ (qspec_then ‘d’ mp_tac) >> fs[]) >>
+  ‘ALOOKUP (rstate lfd hw ifds m w0 k).b.tbl h = SOME f’
+    by (qpat_assum ‘fkeep _ _ _ (rstate _ _ _ _ _ k)’
+          (strip_assume_tac o REWRITE_RULE [fkeep_def]) >> first_assum ACCEPT_TAC) >>
+  ‘LENGTH (outbox_of (rstate lfd hw ifds m w0 k).b f) ≤ hw ∧
+   ∀bs. ¬MEM (Write h bs) (new_actions (log_of m) (rhist lfd hw ifds m w0 k))’
+    by (qpat_assum ‘∀n''. n1 ≤ n'' ∧ _ ⇒ _’ (qspec_then ‘k’ mp_tac) >> impl_tac
+        >- (simp[] >> rpt strip_tac >>
+            qpat_assum ‘∀k. n ≤ k ⇒ _’ (qspec_then ‘k'’ mp_tac) >> fs[fetched_at_def]) >>
+        strip_tac >> conj_tac >- simp[] >> gen_tac >> first_x_assum irule >> simp[]) >>
+  ‘MEM h (ifds (rhist lfd hw ifds m w0 k))’
+    by (qpat_assum ‘S1 _ _ _ _ _’ (mp_tac o REWRITE_RULE [S1_def]) >>
+        disch_then drule >> simp[]) >>
+  ‘¬fetched_at lfd hw ifds m w0 k f’
+    by (qpat_assum ‘∀k. n ≤ k ⇒ _’ (qspec_then ‘k’ mp_tac) >> simp[]) >>
+  drule prun_round' >> disch_then (qspecl_then [‘f’, ‘k’] strip_assume_tac) >>
+  ‘winv (rworld lfd hw ifds m w0 k)’ by simp[] >>
+  drule_all pround_f >> strip_tac >>
+  qpat_x_assum ‘inb_of _ _ = [] ∧ _ ⇒ _’ mp_tac >> impl_tac >- simp[] >> strip_tac >>
+  ‘N + e = k’ by simp[] >> pop_assum SUBST_ALL_TAC >>
+  rpt conj_tac
+  >- first_assum ACCEPT_TAC
+  >- (rpt strip_tac >> first_x_assum irule >> metis_tac[])
+  >> rpt strip_tac >> CCONTR_TAC >>
+  qpat_x_assum ‘∀ev. MEM ev _ ∧ ev_on «sys_recv» _ ev ∧ ¬retried ev ⇒ _’ drule_all >>
+  gvs[]
+QED

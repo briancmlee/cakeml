@@ -20,6 +20,9 @@
   schedule is accepted within A more polls per connection still waiting
   (see T2 below).  A line read in the same round, before the accept, is
   still not owed to it: a one-round granularity no server can avoid.
+  Joined = accepted by the server, as in IRC; lines sent before a client
+  is accepted are not owed; accept delay is bounded by chat_accept_prompt
+  (user decision: no accept-draining server change).
 
   C-EOF.  A client whose end-of-stream the server has read stays owed
   every later line forever, so a correct server that stops serving

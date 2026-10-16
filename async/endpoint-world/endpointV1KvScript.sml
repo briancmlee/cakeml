@@ -34,21 +34,21 @@ Proof
 QED
 
 Theorem v1_run_trace_kv[local]:
-  v1_run_ok lfd a sk prog io ∧ LPREFIX (fromList evs) io ⇒
+  v1_tr lfd ll0 s1 s2 prog io ∧ LPREFIX (fromList evs) io ⇒
   EVERY v1_event evs ∧
   (∀pre ev post c. evs = pre ++ ev :: post ∧
                    (event_written c ev ≠ [] ∨ event_read c ev ≠ []) ⇒
                    MEM c (opened_fds pre)) ∧
   ALL_DISTINCT (opened_fds evs) ∧ LENGTH (opened_fds evs) ≤ dimword (:64)
 Proof
-  rw[v1_run_ok_def] >> drule_all v1_trace >> strip_tac >>
+  rw[v1_tr_def] >> drule_all v1_trace >> strip_tac >>
   gvs[ALL_DISTINCT_TAKE, LENGTH_TAKE]
 QED
 
 (* MAIN: at every prefix, the j-th opened fd's bytes are fd n2w j's in the
    renamed prefix *)
 Theorem kv_bytes_prefix:
-  v1_run_ok lfd a sk prog io ∧ LPREFIX (fromList evs) io ∧ evs1 ≼ evs ∧
+  v1_tr lfd ll0 s1 s2 prog io ∧ LPREFIX (fromList evs) io ∧ evs1 ≼ evs ∧
   j < LENGTH (opened_fds evs) ⇒
   bytes_written_to (n2w j) (ren_evs 0 [] evs1) = bytes_written_to (EL j (opened_fds evs)) evs1 ∧
   bytes_read_from (n2w j) (ren_evs 0 [] evs1) = bytes_read_from (EL j (opened_fds evs)) evs1
@@ -89,8 +89,8 @@ Proof
 QED
 
 (* The same, for any fd of an episode *)
-Theorem kv_bytes_fd[local]:
-  v1_run_ok lfd a sk prog io ∧ LPREFIX (fromList evs) io ∧ evs1 ≼ evs ∧
+Theorem kv_bytes_fd:
+  v1_tr lfd ll0 s1 s2 prog io ∧ LPREFIX (fromList evs) io ∧ evs1 ≼ evs ∧
   w2n d < LENGTH (opened_fds evs) ⇒
   bytes_written_to d (ren_evs 0 [] evs1) = bytes_written_to (EL (w2n d) (opened_fds evs)) evs1 ∧
   bytes_read_from d (ren_evs 0 [] evs1) = bytes_read_from (EL (w2n d) (opened_fds evs)) evs1
@@ -100,7 +100,7 @@ QED
 
 (* Other fds have no bytes in the renamed trace *)
 Theorem kv_ren_none:
-  v1_run_ok lfd a sk prog io ∧ LPREFIX (fromList evs) io ∧
+  v1_tr lfd ll0 s1 s2 prog io ∧ LPREFIX (fromList evs) io ∧
   LENGTH (opened_fds evs) ≤ w2n d ⇒
   bytes_written_to d (ren_evs 0 [] evs) = [] ∧ bytes_read_from d (ren_evs 0 [] evs) = []
 Proof
@@ -118,7 +118,7 @@ QED
    ------------------------------------------------------------------------ *)
 
 (* The replies, with an order renamed injectively on its connections *)
-Theorem replies_rename[local]:
+Theorem replies_rename:
   (∀x. MEM x order' ⇒ rss (g (FST x)) = rss' (FST x)) ∧
   (∀x. MEM x order' ⇒ (g (FST x) = g d ⇔ FST x = d)) ⇒
   replies rss (MAP (λ(d, i). (g d, i)) order') (g d) = replies rss' order' d
@@ -138,7 +138,7 @@ Proof
   qpat_x_assum ‘∀x. MEM x order' ⇒ (g _ = g d ⇔ _)’ drule >> simp[]
 QED
 
-Theorem no_full_brequest_nil[local]:
+Theorem no_full_brequest_nil:
   no_full_brequest []
 Proof
   rw[no_full_brequest_def] >> strip_tac >> fs[brequests_nil]
@@ -157,6 +157,7 @@ Theorem kv_safe_of_ren:
     ∀c. bytes_written_to c evs ≼ reply_bytes (replies rss order c)
 Proof
   strip_tac >>
+  ‘v1_tr lfd sk.sched sk (v2of1 lfd sk) prog io’ by metis_tac[v1_run_ok_tr] >>
   drule_all v1_run_trace_kv >> strip_tac >>
   ‘∀c. ¬MEM c (opened_fds evs) ⇒ bytes_written_to c evs = [] ∧ bytes_read_from c evs = []’
     by metis_tac[v1_bytes] >>
@@ -247,8 +248,7 @@ Proof
            bytes_written_to d (ren_evs 0 [] evs1) = bytes_written_to (g d) evs1 ∧
            bytes_read_from d (ren_evs 0 [] evs1) = bytes_read_from (g d) evs1’
         by (rpt gen_tac >> strip_tac >> simp[Abbr ‘g’, Abbr ‘os’] >>
-            irule kv_bytes_fd >> simp[] >>
-            qexistsl_tac [‘a’, ‘io’, ‘lfd’, ‘prog’, ‘sk’] >> simp[]) >>
+            irule kv_bytes_fd >> simp[] >> metis_tac[]) >>
       ‘replies rss (MAP (λ(d,i). (g d,i)) order') (g da) = replies rss' order' da’
         by (first_assum (mp_tac o SPEC “w2n (da : word64)”) >>
             impl_tac >- fs[] >>

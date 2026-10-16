@@ -114,7 +114,7 @@ Proof
   simp[ep_ffi_def]
 QED
 
-Theorem MEM_v1_v2[local]:
+Theorem MEM_v1_v2:
   MEM m v1_calls ⇒ MEM m v2_calls
 Proof
   simp[v2_calls_def]
@@ -205,7 +205,7 @@ Proof
   gvs[]
 QED
 
-Theorem ep_step_ok_calls[local]:
+Theorem ep_step_ok_calls:
   ∀as w. ep_step_ok (w with calls := c) as = ep_step_ok w as
 Proof
   Induct >> simp[ep_step_ok_def, ep_deliver_calls] >> Cases >>
@@ -237,7 +237,7 @@ QED
 
 (* endpointInstances' sched_connects_le counts the connects of the first n
    steps, as sched_conns lists them *)
-Theorem sched_conns_count[local]:
+Theorem sched_conns_count:
   ∀n ll. LENGTH (sched_conns n ll) =
          LENGTH (FILTER (λa. ∃l c. a = Connect l c) (arrivals_upto n ll))
 Proof
@@ -247,7 +247,7 @@ Proof
   CASE_TAC >> simp[FILTER_APPEND]
 QED
 
-Theorem sched_connects_le_conns[local]:
+Theorem sched_connects_le_conns:
   sched_connects_le M ll ⇔ ∀m. LENGTH (sched_conns m ll) ≤ M
 Proof
   simp[sched_connects_le_def, sched_conns_count]

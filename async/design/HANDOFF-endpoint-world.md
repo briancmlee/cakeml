@@ -57,3 +57,16 @@ Write-up and decisions for review: `35-endpoint-world.md`.
 - `semantics_prog_def`: use `semanticsTheory.semantics_prog_def`.
 - LUPDATE lemmas: state them first-order (`LUPDATE c j l`), since higher-order
   `irule` patterns fail.
+
+## close-v2 status (2026-10-16, before the machine move)
+- PROVED + approved: v1_instance_disc_thm / v1_instance_disc_holds (PR #135, spike/v1-disc);
+  Settle-as-arrival (PR #141, spike/ep-settle, merged into v1-disc → echo-sym-disc → v1-conv).
+- PROVED: the ⇐ directions of the disciplined sym_equiv for echo, http_b, kv
+  (PR #136, spike/echo-sym-disc: endpointV1Disc/Echo/Http/Kv).
+- PROVED: the echo ⇒ direction, endpointV1EchoConv.endpoint_of_echo_spec_le and
+  echo_sym_equiv_disc_thm (spike/v1-conv), with nonsat1 (user decision 2026-10-16, design/35).
+- PROVED: the HTTP-b and KV ⇒ directions, endpointV1HttpConv / endpointV1KvConv
+  (http_sym_equiv_disc_thm, kv_sym_equiv_disc_thm), spike/v1-conv. Whole endpoint-world
+  Holmake green. Notes: async/endpoint-world/NOTES-v1conv.md.
+- KV v2: kv_prog2_spec proved (spike/kv-v2, PR #131).
+- Low priority: HttpKvSpec2Bite R1/R2 from the spec review (~/.cache/spec-review-2/kv2/REPORT.md).

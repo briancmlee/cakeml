@@ -71,6 +71,22 @@ Proof
   fs[step_conns_def] >> metis_tac[FST, APPEND_ASSOC]
 QED
 
+Theorem step_conns_cons:
+  step_conns (Connect l c :: as) = c :: step_conns as ∧
+  step_conns (Data c bs :: as) = step_conns as ∧
+  step_conns (Eof c :: as) = step_conns as
+Proof
+  simp[step_conns_def]
+QED
+
+Theorem rn1_step_cons:
+  rn1_step cs (a :: as) =
+    (FST (rn1_step (FST (rn1_arr cs a)) as),
+     SND (rn1_arr cs a) :: SND (rn1_step (FST (rn1_arr cs a)) as))
+Proof
+  simp[rn1_step_def] >> rpt (pairarg_tac >> gvs[])
+QED
+
 (* The connections of the first n steps of a schedule *)
 Definition sched_conns_def:
   sched_conns 0 ll = [] ∧
@@ -125,7 +141,7 @@ Definition v12core_def:
          ∃cn. ALOOKUP s1.conns (EL j cs) = SOME cn ∧
               cn.incoming = (EL j s2.clients).incoming ∧
               cn.peer_closed = (EL j s2.clients).peer_closed) ∧
-    s2.open_fds = REVERSE (GENLIST (λj. (EL j cs, j)) k) ∧ s2.reserved = []
+    s2.open_fds = REVERSE (GENLIST (λj. (EL j cs, j)) k)
 End
 
 Theorem ALOOKUP_conns_MEM[local]:
@@ -201,7 +217,8 @@ Proof
 QED
 
 Theorem FOLDL_deliver2_fields[local]:
-  ∀st s. (FOLDL deliver2 s st).future = s.future ∧ (FOLDL deliver2 s st).alloc = s.alloc
+  ∀st s. (FOLDL deliver2 s st).future = s.future ∧ (FOLDL deliver2 s st).alloc = s.alloc ∧
+         (FOLDL deliver2 s st).reserved = s.reserved
 Proof
   Induct >> simp[] >> rpt gen_tac >> Cases_on ‘h’ >>
   rw[deliver2_def, update_client_def]
@@ -229,16 +246,26 @@ Proof
   first_x_assum drule_all >> simp[]
 QED
 
+(* The fds in use when client j is accepted, in a disciplined run without
+   close: the process's other fds, the listener, and the earlier clients'
+   fds, newest first *)
+Definition exp_used_def:
+  exp_used res lfd cs j = res ++ [lfd] ++ REVERSE (TAKE j cs)
+End
+
 (* The relation, with the schedules: version 2's future is version 1's
-   schedule renamed, and the allocation knows every connection's fd *)
+   schedule renamed, and the allocation gives each client the fd of its
+   connect (whatever the allocation policy and the other fds) *)
 Definition v12rel_def:
   v12rel lfd ll0 (s1 : sockets) (s2 : sockets2) ⇔
-    ∃cs k. v12core lfd cs k s1 s2 ∧
-           s2.future = rn1_sched cs s1.sched ∧ s2.alloc = alloc1 ll0 ∧
+    ∃cs k. v12core lfd cs k s1 s2 ∧ s2.future = rn1_sched cs s1.sched ∧
            (∀m j. j < LENGTH (cs ++ sched_conns m s1.sched) ⇒
                   conn_fd ll0 j = EL j (cs ++ sched_conns m s1.sched)) ∧
-           (* non-saturation: fewer than 2^64 - 3 connections, ever *)
-           ∀m. LENGTH (cs ++ sched_conns m s1.sched) + 3 < dimword (:64)
+           (∀m j. j < LENGTH (cs ++ sched_conns m s1.sched) ⇒
+                  s2.alloc j (exp_used s2.reserved lfd (cs ++ sched_conns m s1.sched) j) =
+                  EL j (cs ++ sched_conns m s1.sched)) ∧
+           (* non-saturation: fewer than 2^64 - 3 fds in use, ever *)
+           ∀m. LENGTH s2.reserved + LENGTH (cs ++ sched_conns m s1.sched) + 3 < dimword (:64)
 End
 
 (* MAIN: a tick of effective arrivals keeps the relation *)
@@ -259,9 +286,12 @@ Proof
     by fs[next_step_def, step_ok_with_sched] >>
   conj_tac
   >- (irule v12core_step >> simp[]) >>
-  rw[rn1_step_conns]
-  >- (first_x_assum (qspecl_then [‘SUC m’, ‘j’] mp_tac) >> simp[sched_conns_def])
-  >> first_x_assum (qspec_then ‘SUC m’ mp_tac) >> simp[sched_conns_def]
+  rw[rn1_step_conns] >>
+  TRY (qpat_x_assum ‘∀m j. _ ⇒ conn_fd _ _ = _’ (qspecl_then [‘SUC m’, ‘j’] mp_tac) >>
+       simp[sched_conns_def] >> NO_TAC) >>
+  TRY (qpat_x_assum ‘∀m j. _ ⇒ s2.alloc _ _ = _’ (qspecl_then [‘SUC m’, ‘j’] mp_tac) >>
+       simp[sched_conns_def] >> NO_TAC) >>
+  qpat_x_assum ‘∀m. LENGTH cs + _ < _’ (qspec_then ‘SUC m’ mp_tac) >> simp[sched_conns_def]
 QED
 
 (* ------------------------------------------------------------------------
@@ -333,7 +363,7 @@ Proof
   ‘s1.listeners = [(lfd, DROP k cs)] ∧
    s2.listening = [(lfd, GENLIST (λi. k + i) (LENGTH cs − k))] ∧
    k ≤ LENGTH cs ∧ ALL_DISTINCT cs ∧ ¬MEM lfd cs ∧
-   s2.open_fds = REVERSE (GENLIST (λj. (EL j cs, j)) k) ∧ s2.reserved = []’
+   s2.open_fds = REVERSE (GENLIST (λj. (EL j cs, j)) k)’
     by fs[v12core_def] >>
   reverse (Cases_on ‘l = lfd’)
   >- simp[sock_accept_def, sock_accept2_def] >>
@@ -349,21 +379,20 @@ Proof
     by (‘LENGTH cs − k = SUC (LENGTH cs − (k + 1))’ by decide_tac >>
         pop_assum (fn th => REWRITE_TAC[th, GENLIST_CONS]) >>
         simp[combinTheory.o_DEF] >> simp[GENLIST_FUN_EQ]) >>
-  ‘LENGTH (used_fds s2) = k + 1’
-    by (rewrite_tac[used_fds_def] >> asm_rewrite_tac[] >> simp[]) >>
-  ‘LENGTH cs + 3 < dimword (:64)’
+  ‘used_fds s2 = exp_used s2.reserved lfd cs k’
+    by (simp[used_fds_def, exp_used_def, MAP_REVERSE, MAP_GENLIST, combinTheory.o_DEF] >>
+        simp[LIST_EQ_REWRITE, EL_TAKE]) >>
+  ‘LENGTH (used_fds s2) = LENGTH s2.reserved + k + 1’
+    by simp[exp_used_def, LENGTH_TAKE] >>
+  ‘LENGTH s2.reserved + LENGTH cs + 3 < dimword (:64)’
     by (qpat_x_assum ‘∀m. LENGTH cs + _ < _’ (qspec_then ‘0’ mp_tac) >> simp[]) >>
-  ‘conn_fd ll0 k = EL k cs’
-    by (qpat_x_assum ‘∀m j. _ ⇒ conn_fd _ _ = _’ (qspecl_then [‘0’, ‘k’] mp_tac) >>
+  ‘s2.alloc k (used_fds s2) = EL k cs’
+    by (qpat_x_assum ‘∀m j. _ ⇒ s2.alloc _ _ = _’ (qspecl_then [‘0’, ‘k’] mp_tac) >>
         simp[]) >>
-  ‘¬MEM (EL k cs) (used_fds s2)’
-    by (simp[used_fds_def, MEM_MAP, MEM_GENLIST, PULL_EXISTS] >> rw[]
-        >- metis_tac[MEM_EL]
-        >> strip_tac >> ‘j < LENGTH cs’ by decide_tac >>
-        ‘k = j’ by metis_tac[ALL_DISTINCT_EL_IMP] >> decide_tac) >>
-  simp[sock_accept_def, sock_accept2_def, AFUPDKEY_def, alloc1_def] >>
+  ‘s2.alloc k (exp_used s2.reserved lfd cs k) = EL k cs’ by metis_tac[] >>
+  simp[sock_accept_def, sock_accept2_def, AFUPDKEY_def] >>
   rw[] >>
-  TRY (qpat_x_assum ‘¬(k + 1 < _)’ mp_tac >> fs[] >> NO_TAC) >>
+  TRY (fs[] >> NO_TAC) >>
   qexistsl_tac [‘cs’, ‘k + 1’] >> fs[v12core_def] >>
   simp[GSYM ADD1, GENLIST, REVERSE_SNOC]
 QED
@@ -542,22 +571,67 @@ Proof
   metis_tac[IS_PREFIX_LENGTH, is_prefix_el]
 QED
 
-(* MAIN: a version-1 server world and its version-2 world are related *)
-Theorem v12rel_init:
-  sk.listeners = [(lfd, [])] ∧ sk.conns = [] ∧
-  (∀m. LENGTH (sched_conns m sk.sched) + 3 < dimword (:64)) ⇒
-  v12rel lfd sk.sched sk (v2of1 lfd sk)
+(* The fd of the j-th connect is the j-th connection of any long enough
+   prefix of the schedule *)
+Theorem conn_fd_sched:
+  j < LENGTH (sched_conns m ll) ⇒ conn_fd ll j = EL j (sched_conns m ll)
 Proof
-  rw[v12rel_def, v2of1_def] >> qexistsl_tac [‘[]’, ‘0’] >>
-  simp[v12core_def] >> rw[conn_fd_def]
+  rw[conn_fd_def]
   >- (numLib.LEAST_ELIM_TAC >> conj_tac >- metis_tac[] >>
       rw[] >> metis_tac[sched_conns_EL])
   >> metis_tac[]
 QED
 
+(* Left alone, a fair world's connections stay distinct and are never the
+   listener *)
+Theorem core_conns_distinct:
+  ∀n cs k s1 s2. v12core lfd cs k s1 s2 ∧ sched_wf s1 ⇒
+                 ALL_DISTINCT (cs ++ sched_conns n s1.sched) ∧
+                 ¬MEM lfd (cs ++ sched_conns n s1.sched)
+Proof
+  Induct >- (simp[sched_conns_def] >> rw[v12core_def]) >>
+  rpt gen_tac >> strip_tac >> simp[sched_conns_def] >>
+  Cases_on ‘LHD s1.sched’ >> simp[] >- fs[v12core_def] >>
+  rename1 ‘LHD s1.sched = SOME st’ >>
+  ‘step_ok (s1 with sched := THE (LTL s1.sched)) st’
+    by (fs[sched_wf_def] >> first_x_assum (qspec_then ‘0’ mp_tac) >>
+        simp[ticks_def, next_step_def, step_ok_with_sched]) >>
+  ‘v12core lfd cs k (s1 with sched := THE (LTL s1.sched)) s2’ by fs[v12core_def] >>
+  drule_all v12core_step >> simp[rn1_step_conns] >> strip_tac >>
+  ‘sched_wf (FOLDL deliver1 (s1 with sched := THE (LTL s1.sched)) st)’
+    by (‘FOLDL deliver1 (s1 with sched := THE (LTL s1.sched)) st = tick s1’
+          by simp[tick_def, deliver_def] >>
+        metis_tac[sched_wf_tick]) >>
+  qpat_x_assum ‘∀cs k s1 s2. _’ drule_all >> simp[FOLDL_deliver1_sched]
+QED
+
+(* MAIN: a version-1 server world and its version-2 world are related *)
+Theorem v12rel_init:
+  sk.listeners = [(lfd, [])] ∧ sk.conns = [] ∧ sched_wf sk ∧
+  (∀m. LENGTH (sched_conns m sk.sched) + 3 < dimword (:64)) ⇒
+  v12rel lfd sk.sched sk (v2of1 lfd sk)
+Proof
+  strip_tac >>
+  ‘v12core lfd [] 0 sk (v2of1 lfd sk)’ by simp[v12core_def, v2of1_def] >>
+  ‘∀m. ALL_DISTINCT (sched_conns m sk.sched) ∧ ¬MEM lfd (sched_conns m sk.sched)’
+    by metis_tac[core_conns_distinct, APPEND] >>
+  ‘∀m j. j < LENGTH (sched_conns m sk.sched) ⇒
+         conn_fd sk.sched j = EL j (sched_conns m sk.sched)’ by metis_tac[conn_fd_sched] >>
+  simp[v12rel_def] >> qexistsl_tac [‘[]’, ‘0’] >> simp[] >>
+  simp[v2of1_def] >> reverse conj_tac >- fs[] >> rpt strip_tac >>
+  qabbrev_tac ‘cl = sched_conns m sk.sched’ >>
+  ‘conn_fd sk.sched j = EL j cl’ by fs[Abbr ‘cl’] >>
+  ‘ALL_DISTINCT cl ∧ ¬MEM lfd cl’ by simp[Abbr ‘cl’] >>
+  ‘MEM (EL j cl) (DROP j cl)’ by (simp[MEM_EL] >> qexists_tac ‘0’ >> simp[EL_DROP]) >>
+  ‘ALL_DISTINCT (TAKE j cl ++ DROP j cl)’ by simp[TAKE_DROP] >>
+  ‘¬MEM (EL j cl) (TAKE j cl)’ by (fs[ALL_DISTINCT_APPEND] >> metis_tac[]) >>
+  ‘EL j cl ≠ lfd’ by metis_tac[MEM_EL] >>
+  simp[alloc1_def, exp_used_def]
+QED
+
 Theorem v12core_arrival_ok2[local]:
   v12core lfd cs k s1 s2 ∧ arrival_ok s1 a ∧
-  LENGTH (FST (rn1_arr cs a)) + 3 < dimword (:64) ⇒
+  LENGTH s2.reserved + LENGTH (FST (rn1_arr cs a)) + 3 < dimword (:64) ⇒
   arrival_ok2 s2 (SND (rn1_arr cs a))
 Proof
   Cases_on ‘a’ >> simp[rn1_arr_def, arrival_ok_def, arrival_ok2_def] >> strip_tac
@@ -576,14 +650,20 @@ Proof
   Cases_on ‘a’ >> simp[rn1_arr_def, step_conns_def]
 QED
 
+Theorem deliver2_reserved[local]:
+  (deliver2 s b).reserved = s.reserved
+Proof
+  Cases_on ‘b’ >> rw[deliver2_def, update_client_def]
+QED
+
 Theorem v12core_step_ok2[local]:
   ∀st cs s1 s2.
     v12core lfd cs k s1 s2 ∧ step_ok s1 st ∧
-    LENGTH (cs ++ step_conns st) + 3 < dimword (:64) ⇒
+    LENGTH s2.reserved + LENGTH (cs ++ step_conns st) + 3 < dimword (:64) ⇒
     step_ok2 s2 (SND (rn1_step cs st))
 Proof
   Induct >> simp[rn1_step_def, step_ok_def, step_ok2_def] >> rpt gen_tac >> strip_tac >>
-  ‘LENGTH (FST (rn1_arr cs h) ++ step_conns st) + 3 < dimword (:64)’
+  ‘LENGTH s2.reserved + LENGTH (FST (rn1_arr cs h) ++ step_conns st) + 3 < dimword (:64)’
     by (simp_tac std_ss [rn1_arr_conns] >> fs[]) >>
   Cases_on ‘rn1_arr cs h’ >> rename1 ‘rn1_arr cs h = (cs1, b)’ >>
   Cases_on ‘rn1_step cs1 st’ >> simp[step_ok2_def] >> fs[] >>
@@ -591,7 +671,8 @@ Proof
   >- (‘b = SND (rn1_arr cs h)’ by simp[] >> pop_assum SUBST1_TAC >>
       irule v12core_arrival_ok2 >> simp[] >> metis_tac[]) >>
   drule_all v12core_deliver >> simp[] >> strip_tac >>
-  first_x_assum drule_all >> simp[]
+  qpat_x_assum ‘∀cs' s1' s2'. _’ (qspecl_then [‘cs1’, ‘deliver1 s1 h’, ‘deliver2 s2 b’] mp_tac) >>
+  simp[deliver2_reserved]
 QED
 
 (* MAIN: the related version-2 world is fair *)

@@ -26,7 +26,15 @@ is changed.
 | `endpointTraceScript.sml` | (proved) prefixes and events of diverging runs; the endpoint views are EchoSpec2's on traces without connects or sends |
 | `endpointEcho2Script.sml` | (proved) `echo_spec2_of_endpoint` |
 | `endpointV2PrefixScript.sml` | (proved) version-2 worlds that agree on a schedule prefix answer alike |
-| `endpointEcho2ConvScript.sml` | (proved) `endpoint_of_echo_spec2`, `echo2_sym_equiv_thm` |
+| `endpointEcho2ConvScript.sml` | (proved) `endpoint_of_echo_spec2`, `echo2_sym_equiv_thm`; `endpoint_of_live2` for the class of programs making only the calls Q |
+| `endpointV1ConvScript.sml` | (proved) `v1of2_props`: the bounded version-1 world of a version-2 world |
+| `endpointV2HideScript.sml` | (proved) `hide_diverge`: a never-accepted client's data is unobservable (version 2) |
+| `endpointV2AcceptScript.sml` | (proved) `accept_all`: a program answering each client that sends a request accepts each client |
+| `endpointV1ConvRunScript.sml` | (proved) `endpoint_of_v1_live`: the shared ⇒ argument; `nonsat1` |
+| `endpointV1ReqConvScript.sml` | (proved) `req_acc_live`: the ⇒ argument for request/response liveness (HTTP, KV) |
+| `endpointV1EchoConvScript.sml` | (proved) `endpoint_of_echo_spec_le`, `echo_sym_equiv_disc_thm` |
+| `endpointV1HttpConvScript.sml` | (proved) `endpoint_of_http_spec_le`, `http_sym_equiv_disc_thm` |
+| `endpointV1KvConvScript.sml` | (proved) `endpoint_of_kv_spec_le`, `kv_sym_equiv_disc_thm` (`kv_sym_safe`: linearizability carried to the renamed trace) |
 | `endpointOpenScript.sml` | drafts for the next round (§7): `rg_spec_term`, n-ary open systems, buffer closure |
 | `endpointClientsScript.sml` | a toy HTTP client spec; a proxy spec (two roles, half-close) |
 | `endpointComposeScript.sml` | joint runs of two programs, wired; the projection and composition claims |
@@ -236,6 +244,37 @@ rule.
   version-2 and endpoint worlds run out of fds (`arrival_ok2`'s bound)
   where version 1 never does. It is stated as a one-line hypothesis of
   `v1_instance_disc` (`sched_connects_le`), with a comment.
+
+  **The disciplined equivalences** (approved shape 2026-10-16). For a
+  `v1_disciplined` program, with C1 w := `ep_server_world v1_calls lfd a w ∧
+  no_backpressure w ∧ open_loop w`:
+  - ⇐ (`endpointV1Echo/Http/Kv`, proved): `rg_spec C1 G prog` gives the
+    version-1 spec over worlds connecting at most M clients (M + 3 < 2^64).
+  - ⇒ (proved for all three: `endpointV1EchoConv`, `endpointV1HttpConv`,
+    `endpointV1KvConv`): the bounded version-1 spec gives
+    `rg_spec (C1 ∧ nonsat1 lfd a) G prog`. `echo_sym_equiv_disc_thm`,
+    `http_sym_equiv_disc_thm` and `kv_sym_equiv_disc_thm` state both
+    directions.
+  - How ⇒ goes (`endpointV1ConvRun.endpoint_of_v1_live`): the endpoint
+    world's version-2 world sk0 (`v2of`), its bounded version-1 world
+    (`v1of2`), the spec's run there, which is the program's run in sk0 and
+    in the endpoint world. Liveness needs each client that sends something
+    to be accepted eventually (`acc_live`). For echo that is immediate. For
+    HTTP and KV, a client may send only part of a request:
+    `endpointV2Accept.accept_all` shows it is accepted anyway. Give the
+    client a full request right after its connect (`addreq`). A run that
+    never accepts it cannot tell the difference (`endpointV2Hide`), yet in
+    that world the spec makes the program answer, and so accept it.
+  - **[DECIDED 2026-10-16 by the user: `nonsat1`]** The ⇒ directions assume
+    `nonsat1 lfd a w`: the world connects at most M clients with
+    LENGTH w.reserved + M + 4 < 2^64, one more free fd than `nonsat`. The ⇐
+    directions are unchanged. Reason: with plain `nonsat`, ⇒ is false at
+    reserved = [], M = 2^64 − 4. A program that serves echo, but stops
+    polling once it has accepted 2^64 − 4 clients and seen all their EOFs,
+    meets the bounded version-1 spec (no version-1 world it is checked
+    against has more clients). In that endpoint world `nonsat` holds, but
+    the program stops polling, so `ticks_forever` fails. The proof that a
+    program keeps polling adds one more client, so it needs one more fd.
 - **Review-driven fix: `ticks_forever`.** Liveness was vacuous for
   programs that never let time pass. A program that never polls receives
   nothing, so `sym_live` held trivially, while the schedule-based

@@ -78,6 +78,12 @@ Proof
   simp[]
 QED
 
+Theorem v1_run_ok_tr:
+  v1_run_ok lfd a sk prog io ⇒ v1_tr lfd sk.sched sk (v2of1 lfd sk) prog io
+Proof
+  rw[v1_run_ok_def, v1_tr_def] >> fs[v2of1_def]
+QED
+
 Theorem v1_run_trace[local]:
   v1_run_ok lfd a sk prog io ∧ LPREFIX (fromList evs) io ⇒
   EVERY v1_event evs ∧
@@ -153,7 +159,7 @@ Proof
     by (‘j < LENGTH (sched_conns n sk.sched)’ by simp[Abbr ‘j’, MEM_findi] >>
         ‘j < LENGTH cs’ by gvs[LENGTH_TAKE] >>
         ‘EL j (opened_fds evs) = EL j cs’ by gvs[EL_TAKE] >>
-        ‘conn_fd sk.sched j = EL j (sched_conns n sk.sched)’ by simp[conn_fd_EL] >>
+        ‘conn_fd sk.sched j = EL j (sched_conns n sk.sched)’ by simp[conn_fd_sched] >>
         ‘EL j (sched_conns n sk.sched) = c’ by simp[Abbr ‘j’, EL_findi] >>
         metis_tac[]) >>
   ‘ep_written j evs = bytes_written_to c evs’

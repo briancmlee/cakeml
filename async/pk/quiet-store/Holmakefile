@@ -1,0 +1,42 @@
+# Quiescence for stateful servers (design/37): with_store at Level 2
+# (asyncWithStore2); the library skeleton server_v's per-action facts
+# (asyncSVActs) and its query handler's (asyncProtoVActs); then the
+# stability lemma for with_store2 over server_v2.
+# (asyncWrapActs carries them through the store wrapper.)  Stability:
+# asyncStableGen (any server's actions stop), asyncStoreSafe (the store
+# server meets its conditions), asyncStoreReact (Level 2 reactions),
+# asyncStoreAcc (what it waits for), asyncStorePending (a pending query
+# acts), asyncStoreStable (store_stable, proto_stable's analogue).
+# R1's loop (design/37 §4.1): asyncOCBusy (lbgroundsB, qsel_sleepsB),
+# asyncStoreQuiet (store_sleeps).
+# asyncWithStore and asyncServerVKv are spike/kv-live's, placed here as is.
+INCLUDES = ../../model/core \
+           ../../model/level2 \
+           ../../model/sched \
+           ../../servers/echo \
+           ../../servers/closed-loop \
+           ../../servers/relabel \
+           ../../servers/http \
+           ../../servers/http-quiet \
+           ../../option-c-loop \
+           ../../spec \
+           ../../world/sockets \
+           ../../world/clock \
+           ../../world/composed \
+           ../../cakeml/library \
+           ../../loop/polling \
+           ../../programs/echo \
+           ../../programs/echo-live \
+           ../../programs/echo-blocking \
+           ../../loop/blocking \
+           ../../cakeml/approx \
+           ../../quiet/ffi \
+           ../../quiet/echo \
+           ../http-proto \
+           ../library-liveness \
+           ../option-c-proto \
+           $(CAKEMLDIR)/semantics \
+           ../proto-stable
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

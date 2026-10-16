@@ -341,7 +341,7 @@ Estimated, excluding comments:
 | recv | 5 |
 | send | 5 |
 | shutdown, close | 6 |
-| **total** | **≈ 100**, of which the error table is a quarter |
+| **total** | **≈ 100** estimated; **130 as written** (`socket_ffi_l0.c`, two error cases per line), of which the error table is a quarter |
 
 Today it is about 140 lines of code. More important than the count:
 
@@ -498,6 +498,29 @@ this; settled here):
 - **`«sock_write»` stays** in the endpoint world's call set as v1/v2's
   idealised full write, because the v1/v2 instance theorems use it. The
   honest C no longer provides it (§8 phase 1).
+
+### 4.2 Probe results (macOS 26 / Darwin 25.6, arm64; `runnable/l0/tester/probes-macos.txt`)
+
+The real C (`socket_ffi_l0.c`) was run against real loopback clients
+(`probes.py`). The findings correct §4 above in five places; the L0
+world (phase 3) follows the probes.
+
+| probe | observed | consequence for the model |
+|---|---|---|
+| P1 a client that never reads | ≈ 540 KB accepted, one partial send (15708 of 65536), then EAGAIN; poll shows no OUT while full; OUT again after the client reads | as §4 (`takes`) |
+| P2 a peer reset | poll IN\|HUP (**no ERR**); recv: ECONNRESET once, then EOF; send: EPIPE | ERR stays "only if" (Linux reports it; macOS doesn't) |
+| P3 a reset with unread data | the data first, then ECONNRESET, then EOF | the data is kept (the world may still discard it: Linux can) |
+| P4 a send after peer FIN, then RST | send OK; then **send EPIPE without clearing the pending error**; recv then ECONNRESET | **corrects §4:** send on a broken channel returns EPIPE *or* the pending error (world's choice), clearing it only in the second case |
+| P5 EMFILE | the pending connections are **dropped and their clients reset** (on Linux they stay queued); the listener stops being readable | **corrects §4:** on EMFILE the world chooses: keep queued, or drop with the peer reset |
+| P6 close with unread input | the client gets ECONNRESET and **loses the response**; with the input drained first, it gets it | L8 confirmed |
+| P7 arrivals between calls | data sent after an EAGAIN is returned by the next recv, with no poll in between | L6/D3 confirmed |
+| P8 a pending connection reset before accept | **accept returns the fd** (no ECONNABORTED); its first recv is ECONNRESET | both remain world choices (BSDs return ECONNABORTED) |
+| P9 HUP | **HUP on a peer FIN alone**; after our shutdown, send gives EPIPE | **corrects §4:** HUP may be shown once the peer has sent EOF |
+| P10 misc | NVAL for a closed fd; EBADF; send on a listener: ENOTCONN; accept on fd 0: ENOTSOCK; listen on a used port: EADDRINUSE at step 3, with the socket closed again | as §3 |
+
+Linux has not been probed: no Linux machine is available here. The model
+takes the union of the two platforms' documented behaviours. Running
+`make probes` on Linux is a to-do before the C is used for a release.
 
 ## 5. L1: the verified wrapper layer
 

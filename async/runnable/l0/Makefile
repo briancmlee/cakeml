@@ -22,3 +22,11 @@ conformance: probes
 
 clean:
 	rm -rf $(BUILD)
+
+# D20: a real CakeML byte array passes sys_poll's alignment check (the
+# pollfd entries at offset 16).  CAKE_DIR: a CakeML release (cake, basis_ffi.c).
+CAKE_DIR ?= $(HOME)/toolchains/cakeml-release/v3479/x64/cake-x64-64
+align: socket_ffi_l0.c tester/align/align.cml
+	$(CAKE_DIR)/cake < tester/align/align.cml > $(BUILD)/align.S
+	$(CC) -O2 $(BUILD)/align.S $(CAKE_DIR)/basis_ffi.c socket_ffi_l0.c -o $(BUILD)/align -lm
+	$(BUILD)/align

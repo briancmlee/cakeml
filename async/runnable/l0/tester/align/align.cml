@@ -1,0 +1,26 @@
+(* D20 conformance: sys_poll's pollfd entries start at offset 16 of a
+   CakeML byte array; socket_ffi_l0.c fails a poll with EINVAL (code 18) if
+   that address is not aligned for struct pollfd.  Allocate byte arrays of
+   every size 1..64 in between, so the heap position varies, and poll on
+   each: every poll must pass the check (code 0). *)
+fun check n =
+  let
+    val pad = Word8Array.array n (Word8.fromInt 0)
+    val k = 1 + n mod 3
+    val buf = Word8Array.array (16 + 8 * k) (Word8.fromInt 0)
+    fun entry i =
+      (Word8Array.update buf (16 + 8 * i) (Word8.fromInt 1);   (* fd 1 *)
+       Word8Array.update buf (20 + 8 * i) (Word8.fromInt 4))   (* POLLOUT *)
+    val _ = List.app entry (List.genlist (fn i => i) k)
+    val _ = #(sys_poll) (String.implode [Char.chr 0]) buf
+    val code = Word8.toInt (Word8Array.sub buf 0)
+  in
+    if code = 0 then 0
+    else (print ("align FAIL: size " ^ Int.toString n ^ " code " ^ Int.toString code ^ "\n"); 1)
+  end;
+
+fun loop n acc = if n > 64 then acc else loop (n + 1) (acc + check n);
+
+val fails = loop 1 0;
+val _ = if fails = 0 then print "align ok: 64 polls passed the alignment check\n"
+        else print ("align FAILED: " ^ Int.toString fails ^ "\n");

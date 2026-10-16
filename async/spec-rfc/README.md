@@ -1,7 +1,7 @@
-# RFC 9112 request framing: an independent reference and its agreement with HttpSpecBodies
+# RFC 9112 request framing: an independent reference and its agreement with HttpSpec
 
 > **In this repository (`async/spec-rfc/`).** Imported from spec review 2 and stated
-> against the REAL `HttpSpecBodies`, which now has the tchar fix and the RFC
+> against the REAL `HttpSpec`, which now has the tchar fix and the RFC
 > character sets (H-CHARS):
 > - `rfc9112FramingScript.sml`: unchanged. It is the trusted reference, and every
 >   clause cites the RFC.
@@ -24,14 +24,14 @@
 
 I wrote the reference (`rfc9112FramingScript.sml`) from the text of RFC 9112 and the parts of
 RFC 9110 it uses. It imports nothing from the project's specifications, and every clause cites
-its section. `HttpSpecBodiesTcharScript.sml` is HttpSpecBodies with the agreed tchar fix
+its section. `HttpSpecBodiesTcharScript.sml` is HttpSpec with the agreed tchar fix
 (header names are RFC tokens). `rfcAgreeScript.sml` proves that the two agree and
 characterises exactly where they differ.
 
 All three theories build with `holslot timeout 3000 arch -arm64 Holmake -j1` in
 `~/Programming/cakeml-worktrees/spec-review-2/async/rfc`. The Holmakefile has INCLUDES
 `../world/sockets ../spec`, and the worktree is based on origin/spike/quiet-spec, whose
-HttpSpecBodies is byte-identical to origin/review/01-spec. A grep finds no `cheat`, `mk_thm`
+HttpSpec is byte-identical to origin/review/01-spec. A grep finds no `cheat`, `mk_thm`
 or `new_axiom`.
 
 ## The reference (theory `rfc9112Framing`)

@@ -235,8 +235,10 @@ Definition v12rel_def:
   v12rel lfd ll0 (s1 : sockets) (s2 : sockets2) ⇔
     ∃cs k. v12core lfd cs k s1 s2 ∧
            s2.future = rn1_sched cs s1.sched ∧ s2.alloc = alloc1 ll0 ∧
-           ∀m j. j < LENGTH (cs ++ sched_conns m s1.sched) ⇒
-                 conn_fd ll0 j = EL j (cs ++ sched_conns m s1.sched)
+           (∀m j. j < LENGTH (cs ++ sched_conns m s1.sched) ⇒
+                  conn_fd ll0 j = EL j (cs ++ sched_conns m s1.sched)) ∧
+           (* non-saturation: fewer than 2^64 - 3 connections, ever *)
+           ∀m. LENGTH (cs ++ sched_conns m s1.sched) + 3 < dimword (:64)
 End
 
 (* MAIN: a tick of effective arrivals keeps the relation *)
@@ -257,7 +259,111 @@ Proof
     by fs[next_step_def, step_ok_with_sched] >>
   conj_tac
   >- (irule v12core_step >> simp[]) >>
-  rw[rn1_step_conns] >>
-  first_x_assum (qspecl_then [‘SUC m’, ‘j’] mp_tac) >>
+  rw[rn1_step_conns]
+  >- (first_x_assum (qspecl_then [‘SUC m’, ‘j’] mp_tac) >> simp[sched_conns_def])
+  >> first_x_assum (qspec_then ‘SUC m’ mp_tac) >> simp[sched_conns_def]
+QED
+
+(* ------------------------------------------------------------------------
+   The calls, on the listener and on accepted connections
+   ------------------------------------------------------------------------ *)
+
+(* The fds a disciplined program may name: the listener and the accepted
+   connections *)
+Definition v12ok_def:
+  v12ok lfd (s2 : sockets2) f ⇔ f = lfd ∨ MEM f (MAP FST s2.open_fds)
+End
+
+Theorem v12core_open:
+  v12core lfd cs k s1 s2 ⇒
+  (MEM f (MAP FST s2.open_fds) ⇔ ∃j. j < k ∧ f = EL j cs) ∧
+  (∀j. j < k ⇒ client_of s2 (EL j cs) = SOME j)
+Proof
+  strip_tac >> fs[v12core_def] >>
+  ‘GENLIST (λj. EL j cs) k = TAKE k cs’ by simp[LIST_EQ_REWRITE, EL_TAKE] >>
+  ‘ALL_DISTINCT (MAP FST s2.open_fds)’
+    by simp[MAP_REVERSE, MAP_GENLIST, combinTheory.o_DEF, ALL_DISTINCT_TAKE] >>
+  conj_tac >- (simp[MEM_MAP, MEM_GENLIST, PULL_EXISTS] >> metis_tac[]) >>
+  rw[client_of_def] >>
+  ‘ALOOKUP s2.open_fds (EL j cs) = SOME j’
+    by (irule ALOOKUP_ALL_DISTINCT_MEM >> simp[MEM_GENLIST] >> metis_tac[]) >>
+  qpat_x_assum ‘s2.open_fds = _’ (fn th => fs[GSYM th])
+QED
+
+(* MAIN: readiness agrees on the listener and accepted connections *)
+Theorem v12core_ready:
+  v12core lfd cs k s1 s2 ∧ v12ok lfd s2 f ⇒ (is_ready s1 f ⇔ is_ready2 s2 f)
+Proof
+  strip_tac >> drule v12core_open >> strip_tac >>
+  qpat_x_assum ‘v12core _ _ _ _ _’ (strip_assume_tac o REWRITE_RULE [v12core_def]) >>
+  qpat_x_assum ‘v12ok _ _ _’ (strip_assume_tac o REWRITE_RULE [v12ok_def])
+  >- (qpat_x_assum ‘f = lfd’ SUBST_ALL_TAC >>
+      ‘ALOOKUP s1.conns lfd = NONE’ by metis_tac[ALOOKUP_conns_MEM] >>
+      ‘¬MEM lfd (MAP FST s2.open_fds)’
+        by (strip_tac >> ‘∃j. j < k ∧ lfd = EL j cs’ by metis_tac[] >>
+            ‘j < LENGTH cs’ by decide_tac >> metis_tac[MEM_EL]) >>
+      ‘client_of s2 lfd = NONE’
+        by (‘ALOOKUP s2.open_fds lfd = NONE’ by simp[ALOOKUP_NONE] >>
+            simp[client_of_def] >> qpat_x_assum ‘s2.open_fds = _’ (fn th => fs[GSYM th])) >>
+      asm_rewrite_tac[is_ready_def, is_ready2_def] >> simp[] >>
+      simp[DROP_EQ_NIL, GENLIST_EQ_NIL] >> decide_tac) >>
+  ‘∃j. j < k ∧ f = EL j cs’ by metis_tac[] >>
+  qpat_x_assum ‘f = _’ SUBST_ALL_TAC >>
+  ‘j < LENGTH cs’ by decide_tac >>
+  ‘EL j cs ≠ lfd’ by metis_tac[MEM_EL] >>
+  ‘client_of s2 (EL j cs) = SOME j’ by metis_tac[] >>
+  qpat_x_assum ‘∀j. j < LENGTH cs ⇒ _’ (qspec_then ‘j’ mp_tac) >> simp[] >> strip_tac >>
+  asm_rewrite_tac[is_ready_def, is_ready2_def] >> simp[]
+QED
+
+Theorem sched_conns_0[simp]:
+  sched_conns 0 ll = []
+Proof
   simp[sched_conns_def]
+QED
+
+(* MAIN: accept agrees (on any fd) *)
+Theorem v12rel_accept:
+  v12rel lfd ll0 s1 s2 ⇒
+  (sock_accept l s1 = NONE ⇔ sock_accept2 l s2 = NONE) ∧
+  ∀r s1'. sock_accept l s1 = SOME (r, s1') ⇒
+          ∃s2'. sock_accept2 l s2 = SOME (r, s2') ∧ v12rel lfd ll0 s1' s2'
+Proof
+  strip_tac >> fs[v12rel_def] >>
+  ‘s1.listeners = [(lfd, DROP k cs)] ∧
+   s2.listening = [(lfd, GENLIST (λi. k + i) (LENGTH cs − k))] ∧
+   k ≤ LENGTH cs ∧ ALL_DISTINCT cs ∧ ¬MEM lfd cs ∧
+   s2.open_fds = REVERSE (GENLIST (λj. (EL j cs, j)) k) ∧ s2.reserved = []’
+    by fs[v12core_def] >>
+  reverse (Cases_on ‘l = lfd’)
+  >- simp[sock_accept_def, sock_accept2_def] >>
+  qpat_x_assum ‘l = lfd’ SUBST_ALL_TAC >>
+  Cases_on ‘k = LENGTH cs’
+  >- (simp[sock_accept_def, sock_accept2_def, DROP_LENGTH_NIL] >>
+      rw[] >> metis_tac[]) >>
+  ‘k < LENGTH cs’ by decide_tac >>
+  ‘DROP k cs = EL k cs :: DROP (k + 1) cs’
+    by (irule DROP_EL_CONS >> first_assum ACCEPT_TAC) >>
+  ‘GENLIST (λi. k + i) (LENGTH cs − k) =
+   k :: GENLIST (λi. (k + 1) + i) (LENGTH cs − (k + 1))’
+    by (‘LENGTH cs − k = SUC (LENGTH cs − (k + 1))’ by decide_tac >>
+        pop_assum (fn th => REWRITE_TAC[th, GENLIST_CONS]) >>
+        simp[combinTheory.o_DEF] >> simp[GENLIST_FUN_EQ]) >>
+  ‘LENGTH (used_fds s2) = k + 1’
+    by (rewrite_tac[used_fds_def] >> asm_rewrite_tac[] >> simp[]) >>
+  ‘LENGTH cs + 3 < dimword (:64)’
+    by (qpat_x_assum ‘∀m. LENGTH cs + _ < _’ (qspec_then ‘0’ mp_tac) >> simp[]) >>
+  ‘conn_fd ll0 k = EL k cs’
+    by (qpat_x_assum ‘∀m j. _ ⇒ conn_fd _ _ = _’ (qspecl_then [‘0’, ‘k’] mp_tac) >>
+        simp[]) >>
+  ‘¬MEM (EL k cs) (used_fds s2)’
+    by (simp[used_fds_def, MEM_MAP, MEM_GENLIST, PULL_EXISTS] >> rw[]
+        >- metis_tac[MEM_EL]
+        >> strip_tac >> ‘j < LENGTH cs’ by decide_tac >>
+        ‘k = j’ by metis_tac[ALL_DISTINCT_EL_IMP] >> decide_tac) >>
+  simp[sock_accept_def, sock_accept2_def, AFUPDKEY_def, alloc1_def] >>
+  rw[] >>
+  TRY (qpat_x_assum ‘¬(k + 1 < _)’ mp_tac >> fs[] >> NO_TAC) >>
+  qexistsl_tac [‘cs’, ‘k + 1’] >> fs[v12core_def] >>
+  simp[GSYM ADD1, GENLIST, REVERSE_SNOC]
 QED

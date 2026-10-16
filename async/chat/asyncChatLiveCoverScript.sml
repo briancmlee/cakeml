@@ -172,6 +172,136 @@ Proof
 QED
 
 (* ------------------------------------------------------------------------
+   Windows: every two rounds, a new answered Fetch
+   ------------------------------------------------------------------------ *)
+
+Theorem trans_bind_emit_NIL:
+  trans (bind (emit a) f) [] = [(a, NONE)]
+Proof
+  simp[trans_def, round_trans_def, responses_at_def, new_actions_def,
+       log_of_def, bind_emit_NIL, zipr_def]
+QED
+
+(* One answered emit, on every prefix of the history *)
+Theorem bind_emit_TAKE:
+  prompt (bind (emit a) f) (s :: G) ⇒
+  ∃r. oHD s.results = SOME r ∧ prompt (f r) G ∧
+      trans (bind (emit a) f) (s :: G) = (a, SOME r) :: trans (f r) G ∧
+      ∀k. trans (bind (emit a) f) (s :: TAKE k G) =
+          (a, SOME r) :: trans (f r) (TAKE k G)
+Proof
+  strip_tac >> drule bind_emit_step >> strip_tac >> qexists_tac ‘r’ >> simp[] >>
+  gen_tac >>
+  ‘prompt (bind (emit a) f) (s :: TAKE k G)’
+    by (‘s :: TAKE k G = TAKE (SUC k) (s :: G)’ by simp[] >>
+        pop_assum SUBST1_TAC >> irule prompt_TAKE >> first_assum ACCEPT_TAC) >>
+  drule bind_emit_step >> strip_tac >> gvs[]
+QED
+
+Definition wk_def:
+  wk fd i ln = if ln = "" then wloop (fd, i)
+               else bind (emit (Sock (Write fd ln))) (λw. wloop (fd, i + LENGTH ln))
+End
+
+(* The write loop's round: an answered Fetch *)
+Theorem wloop_step:
+  prompt (wloop (fd, i)) (s :: G) ∧
+  answers_kind fd (trans (wloop (fd, i)) (s :: G)) ⇒
+  ∃ln. prompt (wk fd i ln) G ∧ answers_kind fd (trans (wk fd i ln) G) ∧
+       ∀k. trans (wloop (fd, i)) (s :: TAKE k G) =
+           (Kv (fd, Fetch i), SOME (KvR (Lines ln))) :: trans (wk fd i ln) (TAKE k G)
+Proof
+  ONCE_REWRITE_TAC[asyncChatModelTheory.wloop_unfold] >>
+  qmatch_goalsub_abbrev_tac ‘bind (emit (Kv (fd, Fetch i))) K0’ >>
+  strip_tac >> drule bind_emit_TAKE >> strip_tac >>
+  ‘∃ln. r = KvR (Lines ln)’ by gvs[answers_kind_def] >>
+  ‘K0 r = wk fd i ln’ by (simp[Abbr ‘K0’, wk_def] >> rw[]) >>
+  qexists_tac ‘ln’ >> gvs[] >>
+  irule answers_kind_CONS >> metis_tac[]
+QED
+
+(* The write round after a non-empty Fetch *)
+Theorem wk_step:
+  ln ≠ "" ∧ prompt (wk fd i ln) (s :: G) ∧
+  answers_kind fd (trans (wk fd i ln) (s :: G)) ⇒
+  ∃r. prompt (wloop (fd, i + LENGTH ln)) G ∧
+      answers_kind fd (trans (wloop (fd, i + LENGTH ln)) G) ∧
+      ∀k. trans (wk fd i ln) (s :: TAKE k G) =
+          (Sock (Write fd ln), SOME r) :: trans (wloop (fd, i + LENGTH ln)) (TAKE k G)
+Proof
+  strip_tac >> gvs[wk_def] >> drule bind_emit_TAKE >> strip_tac >>
+  qexists_tac ‘r’ >> gvs[] >> irule answers_kind_CONS >> metis_tac[]
+QED
+
+Theorem wloop_first:
+  prompt (wloop (fd, i)) (s :: G) ∧
+  answers_kind fd (trans (wloop (fd, i)) (s :: G)) ⇒
+  0 < nfa fd (trans (wloop (fd, i)) (s :: TAKE k G))
+Proof
+  strip_tac >> drule_all wloop_step >> strip_tac >> simp[afetch_def]
+QED
+
+Theorem nfa_wloop_NIL:
+  nfa fd (trans (wloop (fd, i)) []) = 0
+Proof
+  ONCE_REWRITE_TAC[asyncChatModelTheory.wloop_unfold] >>
+  simp[trans_bind_emit_NIL, afetch_def]
+QED
+
+Theorem nfa_wk_NIL:
+  ln ≠ "" ⇒ nfa fd (trans (wk fd i ln) []) = 0
+Proof
+  rw[wk_def, trans_bind_emit_NIL, afetch_def]
+QED
+
+Theorem wloop_window:
+  ∀G i m. prompt (wloop (fd, i)) G ∧ answers_kind fd (trans (wloop (fd, i)) G) ∧
+          m + 2 ≤ LENGTH G ⇒
+          nfa fd (trans (wloop (fd, i)) (TAKE m G)) <
+          nfa fd (trans (wloop (fd, i)) (TAKE (m + 2) G))
+Proof
+  gen_tac >> measureInduct_on ‘LENGTH G’ >> rpt gen_tac >>
+  Cases_on ‘G’ >> simp[] >> rename1 ‘s :: G1’ >> strip_tac >>
+  ‘m + 2 = SUC (SUC m)’ by simp[] >> pop_assum SUBST1_TAC >>
+  drule_all wloop_step >> strip_tac >>
+  Cases_on ‘m’ >> simp[nfa_wloop_NIL, afetch_def] >>
+  rename1 ‘SUC m1’ >>
+  Cases_on ‘ln = ""’
+  >- (gvs[] >> qpat_x_assum ‘∀y. _’ (qspec_then ‘G1’ mp_tac) >> simp[] >>
+      disch_then (qspecl_then [‘i’, ‘m1’] mp_tac) >> fs[wk_def, ADD1]) >>
+  Cases_on ‘G1’ >> gvs[] >> rename1 ‘s1 :: G2’ >>
+  drule_all wk_step >> strip_tac >> simp[] >>
+  Cases_on ‘m1’ >> simp[]
+  >- (Cases_on ‘G2’ >> gvs[] >> drule_all wloop_first >>
+      disch_then (qspec_then ‘0’ mp_tac) >> simp[nfa_wk_NIL, afetch_def]) >>
+  qpat_x_assum ‘∀y. _’ (qspec_then ‘G2’ mp_tac) >> simp[] >>
+  disch_then (qspecl_then [‘i + STRLEN ln’, ‘n’] mp_tac) >> simp[ADD1, afetch_def]
+QED
+
+(* MAIN (writer progress, local form): in every window of two rounds the
+   writer makes a new answered Fetch *)
+Theorem writer_window:
+  prompt (writer fd) G ∧ answers_kind fd (trans (writer fd) G) ∧ m + 2 ≤ LENGTH G ⇒
+  nfa fd (trans (writer fd) (TAKE m G)) < nfa fd (trans (writer fd) (TAKE (m + 2) G))
+Proof
+  Cases_on ‘G’ >> simp[] >> rename1 ‘s :: G1’ >>
+  simp[asyncChatModelTheory.writer_def] >>
+  qmatch_goalsub_abbrev_tac ‘bind (emit (Kv (fd, Start))) K0’ >>
+  strip_tac >> drule bind_emit_TAKE >> strip_tac >>
+  ‘∃j. r = KvR (Pos j)’ by gvs[answers_kind_def] >>
+  ‘answers_kind fd (trans (K0 r) G1)’
+    by (irule answers_kind_CONS >> metis_tac[]) >>
+  ‘K0 r = wloop (fd, j)’ by simp[Abbr ‘K0’] >>
+  ‘m + 2 = SUC (SUC m)’ by simp[] >> pop_assum SUBST1_TAC >>
+  gvs[] >>
+  Cases_on ‘m’ >> simp[trans_bind_emit_NIL, afetch_def]
+  >- (Cases_on ‘G1’ >> gvs[] >> drule_all wloop_first >>
+      disch_then (qspec_then ‘0’ mp_tac) >> simp[]) >>
+  rename1 ‘SUC m1’ >>
+  qspecl_then [‘G1’, ‘j’, ‘m1’] mp_tac wloop_window >> simp[ADD1]
+QED
+
+(* ------------------------------------------------------------------------
    Telescoping
    ------------------------------------------------------------------------ *)
 

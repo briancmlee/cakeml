@@ -601,10 +601,59 @@ Proof
   >> first_x_assum drule_all >> simp[]
 QED
 
-(* ------------------------------------------------------------------------
-   WORK IN PROGRESS (kept as a comment until proved; the statements are
-   the plan for R1-live's round step, design/36 §6; the *_winv lemmas
-   below loop on TRY metis_tac[] and need targeted tactics):
+Theorem res_of_fail:
+  LENGTH (w.ch.errno_of w.hist) = 4 ⇒
+  l0_res_of (enc_res (fail w e) ++ rest) = Fail e (w.ch.errno_of w.hist)
+Proof
+  rw[fail_def] >> irule l0_res_of_enc_app >> simp[l0_res_ok_def]
+QED
+
+Theorem readable_zip:
+  ∀fes. MEM (f, e) fes ∧ (g (f, e)).rin ⇒
+        MEM f (readable_fds (ZIP (MAP FST fes, MAP g fes)))
+Proof
+  Induct >> simp[FORALL_PROD, readable_fds_def] >> rw[] >> gvs[readable_fds_def]
+QED
+
+(* One poll, seen from f: if it lists f (for input) and is not retried, it
+   reports f readable *)
+Theorem sys_poll_f:
+  sys_poll fes w = SOME (out, w', ev) ∧ winv w ∧ pend w f ∧
+  EVERY (λ(g, e). e < 256 ∧ (g = f ⇒ ODD e)) fes ⇒
+  winv w' ∧ pend w' f ∧ ev_name ev = ExtCall «sys_poll» ∧
+  (MEM f (MAP FST fes) ⇒ ev_on «sys_poll» f ev) ∧
+  (ev_on «sys_poll» f ev ∧ ¬retried ev ⇒ MEM f (readable_fds (poll_revents fes out)))
+Proof
+  strip_tac >> ‘l0_rely w’ by gvs[winv_def] >>
+  ‘EVERY (λ(g, e). e < 256) fes’
+    by (qpat_x_assum ‘EVERY _ fes’ mp_tac >> match_mp_tac EVERY_MONOTONIC >>
+        simp[FORALL_PROD]) >>
+  drule_all call_fds_poll >> strip_tac >>
+  qpat_x_assum ‘sys_poll _ _ = _’ mp_tac >> simp[sys_poll_def] >> strip_tac >>
+  drule_all ev_do >> strip_tac >>
+  ‘winv w' ∧ pend w' f’
+    by (conj_tac >- (drule_at (Pos last) winv_do >> simp[]) >>
+        drule_at (Pos last) pend_do >> simp[]) >>
+  drule l0_do_cases >> strip_tac >> gvs[ev_name_def] >>
+  rw[] >> gvs[] >>
+  ‘poll_entries (DROP 1 (poll_conf fes)) = fes ∧ HD (poll_conf fes) = 0w’
+    by simp[poll_conf_def, poll_entries_conf] >>
+  qabbrev_tac ‘wt = l0_tick «sys_poll» w’ >>
+  ‘noconn wt ∧ pend wt f ∧ LENGTH (wt.ch.errno_of wt.hist) = 4’
+    by gvs[Abbr ‘wt’, winv_def, noconn_tick, pend_tick, l0_rely_def] >>
+  qpat_x_assum ‘l0_call _ _ _ _ = _’ mp_tac >> simp[l0_call_def] >>
+  rw[AllCaseEqs()] >> gvs[] >>
+  TRY (gvs[res_of_fail] >> NO_TAC) >>
+  gvs[MEM_MAP] >> rename1 ‘MEM y fes’ >> PairCases_on ‘y’ >> gvs[] >>
+  ‘ODD y1’ by (qpat_x_assum ‘EVERY (λ(g, e). _ ∧ _) fes’ mp_tac >>
+                simp[EVERY_MEM] >> disch_then drule >> simp[]) >>
+  simp[poll_revents_def] >> CASE_TAC >> gvs[] >>
+  simp[DROP_poll_out] >>
+  ‘TAKE (LENGTH fes) (MAP (fd_revents w1) fes) = MAP (fd_revents w1) fes’
+    by metis_tac[LENGTH_MAP, TAKE_LENGTH_ID] >>
+  simp[MAP_MAP_o] >> irule readable_zip >> qexists_tac ‘y1’ >>
+  simp[pend_revents_in]
+QED
 
 Theorem l1_polls_f:
   ∀chs w rv w' evs.
@@ -615,8 +664,18 @@ Theorem l1_polls_f:
     (∀c. MEM c chs ∧ MEM f (MAP FST c) ⇒ EXISTS (ev_on «sys_poll» f) evs) ∧
     (∀ev. MEM ev evs ∧ ev_on «sys_poll» f ev ∧ ¬retried ev ⇒ MEM f (readable_fds rv))
 Proof
-  cheat
+  Induct >> simp[l1_polls_def] >> rpt gen_tac >> strip_tac >>
+  gvs[AllCaseEqs(), DISJ_IMP_THM, FORALL_AND_THM] >>
+  drule_all sys_poll_f >> strip_tac >>
+  first_x_assum drule_all >> strip_tac >>
+  simp[readable_fds_def, FILTER_APPEND] >> gvs[readable_fds_def] >>
+  rw[] >> gvs[] >> metis_tac[]
 QED
+
+(* ------------------------------------------------------------------------
+   WORK IN PROGRESS (kept as a comment until proved; the statements are
+   the plan for R1-live's round step, design/36 §6; the *_winv lemmas
+   below loop on TRY metis_tac[] and need targeted tactics):
 
 Theorem pf_fetch_f:
   ∀fs w ps w' ps' log evs.

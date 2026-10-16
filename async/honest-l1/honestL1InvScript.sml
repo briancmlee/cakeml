@@ -321,10 +321,8 @@ Theorem poll_chunks_ok:
   ∀l. EVERY P l ⇒ EVERY (λc. LENGTH c ≤ 4096 ∧ EVERY P c) (poll_chunks l)
 Proof
   gen_tac >> completeInduct_on ‘LENGTH l’ >> rw[] >>
-  Cases_on ‘l = []’ >- (gvs[] >> simp[Once poll_chunks_def]) >>
-  simp[Once poll_chunks_def] >> gvs[EVERY_TAKE, LENGTH_TAKE_EQ] >>
-  first_x_assum (qspec_then ‘LENGTH (DROP 4096 l)’ mp_tac) >>
-  impl_tac >- (Cases_on ‘l’ >> gvs[]) >>
+  simp[Once poll_chunks_def] >> IF_CASES_TAC >> gvs[EVERY_TAKE, LENGTH_TAKE_EQ] >>
+  first_x_assum (qspec_then ‘LENGTH (DROP 4096 l)’ mp_tac) >> simp[] >>
   disch_then (qspec_then ‘DROP 4096 l’ mp_tac) >> simp[EVERY_DROP]
 QED
 

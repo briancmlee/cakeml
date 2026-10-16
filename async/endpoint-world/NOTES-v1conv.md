@@ -29,7 +29,24 @@ nonsat is false when w.reserved = [] and M = 2^64-4 (a program that stops pollin
 accepting 2^64-4 clients that have all sent EOF meets echo_spec_le but not ticks_forever).
 Proposed: nonsat1 (reserved + M + 4 < 2^64) for the v1 ⇒ directions. Working with nonsat1.
 
-Next steps, in order:
+ECHO ⇒ DONE (endpointV1EchoConv, LSP 15/15; see the build log for Holmake):
+  endpoint_of_echo_spec_le: v1_disciplined ∧ echo_spec_le ⇒
+    rg_spec (C1 ∧ nonsat1 lfd a w) ep_echo_guar prog
+  echo_sym_equiv_disc_thm: both directions (⇐ from endpointV1Echo).
+  Route: w ↦ w2 = w with v2 calls (rclass_v1: rely restricted to v1 calls);
+  sk0 = v2of w; v1of2 sk0 bounded (v1of2_props); echo_spec_le there; v1of2_run
+  (fd_disciplined, run in sk0); live2_of_v1 (echo_live → echo_live2 via v1of2_sent,
+  v1of2_written, sent2_unconn); endpointEcho2Conv.endpoint_of_live2 (liveness, ticks;
+  the ext1 worlds bounded by M+1, hence nonsat1); ep_guar_v1 back to v1 calls;
+  v1_sym_safe (ren_evs_prefix_inv + proj_v1/proj_ren_beyond).
+  Shared refactors: endpointV2Sim.polls_rely/v2of_props_polls; endpointEcho2Conv
+  rely_on/rclass/live2_ticks/endpoint_of_live2 (old statements unchanged).
+
+Next: HTTP-b and KV ⇒. endpoint_of_live2/live2_ticks are echo-specific (echo_live2,
+ext1 sends [0w]): generalise over the liveness relation P and ext1's request bytes, so
+the new client sends a valid full request; then copy the echo route per server.
+
+Older next steps, in order:
 1. Holmake the whole endpoint-world on this branch. Fix V1Inst/V1Disc/V1Echo/V1Http/V1Kv
    after the v12rel generalization (expected: only small call-site changes, e.g.
    v12rel_init's sched_wf hypothesis in V1Inst.v2of1_server_world2).

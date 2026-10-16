@@ -395,15 +395,70 @@ QED
 
 (* The worlds one more client after step k *)
 Overload ext1s = “λlfd a w sk1. ∃k. sk1 = ext1 lfd (v2of lfd a w) k (nconn (v2of lfd a w) k)”
+Overload ext1k = “λlfd a w k. ext1 lfd (v2of lfd a w) k (nconn (v2of lfd a w) k)”
 
-(* A program live in those worlds keeps polling in every world of the
-   class that does not saturate *)
-Theorem live2_ticks:
+(* An echo-live run accepts each client that sends something *)
+Theorem echo_live2_acc:
+  echo_live2 sk io ⇒
+  ∀j n. sent2_upto j n sk ≠ [] ⇒
+  ∃evs. LPREFIX (fromList evs) io ∧ sent2_upto j n sk ≼ ep_written j evs ∧
+        j < LENGTH (accepted_fds evs)
+Proof
+  rw[echo_live2_def] >> first_x_assum (qspecl_then [‘j’, ‘n’] strip_assume_tac) >>
+  qexists_tac ‘evs’ >> simp[] >> CCONTR_TAC >> fs[ep_written_def] >>
+  Cases_on ‘sent2_upto j n sk’ >> fs[]
+QED
+
+(* MAIN: a run in the class's version-2 world that, for each client that
+   has sent something, eventually accepts it and has P of what it sent and
+   what its episode wrote, is P-live in the endpoint world *)
+Theorem sym_live_of_acc:
+  rclass Q lfd a w ∧
+  semantics_prog (init_state (socket2_ffi (v2of lfd a w))) init_env prog (Diverge io) ∧
+  (∀evs. LPREFIX (fromList evs) io ⇒ EVERY (ev_in Q) evs) ∧
+  (∀j n. sent2_upto j n (v2of lfd a w) ≠ [] ⇒
+         ∃evs. LPREFIX (fromList evs) io ∧
+               P (sent2_upto j n (v2of lfd a w)) (ep_written j evs) ∧
+               j < LENGTH (accepted_fds evs)) ⇒
+  sym_live P w io
+Proof
+  strip_tac >>
+  imp_res_tac rclass_polls >>
+  ‘ep_server_world v2_calls lfd a w ∧ no_backpressure w ∧ open_loop w’ by fs[rclass_def] >>
+  drule_all v2of_props_polls >> strip_tac >>
+  qabbrev_tac ‘sk0 = v2of lfd a w’ >>
+  ‘semantics_prog (init_state (ep_ffi w)) init_env prog (Diverge io)’
+    by (‘(socket2_ffi sk0).io_events = (ep_ffi w).io_events’
+          by simp[socket2_ffi_def, ep_ffi_def] >>
+        metis_tac[same_answers_semantics]) >>
+  ‘∀evs. LPREFIX (fromList evs) io ⇒ replay_ok w evs’ by metis_tac[trace_replay_ok] >>
+  ‘∀evs. LPREFIX (fromList evs) io ⇒ EVERY (event_ok no_conn_send) evs’
+    by (rpt strip_tac >>
+        qpat_assum ‘semantics_prog (init_state (socket2_ffi _)) _ _ _’
+          (fn th => mp_tac (MATCH_MP (REWRITE_RULE [GSYM AND_IMP_INTRO]
+             (Q.INST [‘P’ |-> ‘no_conn_send’] run_events_ok)) th)) >>
+        simp[socket2_ffi_def, socket2_oracle_ok]) >>
+  rw[sym_live_def, eventually_def] >>
+  ‘ginv lfd a w evs (ep_replay w evs)’ by metis_tac[class_inv] >>
+  fs[ginv_def, peer_at_of] >>
+  qabbrev_tac ‘N = (ep_replay w evs).clock − w.clock’ >>
+  first_x_assum (qspecl_then [‘c’, ‘N’] mp_tac) >> impl_tac >- fs[Abbr ‘sk0’] >> strip_tac >>
+  ‘c < LENGTH (opened_fds evs')’ by metis_tac[opened_accepted_fds] >>
+  qexists_tac ‘evs'’ >> simp[] >> qexists_tac ‘c’ >>
+  conj_tac >- metis_tac[class_chan] >>
+  metis_tac[ch_sent_ep_written]
+QED
+
+(* A program that, in each of those worlds, accepts the new client keeps
+   polling in every world of the class that does not saturate *)
+Theorem acc_ticks:
   rclass Q lfd a w ∧ nonsat lfd a w ∧
   semantics_prog (init_state (socket2_ffi (v2of lfd a w))) init_env prog (Diverge io) ∧
-  (∀sk1. server_world2 lfd sk1 ∧ ext1s lfd a w sk1 ⇒
-         ∃io'. semantics_prog (init_state (socket2_ffi sk1)) init_env prog (Diverge io') ∧
-               echo_live2 sk1 io') ⇒
+  (∀k. server_world2 lfd (ext1k lfd a w k) ⇒
+       ∃io'. semantics_prog (init_state (socket2_ffi (ext1k lfd a w k))) init_env prog
+               (Diverge io') ∧
+             ∃evs. LPREFIX (fromList evs) io' ∧
+                   nconn (v2of lfd a w) k < LENGTH (accepted_fds evs)) ⇒
   ticks_forever w io
 Proof
   rw[ticks_forever_def, eventually_def] >> CCONTR_TAC >> fs[] >>
@@ -432,28 +487,24 @@ Proof
   qabbrev_tac ‘m = nconn sk0 kk’ >>
   ‘LENGTH sk0.reserved + m + 3 < dimword (:64)’
     by (fs[nonsat_def, Abbr ‘m’, Abbr ‘sk0’] >>
-        first_x_assum (qspec_then ‘kk’ assume_tac) >> fs[v2of_def]) >>
+        qpat_x_assum ‘∀n. nconn _ n ≤ _’ (qspec_then ‘kk’ assume_tac) >> fs[v2of_def]) >>
   qabbrev_tac ‘sk1 = ext1 lfd sk0 kk m’ >>
   ‘server_world2 lfd sk1’ by (simp[Abbr ‘sk1’, Abbr ‘m’] >> irule ext1_world >> fs[]) >>
   ‘semantics_prog (init_state (socket2_ffi sk1)) init_env prog (Diverge io)’
     by (irule diverge_same_prefix >> qexistsl_tac [‘kk’, ‘sk0’] >>
         simp[Abbr ‘sk1’, ext1_agree]) >>
-  qpat_x_assum ‘∀sk1. server_world2 _ _ ∧ _ ⇒ _’ (qspec_then ‘sk1’ mp_tac) >>
-  impl_tac >- (fs[] >> qexists_tac ‘kk’ >> simp[Abbr ‘sk1’, Abbr ‘m’]) >> strip_tac >>
+  qpat_x_assum ‘∀k. server_world2 _ _ ⇒ _’ (qspec_then ‘kk’ mp_tac) >>
+  impl_tac >- fs[Abbr ‘sk1’, Abbr ‘m’] >> strip_tac >>
+  ‘semantics_prog (init_state (socket2_ffi sk1)) init_env prog (Diverge io')’
+    by fs[Abbr ‘sk1’, Abbr ‘m’] >>
   ‘io' = io’ by metis_tac[diverge_unique] >> gvs[] >>
-  fs[echo_live2_def] >>
-  first_x_assum (qspecl_then [‘m’, ‘SUC kk’] strip_assume_tac) >>
-  rename1 ‘sent2_upto m (SUC kk) sk1 ≼ ep_written m evs’ >>
-  ‘ep_written m evs ≠ []’
-    by (strip_tac >> fs[] >> metis_tac[ext1_sent, Abbr ‘sk1’]) >>
+  ‘m < LENGTH (accepted_fds evs)’ by simp[Abbr ‘m’] >>
   ‘EVERY (event_ok no_conn_send) evs’
     by (qpat_assum ‘semantics_prog (init_state (socket2_ffi sk1)) _ _ _’
           (fn th => mp_tac (MATCH_MP (REWRITE_RULE [GSYM AND_IMP_INTRO]
              (Q.INST [‘P’ |-> ‘no_conn_send’] run_events_ok)) th)) >>
         simp[socket2_ffi_def, socket2_oracle_ok]) >>
-  ‘m < LENGTH (opened_fds evs)’
-    by (fs[ep_written_def] >> pop_assum mp_tac >> pop_assum mp_tac >> rw[] >>
-        metis_tac[opened_accepted_fds]) >>
+  ‘m < LENGTH (opened_fds evs)’ by metis_tac[opened_accepted_fds] >>
   drule_then (qspec_then ‘a’ strip_assume_tac) dworld_props >>
   ‘semantics_prog (init_state (ep_ffi (dworld lfd a sk1))) init_env prog (Diverge io)’
     by (‘(socket2_ffi sk1).io_events = (ep_ffi (dworld lfd a sk1)).io_events’
@@ -475,9 +526,24 @@ Theorem echo_spec2_ticks:
   semantics_prog (init_state (socket2_ffi (v2of lfd a w))) init_env prog (Diverge io) ⇒
   ticks_forever w io
 Proof
-  strip_tac >> irule live2_ticks >> simp[] >>
-  qexistsl_tac [‘K T’, ‘a’, ‘lfd’, ‘prog’] >> simp[simple_rclass] >>
-  fs[echo_spec2_def] >> metis_tac[]
+  strip_tac >>
+  ‘simple_class lfd a w’ by simp[] >> fs[simple_class_def] >>
+  drule_all v2of_props >> strip_tac >>
+  ‘∀k. server_world2 lfd (ext1k lfd a w k) ⇒
+       ∃io'. semantics_prog (init_state (socket2_ffi (ext1k lfd a w k))) init_env prog
+               (Diverge io') ∧
+             ∃evs. LPREFIX (fromList evs) io' ∧
+                   nconn (v2of lfd a w) k < LENGTH (accepted_fds evs)’
+    by (rpt strip_tac >>
+        qpat_x_assum ‘echo_spec2 _ _’ (mp_tac o REWRITE_RULE [echo_spec2_def]) >>
+        disch_then (qspec_then ‘ext1k lfd a w k’ mp_tac) >>
+        impl_tac >- first_assum ACCEPT_TAC >> strip_tac >>
+        qexists_tac ‘io'’ >> simp[] >>
+        drule echo_live2_acc >>
+        disch_then (qspecl_then [‘nconn (v2of lfd a w) k’, ‘SUC k’] mp_tac) >>
+        simp[ext1_sent] >> metis_tac[]) >>
+  ‘rclass (K T) lfd a w’ by metis_tac[simple_rclass, simple_class_def] >>
+  metis_tac[acc_ticks]
 QED
 
 (* MAIN: a run in the class's version-2 world, live there and in the
@@ -498,35 +564,30 @@ Proof
   imp_res_tac rclass_polls >>
   ‘ep_server_world v2_calls lfd a w ∧ no_backpressure w ∧ open_loop w’ by fs[rclass_def] >>
   drule_all v2of_props_polls >> strip_tac >>
-  qabbrev_tac ‘sk0 = v2of lfd a w’ >>
   ‘semantics_prog (init_state (ep_ffi w)) init_env prog (Diverge io)’
-    by (‘(socket2_ffi sk0).io_events = (ep_ffi w).io_events’
+    by (‘(socket2_ffi (v2of lfd a w)).io_events = (ep_ffi w).io_events’
           by simp[socket2_ffi_def, ep_ffi_def] >>
         metis_tac[same_answers_semantics]) >>
-  simp[] >>
-  ‘∀evs. LPREFIX (fromList evs) io ⇒ replay_ok w evs’ by metis_tac[trace_replay_ok] >>
-  ‘∀evs. LPREFIX (fromList evs) io ⇒ EVERY (event_ok no_conn_send) evs’
+  simp[] >> conj_tac
+  >- (‘∀j n. sent2_upto j n (v2of lfd a w) ≠ [] ⇒
+             ∃evs. LPREFIX (fromList evs) io ∧
+                   sent2_upto j n (v2of lfd a w) ≼ ep_written j evs ∧
+                   j < LENGTH (accepted_fds evs)’ by metis_tac[echo_live2_acc] >>
+      mp_tac (Q.INST [‘P’ |-> ‘λx y. x ≼ y’] sym_live_of_acc) >> simp[] >>
+      disch_then irule >> metis_tac[]) >>
+  ‘∀k. server_world2 lfd (ext1k lfd a w k) ⇒
+       ∃io'. semantics_prog (init_state (socket2_ffi (ext1k lfd a w k))) init_env prog
+               (Diverge io') ∧
+             ∃evs. LPREFIX (fromList evs) io' ∧
+                   nconn (v2of lfd a w) k < LENGTH (accepted_fds evs)’
     by (rpt strip_tac >>
-        qpat_assum ‘semantics_prog (init_state (socket2_ffi _)) _ _ _’
-          (fn th => mp_tac (MATCH_MP (REWRITE_RULE [GSYM AND_IMP_INTRO]
-             (Q.INST [‘P’ |-> ‘no_conn_send’] run_events_ok)) th)) >>
-        simp[socket2_ffi_def, socket2_oracle_ok]) >>
-  conj_tac
-  >- (rw[sym_live_def, eventually_def] >>
-      ‘ginv lfd a w evs (ep_replay w evs)’ by metis_tac[class_inv] >>
-      fs[ginv_def, peer_at_of] >>
-      qabbrev_tac ‘N = (ep_replay w evs).clock − w.clock’ >>
-      fs[echo_live2_def] >>
-      first_x_assum (qspecl_then [‘c’, ‘N’] strip_assume_tac) >>
-      rename1 ‘sent2_upto c N sk0 ≼ ep_written c evs'’ >>
-      ‘ep_written c evs' ≠ []’ by (strip_tac >> fs[Abbr ‘sk0’]) >>
-      ‘c < LENGTH (opened_fds evs')’
-        by (fs[ep_written_def] >> pop_assum mp_tac >> rw[] >>
-            metis_tac[opened_accepted_fds]) >>
-      qexists_tac ‘evs'’ >> simp[] >> qexists_tac ‘c’ >>
-      conj_tac >- metis_tac[class_chan] >>
-      metis_tac[ch_sent_ep_written])
-  >> irule live2_ticks >> simp[] >> metis_tac[]
+        qpat_x_assum ‘∀sk1. server_world2 _ _ ∧ _ ⇒ _’ (qspec_then ‘ext1k lfd a w k’ mp_tac) >>
+        impl_tac >- (conj_tac >- first_assum ACCEPT_TAC >> qexists_tac ‘k’ >> simp[]) >>
+        strip_tac >> qexists_tac ‘io'’ >> simp[] >>
+        drule echo_live2_acc >>
+        disch_then (qspecl_then [‘nconn (v2of lfd a w) k’, ‘SUC k’] mp_tac) >>
+        simp[ext1_sent] >> metis_tac[]) >>
+  metis_tac[acc_ticks]
 QED
 
 (* MAIN (completeness check): a program meeting echo_spec2 meets the

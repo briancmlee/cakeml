@@ -203,8 +203,8 @@ rule.
   a schedule connecting fd 5 with data, then the calls poll, read fd 5.
   The same program-level gap makes the version-1 equivalences
   (`echo_sym_equiv`, `http_sym_equiv`, `kv_sym_equiv`) false for programs
-  that touch fds they have not accepted. **[PENDING USER DECISION]**
-  Proposed: restrict them to **fd-disciplined** programs, a trace
+  that touch fds they have not accepted. **[DECIDED 2026-10-16: option A]**
+  The version-1 claims are stated for **fd-disciplined** programs, a trace
   property (`fd_disciplined lfd io`: every socket event names `lfd` or an
   fd opened and not yet closed; `v1_disciplined`, `v1_instance_disc`,
   drafted). Our programs would then be proved disciplined, which turns
@@ -254,6 +254,9 @@ rule.
 | Select, clock, timers, scopes | **Deferred** |
 
 ## 6. Decisions for you
+
+Items 1–4 stay **parked** (2026-10-16): to be decided before any client or
+proxy program, or any extension of socket_ffi.c.
 
 1. **[PENDING USER DECISION]** The acceptance policy `takes j b n` gives one number per call. A policy
    that varies with time, beyond the bytes in flight, would need the
@@ -351,8 +354,9 @@ instant gives the system's (`relay_safety`, proved).
 the relay facts alone. The system's clock is the proxy's, so that part
 needs the proxy's own `ticks_forever`.
 
-Questions for you:
-- (a) is the instant-by-instant relay relation above the one you want
-  (replacing the draft `buf_rel`)?
-- (b) should `sys_spec` quantify the process worlds existentially (as
-  drafted: "the system can be run") or universally over wired worlds?
+Decisions (2026-10-16):
+- (a) **APPROVED**: the per-instant `relays` relation replaces the draft
+  `buf_rel`.
+- (b) **DECIDED**: `sys_spec` quantifies over **every** wired, fair system
+  run (∀). Each concrete system we compose gets a separate non-vacuity
+  (existence) lemma.

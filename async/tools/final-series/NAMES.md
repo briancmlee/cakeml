@@ -40,10 +40,10 @@ Rules: theory renames apply everywhere, including `XTheory.`, `X$c` and translat
 | `echo_live_unwaited` | `echo_blocking_unwaited` | exact |
 | `echo_live_list_covers` | `echo_blocking_list_covers` | exact |
 | `echo2_sym_equiv_thm` | `echo_episodes_peer_equiv_thm` | exact |
-| `echo2_sym_equiv` | `echo_episodes_peer_equiv` | exact |
-| `echo_sym_equiv` | `echo_peer_equiv` | exact |
-| `http_sym_equiv` | `http_peer_equiv` | exact |
-| `kv_sym_equiv` | `kv_peer_equiv` | exact |
+| `echo2_sym_equiv` | `echo_episodes_peer_equiv` | prefix |
+| `echo_sym_equiv` | `echo_peer_equiv` | prefix |
+| `http_sym_equiv` | `http_peer_equiv` | prefix |
+| `kv_sym_equiv` | `kv_peer_equiv` | prefix |
 | `echo_spec_of_endpoint_disc` | `echo_spec_of_peer_disc` | exact |
 | `http_spec_b_of_endpoint_disc` | `http_spec_of_peer_disc` | exact |
 | `kv_spec_of_endpoint_disc` | `kv_spec_of_peer_disc` | exact |
@@ -56,6 +56,9 @@ Rules: theory renames apply everywhere, including `XTheory.`, `X$c` and translat
 | `endpoint_of_v1_live` | `peer_of_v1_live` | exact |
 | `endpoint_of_live2` | `peer_of_live2` | exact |
 | `endpoint_of_echo_spec2` | `peer_of_echo_spec2` | exact |
+| `v1_endpoint_run` | `v1_peer_run` | exact |
+| `echo_spec2_of_endpoint` | `echo_episodes_spec_of_peer` | exact |
+| `echo_episodes_spec_of_endpoint` | `echo_episodes_spec_of_peer` | exact |
 
 ## Libraries
 

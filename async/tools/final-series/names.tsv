@@ -294,10 +294,10 @@ theory	endpointV2Sim	peerV2Sim		endpoint-world
 theory	endpointV1Conv	peerV1Conv		endpoint-world
 theory	l2Statements	peerStatements		l2-statements
 const	echo2_sym_equiv_thm	echo_episodes_peer_equiv_thm	exact
-const	echo2_sym_equiv	echo_episodes_peer_equiv	exact
-const	echo_sym_equiv	echo_peer_equiv	exact
-const	http_sym_equiv	http_peer_equiv	exact
-const	kv_sym_equiv	kv_peer_equiv	exact
+const	echo2_sym_equiv	echo_episodes_peer_equiv	prefix
+const	echo_sym_equiv	echo_peer_equiv	prefix
+const	http_sym_equiv	http_peer_equiv	prefix
+const	kv_sym_equiv	kv_peer_equiv	prefix
 const	echo_spec_of_endpoint_disc	echo_spec_of_peer_disc	exact
 const	http_spec_b_of_endpoint_disc	http_spec_of_peer_disc	exact
 const	kv_spec_of_endpoint_disc	kv_spec_of_peer_disc	exact
@@ -320,3 +320,7 @@ const	endpoint_of_live2	peer_of_live2	exact
 const	endpoint_of_echo_spec2	peer_of_echo_spec2	exact
 # L2-04 fd discipline (provisional)
 theory	fdDiscipline2	fdDisciplineEpisodes		fd-discipline
+# endpoint leftovers in theorem names (close-v2, 2026-10-17)
+const	v1_endpoint_run	v1_peer_run	exact
+const	echo_spec2_of_endpoint	echo_episodes_spec_of_peer	exact
+const	echo_episodes_spec_of_endpoint	echo_episodes_spec_of_peer	exact

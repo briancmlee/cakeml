@@ -187,6 +187,14 @@ that the final series has one copy of each:
 - `asyncServerVKvScript.sml`: temporary copy of spike/kv-live's
   `asyncServerVKv` @5a72181db.
 
+On `spike/quiet-loop` (E's model side), also copied as is, **remove at
+merge** (the final series supersedes them), from spike/http-kv-impl
+@024a0857b:
+
+- `HttpKvSpecScript.sml` (from `spec/`);
+- `asyncServerWithKScript.sml`, `asyncKvHandlerScript.sml`,
+  `asyncKvModelScript.sml` (from `http-kv/`).
+
 ## 8. Where KV's CakeML and the option-C loop meet (for E)
 
 *(2026-10-16; D's CakeML is on `spike/quiet-loop`, from `spike/quiet-store`,
@@ -225,3 +233,32 @@ Not blocked before then:
   lineage;
 - D's CakeML: `step_q'`/`run_q'` and their specs for any Level 2 program
   (`COMPI`) whose event list may contain `Always`.
+
+## 9. Known limitation: chat is never quiescent
+
+Chat's writer busy-waits. In `asyncChatModel` (`wloop`, 50d7ec7df, the
+same on every chat branch), the writer of each connection emits
+`Kv (fd, Fetch i)`, and on an empty answer `KvR (Lines "")` it immediately
+asks again. So while a client is connected, a query is pending in every
+round. `with_tap2`'s busy flag would always be set, R1's loop would poll
+every round, and a chat analogue of `store_stable`/`store_sleeps` is
+false for the chat model as it is. F (with_tap2 and the chat instance) is
+therefore skipped.
+
+Two ways to make chat quiescent (model and CakeML changes, for chat's
+owner):
+
+1. **The writer waits for the log to grow.** Replace the retry on
+   `Lines ""` by a wait on an event that becomes ready when the log is
+   longer than `i`. That would be a store event declared by `with_tap2`,
+   the way `with_store2` declares `Always`, reported ready only after the
+   tap has extended the log. The writer then asks only when there is
+   something to fetch.
+2. **The tap wakes the writers.** The tap marks the connections whose
+   writers are behind when a line completes, and `with_tap2` declares
+   `Always` only while some writer has news. An idle writer sits in a
+   Level 2 wait that the tap's marking ends.
+
+Either way the busy rounds are bounded by the lines completed, and the
+analogue of `store_stable` goes through as in §5, with the pending-query
+term counting the writers with news.

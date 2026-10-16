@@ -639,5 +639,5 @@ Theorem echo_episodes_peer_equiv_thm:
                   nonsat lfd a w)
        ep_echo2_guar prog)
 Proof
-  metis_tac[echo_episodes_spec_of_endpoint, peer_of_echo_spec2]
+  metis_tac[echo_episodes_spec_of_peer, peer_of_echo_spec2]
 QED

@@ -9,8 +9,11 @@
   whose connect is pending or refused.
    - EConnect a (a < 2^16; a larger address is a misuse: L0 connects only
      to loopback ports): sys_connect.  No socket: EConnected NONE.  A socket
-     f: a fresh handle in ctbl, with f's status: pending (EINPROGRESS), up
-     (connected at once) or refused (failed at once);
+     f: a fresh handle in ctbl, pending.  An outcome known at once (connected
+     or failed at once) is kept in `early` and takes effect at the round's
+     tail, as the layer's Settle arrives at the next tick (so within the round
+     the handle behaves as pending; close-v2's E1 refinement needs this:
+     handle names are predictable);
    - ERead on a ctbl handle: pending: would-block (EGot NONE, as a
      Connecting channel reads); refused: ERefused, the socket is closed and
      the handle forgotten;
@@ -39,11 +42,14 @@ Datatype:
   l1e = <| p : l1p                              (* the prefetching L1's state *)
          ; ctbl : (word64 # word64) list        (* connect handle, its fd: not yet up *)
          ; cst : (word64 # cstat) list          (* fd: its connect's status *)
-         ; settling : word64 list |>            (* connect handles not yet reported *)
+         ; settling : word64 list               (* connect handles not yet reported *)
+         ; early : (word64 # cstat) list |>     (* fd: a connect's outcome known at
+                                                   once (up or refused), applied at
+                                                   the round's tail *)
 End
 
 Definition einit_def:
-  einit = <| p := pinit; ctbl := []; cst := []; settling := [] |>
+  einit = <| p := pinit; ctbl := []; cst := []; settling := []; early := [] |>
 End
 
 Definition cstat_of_def:
@@ -97,8 +103,10 @@ Definition edo_def:
                  SOME (EConnected (SOME h),
                        (w', es with <| p := es.p with b := es.p.b with nxt := es.p.b.nxt + 1;
                                        ctbl := (h, f) :: es.ctbl;
-                                       cst := (f, c) :: ADELKEY f es.cst;
-                                       settling := h :: es.settling |>), [ev])
+                                       cst := (f, CPending) :: ADELKEY f es.cst;
+                                       settling := h :: es.settling;
+                                       early := if c = CPending then es.early
+                                                else (f, c) :: es.early |>), [ev])
              else NONE) ∧
   edo lfd hw (w, es) (ERead h n) =
     (case ALOOKUP es.ctbl h of
@@ -133,9 +141,19 @@ Definition eacts_def:
         | SOME (rs, evs, ws2) => SOME (r :: rs, evs1 ++ evs, ws2)
 End
 
-(* The pending connects' fds *)
+(* The pending connects' fds (not those whose outcome is already known) *)
 Definition pend_fds_def:
-  pend_fds es = MAP SND (FILTER (λ(h, f). cstat_of es f = CPending) es.ctbl)
+  pend_fds es =
+    MAP SND (FILTER (λ(h, f). cstat_of es f = CPending ∧ ¬MEM f (MAP FST es.early)) es.ctbl)
+End
+
+(* The connects whose outcome was known at once take it now, at the tail
+   (model state only: no syscall; an implementation of this layer must
+   keep the same timing) *)
+Definition apply_early_def:
+  apply_early es =
+    es with <| cst := FOLDR (λ(f, c) l. (f, c) :: ADELKEY f l) es.cst es.early;
+               early := [] |>
 End
 
 (* Settle the pending connects the poll found writable (or ERR/HUP): read
@@ -189,7 +207,8 @@ Definition etail_def:
                     let ready_pend = FILTER (λf. MEM f (pend_fds es) ∧
                                                (MEM f (writable_fds rv) ∨ MEM f (readable_fds rv)))
                                             (pend_fds es) in
-                    case settle_fds ready_pend (w4, es with p := ps3 with <| b := b4; pause := ps3.pause − 1 |>) of
+                    case settle_fds ready_pend
+                           (w4, apply_early (es with p := ps3 with <| b := b4; pause := ps3.pause − 1 |>)) of
                     | NONE => NONE
                     | SOME ((w5, es5), sevs) =>
                         let es6 = promote es5;

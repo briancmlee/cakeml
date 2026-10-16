@@ -1029,6 +1029,52 @@ L1 becomes *the* L1.
     "ready" only when L1's queue holds an fd, so it never sees a failed
     Accept.
 
+**R1's two halves.** The v2 world `sk` is built from the run's own fetch
+log:
+- the schedule's step n is round n's fetches;
+- `alloc` returns the kernel's fd for each client;
+- `reserved = []`.
+
+So R1 splits into two halves.
+
+- **R1-safe (forward simulation).** L1's history equals the handle
+  layer's in `sk`, round by round. `sk` is well formed (`sched_wf2`,
+  `alloc_ok`), so it satisfies `server_world2`, and L2's *safety*
+  theorems transfer as they are.
+- **R1-live (fetch completeness).** L2's liveness is relative to `sk`.
+  For example, `echo_live2 sk io` promises to echo what client j sent
+  *in `sk`*, which here means what L1 fetched. To transfer liveness to
+  the real clients, R1 must show that L1 eventually fetches what the
+  kernel delivers:
+  - **(data)** for an accepted connection: every byte its peer delivered
+    that a recv could return is eventually in some round's `FData`, and
+    its EOF or break eventually gives `FEof`/`FReset`;
+  - **(connections)** every connection pending on the listener is
+    eventually `FConn`. The exceptions: it is aborted (ECONNABORTED: the
+    peer reset it, so no service is owed), or it is reset under EMFILE
+    (`emfile_drops`, macOS).
+
+  Where starvation could come from, and what removes it:
+
+  | source | removed by | kind |
+  |---|---|---|
+  | the server never polls the handle or listener | **S1:** the interest covers every open handle and the listener (asyncServer's `ifds` does by construction) | server obligation, proved per server like `hl_ok` |
+  | the inbox stays full (no fetch while it is non-empty) | the server reads what it is shown. This follows from L2's own v2 liveness: what `sk` delivers is eventually read | free |
+  | the accept queue stays full | the server accepts when the listener is ready (asyncServer does); one accept per round then drains the backlog first in, first out | server obligation (S1) |
+  | **transient errors forever:** the model lets EINTR/ENOBUFS/ENOMEM/ENFILE happen "at any time", so recv, accept or poll could fail on every try | **[F1] (new, trusted):** a run has only finitely many transient failures. EINTR needs a caught signal, which the startup contract does not install, and resource shortages are temporary | **L0 fairness assumption, for the user** |
+  | **pausing forever:** the outbox never drops below hw | the client keeps reading its responses (LDrain), **and [F2] (new, trusted):** with nothing in flight, the kernel accepts at least one byte (`0 < n ⇒ 0 < takes j h 0 n`) | client hypothesis per episode, plus an **L0 assumption, for the user** |
+  | **EMFILE forever:** the process sits at the fd limit | **[F3]:** liveness for *new* connections assumes fds free up, e.g. the open connections stay below the limit. Otherwise connections wait in the backlog, which is the real behaviour | hypothesis of the connection half |
+  | the round stops | the loop runs forever (`Diverge`), and every round polls (`poll_chunks` polls at least once) | free |
+
+  The resulting L0-level liveness is L2's v2 liveness, restricted to
+  episodes whose client keeps reading. For servers that never pause (the
+  outbox stays ≤ hw), it applies to every episode. That is the honest
+  statement: a client that never reads is backpressured, by design (D4).
+
+  R1-live comes after R1-safe. [F1] and [F2] are proposed additions to
+  the trusted L0 surface (§4.2), awaiting the user's decision. Without
+  them, only R1-safe and the transfer of L2's safety theorems hold.
+
 **(R3) Per-wrapper lemmas** (model level, on L1's functional core; the
 cheap part). For example:
 

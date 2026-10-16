@@ -21,7 +21,7 @@
 Theory honestL1EPRefine
 Ancestors
   honestL1EPModel honestL1PFRefine honestL1PFModel honestL1Model honestL1Steps
-  socketV2FFI ffiSpikeSocketFFI
+  socketV2FFI ffiSpikeSocketFFI Marshalling
   honestL1Inv honestL0Rely honestL0World honestL0
   endpointHLModel endpointWorld asyncHLModel asyncCore asyncLevel1 asyncM3World
   llist alist
@@ -49,7 +49,8 @@ Definition ev_rel_def:
        MEM f (MAP FST cm) ∧ ALOOKUP w.open_fds f = SOME (cl cm f) ∧
        (EL (cl cm f) w.chans).inbox = [] ∧ ¬(EL (cl cm f) w.chans).peer_eof ∧
        (EL (cl cm f) w.chans).status =
-         (if cstat_of es f = CRefused then Refused else Connecting)) ∧
+         (if cstat_of es f = CRefused then Refused else Connecting) ∧
+       ¬(EL (cl cm f) w.chans).shut) ∧
     (∀f. MEM f es.p.acq ⇒
        MEM f (MAP FST cm) ∧
        (EL (cl cm f) w.chans).inbox = [] ∧ ¬(EL (cl cm f) w.chans).peer_eof ∧
@@ -117,7 +118,8 @@ Theorem ev_rel_ctbl:
   ep_chan_of w f = SOME (cl cm f) ∧ cl cm f < LENGTH w.chans ∧
   ALOOKUP w.open_fds f = SOME (cl cm f) ∧ MEM f (MAP FST cm) ∧
   (EL (cl cm f) w.chans).inbox = [] ∧ ¬(EL (cl cm f) w.chans).peer_eof ∧
-  (EL (cl cm f) w.chans).status = (if cstat_of es f = CRefused then Refused else Connecting)
+  (EL (cl cm f) w.chans).status = (if cstat_of es f = CRefused then Refused else Connecting) ∧
+  ¬(EL (cl cm f) w.chans).shut
 Proof
   simp[ev_rel_def] >> strip_tac >> qpat_x_assum ‘∀h f. ALOOKUP es.ctbl h = _ ⇒ _’ drule >>
   strip_tac >>
@@ -306,7 +308,8 @@ Theorem ev_rel_upd:
   (MEM f (MAP SND es.ctbl) ⇒
      (gc (EL (cl cm f) w.chans)).inbox = [] ∧ ¬(gc (EL (cl cm f) w.chans)).peer_eof ∧
      (gc (EL (cl cm f) w.chans)).status =
-       (if cstat_of es' f = CRefused then Refused else Connecting)) ⇒
+       (if cstat_of es' f = CRefused then Refused else Connecting) ∧
+     ¬(gc (EL (cl cm f) w.chans)).shut) ⇒
   ev_rel lfd a cm es' (upd_chan (cl cm f) gc w)
 Proof
   disch_then (strip_assume_tac o REWRITE_RULE [GSYM MEM_APPEND]) >>
@@ -1066,4 +1069,63 @@ Proof
       gvs[eown_def, ALL_DISTINCT_APPEND, l0owne_def, l0own_def] >> metis_tac[])
   >- (gvs[l0owne_def])
   >> gvs[]
+QED
+
+(* ------------------------------------------------------------------------
+   The L0 side of connects: sys_connect's fd is new; sys_connerr changes no
+   fd
+   ------------------------------------------------------------------------ *)
+
+Theorem res_val_enc:
+  v < 2 ** 64 ⇒
+  res_val (enc_res (Ok v)) = v ∧ res_val (enc_err_val w e v) = v
+Proof
+  rw[res_val_def, enc_res_def, enc_err_val_def] >>
+  ‘LENGTH (n2w8 v) = 8’ by simp[LENGTH_n2w8] >>
+  simp[TAKE_APPEND1, TAKE_LENGTH_ID_rwt] >> irule w82n_n2w8 >> simp[]
+QED
+
+Theorem sys_connerr_l0:
+  sys_connerr f w = SOME (out, w', ev) ∧ l0_rely w ⇒
+  l0_used w' = l0_used w ∧ w'.fd_limit = w.fd_limit ∧ l0_rely w'
+Proof
+  strip_tac >>
+  ‘l0_rely w'’ by (gvs[sys_connerr_def] >> drule_all l0_do_rely >> simp[]) >>
+  gvs[sys_connerr_def, l0_do_def, l0_ffi_fn_def, AllCaseEqs()] >>
+  gvs[l0_call_def, l0_connerr_def, AllCaseEqs()] >> simp[upd_lchan_def]
+QED
+
+Theorem l0_used_cons:
+  (MEM g (l0_used (w with <| chans := c; open_fds := x :: w.open_fds |>)) ⇔
+     g = FST x ∨ MEM g (l0_used w)) ∧
+  (MEM g (l0_used (w with <| chans := c; open_fds := x :: w.open_fds; hist := h |>)) ⇔
+     g = FST x ∨ MEM g (l0_used w)) ∧
+  l0_used (w with hist := h) = l0_used w ∧
+  (w with <| chans := c; open_fds := o'; hist := h |>).fd_limit = w.fd_limit ∧
+  (w with <| chans := c; open_fds := o' |>).fd_limit = w.fd_limit
+Proof
+  simp[l0_used_def] >> metis_tac[]
+QED
+
+Theorem sys_connect_l0:
+  l0_rely w ∧ fds_lt w ∧ sys_connect p w = SOME (out, w', ev) ⇒
+  l0_rely w' ∧ fds_lt w' ∧ (∀g. MEM g (l0_used w) ⇒ MEM g (l0_used w')) ∧
+  (res_val out ≠ 0 ⇒
+     MEM (n2w (res_val out)) (l0_used w') ∧ ¬MEM (n2w (res_val out)) (l0_used w))
+Proof
+  strip_tac >>
+  ‘l0_rely w'’ by (gvs[sys_connect_def] >> drule_all l0_do_rely >> simp[]) >>
+  simp[] >>
+  qpat_x_assum ‘sys_connect _ _ = _’ mp_tac >>
+  simp[sys_connect_def, l0_do_def, l0_ffi_fn_def, AllCaseEqs()] >> strip_tac >>
+  qabbrev_tac ‘tw = l0_tick «sys_connect» w’ >>
+  ‘l0_used tw = l0_used w ∧ tw.fd_limit = w.fd_limit’ by simp[Abbr ‘tw’] >>
+  ‘fds_lt tw’ by gvs[fds_lt_def] >>
+  ‘w.fd_limit ≤ 2 ** 31’ by gvs[l0_rely_def] >>
+  ‘¬MEM (lowest_fd tw) (l0_used tw)’ by (irule lowest_fd_fresh >> fs[]) >>
+  ‘w2n (lowest_fd tw) < 2 ** 64’
+    by (assume_tac (w2n_lt |> INST_TYPE [alpha |-> “:64”]) >> fs[]) >>
+  gvs[l0_call_def, l0_connect_def, fail_def, l0_alloc_def, AllCaseEqs()] >>
+  gvs[res_val_enc, fds_lt_def, l0_used_cons] >> rw[] >> gvs[] >>
+  fs[upd_lchan_def, l0_used_cons]
 QED

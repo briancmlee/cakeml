@@ -42,7 +42,7 @@ QED
 Theorem ep_tick_calls[local]:
   ep_tick (w with calls := c) = ep_tick w with calls := c
 Proof
-  simp[ep_tick_def, settle_def, GSYM FOLDL_ep_deliver_calls] >>
+  simp[ep_tick_def, GSYM FOLDL_ep_deliver_calls] >>
   AP_THM_TAC >> AP_TERM_TAC >> simp[eworld_component_equality]
 QED
 
@@ -102,7 +102,7 @@ Theorem ep_ffi_fn_calls_same:
   ep_ffi_fn n conf bys w = SOME (b, w') ⇒ w'.calls = w.calls
 Proof
   rw[ep_ffi_fn_def, AllCaseEqs()] >> simp[] >>
-  gvs[ep_call_def, AllCaseEqs(), ep_tick_def, settle_def, ep_deliver_calls_same,
+  gvs[ep_call_def, AllCaseEqs(), ep_tick_def, ep_deliver_calls_same,
       ep_accept_def, ep_alloc_def, ep_connect_def, ep_read_def, ep_send_def,
       ep_conn_err_def, ep_shutdown_def, ep_close_def, upd_chan_def] >>
   rpt (pairarg_tac >> gvs[AllCaseEqs()])
@@ -218,9 +218,9 @@ Proof
   rw[ep_rely_def, ep_sched_ok_def] >>
   drule_all ep_after_v1 >> strip_tac >> gvs[] >>
   first_x_assum drule >>
-  ‘settle (w'' with calls := v1_calls) with clock := w''.clock + 1 =
-   (settle w'' with clock := w''.clock + 1) with calls := v1_calls’
-    by simp[settle_def, eworld_component_equality] >>
+  ‘(w'' with calls := v1_calls) with clock := w''.clock + 1 =
+   (w'' with clock := w''.clock + 1) with calls := v1_calls’
+    by simp[eworld_component_equality] >>
   simp[ep_step_ok_calls]
 QED
 

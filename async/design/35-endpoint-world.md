@@ -209,6 +209,33 @@ rule.
   fd opened and not yet closed; `v1_disciplined`, `v1_instance_disc`,
   drafted). Our programs would then be proved disciplined, which turns
   version 1's idealisation into a theorem about them.
+
+  **Proof plan for `v1_instance_disc`** (branch `spike/v1-disc`). The
+  plan goes through version 2, which is already an exact instance
+  (`v2_instance_thm`), so no new endpoint simulation is needed:
+  1. From a version-1 server world `sk`, build a version-2 world `v2of1 sk`.
+     - Its schedule is `sk`'s, renamed: `Connect l c` becomes `Connect2 l`,
+       and `Data c bs` and `Eof c` go to the client numbered by `c`'s
+       connect order.
+     - Its allocation gives client j the fd of the j-th connect, or the
+       lowest free fd if that one is in use, so `alloc_ok` holds.
+  2. `v1_v2_disc` (the core lemma): along the calls of a disciplined trace
+     with no `«sock_close»` (version 1 has none), `socket_ffi sk` and
+     `socket2_ffi (v2of1 sk)` give the same answers. Discipline keeps the
+     program off connections it has not accepted, the one place the two
+     worlds differ.
+  3. `semantics_prog_upto` (async/quiet/ffi) carries the version-1
+     `Diverge io` over to version 2. Determinism gives every other
+     behaviour (∀b).
+  4. Compose with `v2_instance_thm`. Then restrict the endpoint world's
+     calls to version 1's: the trace has no `«sock_close»`, so the answers
+     are unchanged (`ep_calls_subset`).
+
+  **Non-saturation hypothesis** (agreed 2026-10-16): the version-1 schedule
+  connects at most M clients, with M + 3 < 2^64. Without it, the
+  version-2 and endpoint worlds run out of fds (`arrival_ok2`'s bound)
+  where version 1 never does. It is stated as a one-line hypothesis of
+  `v1_instance_disc` (`sched_connects_le`), with a comment.
 - **Review-driven fix: `ticks_forever`.** Liveness was vacuous for
   programs that never let time pass. A program that never polls receives
   nothing, so `sym_live` held trivially, while the schedule-based

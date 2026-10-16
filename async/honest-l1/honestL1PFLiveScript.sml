@@ -1,7 +1,8 @@
 (*
-  R1-live for the prefetching L1 (design/36 §6, D14/D15): L1 eventually
-  fetches what the kernel delivers, so the version-2 world built from its
-  run (psk) misses nothing a client sent.  WORK IN PROGRESS.
+  R1-live for the prefetching L1 (design/36 §6, D14/D15), the fetch half:
+  L1 eventually fetches on an open handle's fd whose kernel channel has
+  input pending (fetch_progress), given [F1] (D11′), S1, S3 and S4.  The
+  stream invariant and live-data / live-conn build on it.
 
   The run: an infinite run of L1 in the L0 world w0 (total by
   honestL1PFInv's prun_total).  Its IO-event trace, which only grows,
@@ -429,4 +430,99 @@ Proof
   >> rpt strip_tac >> CCONTR_TAC >>
   qpat_x_assum ‘∀ev. MEM ev _ ∧ ev_on «sys_recv» _ ev ∧ ¬retried ev ⇒ _’ drule_all >>
   gvs[]
+QED
+
+(* [F1]'s indices and the rounds *)
+Theorem call_at_round:
+  run_ok lfd hw ifds m w0 ∧ MEM ev (rrev lfd hw ifds m w0 k) ∧ ev_on nm f ev ⇒
+  ∃i. LENGTH (revs lfd hw ifds m w0 k) ≤ i ∧ call_at lfd hw ifds m w0 i nm f
+Proof
+  strip_tac >> drule_all round_event >> strip_tac >>
+  qexists_tac ‘i’ >> simp[call_at_def] >> qexists_tac ‘SUC k’ >> simp[]
+QED
+
+Theorem call_ok_round:
+  run_ok lfd hw ifds m w0 ∧ call_at lfd hw ifds m w0 i nm f ∧
+  call_ok_at lfd hw ifds m w0 i ∧ LENGTH (revs lfd hw ifds m w0 K0) ≤ i ⇒
+  ∃k ev. K0 ≤ k ∧ LENGTH (revs lfd hw ifds m w0 k) ≤ i ∧ MEM ev (rrev lfd hw ifds m w0 k) ∧
+         ev_on nm f ev ∧ ¬retried ev
+Proof
+  rw[call_at_def, call_ok_at_def] >>
+  drule event_round >> disch_then drule >> strip_tac >>
+  qexistsl_tac [‘k’, ‘EL i (revs lfd hw ifds m w0 n)’] >> simp[] >>
+  conj_tac
+  >- (CCONTR_TAC >> ‘SUC k ≤ K0’ by simp[] >>
+      drule_all revs_len_mono >> simp[])
+  >> ‘EL i (revs lfd hw ifds m w0 n') = EL i (revs lfd hw ifds m w0 n)’
+       by (irule revs_EL >> simp[]) >> gvs[]
+QED
+
+(* From some round on, every round has an event: the trace grows *)
+Theorem revs_long:
+  run_ok lfd hw ifds m w0 ∧ (∀k. N ≤ k ⇒ rrev lfd hw ifds m w0 k ≠ []) ⇒
+  ∀d. d ≤ LENGTH (revs lfd hw ifds m w0 (N + d))
+Proof
+  strip_tac >> Induct >> simp[] >>
+  drule prun_round' >> disch_then (qspecl_then [‘ARB’, ‘N + d’] strip_assume_tac) >>
+  first_x_assum (qspec_then ‘N + d’ mp_tac) >> simp[ADD_CLAUSES] >>
+  Cases_on ‘rrev lfd hw ifds m w0 (N + d)’ >> simp[]
+QED
+
+(* ------------------------------------------------------------------------
+   R1-live, the fetch half: L1 eventually fetches what the kernel holds for
+   an open handle's fd (D14, with [F1] as D11′)
+   ------------------------------------------------------------------------ *)
+
+Theorem fetch_progress:
+  run_ok lfd hw ifds m w0 ∧ winv w0 ∧ MEM lfd (l0_used w0) ∧
+  (∀n. SND (pcm lfd hw ifds m w0 n) + 1 < dimword (:64)) ∧
+  F1 lfd hw ifds m w0 ∧ S1 lfd hw ifds m w0 ∧ S3 lfd hw ifds m w0 ∧
+  S4 lfd hw ifds m w0 f ⇒
+  ∀n h. ALOOKUP (rstate lfd hw ifds m w0 n).b.tbl h = SOME f ∧
+        ¬MEM f (rstate lfd hw ifds m w0 n).eof ∧ pend (rworld lfd hw ifds m w0 n) f ⇒
+        ∃k. n ≤ k ∧ fetched_at lfd hw ifds m w0 k f
+Proof
+  strip_tac >> rpt gen_tac >> strip_tac >> CCONTR_TAC >>
+  ‘∀k. n ≤ k ⇒ ¬fetched_at lfd hw ifds m w0 k f’ by metis_tac[] >>
+  qpat_x_assum ‘¬_’ kall_tac >>
+  drule_all late_rounds >> strip_tac >>
+  ‘∀k. N ≤ k ⇒ rrev lfd hw ifds m w0 k ≠ []’
+    by (rpt strip_tac >> first_x_assum drule >> simp[]) >>
+  drule_all revs_long >> strip_tac >>
+  (* polls on f, infinitely often *)
+  ‘∀i. ∃i'. i ≤ i' ∧ call_at lfd hw ifds m w0 i' «sys_poll» f’
+    by (gen_tac >> qpat_assum ‘∀k. N ≤ k ⇒ _ ∧ _’ (qspec_then ‘N + i’ mp_tac) >>
+        impl_tac >- simp[] >>
+        disch_then (strip_assume_tac o REWRITE_RULE [EXISTS_MEM]) >>
+        drule_all call_at_round >> strip_tac >>
+        qexists_tac ‘i'’ >> simp[] >>
+        qpat_assum ‘∀d. d ≤ _’ (qspec_then ‘i’ assume_tac) >> simp[]) >>
+  (* [F1] on polls: infinitely many polls on f are not retried *)
+  ‘∀i. ∃i'. i ≤ i' ∧ call_at lfd hw ifds m w0 i' «sys_poll» f ∧
+            call_ok_at lfd hw ifds m w0 i'’
+    by (qpat_assum ‘F1 _ _ _ _ _’ (mp_tac o REWRITE_RULE [F1_def]) >>
+        disch_then (qspecl_then [‘«sys_poll»’, ‘f’] mp_tac) >> metis_tac[]) >>
+  (* each leads to a recv on f in its round: recvs on f, infinitely often *)
+  ‘∀i. ∃j. i ≤ j ∧ call_at lfd hw ifds m w0 j «sys_recv» f’
+    by (gen_tac >>
+        qpat_assum ‘∀i. ∃i'. i ≤ i' ∧ _ ∧ call_ok_at _ _ _ _ _ _’
+          (qspec_then ‘LENGTH (revs lfd hw ifds m w0 (N + i))’ strip_assume_tac) >>
+        drule_all call_ok_round >> strip_tac >>
+        qpat_assum ‘∀k. N ≤ k ⇒ _ ∧ _’ (qspec_then ‘k’ mp_tac) >>
+        impl_tac >- simp[] >> strip_tac >>
+        qpat_x_assum ‘∀ev. MEM ev _ ∧ ev_on «sys_poll» _ ev ∧ _ ⇒ _’ drule_all >>
+        disch_then (strip_assume_tac o REWRITE_RULE [EXISTS_MEM]) >>
+        drule_all call_at_round >> strip_tac >>
+        qexists_tac ‘i''’ >> simp[] >>
+        ‘LENGTH (revs lfd hw ifds m w0 (N + i)) ≤ LENGTH (revs lfd hw ifds m w0 k)’
+          by (irule revs_len_mono >> simp[]) >>
+        qpat_assum ‘∀d. d ≤ _’ (qspec_then ‘i’ assume_tac) >> simp[]) >>
+  (* [F1] on recvs: one on f is not retried; but from round N on, every recv
+     on f is retried *)
+  qpat_assum ‘F1 _ _ _ _ _’ (mp_tac o REWRITE_RULE [F1_def]) >>
+  disch_then (qspecl_then [‘«sys_recv»’, ‘f’] mp_tac) >> impl_tac >- metis_tac[] >>
+  disch_then (qspec_then ‘LENGTH (revs lfd hw ifds m w0 N)’ strip_assume_tac) >>
+  drule_all call_ok_round >> strip_tac >>
+  qpat_assum ‘∀k. N ≤ k ⇒ _ ∧ _’ (qspec_then ‘k’ mp_tac) >> impl_tac >- simp[] >>
+  strip_tac >> first_x_assum drule_all >> simp[]
 QED

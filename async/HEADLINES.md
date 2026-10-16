@@ -561,9 +561,23 @@ rg_spec cls guar (prog : dec list) ⇔
 
 **Scope.** The servers' peer-world specs hold in the SIMPLE CLASS ONLY:
 
-    cls w = ep_server_world v2_calls lfd a w ∧ no_backpressure w ∧ open_loop w   (∧ nonsat lfd a w for the converse)
+    cls w = ep_server_world cs lfd a w ∧ no_backpressure w ∧ open_loop w ∧ nonsat1 lfd a w
 
 They do not hold over all peer worlds. Our servers write with the full `«sock_write»`, and under backpressure a full write that doesn't fit is a misuse (it fails). So a server spec over every peer world is **false** for `echo_episodes_prog`, `http_prog` and `kv_prog`. Backpressure, fd limits and errors are meant to be absorbed by L3's verified wrappers (section 8), not by the servers.
+
+The class is now `nonsat1` (user-approved: the converse directions need one more fd slot than `nonsat` leaves). The headline claims are drafted on `final/L2-00-statements`.
+
+**What the simple class leaves out, and where each piece is covered** (user condition, 2026-10-16: the simple-class scope is acceptable *provided* these are covered later). Status as of 2026-10-17:
+
+| excluded behaviour | covered where | statement or section | status |
+|---|---|---|---|
+| **backpressure and partial writes** (a server's full write that doesn't fit) | L3: the prefetching L1 wrappers buffer each fd's writes in an outbox, retry partial sends, and pause reading a fd whose outbox is above the high-water mark | design/36 §5.1 (write row) and §6; safety: R1-safe `l1pf_refines_hl` (`honestL1PFRefine`); liveness: R1-live (`fetch_progress`), with per-server obligations S3/S4 (D15) | R1-safe **proved** (model level); `fetch_progress` **proved**; live-data (D16) **in progress** |
+| **cross-fd backpressure** (proxies and clients: stop reading A while B's outbox is full) | the moonshot: an L1 pause-policy parameter (`pol_self` for servers, `pol_never` for proxy and client), plus an outbox-level query | design/45 §2.2 (decision Q1 = P2, approved), §2.3 (`S4_relay`), §2.6 (the no-deadlock lemma) | design **approved**; not proved |
+| **fd exhaustion** (EMFILE/ENFILE, `fd_limit`) | L3: the L0 world's `fd_limit`, and L1's `exhausted` state (the listener isn't polled until a close frees an fd, which fixes the spin); the moonshot's launch-time `fds_ok` | design/36 §4 (`fd_limit`), §5.1 (accept row), R1-live's connection half under [F3] (D14); design/45 §4.2 (`fds_ok`) | model and wrapper **built** (`exhausted_quiet`); liveness for new connections **in progress** |
+| **errors and resets** (ECONNRESET, EPIPE; transient EINTR/ENOBUFS/ENOMEM) | L3: L1 absorbs them (a reset reads as EOF and marks the fd `gone`; transient failures retry). The specs move to the raw trace, so errors stay visible | design/36 §5.1, D16 (live data unless a hard error was observed, plus a corollary with no spurious hard errors), [F1] (D11, weak fairness on transient failures) | R1-safe **proved**; D16 **in progress**; one statement gap (a broken fd's error reported as transient forever) **awaiting decision** |
+| **clients that are not open loop** (reactive peers, the environment reacting to what the server sends) | the moonshot's client, proxy and system theorems (the client never pauses its reads, so it is the sink that makes the waits well-founded) | design/45 §2.5 (the client), §3 (the shared kernel `l0sys`), §4 (system safety; liveness under fairness) | statements **drafted**; not proved |
+| **filling the fd space** (`nonsat1`: fewer than 2^64 − reserved − 4 connections in all) | not covered, by design: a model bound far above any real `fd_limit`, which is the real constraint (row 3) | — | permanent idealisation (harmless) |
+
 
 **Linked to L1 (proved):**
 - `v2_instance_thm`: the lifetimes world is an exact instance of the peer world;
@@ -604,6 +618,8 @@ L2's statements are shown with their spike names; they are renamed when L2 is fo
 | chat | **open** | — | dropping slow clients (D7) changes its spec; chat is never quiescent |
 
 "No server proof changes" holds at the **model level** only. At the whole-program level, each server's CakeML main theorem is re-based on the L1 loop's translation chain.
+
+**Coverage of what L2 leaves out.** Backpressure, fd exhaustion, errors and reactive clients are covered here at L3 and in the moonshot. Section 7's coverage table gives, for each, the statement or design section and its status.
 
 **Statements to write first** (from the transfer-claim review):
 1. `l1pf_simple`, the new R2 for the prefetching L1. In simple worlds with at most one connect per tick and small data, the abstract world equals `sk_of w0`; otherwise it is an explicit *delay* of it. The trace relation is a fetch-placement relation, not a renaming.

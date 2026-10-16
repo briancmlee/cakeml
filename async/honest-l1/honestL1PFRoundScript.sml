@@ -335,8 +335,8 @@ Proof
 QED
 
 Theorem l1_close_f:
-  l1_close g (w, st) = SOME ((w', st'), evs) ∧ winv w ∧ pend w f ∧ g ≠ f ⇒
-  winv w' ∧ pend w' f ∧ st'.tbl = st.tbl ∧ st'.nxt = st.nxt ∧
+  l1_close g (w, st) = SOME ((w', st'), evs) ∧ winv w ∧ g ≠ f ⇒
+  winv w' ∧ (pend w f ⇒ pend w' f) ∧ st'.tbl = st.tbl ∧ st'.nxt = st.nxt ∧
   st'.closing = FILTER ($≠ g) st.closing ∧ outbox_of st' f = outbox_of st f ∧
   EVERY (λev. ev_name ev = ExtCall «sys_close») evs
 Proof
@@ -523,9 +523,8 @@ Proof
 QED
 
 Theorem pdo_f:
-  pdo lfd (w, ps) a = SOME (r, (w', ps'), evs) ∧ winv w ∧ pend w f ∧
-  fkeep lfd h f ps ⇒
-  winv w' ∧ pend w' f ∧ fkeep lfd h f ps' ∧
+  pdo lfd (w, ps) a = SOME (r, (w', ps'), evs) ∧ winv w ∧ fkeep lfd h f ps ⇒
+  winv w' ∧ (pend w f ⇒ pend w' f) ∧ fkeep lfd h f ps' ∧
   (inb_of ps f = [] ⇒ inb_of ps' f = []) ∧
   ((∀bs. a ≠ Write h bs) ⇒ LENGTH (outbox_of ps'.b f) ≤ LENGTH (outbox_of ps.b f)) ∧
   EVERY (λev. ev_name ev = ExtCall «sys_send» ∨ ev_name ev = ExtCall «sys_close») evs
@@ -562,11 +561,11 @@ Proof
        strip_tac >> Cases_on ‘g = f’ >- (gvs[] >> metis_tac[]) >>
        simp[outbox_of_set_outbox] >> NO_TAC) >>
   (* sent at once *)
-  ‘winv w' ∧ pend w' f ∧ ev_name ev = ExtCall «sys_send»’
+  ‘winv w' ∧ (pend w f ⇒ pend w' f) ∧ ev_name ev = ExtCall «sys_send»’
     by (qpat_x_assum ‘sys_send _ _ _ = _’ mp_tac >> simp[sys_send_def] >> strip_tac >>
         rpt conj_tac
         >- (drule_at (Pos last) winv_do >> simp[])
-        >- (drule_at (Pos last) pend_do >> simp[])
+        >- (strip_tac >> drule_at (Pos last) pend_do >> simp[])
         >> drule l0_do_cases >> rw[] >> simp[ev_name_def]) >>
   rpt conj_tac >> TRY (first_assum ACCEPT_TAC) >> simp[] >>
   TRY (irule fkeep_b_same >> simp[after_send_def, set_outbox_def] >>
@@ -577,9 +576,8 @@ QED
 
 Theorem pacts_f:
   ∀acts w ps rs evs w' ps'.
-    pacts lfd (w, ps) acts = SOME (rs, evs, (w', ps')) ∧ winv w ∧ pend w f ∧
-    fkeep lfd h f ps ⇒
-    winv w' ∧ pend w' f ∧ fkeep lfd h f ps' ∧
+    pacts lfd (w, ps) acts = SOME (rs, evs, (w', ps')) ∧ winv w ∧ fkeep lfd h f ps ⇒
+    winv w' ∧ (pend w f ⇒ pend w' f) ∧ fkeep lfd h f ps' ∧
     (inb_of ps f = [] ⇒ inb_of ps' f = []) ∧
     ((∀bs. ¬MEM (Write h bs) acts) ⇒
      LENGTH (outbox_of ps'.b f) ≤ LENGTH (outbox_of ps.b f)) ∧
@@ -595,19 +593,20 @@ QED
 
 Theorem l1_flush_f:
   ∀fs w st w' st' evs.
-    l1_flush fs (w, st) = SOME ((w', st'), evs) ∧ winv w ∧ pend w f ⇒
-    winv w' ∧ pend w' f ∧ st'.tbl = st.tbl ∧ st'.nxt = st.nxt ∧
+    l1_flush fs (w, st) = SOME ((w', st'), evs) ∧ winv w ⇒
+    winv w' ∧ (pend w f ⇒ pend w' f) ∧ st'.tbl = st.tbl ∧ st'.nxt = st.nxt ∧
     st'.closing = st.closing ∧
     LENGTH (outbox_of st' f) ≤ LENGTH (outbox_of st f) ∧
     EVERY (λev. ev_name ev = ExtCall «sys_send») evs
 Proof
-  Induct >> simp[l1_flush_def] >> rpt gen_tac >> rw[] >>
-  TRY (first_x_assum drule_all >> simp[] >> NO_TAC) >>
+  Induct >> simp[l1_flush_def] >> rpt gen_tac >> strip_tac >>
+  qpat_x_assum ‘(if _ then _ else _) = _’ mp_tac >> IF_CASES_TAC >> strip_tac
+  >- (first_x_assum drule_all >> simp[]) >>
   gvs[AllCaseEqs()] >> rename1 ‘sys_send _ _ _ = SOME (out, w1, ev)’ >>
-  ‘winv w1 ∧ pend w1 f ∧ ev_name ev = ExtCall «sys_send»’
+  ‘winv w1 ∧ (pend w f ⇒ pend w1 f) ∧ ev_name ev = ExtCall «sys_send»’
     by (gvs[sys_send_def] >> rpt conj_tac
         >- (drule_at (Pos last) winv_do >> simp[])
-        >- (drule_at (Pos last) pend_do >> simp[])
+        >- (strip_tac >> drule_at (Pos last) pend_do >> simp[])
         >> drule l0_do_cases >> rw[] >> simp[ev_name_def]) >>
   first_x_assum drule_all >> strip_tac >> gvs[] >>
   irule LESS_EQ_TRANS >> goal_assum drule >> simp[after_send_le]
@@ -615,8 +614,8 @@ QED
 
 Theorem l1_reap_f:
   ∀fs w st w' st' evs.
-    l1_reap fs (w, st) = SOME ((w', st'), evs) ∧ winv w ∧ pend w f ∧ ¬MEM f fs ⇒
-    winv w' ∧ pend w' f ∧ st'.tbl = st.tbl ∧ st'.nxt = st.nxt ∧
+    l1_reap fs (w, st) = SOME ((w', st'), evs) ∧ winv w ∧ ¬MEM f fs ⇒
+    winv w' ∧ (pend w f ⇒ pend w' f) ∧ st'.tbl = st.tbl ∧ st'.nxt = st.nxt ∧
     (∀x. MEM x st'.closing ⇒ MEM x st.closing) ∧
     outbox_of st' f = outbox_of st f ∧
     EVERY (λev. ev_name ev = ExtCall «sys_close») evs
@@ -891,6 +890,7 @@ Proof
   ‘¬MEM f pa.eof ∧ f ≠ lfd ∧ ALOOKUP pa.b.tbl h = SOME f ∧
    (∀h'. ALOOKUP pa.b.tbl h' = SOME f ⇒ h' = h) ∧ ¬MEM f pa.b.closing’
     by (qpat_x_assum ‘fkeep _ _ _ pa’ mp_tac >> simp[fkeep_def]) >>
+  qpat_x_assum ‘pend w f ⇒ _’ mp_tac >> impl_tac >- simp[] >> strip_tac >>
   drule_all l1_polls_keep >> strip_tac >>
   drule_all l1_flush_f >> strip_tac >>
   ‘fkeep lfd h f (pa with b := b2)’ by (irule fkeep_b_same >> fs[]) >>

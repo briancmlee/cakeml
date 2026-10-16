@@ -258,3 +258,9 @@ Proof
   ‘l0_ep_events j 0 [] evs = []’ by (irule ep_events_never >> simp[]) >>
   gvs[]
 QED
+
+Theorem ep_ok_ADELKEY:
+  ep_ok (k, opn) ⇒ ep_ok (k, ADELKEY f opn)
+Proof
+  rw[ep_ok_def, ALL_DISTINCT_ADELKEY, EVERY_MEM] >> metis_tac[MEM_SND_ADELKEY]
+QED

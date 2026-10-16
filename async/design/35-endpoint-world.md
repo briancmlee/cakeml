@@ -249,24 +249,37 @@ rule.
 | 4. Input liveness | **Adopted** as an additive guarantee (`input_live`) with a bite; the headline specs are unchanged |
 | Half-close (relay) | **Adopted**: `«sock_shutdown»` |
 | 5. Progress relies must be per-guarantee | **Adopted** (§3) |
-| Open n-ary systems with an external io_event view; the buffer-closure lemma (proxy ‖ U meets U's spec, and KV stays linearizable behind a proxy) | **Drafted** (§7), after your approval of decision 5 |
+| Open n-ary systems with an external io_event view; the buffer-closure lemma (proxy ‖ U meets U's spec, and KV stays linearizable behind a proxy) | **Drafted** (§7), after your approval of decision 5; relay closure proved for echo, HTTP and KV |
 | Terminating clients (`rg_spec_term`) | **Drafted** (§7), after your approval of decision 6 |
 | Select, clock, timers, scopes | **Deferred** |
 
 ## 6. Decisions for you
 
-Items 1–4 stay **parked** (2026-10-16): to be decided before any client or
-proxy program, or any extension of socket_ffi.c.
+Items 1–4 were decided on 2026-10-16:
 
-1. **[PENDING USER DECISION]** The acceptance policy `takes j b n` gives one number per call. A policy
-   that varies with time, beyond the bytes in flight, would need the
-   environment.
-2. **[PENDING USER DECISION]** A connect's outcome is the world's choice (`accepts a j`), settled at the
-   next tick. A refused channel reads as EOF.
-3. **[PENDING USER DECISION]** `«sock_write»` stays a full write; under backpressure a full write that
-   doesn't fit is a misuse.
-4. **[PENDING USER DECISION]** Writability is a separate call (`«sock_writable»`), so `«sock_poll»` is
-   unchanged and version 1 is an exact instance.
+1. **[ACCEPTED 2026-10-16]** The acceptance policy `takes j b n` gives one
+   number per call. This is the "n accepted" of design/36's single
+   non-blocking L0 send. A policy that varies with time, beyond the bytes
+   in flight, would need the environment.
+2. **[CHANGED 2026-10-16]** A connect's outcome is still the world's
+   choice (`accepts a j`), settled at the next tick, but it is now
+   three-way: pending, connected or refused. A refused channel does not
+   read as EOF. Read, write and poll on it return an **error result** (an
+   ordinary return, not `FFI_failed`), and connect's FFI result gains a
+   status byte. To follow, coordinated with design/36's error encoding:
+   - `http_client_term_spec`: on refusal the client reports it and ends
+     cleanly;
+   - `proxy_spec`: an upstream refusal closes the client's episode or
+     answers an error (our choice, documented with the statement);
+   - a bite: a client that treats refusal as success fails its spec;
+   - a check that the v1 and v2 instance proofs are unaffected.
+3. **[SUPERSEDED by design/36 (pending review)]** The full-write
+   `«sock_write»`, and full-write misuse under backpressure, are not
+   hard-coded further. Design/36 has an honest, layered FFI: L0 honest
+   syscalls with a single non-blocking send, L1 verified wrappers, and L2
+   servers proved against L1.
+4. **[SUPERSEDED by design/36 (pending review)]** A separate writability
+   call (`«sock_writable»`) is not pursued further, for the same reason.
 5. **[APPROVED 2026-10-16: go to n-ary open systems + buffer closure]**
    Composition is binary and closed (client + server) in this round. The
    stress test recommends, as the next step:
@@ -343,12 +356,19 @@ instant gives the system's (`relay_safety`, proved).
   `endpointBufferHttp`). Request parsing is monotone (`parse_mono`) because
   a printed valid request is never a proper prefix of another
   (`print_prefix_free`).
-- KV's remains a claim, and it is not cheap. `kv_safe` is not a
-  per-connection predicate: its real-time `precedes` compares event
-  positions across connections. Transferring it needs the relay relation
-  over the joint interleaving at every instant (a relay only widens
-  request intervals). It also needs the order extended by the requests the
-  server behind the proxy has not yet seen.
+- KV's is relay-closed too (`kv_relay_closed`, proved in
+  `endpointBufferKv`). `kv_safe` is not a per-connection predicate, since
+  its real-time `precedes` compares positions across connections. So the
+  setting is a **relay run** (`relay_run`): inside and outside traces at
+  the instants of a joint run, monotone, every outside prefix observed,
+  and `relays` on every connection at every instant. At an outside point,
+  the server has read a prefix of each connection's requests
+  (`parse_mono`). `kv_safe` inside orders those. The order is extended by
+  the unread requests at the end (`extra`). The store is sequential, so
+  the earlier replies are unchanged. Real time transfers at the instant of
+  the outside witness, since a relay only widens request intervals. An
+  appended request cannot have been answered outside, because what was
+  written outside is a prefix of what the server wrote.
 
 `buffer_closed` also cannot give the outside world `ticks_forever` from
 the relay facts alone. The system's clock is the proxy's, so that part

@@ -19,8 +19,16 @@ Write-up and decisions for review: `35-endpoint-world.md`.
   (`dworld`, `dworld_inv`), `endpointV2Prefix`, `endpointEcho2Conv`
   (`class_inv`, `echo_spec2_ticks`). `ffiAgreeUpto` is imported from
   spike/quiet-echo at `async/quiet/ffi`.
-- Parked pending the user: the v1 equivalences (fd discipline), http/kv,
-  buffer closure (§7 questions).
+- Decided (2026-10-16, design/35 §6, §7): v1 option A (fd-disciplined
+  programs); per-instant `relays`; `sys_spec` over every wired fair run;
+  refused connect three-way with an error result; §6 items 3–4 superseded
+  by design/36.
+- Buffer closure (PR #79, `spike/buffer-closure`): `relay_safety`,
+  `echo_relay_closed`, `http_relay_closed` (`endpointBufferHttp`) and
+  `kv_relay_closed` (`endpointBufferKv`, over a `relay_run`) are proved.
+- Queue: refused-connect changes (encoding from design/36) →
+  `v1_instance_disc` (non-saturation hypothesis: ≤M connects, M+3 < 2^64)
+  on `spike/v1-disc` → disciplined echo sym_equiv → http_b → kv.
 - `endpointV2Sim`'s relation `v2rel` (core + al_rel of the futures) is the
   template for the version-1 disciplined instance.
 

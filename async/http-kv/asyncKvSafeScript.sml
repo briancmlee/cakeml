@@ -26,7 +26,7 @@ Ancestors
   asyncM4SockModel asyncM4GTrans asyncRunOkGen EchoSpec HttpSpec
   HttpSpecBodies HttpKvSpec asyncHttpParse asyncHttpParseH asyncHttpParseB
   asyncWithStore asyncServerWithK asyncKvHandler asyncKvModel asyncKvOrder
-  asyncKvLabel asyncKvTraceLemmas llist ffi while
+  asyncKvLabel asyncKvTraceLemmas llist ffi
 Libs
   preamble
 
@@ -37,8 +37,9 @@ Libs
 Theorem FLAT_GENLIST_prefix[local]:
   a ≤ b ⇒ FLAT (GENLIST f a) ≼ FLAT (GENLIST f b)
 Proof
-  strip_tac >> ‘b = a + (b - a)’ by simp[] >>
-  pop_assum SUBST1_TAC >> simp[GENLIST_APPEND, FLAT_APPEND]
+  Induct_on ‘b’ >> rw[] >> Cases_on ‘a = SUC b’ >> simp[] >>
+  ‘a ≤ b’ by simp[] >> first_x_assum drule >>
+  rw[IS_PREFIX_APPEND, GENLIST, SNOC_APPEND, FLAT_APPEND] >> metis_tac[APPEND_ASSOC]
 QED
 
 Theorem prefix_TAKE_eq[local]:
@@ -98,14 +99,22 @@ Proof
   strip_tac >> irule FILTER_TAKE_lt >> simp[]
 QED
 
+Theorem n2w_eq_iff[local]:
+  h0 < dimword(:64) ⇒ ((n2w h0 : word64) = c ⇔ h0 = w2n c)
+Proof
+  rw[EQ_IMP_THM] >> simp[]
+QED
+
 (* Connections of fds below 2^64, as words *)
 Theorem FILTER_conn_words[local]:
   ∀G. (∀q. MEM q G ⇒ FST q < dimword(:64)) ⇒
       FILTER (λx. FST x = c) (MAP (λq. (n2w (FST q) : word64, SND q)) G) =
       MAP (λq. (c, SND q)) (FILTER (λq. FST q = w2n c) G)
 Proof
-  Induct >> simp[] >> PairCases >> rw[] >> gvs[] >>
-  gvs[] >> metis_tac[w2n_n2w, n2w_w2n, LESS_MOD]
+  Induct >> simp[] >> PairCases >> rpt strip_tac >>
+  first_assum (qspec_then ‘(h0,h1)’ mp_tac) >> simp_tac std_ss [] >> strip_tac >>
+  ‘∀q. MEM q G ⇒ FST q < dimword(:64)’ by (rw[] >> fs[]) >>
+  fs[] >> simp[n2w_eq_iff] >> rw[]
 QED
 
 Theorem ZIP_conn_words[local]:
@@ -116,7 +125,11 @@ Theorem ZIP_conn_words[local]:
             (FILTER (λp. FST (FST p) = w2n c) (ZIP (G, A)))
 Proof
   Induct >> simp[] >> PairCases >> rpt gen_tac >> Cases_on ‘A’ >> simp[] >>
-  rw[] >> gvs[] >> metis_tac[w2n_n2w, n2w_w2n, LESS_MOD]
+  strip_tac >>
+  first_assum (qspec_then ‘(h0,h1)’ mp_tac) >> simp_tac std_ss [] >> strip_tac >>
+  ‘∀q. MEM q G ⇒ FST q < dimword(:64)’ by (rw[] >> fs[]) >>
+  first_x_assum (qspec_then ‘t’ mp_tac) >> simp[] >> strip_tac >>
+  simp[n2w_eq_iff] >> rw[]
 QED
 
 Theorem FILTER_pend[local]:
@@ -124,8 +137,11 @@ Theorem FILTER_pend[local]:
        FILTER (λx. FST x = c) (FLAT (MAP (λc. MAP (λr. (c, r)) (D c)) CS)) =
        if MEM c CS then MAP (λr. (c, r)) (D c) else []
 Proof
-  Induct >> simp[FILTER_APPEND] >> rw[] >> gvs[]
-  >> simp[FILTER_EQ_ID, EVERY_MAP, FILTER_EQ_NIL]
+  Induct >> simp[FILTER_APPEND] >> rpt strip_tac >> fs[] >>
+  ‘FILTER (λx. FST x = c) (MAP (λr. (h, r)) (D h)) =
+   if h = c then MAP (λr. (c, r)) (D c) else []’
+    by (rw[FILTER_EQ_ID, EVERY_MAP, FILTER_EQ_NIL]) >>
+  simp[] >> Cases_on ‘h = c’ >> gvs[]
 QED
 
 Theorem LENGTH_FILTER_ZIP[local]:
@@ -145,9 +161,9 @@ Theorem conns_of_trace[local]:
   ∃CS. ALL_DISTINCT CS ∧ ∀c. bytes_read_from c evs ≠ [] ⇒ MEM c CS
 Proof
   qexists_tac ‘nub (MAP ev_conn evs)’ >> simp[all_distinct_nub] >>
-  simp[bytes_read_from_def, FLAT_EQ_NIL, EXISTS_MEM, EVERY_MEM] >>
-  rpt strip_tac >> simp[MEM_MAP] >> qexists_tac ‘e’ >> simp[] >>
-  Cases_on ‘e’ >> rename1 ‘IO_event f conf b’ >> Cases_on ‘f’ >>
+  rw[bytes_read_from_def] >> gs[FLAT_EQ_NIL, EVERY_MEM, MEM_MAP] >>
+  rename1 ‘MEM ev evs’ >> qexists_tac ‘ev’ >> simp[] >>
+  Cases_on ‘ev’ >> rename1 ‘IO_event f conf b’ >> Cases_on ‘f’ >>
   gvs[event_read_def, ev_conn_def] >> every_case_tac >> gvs[]
 QED
 
@@ -162,6 +178,78 @@ QED
    The theorem
    ------------------------------------------------------------------------ *)
 
+(* The server's rounds, in the loop's run *)
+Overload KEV = “λlfdn ifds s0. grounds_events ifds (srelabel (kv_server lfdn)) s0”
+Overload KHH = “λlfdn ifds s0 k. MAP sfs (ghist ifds (srelabel (kv_server lfdn)) s0 k)”
+Overload KTS = “λlfdn ifds s0 k. trans (kv_server lfdn) (KHH lfdn ifds s0 k)”
+Overload KG = “λlfdn ifds s0 k. kv_queries lfdn (KHH lfdn ifds s0 k)”
+Overload KP = “λlfdn ifds s0 k. FLAT (GENLIST (KEV lfdn ifds s0) k)”
+
+(* The bridge, at every round *)
+Theorem kv_rounds_bytes[local]:
+  s0.listeners = [(n2w lfdn, [])] ∧ s0.conns = [] ⇒
+  bytes_written_to c (KP lfdn ifds s0 (SUC k)) =
+    HttpSpec$bytes (FLAT (written (w2n c) (KTS lfdn ifds s0 k))) ∧
+  bytes_read_from c (KP lfdn ifds s0 k) =
+    HttpSpec$bytes (FLAT (read (w2n c) (KTS lfdn ifds s0 k)))
+Proof
+  strip_tac >>
+  ‘uses_ok lfdn (kv_server lfdn)’ by simp[kv_server_uses_ok] >>
+  drule_all gen_rounds_bytes >>
+  disch_then (qspecl_then [‘k’, ‘ifds’, ‘c’] mp_tac) >> simp[bytes_def]
+QED
+
+Theorem kv_rounds_fresh[local]:
+  s0.listeners = [(n2w lfdn, [])] ∧ s0.conns = [] ⇒
+  fresh (KTS lfdn ifds s0 k)
+Proof
+  strip_tac >> ‘uses_ok lfdn (kv_server lfdn)’ by simp[kv_server_uses_ok] >>
+  drule_all gen_fresh >> simp[]
+QED
+
+Theorem kv_rounds_serves[local]:
+  s0.listeners = [(n2w lfdn, [])] ∧ s0.conns = [] ⇒
+  MAP SND (FILTER (λq. FST q = fd) (KG lfdn ifds s0 k)) ≼
+    parse_all_b (FLAT (read fd (KTS lfdn ifds s0 k))) ∧
+  written fd (KTS lfdn ifds s0 k) ≼
+    MAP print_response (fd_answers fd (KG lfdn ifds s0 k))
+Proof
+  strip_tac >> irule kv_server_serves >> simp[kv_rounds_fresh]
+QED
+
+Theorem kv_rounds_mono[local]:
+  k1 ≤ k2 ⇒
+  KG lfdn ifds s0 k1 ≼ KG lfdn ifds s0 k2 ∧ KP lfdn ifds s0 k1 ≼ KP lfdn ifds s0 k2
+Proof
+  strip_tac >> conj_tac
+  >- (‘KHH lfdn ifds s0 k1 = TAKE k1 (KHH lfdn ifds s0 k2)’
+        by simp[GSYM MAP_TAKE, ghist_TAKE] >>
+      pop_assum SUBST1_TAC >> simp[kv_queries_TAKE]) >>
+  irule FLAT_GENLIST_prefix >> simp[]
+QED
+
+Theorem parse_all_b_NIL[local]:
+  parse_all_b "" = []
+Proof
+  simp[Once parse_all_b_def] >> EVAL_TAC
+QED
+
+Theorem kv_rounds_bounded[local]:
+  s0.listeners = [(n2w lfdn, [])] ∧ s0.conns = [] ∧ MEM q (KG lfdn ifds s0 k) ⇒
+  FST q < dimword(:64)
+Proof
+  strip_tac >>
+  ‘MAP SND (FILTER (λq'. FST q' = FST q) (KG lfdn ifds s0 k)) ≼
+   parse_all_b (FLAT (read (FST q) (KTS lfdn ifds s0 k)))’
+    by metis_tac[kv_rounds_serves] >>
+  ‘FLAT (read (FST q) (KTS lfdn ifds s0 k)) ≠ []’
+    by (strip_tac >> fs[parse_all_b_NIL] >>
+        fs[FILTER_EQ_NIL, EVERY_MEM] >> metis_tac[]) >>
+  drule read_on_fd >> strip_tac >>
+  ‘uses_ok lfdn (kv_server lfdn)’ by simp[kv_server_uses_ok] >>
+  drule_all gen_fds_bounded >> simp[]
+QED
+
 (* MAIN: HttpKvSpec's safety for the key-value server's trace: in a world
    with one listener n2w lfdn and no connections, for any interest
    function, the trace is linearizable *)
@@ -171,57 +259,42 @@ Theorem kv_comp_safe:
     (λi. fromList (grounds_events ifds (srelabel (kv_server lfdn)) s0 i)) NONE))
 Proof
   rw[kv_safe_def] >>
-  qabbrev_tac ‘ev = grounds_events ifds (srelabel (kv_server lfdn)) s0’ >>
-  ‘∀i. ev i ≠ []’ by simp[Abbr ‘ev’, grounds_events_alt] >>
+  ‘∀i. KEV lfdn ifds s0 i ≠ []’ by simp[grounds_events_alt] >>
   drule_all LPREFIX_rounds_between >> strip_tac >>
-  ‘uses_ok lfdn (kv_server lfdn)’ by simp[kv_server_uses_ok] >>
-  qabbrev_tac ‘HH = λk. MAP sfs (ghist ifds (srelabel (kv_server lfdn)) s0 k)’ >>
-  qabbrev_tac ‘TS = λk. trans (kv_server lfdn) (HH k)’ >>
-  qabbrev_tac ‘G = λk. kv_queries lfdn (HH k)’ >>
-  qabbrev_tac ‘P = λk. FLAT (GENLIST ev k)’ >>
-  (* the bridge, at every round *)
-  ‘∀k c. bytes_written_to c (P (SUC k)) = bytes (FLAT (written (w2n c) (TS k))) ∧
-         bytes_read_from c (P k) = bytes (FLAT (read (w2n c) (TS k)))’
-    by (rpt gen_tac >> drule_all gen_rounds_bytes >>
-        disch_then (qspecl_then [‘k’, ‘ifds’, ‘c’] mp_tac) >>
-        simp[Abbr ‘P’, Abbr ‘ev’, Abbr ‘TS’, Abbr ‘HH’, bytes_def]) >>
-  ‘∀k. fresh (TS k)’ by (simp[Abbr ‘TS’, Abbr ‘HH’] >> metis_tac[gen_fresh]) >>
-  ‘∀k fd. MAP SND (FILTER (λq. FST q = fd) (G k)) ≼
-            parse_all_b (FLAT (read fd (TS k))) ∧
-          written fd (TS k) ≼ MAP print_response (fd_answers fd (G k))’
-    by (rpt gen_tac >> simp[Abbr ‘G’, Abbr ‘TS’] >> irule kv_server_serves >>
-        fs[Abbr ‘TS’]) >>
-  ‘∀k1 k2. k1 ≤ k2 ⇒ G k1 ≼ G k2 ∧ P k1 ≼ P k2’
-    by (rw[Abbr ‘G’, Abbr ‘P’, FLAT_GENLIST_prefix] >>
-        ‘HH k1 = TAKE k1 (HH k2)’ by simp[Abbr ‘HH’, MAP_TAKE, ghist_TAKE] >>
-        simp[kv_queries_TAKE]) >>
-  ‘∀k q. MEM q (G k) ⇒ FST q < dimword(:64)’
-    by (rpt strip_tac >>
-        first_x_assum (qspecl_then [‘k’, ‘FST q’] (strip_assume_tac o CONJUNCT1)) >>
-        ‘FLAT (read (FST q) (TS k)) ≠ []’
-          by (strip_tac >> gvs[] >>
-              qpat_x_assum ‘_ ≼ parse_all_b ""’ mp_tac >>
-              simp[Once parse_all_b_def, parse_brequest_def] >>
-              EVAL_TAC >> simp[FILTER_EQ_NIL, EVERY_MEM] >> metis_tac[]) >>
-        drule read_on_fd >> simp[Abbr ‘TS’, Abbr ‘HH’] >> strip_tac >>
-        drule_all gen_fds_bounded >> simp[]) >>
+  ‘∀k c. bytes_written_to c (KP lfdn ifds s0 (SUC k)) =
+           HttpSpec$bytes (FLAT (written (w2n c) (KTS lfdn ifds s0 k))) ∧
+         bytes_read_from c (KP lfdn ifds s0 k) =
+           HttpSpec$bytes (FLAT (read (w2n c) (KTS lfdn ifds s0 k)))’
+    by metis_tac[kv_rounds_bytes] >>
+  ‘∀k fd. MAP SND (FILTER (λq. FST q = fd) (KG lfdn ifds s0 k)) ≼
+            parse_all_b (FLAT (read fd (KTS lfdn ifds s0 k))) ∧
+          written fd (KTS lfdn ifds s0 k) ≼
+            MAP print_response (fd_answers fd (KG lfdn ifds s0 k))’
+    by metis_tac[kv_rounds_serves] >>
+  ‘∀k1 k2. k1 ≤ k2 ⇒
+           KG lfdn ifds s0 k1 ≼ KG lfdn ifds s0 k2 ∧
+           KP lfdn ifds s0 k1 ≼ KP lfdn ifds s0 k2’
+    by metis_tac[kv_rounds_mono] >>
+  ‘∀k q. MEM q (KG lfdn ifds s0 k) ⇒ FST q < dimword(:64)’
+    by metis_tac[kv_rounds_bounded] >>
   (* what has been read from each connection *)
   ‘∀c. parse_all_b (MAP (CHR o w2n) (bytes_read_from c evs)) = rss c’
     by (gen_tac >> irule read_brequests_parse >> simp[bytes_chars] >> metis_tac[]) >>
-  ‘∀k c. k ≤ n ⇒ parse_all_b (FLAT (read (w2n c) (TS k))) ≼ rss c’
+  ‘∀k c. k ≤ n ⇒ parse_all_b (FLAT (read (w2n c) (KTS lfdn ifds s0 k))) ≼ rss c’
     by (rpt strip_tac >>
         first_x_assum (qspec_then ‘c’ (SUBST1_TAC o SYM)) >>
         irule parse_all_b_prefix >> ONCE_REWRITE_TAC[GSYM bytes_prefix_iff] >>
         simp[bytes_chars] >>
-        qpat_x_assum ‘∀k c. bytes_written_to _ _ = _ ∧ _’
+        qpat_assum ‘∀k c. bytes_written_to _ _ = _ ∧ _’
           (qspecl_then [‘k’, ‘c’] (SUBST1_TAC o SYM o CONJUNCT2)) >>
-        irule bytes_read_from_mono >> irule IS_PREFIX_TRANS >>
-        qexists_tac ‘P n’ >> simp[]) >>
-  qabbrev_tac ‘Gn = G n’ >>
-  qabbrev_tac ‘Gc = λc. MAP SND (FILTER (λq. FST q = w2n c) Gn)’ >>
+        qpat_assum ‘∀c. EVERY _ _ ∧ _’
+          (qspec_then ‘c’ (SUBST1_TAC o SYM o last o CONJUNCTS)) >>
+        irule bytes_read_from_mono >> metis_tac[IS_PREFIX_TRANS]) >>
+  qabbrev_tac ‘Gn = KG lfdn ifds s0 n’ >>
+  qabbrev_tac ‘Gc = λc:word64. MAP SND (FILTER (λq. FST q = w2n c) Gn)’ >>
   ‘∀c. Gc c ≼ rss c’
     by (gen_tac >> simp[Abbr ‘Gc’, Abbr ‘Gn’] >> irule IS_PREFIX_TRANS >>
-        qexists_tac ‘parse_all_b (FLAT (read (w2n c) (TS n)))’ >> simp[]) >>
+        qexists_tac ‘parse_all_b (FLAT (read (w2n c) (KTS lfdn ifds s0 n)))’ >> simp[]) >>
   (* the order *)
   qspec_then ‘evs’ strip_assume_tac (GEN_ALL conns_of_trace) >>
   qabbrev_tac ‘L1 = MAP (λq. (n2w (FST q) : word64, SND q)) Gn’ >>
@@ -232,18 +305,26 @@ Proof
         DEP_REWRITE_TAC[FILTER_conn_words] >> simp[MAP_MAP_o, combinTheory.o_DEF] >>
         fs[Abbr ‘Gn’] >> metis_tac[]) >>
   ‘∀c. MAP SND (FILTER (λx. FST x = c) L) = rss c’
-    by (gen_tac >> simp[Abbr ‘L’, FILTER_APPEND, Abbr ‘pend’, FILTER_pend] >>
-        rw[]
-        >- (first_x_assum (qspec_then ‘c’ mp_tac) >> rw[IS_PREFIX_APPEND] >>
-            simp[MAP_MAP_o, combinTheory.o_DEF, DROP_LENGTH_APPEND])
-        >> ‘rss c = []’
-             by (CCONTR_TAC >>
-                 ‘bytes_read_from c evs ≠ []’
-                   by (first_x_assum (qspec_then ‘c’ mp_tac) >>
-                       Cases_on ‘rss c’ >> simp[brequests_def, bytes_APPEND] >>
-                       metis_tac[print_brequest_NIL, LENGTH_NIL, LENGTH_bytes]) >>
-                 metis_tac[]) >>
-        first_x_assum (qspec_then ‘c’ mp_tac) >> simp[]) >>
+    by (gen_tac >> simp[Abbr ‘L’, FILTER_APPEND, Abbr ‘pend’, FILTER_pend] >> rw[]
+        >- (qpat_x_assum ‘∀c. Gc c ≼ rss c’ (qspec_then ‘c’ mp_tac) >>
+            simp[MAP_MAP_o, combinTheory.o_DEF] >> strip_tac >> fs[IS_PREFIX_APPEND] >>
+            simp[DROP_LENGTH_APPEND]) >>
+        ‘rss c = []’
+          by (CCONTR_TAC >>
+              ‘bytes_read_from c evs ≠ []’ suffices_by metis_tac[] >>
+              qpat_assum ‘∀c. EVERY _ _ ∧ _’ (qspec_then ‘c’ mp_tac) >>
+              Cases_on ‘rss c’ >> fs[brequests_def, bytes_APPEND] >> rpt strip_tac >>
+              qpat_x_assum ‘_ (print_brequest _) = []’
+                (mp_tac o AP_TERM “LENGTH : word8 list -> num”) >>
+              simp[print_brequest_NIL]) >>
+        qpat_x_assum ‘∀c. Gc c ≼ rss c’ (qspec_then ‘c’ mp_tac) >> simp[]) >>
+  (* what has been written, at evs *)
+  ‘∀c. bytes_written_to c evs ≼ reply_bytes (fd_answers (w2n c) Gn)’
+    by (gen_tac >> irule IS_PREFIX_TRANS >>
+        qexists_tac ‘bytes_written_to c (KP lfdn ifds s0 (SUC n))’ >>
+        simp[bytes_written_to_mono] >>
+        simp[reply_bytes_def, bytes_prefix_iff, Abbr ‘Gn’] >>
+        irule prefix_FLAT >> simp[]) >>
   qexists_tac ‘label L’ >>
   ‘is_order rss (label L)’ by (irule is_order_label >> simp[]) >>
   simp[] >>
@@ -251,147 +332,161 @@ Proof
   qabbrev_tac ‘A = FST (run_store kv_delta (λk. NONE) Gn)’ >>
   ‘∀c. ∃X. replies rss (label L) c = fd_answers (w2n c) Gn ++ X’
     by (gen_tac >> simp[replies_label] >>
-        ‘MAP SND L = MAP SND (Gn ++ MAP (λx. (0, SND x)) pend)’
-          by simp[Abbr ‘L’, Abbr ‘L1’, MAP_MAP_o, combinTheory.o_DEF] >>
-        simp[kv_run_store, run_store_APPEND_FST] >>
-        ‘LENGTH L1 = LENGTH A’ by simp[Abbr ‘L1’, Abbr ‘A’] >>
-        simp[Abbr ‘L’, ZIP_APPEND, FILTER_APPEND] >>
-        DEP_REWRITE_TAC[ZIP_conn_words |> Q.GEN ‘c’ |> Q.SPEC ‘c’] >>
+        ‘MAP SND L1 = MAP SND Gn’ by simp[Abbr ‘L1’, LIST_EQ_REWRITE, EL_MAP] >>
+        ‘MAP SND L = MAP SND (Gn ++ MAP (λx. (0:num, SND x)) pend)’
+          by (simp[Abbr ‘L’] >> simp[LIST_EQ_REWRITE, EL_MAP]) >>
+        qpat_x_assum ‘MAP SND L = _’ SUBST1_TAC >>
+        REWRITE_TAC[kv_run_store, run_store_APPEND_FST] >>
+        simp[Abbr ‘L’] >>
+        DEP_REWRITE_TAC[GSYM ZIP_APPEND] >> conj_tac >- simp[Abbr ‘L1’, Abbr ‘A’] >>
+        simp[FILTER_APPEND, Abbr ‘L1’] >>
+        DEP_REWRITE_TAC[ZIP_conn_words] >>
         conj_tac >- (simp[Abbr ‘A’] >> fs[Abbr ‘Gn’] >> metis_tac[]) >>
-        simp[fd_answers_def, MAP_MAP_o, combinTheory.o_DEF, Abbr ‘A’]) >>
+        simp[fd_answers_def, MAP_MAP_o, combinTheory.o_DEF, ETA_AX]) >>
   ‘∀c. LENGTH (replies rss (label L) c) = LENGTH (rss c)’
     by (gen_tac >> simp[replies_label] >>
-        simp[LENGTH_FILTER_ZIP] >>
-        first_x_assum (qspec_then ‘c’ (SUBST1_TAC o SYM)) >> simp[]) >>
+        DEP_REWRITE_TAC[LENGTH_FILTER_ZIP] >> simp[] >>
+        qpat_x_assum ‘∀c. MAP SND (FILTER _ L) = _’
+          (qspec_then ‘c’ (SUBST1_TAC o SYM)) >> simp[]) >>
   ‘∀c. LENGTH (fd_answers (w2n c) Gn) = LENGTH (Gc c)’
     by simp[LENGTH_fd_answers, Abbr ‘Gc’] >>
   ‘∀c. reply_bytes (fd_answers (w2n c) Gn) =
        reply_bytes (TAKE (LENGTH (Gc c)) (replies rss (label L) c))’
-    by (gen_tac >> first_x_assum (qspec_then ‘c’ strip_assume_tac) >>
-        last_x_assum (qspec_then ‘c’ strip_assume_tac) >>
-        simp[TAKE_LENGTH_APPEND] >> metis_tac[TAKE_LENGTH_APPEND]) >>
-  (* what has been written, at evs *)
-  ‘∀c. bytes_written_to c evs ≼ reply_bytes (fd_answers (w2n c) Gn)’
-    by (gen_tac >> irule IS_PREFIX_TRANS >>
-        qexists_tac ‘bytes_written_to c (P (SUC n))’ >>
-        simp[bytes_written_to_mono] >>
-        simp[reply_bytes_def, bytes_prefix_iff, Abbr ‘Gn’] >>
-        irule prefix_FLAT >> simp[]) >>
+    by (gen_tac >> qpat_x_assum ‘∀c. ∃X. _’ (qspec_then ‘c’ strip_assume_tac) >>
+        qpat_x_assum ‘∀c. LENGTH (fd_answers _ _) = _’
+          (qspec_then ‘c’ (SUBST1_TAC o SYM)) >>
+        simp[TAKE_LENGTH_APPEND]) >>
   conj_tac
   >- ((* real time *)
-      irule commits_at_real_time >> simp[] >>
-      qexists_tac ‘λj. if j < LENGTH Gn then LENGTH (P ($LEAST (λk. j < LENGTH (G k))))
+      qsuff_tac ‘∃pj. commits_at rss (label L) evs pj’
+      >- metis_tac[commits_at_real_time] >>
+      qexists_tac ‘λj. if j < LENGTH Gn then LENGTH (KP lfdn ifds s0 ($LEAST (λk. j < LENGTH (KG lfdn ifds s0 k))))
                        else LENGTH evs’ >>
       ‘∀j. j < LENGTH Gn ⇒
-           j < LENGTH (G ($LEAST (λk. j < LENGTH (G k)))) ∧
-           $LEAST (λk. j < LENGTH (G k)) ≤ n ∧
-           ∀m. m < $LEAST (λk. j < LENGTH (G k)) ⇒ LENGTH (G m) ≤ j’
+           j < LENGTH (KG lfdn ifds s0 ($LEAST (λk. j < LENGTH (KG lfdn ifds s0 k)))) ∧
+           $LEAST (λk. j < LENGTH (KG lfdn ifds s0 k)) ≤ n ∧
+           ∀m. m < $LEAST (λk. j < LENGTH (KG lfdn ifds s0 k)) ⇒ LENGTH (KG lfdn ifds s0 m) ≤ j’
         by (rpt gen_tac >> strip_tac >>
-            qspecl_then [‘λk. j < LENGTH (G k)’, ‘n’] mp_tac
-              (Q.GENL [‘P’, ‘x’] FULL_LEAST_INTRO) >>
+            qspecl_then [‘λk. j < LENGTH (KG lfdn ifds s0 k)’, ‘n’] mp_tac
+              (Q.GEN ‘P’ WhileTheory.FULL_LEAST_INTRO) >>
             simp[Abbr ‘Gn’] >> rw[] >>
-            drule (Q.ISPEC ‘λk. j < LENGTH (G k)’ LESS_LEAST) >> simp[]) >>
-      ‘∀a b. a ≤ b ⇒ LENGTH (P a) ≤ LENGTH (P b)’
+            drule (Q.ISPEC ‘λk. j < LENGTH (KG lfdn ifds s0 k)’ WhileTheory.LESS_LEAST) >> simp[]) >>
+      ‘∀a b. a ≤ b ⇒ LENGTH (KP lfdn ifds s0 a) ≤ LENGTH (KP lfdn ifds s0 b)’
         by metis_tac[IS_PREFIX_LENGTH] >>
-      ‘LENGTH (P n) ≤ LENGTH evs’ by metis_tac[IS_PREFIX_LENGTH] >>
+      ‘LENGTH (KP lfdn ifds s0 n) ≤ LENGTH evs’ by metis_tac[IS_PREFIX_LENGTH] >>
       ‘LENGTH L1 = LENGTH Gn’ by simp[Abbr ‘L1’] >>
       simp[commits_at_def] >> conj_tac
       >- (rw[] >> gvs[]
-          >- (first_x_assum irule >>
-              qspecl_then [‘λk. j < LENGTH (G k)’,
-                           ‘$LEAST (λk'. k < LENGTH (G k'))’] mp_tac
-                (Q.GENL [‘P’, ‘x’] FULL_LEAST_INTRO) >>
-              simp[] >> impl_tac >- (first_x_assum (qspec_then ‘k’ mp_tac) >> simp[]) >>
+          >- (qpat_x_assum ‘∀a b. a ≤ b ⇒ LENGTH _ ≤ LENGTH _’ irule >>
+              qspecl_then [‘λk. j < LENGTH (KG lfdn ifds s0 k)’,
+                           ‘$LEAST (λk. j' < LENGTH (KG lfdn ifds s0 k))’] mp_tac
+                (Q.GEN ‘P’ WhileTheory.FULL_LEAST_INTRO) >>
+              simp[] >> impl_tac
+              >- (qpat_x_assum ‘∀j. j < LENGTH Gn ⇒ _’ (qspec_then ‘j'’ mp_tac) >> simp[]) >>
               simp[])
-          >> irule LESS_EQ_TRANS >> qexists_tac ‘LENGTH (P n)’ >> simp[]) >>
+          >> irule LESS_EQ_TRANS >> qexists_tac ‘LENGTH (KP lfdn ifds s0 n)’ >> simp[] >>
+          qpat_x_assum ‘∀a b. a ≤ b ⇒ LENGTH _ ≤ LENGTH _’ irule >>
+          qpat_x_assum ‘∀j. j < LENGTH Gn ⇒ _’ (qspec_then ‘j’ mp_tac) >> simp[]) >>
       rpt gen_tac >> strip_tac >>
-      simp[label_def, EL_GENLIST] >>
       qabbrev_tac ‘c = FST (EL j L)’ >>
       qabbrev_tac ‘i = LENGTH (FILTER (λx. FST x = c) (TAKE j L))’ >>
+      ‘EL j (label L) = (c, i)’ by simp[label_def, EL_GENLIST, Abbr ‘c’, Abbr ‘i’] >>
+      pop_assum SUBST1_TAC >>
       ‘i < LENGTH (rss c)’
         by (simp[Abbr ‘i’, Abbr ‘c’] >>
-            first_x_assum (qspec_then ‘FST (EL j L)’ (SUBST1_TAC o SYM o
-                             (fn th => th) )) >>
+            qpat_x_assum ‘∀c. MAP SND (FILTER _ L) = _’
+              (qspec_then ‘FST (EL j L)’ (SUBST1_TAC o SYM)) >>
             simp[] >> irule cnt_TAKE_lt >> fs[]) >>
       simp[started_def, answered_def] >>
       Cases_on ‘j < LENGTH Gn’ >> simp[]
-      >- ((* a query, committed at the start of its first round *)
-          qabbrev_tac ‘cr = $LEAST (λk. j < LENGTH (G k))’ >>
-          first_x_assum (qspec_then ‘j’ mp_tac) >> simp[] >> strip_tac >>
-          ‘TAKE (LENGTH (P cr)) evs = P cr’
+      >- ((* a query, committed at the start of its first round cr *)
+          qabbrev_tac ‘cr = $LEAST (λk. j < LENGTH (KG lfdn ifds s0 k))’ >>
+          qpat_x_assum ‘∀j. j < LENGTH Gn ⇒ _’ (qspec_then ‘j’ mp_tac) >> simp[] >> strip_tac >>
+          ‘TAKE (LENGTH (KP lfdn ifds s0 cr)) evs = KP lfdn ifds s0 cr’
             by (irule prefix_TAKE_self >> irule IS_PREFIX_TRANS >>
-                qexists_tac ‘P n’ >> simp[]) >>
+                qexists_tac ‘KP lfdn ifds s0 n’ >> simp[]) >>
           simp[] >>
           qabbrev_tac ‘fd = FST (EL j Gn)’ >>
-          ‘fd < dimword(:64)’ by (simp[Abbr ‘fd’, Abbr ‘Gn’] >> metis_tac[MEM_EL]) >>
+          ‘fd < dimword(:64)’
+            by (qpat_assum ‘∀k q. MEM q (KG _ _ _ k) ⇒ _’ (qspecl_then [‘n’, ‘EL j Gn’] mp_tac) >>
+                simp[Abbr ‘fd’] >> disch_then irule >> simp[Abbr ‘Gn’, EL_MEM]) >>
           ‘EL j L = (n2w fd, SND (EL j Gn))’
             by simp[Abbr ‘L’, EL_APPEND1, Abbr ‘L1’, EL_MAP] >>
-          ‘c = n2w fd ∧ w2n c = fd’ by simp[Abbr ‘c’] >>
-          ‘i = LENGTH (FILTER (λq. FST q = fd) (TAKE j Gn))’
+          ‘w2n c = fd’ by simp[Abbr ‘c’] >>
+          ‘LENGTH (FILTER (λq. FST q = fd) (TAKE j Gn)) = i’
             by (simp[Abbr ‘i’, Abbr ‘L’, TAKE_APPEND1, Abbr ‘L1’, GSYM MAP_TAKE] >>
                 DEP_REWRITE_TAC[FILTER_conn_words] >> simp[] >>
-                fs[Abbr ‘Gn’] >> metis_tac[MEM_TAKE]) >>
-          ‘G cr ≼ Gn’ by simp[Abbr ‘Gn’] >>
-          ‘TAKE (SUC j) Gn = TAKE (SUC j) (G cr)’ by (irule prefix_TAKE_eq >> simp[]) >>
+                rpt strip_tac >> ‘MEM q Gn’ by metis_tac[MEM_TAKE] >>
+                qpat_assum ‘∀k q. MEM q (KG _ _ _ k) ⇒ _’ (qspecl_then [‘n’, ‘q’] mp_tac) >>
+                fs[Abbr ‘Gn’]) >>
+          ‘KG lfdn ifds s0 cr ≼ Gn’ by simp[Abbr ‘Gn’] >>
+          ‘TAKE (SUC j) Gn = TAKE (SUC j) (KG lfdn ifds s0 cr)’
+            by (irule prefix_TAKE_eq >> simp[]) >>
           conj_tac
           >- ((* started: c's first i+1 requests were read before round cr *)
               irule brequests_TAKE_SUC >> simp[] >>
-              qabbrev_tac ‘PR = parse_all_b (FLAT (read fd (TS cr)))’ >>
-              ‘PR ≼ rss c’ by (simp[Abbr ‘PR’] >> metis_tac[]) >>
+              qabbrev_tac ‘PR = parse_all_b (FLAT (read fd (KTS lfdn ifds s0 cr)))’ >>
+              ‘PR ≼ rss c’
+                by (qunabbrev_tac ‘PR’ >> qpat_assum ‘w2n c = fd’ (SUBST1_TAC o SYM) >>
+                    qpat_assum ‘∀k c. k ≤ n ⇒ parse_all_b _ ≼ rss c’ irule >> simp[]) >>
+              ‘LENGTH (FILTER (λq. FST q = fd) (TAKE (SUC j) (KG lfdn ifds s0 cr))) = SUC i’
+                by (qpat_x_assum ‘TAKE (SUC j) Gn = _’ (SUBST1_TAC o SYM) >>
+                    simp[TAKE_SUC_EL, FILTER_APPEND] >> simp[Abbr ‘fd’]) >>
+              ‘LENGTH (FILTER (λq. FST q = fd) (TAKE (SUC j) (KG lfdn ifds s0 cr))) ≤
+               LENGTH (FILTER (λq. FST q = fd) (KG lfdn ifds s0 cr))’
+                by (irule IS_PREFIX_LENGTH >> irule prefix_FILTER >>
+                    simp[IS_PREFIX_APPEND] >> metis_tac[TAKE_DROP]) >>
               ‘SUC i ≤ LENGTH PR’
-                by (irule LESS_EQ_TRANS >>
-                    qexists_tac ‘LENGTH (MAP SND (FILTER (λq. FST q = fd) (G cr)))’ >>
-                    reverse conj_tac >- metis_tac[IS_PREFIX_LENGTH] >>
-                    simp[] >> irule LESS_EQ_TRANS >>
-                    qexists_tac ‘LENGTH (FILTER (λq. FST q = fd) (TAKE (SUC j) (G cr)))’ >>
-                    reverse conj_tac
-                    >- (irule IS_PREFIX_LENGTH >> irule prefix_FILTER >>
-                        simp[IS_PREFIX_APPEND] >> metis_tac[TAKE_DROP]) >>
-                    qpat_x_assum ‘TAKE (SUC j) Gn = _’ (SUBST1_TAC o SYM) >>
-                    simp[TAKE_SUC_EL, FILTER_APPEND, Abbr ‘fd’]) >>
+                by (qpat_assum ‘∀k fd. MAP SND _ ≼ _ ∧ _’
+                      (qspecl_then [‘cr’, ‘fd’] (assume_tac o CONJUNCT1)) >>
+                    imp_res_tac IS_PREFIX_LENGTH >> fs[Abbr ‘PR’]) >>
               ‘TAKE (SUC i) (rss c) = TAKE (SUC i) PR’ by (irule prefix_TAKE_eq >> simp[]) >>
-              simp[brequests_def] >>
-              qpat_x_assum ‘∀k c. bytes_written_to _ _ = _ ∧ _’
-                (qspecl_then [‘cr’, ‘c’] (SUBST1_TAC o CONJUNCT2)) >>
-              simp[bytes_prefix_iff] >> irule parse_all_b_printed >>
-              simp[Abbr ‘PR’, IS_PREFIX_APPEND] >> metis_tac[TAKE_DROP]) >>
+              simp[brequests_def, bytes_prefix_iff] >>
+              irule parse_all_b_printed >> simp[Abbr ‘PR’, IS_PREFIX_APPEND] >>
+              metis_tac[TAKE_DROP]) >>
           (* not answered: before round cr, at most c's first i answers *)
-          ‘∃i'. i' ≤ i ∧ bytes_written_to c (P cr) ≼
+          ‘∃i'. i' ≤ i ∧ bytes_written_to c (KP lfdn ifds s0 cr) ≼
                          reply_bytes (TAKE i' (replies rss (label L) c))’
             by (Cases_on ‘cr’
-                >- (qexists_tac ‘0’ >> simp[Abbr ‘P’, bytes_written_to_def]) >>
-                rename1 ‘P (SUC k2)’ >>
-                ‘k2 < SUC k2’ by simp[] >>
-                ‘LENGTH (G k2) ≤ j’ by metis_tac[] >>
-                ‘G k2 ≼ Gn’ by simp[Abbr ‘Gn’] >>
-                qexists_tac ‘LENGTH (fd_answers fd (G k2))’ >>
-                conj_tac
-                >- (simp[LENGTH_fd_answers, Abbr ‘i’] >> irule IS_PREFIX_LENGTH >>
-                    irule prefix_FILTER >> irule prefix_shorter_TAKE >> simp[]) >>
-                qpat_x_assum ‘∀k c. bytes_written_to _ _ = _ ∧ _’
-                  (qspecl_then [‘k2’, ‘c’] (SUBST1_TAC o CONJUNCT1)) >>
-                ‘fd_answers fd (G k2) =
-                 TAKE (LENGTH (fd_answers fd (G k2))) (replies rss (label L) c)’
+                >- (qexists_tac ‘0’ >> simp[bytes_written_to_def]) >>
+                rename1 ‘KP lfdn ifds s0 (SUC k2)’ >>
+                ‘LENGTH (KG lfdn ifds s0 k2) ≤ j’
+                  by (qpat_x_assum ‘∀m. m < SUC k2 ⇒ _’ (qspec_then ‘k2’ mp_tac) >> simp[]) >>
+                ‘KG lfdn ifds s0 k2 ≼ Gn’ by simp[Abbr ‘Gn’] >>
+                qexists_tac ‘LENGTH (fd_answers fd (KG lfdn ifds s0 k2))’ >> conj_tac
+                >- (simp[LENGTH_fd_answers] >>
+                    qpat_x_assum ‘LENGTH (FILTER _ (TAKE j Gn)) = i’ (SUBST1_TAC o SYM) >>
+                    irule IS_PREFIX_LENGTH >> irule prefix_FILTER >>
+                    irule prefix_shorter_TAKE >> simp[]) >>
+                ‘fd_answers fd (KG lfdn ifds s0 k2) =
+                 TAKE (LENGTH (fd_answers fd (KG lfdn ifds s0 k2))) (replies rss (label L) c)’
                   by (irule prefix_LENGTH_eq_TAKE >> irule IS_PREFIX_TRANS >>
-                      qexists_tac ‘fd_answers fd Gn’ >> simp[fd_answers_prefix] >>
-                      last_x_assum (qspec_then ‘c’ strip_assume_tac) >> gvs[]) >>
+                      qexists_tac ‘fd_answers fd Gn’ >> conj_tac >>
+                      TRY (irule fd_answers_prefix >> simp[] >> NO_TAC) >>
+                      qpat_x_assum ‘∀c. ∃X. _’ (qspec_then ‘c’ strip_assume_tac) >> simp[]) >>
                 pop_assum (SUBST1_TAC o SYM) >>
-                simp[reply_bytes_def, bytes_prefix_iff] >>
-                irule prefix_FLAT >> simp[]) >>
-          strip_tac >> drule_at (Pos last) reply_bytes_TAKE >> simp[] >>
-          qexists_tac ‘i'’ >> simp[]) >>
+                qpat_assum ‘∀k c. bytes_written_to _ _ = _ ∧ _’
+                  (qspecl_then [‘k2’, ‘c’] (SUBST1_TAC o CONJUNCT1)) >>
+                simp[reply_bytes_def, bytes_prefix_iff] >> irule prefix_FLAT >>
+                qpat_assum ‘∀k fd. MAP SND _ ≼ _ ∧ _’
+                  (qspecl_then [‘k2’, ‘fd’] (ACCEPT_TAC o CONJUNCT2))) >>
+          strip_tac >>
+          qspecl_then [‘i’, ‘replies rss (label L) c’, ‘i'’,
+                       ‘bytes_written_to c (KP lfdn ifds s0 cr)’]
+            mp_tac (Q.GENL [‘i’, ‘R’, ‘j’, ‘x’] reply_bytes_TAKE) >> simp[]) >>
       (* a request not queried yet, committed at the end of evs *)
       ‘LENGTH (Gc c) ≤ i’
-        by (simp[Abbr ‘i’, Abbr ‘L’, TAKE_APPEND, TAKE_LENGTH_TOO_LONG, FILTER_APPEND] >>
-            first_x_assum (qspec_then ‘c’ (SUBST1_TAC o SYM)) >> simp[]) >>
+        by (qpat_x_assum ‘∀c. MAP SND (FILTER _ L1) = Gc c’ (qspec_then ‘c’ (SUBST1_TAC o SYM)) >>
+            simp[Abbr ‘i’, Abbr ‘L’, TAKE_APPEND, TAKE_LENGTH_TOO_LONG, FILTER_APPEND]) >>
       conj_tac
-      >- (irule brequests_TAKE_SUC >> simp[] >>
-          first_x_assum (qspec_then ‘c’ strip_assume_tac) >> simp[] >>
-          irule IS_PREFIX_TRANS >> qexists_tac ‘brequests (rss c)’ >>
-          simp[brequests_TAKE_prefix]) >>
-      strip_tac >> drule_at (Pos last) reply_bytes_TAKE >> simp[] >>
-      qexists_tac ‘LENGTH (Gc c)’ >> simp[] >> metis_tac[]) >>
-  gen_tac >> irule IS_PREFIX_TRANS >> first_assum (irule_at Any) >>
-  first_x_assum (qspec_then ‘c’ strip_assume_tac) >>
-  simp[] >> irule reply_bytes_prefix >> simp[]
+      >- (irule brequests_TAKE_SUC >> simp[] >> irule IS_PREFIX_TRANS >>
+          qexists_tac ‘brequests (rss c)’ >> simp[brequests_TAKE_prefix]) >>
+      strip_tac >>
+      qspecl_then [‘i’, ‘replies rss (label L) c’, ‘LENGTH (Gc c)’, ‘bytes_written_to c evs’]
+        mp_tac (Q.GENL [‘i’, ‘R’, ‘j’, ‘x’] reply_bytes_TAKE) >> simp[] >>
+      qpat_x_assum ‘∀c. reply_bytes _ = _’ (qspec_then ‘c’ (SUBST1_TAC o SYM)) >>
+      qpat_x_assum ‘∀c. bytes_written_to c evs ≼ _’ (qspec_then ‘c’ ACCEPT_TAC)) >>
+  gen_tac >> qpat_x_assum ‘∀c. ∃X. _’ (qspec_then ‘c’ strip_assume_tac) >> simp[] >>
+  irule IS_PREFIX_TRANS >> qexists_tac ‘reply_bytes (fd_answers (w2n c) Gn)’ >>
+  simp[reply_bytes_prefix]
 QED

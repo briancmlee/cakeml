@@ -217,6 +217,28 @@ Proof
   strip_tac >> simp[ev_sent_def, MAP_SND_ZIP_REPLICATE] >> rw[]
 QED
 
+Theorem csent_do_buf:
+  winv w ∧ l0_chan_of w f = SOME c ∧ n ≠ «sys_connect» ∧
+  ¬(n = «sys_close» ∧ bytes_fd conf = f) ∧ (n = «sys_send» ⇒ LENGTH conf < 8 + 256 ** 8) ∧
+  l0_do_buf n conf bs w = SOME (out, w', ev) ⇒
+  l0_chan_of w' f = SOME c ∧ csent w' c = csent w c ++ ev_sent f ev
+Proof
+  strip_tac >>
+  ‘LENGTH out = alen’
+    by (gvs[l0_do_buf_def, AllCaseEqs(), winv_def] >> drule_all l0_ffi_fn_length >> simp[]) >>
+  drule l0_do_buf_cases >> strip_tac >> gvs[] >>
+  qabbrev_tac ‘wt = l0_tick n w’ >>
+  ‘c < LENGTH w.chans’ by gvs[l0_chan_of_def, AllCaseEqs()] >>
+  ‘l0_chan_of wt f = SOME c ∧ csent wt c = csent w c’
+    by (qspecl_then [‘w’, ‘n’] mp_tac (Q.GENL [‘w’, ‘nm’] csent_tick) >>
+        simp[Abbr ‘wt’] >> gvs[l0_chan_of_def, AllCaseEqs()]) >>
+  ‘l0wf wt ∧ fds_lt wt ∧ l0_rely wt’
+    by (gvs[Abbr ‘wt’, winv_def, l0wf_tick] >> irule l0_rely_ch >> qexists_tac ‘w’ >> simp[]) >>
+  drule_at (Pos last) csent_call >> disch_then (qspecl_then [‘f’, ‘c’] mp_tac) >>
+  impl_tac >- (fs[] >> metis_tac[]) >>
+  strip_tac >> simp[ev_sent_def, MAP_SND_ZIP_REPLICATE] >> rw[]
+QED
+
 (* ------------------------------------------------------------------------
    L1's calls and one fd's account
    ------------------------------------------------------------------------ *)
@@ -619,6 +641,15 @@ Proof
   gvs[winv_def, qfresh_tick, l0wf_tick]
 QED
 
+Theorem qfresh_do_buf:
+  l0_do_buf n conf bs w = SOME (out, w', ev) ∧ n ≠ «sys_connect» ∧ qfresh w ∧ winv w ⇒
+  qfresh w'
+Proof
+  strip_tac >> drule l0_do_buf_cases >> strip_tac >> gvs[] >>
+  drule qfresh_call >> simp[] >> disch_then irule >>
+  gvs[winv_def, qfresh_tick, l0wf_tick]
+QED
+
 Theorem sys_qfresh:
   (qfresh w ∧ winv w ∧ sys_send g bs w = SOME (out, w', ev) ⇒ qfresh w') ∧
   (qfresh w ∧ winv w ∧ sys_close g w = SOME (out, w', ev) ⇒ qfresh w') ∧
@@ -627,6 +658,7 @@ Theorem sys_qfresh:
   (qfresh w ∧ winv w ∧ sys_poll fes w = SOME (out, w', ev) ⇒ qfresh w')
 Proof
   rw[sys_close_def, sys_send_def, sys_recv_def, sys_accept_def, sys_poll_def] >>
+  TRY (drule_at (Pos (el 1)) qfresh_do_buf >> simp[] >> NO_TAC) >>
   drule_at (Pos (el 1)) qfresh_do >> simp[]
 QED
 

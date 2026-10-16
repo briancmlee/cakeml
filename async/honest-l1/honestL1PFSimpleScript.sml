@@ -1509,3 +1509,144 @@ Proof
       simp[IS_PREFIX_APPEND] >> metis_tac[])
   >> metis_tac[]
 QED
+
+(* ========================================================================
+   G. R2′'s second half: psk misses nothing
+   ======================================================================== *)
+
+(* G1. Every round polls: the kernel's instant advances *)
+
+Definition hgrow_def:
+  hgrow (w : l0world) (w' : l0world) k ⇔ ∃h. w'.hist = w.hist ++ h ∧ k ≤ npolls h
+End
+
+Theorem npolls_append:
+  npolls (h1 ++ h2) = npolls h1 + npolls h2
+Proof
+  simp[npolls_def, FILTER_APPEND]
+QED
+
+Theorem hgrow_refl[simp]:
+  hgrow w w 0
+Proof
+  simp[hgrow_def] >> qexists_tac ‘[]’ >> simp[npolls_def]
+QED
+
+Theorem hgrow_trans:
+  hgrow w w1 a ∧ hgrow w1 w2 b ⇒ hgrow w w2 (a + b)
+Proof
+  rw[hgrow_def] >> qexists_tac ‘h ++ h'’ >> simp[npolls_append]
+QED
+
+Theorem hgrow_mono:
+  hgrow w w' a ∧ b ≤ a ⇒ hgrow w w' b
+Proof
+  rw[hgrow_def] >> metis_tac[LESS_EQ_TRANS]
+QED
+
+Theorem l0_do_hgrow:
+  l0_do n conf alen w = SOME (out, w', ev) ⇒
+  hgrow w w' (if n = «sys_poll» then 1 else 0)
+Proof
+  strip_tac >> drule l0_do_cases >> strip_tac >> simp[hgrow_def] >> rw[npolls_def]
+QED
+
+Theorem sys_hgrow:
+  (sys_poll fes w = SOME (out, w', ev) ⇒ hgrow w w' 1) ∧
+  (sys_send f bs w = SOME (out, w', ev) ⇒ hgrow w w' 0) ∧
+  (sys_close f w = SOME (out, w', ev) ⇒ hgrow w w' 0) ∧
+  (sys_accept f w = SOME (out, w', ev) ⇒ hgrow w w' 0) ∧
+  (sys_recv f k w = SOME (out, w', ev) ⇒ hgrow w w' 0)
+Proof
+  rw[sys_poll_def, sys_send_def, sys_close_def, sys_accept_def, sys_recv_def] >>
+  drule l0_do_hgrow >> simp[]
+QED
+
+Theorem l1_close_hgrow:
+  l1_close f (w, st) = SOME ((w', st'), evs) ⇒ hgrow w w' 0
+Proof
+  rw[l1_close_def, AllCaseEqs()] >> metis_tac[sys_hgrow]
+QED
+
+Theorem pdo_hgrow:
+  pdo lfd (w, ps) act = SOME (r, (w', ps'), evs) ⇒ hgrow w w' 0
+Proof
+  Cases_on ‘act’ >> simp[pdo_def] >> rw[AllCaseEqs()] >> gvs[] >>
+  TRY (PairCases_on ‘z’) >> gvs[l1do_def, AllCaseEqs()] >>
+  metis_tac[l1_close_hgrow, sys_hgrow, hgrow_refl]
+QED
+
+Theorem pacts_hgrow:
+  ∀acts w ps rs evs w' ps'.
+    pacts lfd (w, ps) acts = SOME (rs, evs, (w', ps')) ⇒ hgrow w w' 0
+Proof
+  Induct >> simp[pacts_def] >> rpt gen_tac >> strip_tac >> gvs[AllCaseEqs()] >>
+  rename1 ‘pdo _ _ _ = SOME (r1, ws1, evs1)’ >> PairCases_on ‘ws1’ >>
+  drule pdo_hgrow >> strip_tac >> first_x_assum drule >> strip_tac >>
+  drule_all hgrow_trans >> simp[]
+QED
+
+Theorem l1_polls_hgrow:
+  ∀chs w rv w' evs. l1_polls chs w = SOME (rv, w', evs) ⇒
+                    hgrow w w' (if chs = [] then 0 else 1)
+Proof
+  Induct >> simp[l1_polls_def] >> rpt gen_tac >> strip_tac >> gvs[AllCaseEqs()] >>
+  drule (CONJUNCT1 sys_hgrow) >> strip_tac >> first_x_assum drule >> strip_tac >>
+  ‘hgrow w w' (1 + if chs = [] then 0 else 1)’ by metis_tac[hgrow_trans] >>
+  irule hgrow_mono >> first_assum (irule_at Any) >> rw[]
+QED
+
+Theorem l1_flush_hgrow:
+  ∀fs w st w' st' evs. l1_flush fs (w, st) = SOME ((w', st'), evs) ⇒ hgrow w w' 0
+Proof
+  Induct >> simp[l1_flush_def] >> rpt gen_tac >>
+  IF_CASES_TAC >- (strip_tac >> first_x_assum drule >> simp[]) >>
+  strip_tac >> gvs[AllCaseEqs()] >>
+  drule (el 2 (CONJUNCTS sys_hgrow)) >> strip_tac >> first_x_assum drule >> strip_tac >>
+  drule_all hgrow_trans >> simp[]
+QED
+
+Theorem pf_fetch_hgrow:
+  ∀fs w ps w' ps' log evs.
+    pf_fetch lfd hw fs (w, ps) = SOME ((w', ps'), log, evs) ⇒ hgrow w w' 0
+Proof
+  Induct >> simp[pf_fetch_def] >> rpt gen_tac >> rw[] >>
+  TRY (first_x_assum drule >> simp[] >> NO_TAC) >>
+  gvs[AllCaseEqs()] >> pairarg_tac >> gvs[AllCaseEqs()] >>
+  first_x_assum drule >> strip_tac >>
+  metis_tac[sys_hgrow, hgrow_trans, ADD_CLAUSES]
+QED
+
+Theorem l1_reap_hgrow:
+  ∀fs w st w' st' evs. l1_reap fs (w, st) = SOME ((w', st'), evs) ⇒ hgrow w w' 0
+Proof
+  Induct >> simp[l1_reap_def] >> rpt gen_tac >>
+  IF_CASES_TAC >> strip_tac
+  >- (gvs[AllCaseEqs()] >> PairCases_on ‘ws’ >>
+      drule l1_close_hgrow >> strip_tac >> first_x_assum drule >> strip_tac >>
+      drule_all hgrow_trans >> simp[])
+  >> first_x_assum drule >> simp[]
+QED
+
+Theorem pround_hgrow:
+  pround lfd hw hs (w, ps) acts = SOME (snap, (w', ps'), log, evs) ⇒ hgrow w w' 1
+Proof
+  simp[pround_def, AllCaseEqs()] >> strip_tac >> PairCases_on ‘ws1’ >>
+  gvs[pf_tail_def, AllCaseEqs()] >>
+  drule pacts_hgrow >> strip_tac >>
+  drule l1_polls_hgrow >> simp[poll_chunks_ne] >> strip_tac >>
+  drule l1_flush_hgrow >> strip_tac >>
+  drule pf_fetch_hgrow >> strip_tac >>
+  drule l1_reap_hgrow >> strip_tac >>
+  metis_tac[hgrow_trans, ADD_CLAUSES]
+QED
+
+Theorem round_instant_ge:
+  run_ok lfd hw ifds m w1 ⇒
+  ∀k. k ≤ npolls (rworld lfd hw ifds m w1 k).hist − npolls w1.hist ∧
+      npolls w1.hist ≤ npolls (rworld lfd hw ifds m w1 k).hist
+Proof
+  strip_tac >> Induct >- simp[rworld_def, prun_0] >>
+  drule prun_round' >> disch_then (qspecl_then [‘ARB’, ‘k’] strip_assume_tac) >>
+  drule pround_hgrow >> rw[hgrow_def] >> gvs[npolls_append]
+QED

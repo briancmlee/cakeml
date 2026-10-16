@@ -1795,3 +1795,106 @@ Proof
     by (simp[Abbr ‘es1’] >> every_case_tac >> rw[cstat_of_def, ALOOKUP_ADELKEY]) >>
   simp[] >> metis_tac[]
 QED
+
+(* ------------------------------------------------------------------------
+   The round's tail
+   ------------------------------------------------------------------------ *)
+
+Theorem ev_rel_pb:
+  ps'.inb = ps.inb ∧ ps'.eof = ps.eof ∧ ps'.acq = ps.acq ∧ ps'.b.tbl = ps.b.tbl ⇒
+  (ev_rel lfd a cm (es with p := ps') w ⇔ ev_rel lfd a cm (es with p := ps) w)
+Proof
+  simp[ev_rel_def, inb_of_def, cstat_of_def]
+QED
+
+Theorem ev_rel_clock[simp]:
+  ev_rel lfd a cm es (w with clock := c) ⇔ ev_rel lfd a cm es w
+Proof
+  simp[ev_rel_def]
+QED
+
+Theorem in_fds_pend:
+  MEM f (in_fds (fes ++ MAP (λf. (f, 2n)) fs)) ⇔ MEM f (in_fds fes)
+Proof
+  simp[in_fds_def, FILTER_APPEND, MAP_MAP_o, combinTheory.o_DEF] >>
+  ‘FILTER (λ(f, e). ODD e) (MAP (λf. (f, 2n)) fs) = []’
+    by (simp[FILTER_EQ_NIL, EVERY_MEM, MEM_MAP] >> rw[] >> simp[]) >>
+  simp[]
+QED
+
+(* The tail up to the settling: the poll, the flush, the fetch (its
+   arrivals delivered) and the reap *)
+Theorem ev_pre_settle:
+  l1_polls fess wl = SOME (rv, w1, pevs) ∧
+  l1_flush fls (w1, es.p.b) = SOME ((w2, b2), fevs) ∧
+  pf_fetch lfd hw fs (w2, es.p with b := b2) = SOME ((w3, ps3), log, gevs) ∧
+  l1_reap ps3.b.closing (w3, ps3.b) = SOME ((w4, b4), cevs) ∧
+  (∀f. MEM f fs ⇒ f = lfd ∨ MEM f (MAP SND es.p.b.tbl)) ∧
+  ev_rel lfd a cm es w ∧ eown lfd es ∧ l0owne lfd wl es ∧ l0_rely wl ∧ fds_lt wl ∧
+  arrs lfd (cm, LENGTH w.chans) log = (as, (cm', k')) ∧
+  (∀f j. MEM (f, j) cm' ∧ LENGTH w.chans ≤ j ⇒ ∀used. ¬MEM f used ⇒ w.alloc j used = f) ∧
+  k' + 1 < dimword (:64) ⇒
+  let es4 = es with p := ps3 with <| b := b4; pause := x |>;
+      wf = FOLDL ep_deliver w (MAP (conv a) as) in
+  ev_rel lfd a cm' es4 wf ∧ eown lfd es4 ∧ l0owne lfd w4 es4 ∧ l0_rely w4 ∧ fds_lt w4 ∧
+  ep_grows w wf ∧ k' = LENGTH wf.chans ∧
+  es4.ctbl = es.ctbl ∧ es4.cst = es.cst ∧ es4.settling = es.settling ∧
+  es4.early = es.early ∧ es4.p.b.nxt = es.p.b.nxt ∧
+  ∃new. cm' = new ++ cm ∧ ∀f. MEM f (MAP FST new) ⇒ ¬MEM f (MAP SND es.ctbl)
+Proof
+  strip_tac >> simp[] >>
+  drule_all l1_polls_l0 >> strip_tac >>
+  drule_all l1_flush_l0 >> strip_tac >>
+  qabbrev_tac ‘es2 = es with p := es.p with b := b2’ >>
+  ‘ev_rel lfd a cm es2 w’
+    by (simp[Abbr ‘es2’] >> ‘es = es with p := es.p’ by simp[l1e_component_equality] >>
+        pop_assum (fn th => ONCE_REWRITE_TAC [th]) >> simp[ev_rel_b]) >>
+  ‘eown lfd es2’ by (simp[Abbr ‘es2’] >> irule eown_p >> simp[pown_b] >> gvs[eown_def]) >>
+  ‘l0owne lfd w2 es2’
+    by (qpat_x_assum ‘l0owne _ _ _’ mp_tac >> simp[Abbr ‘es2’, l0owne_def, l0own_def] >>
+        disch_then (MATCH_ACCEPT_TAC o CONJUNCT1)) >>
+  ‘l0_rely w2 ∧ fds_lt w2’ by gvs[fds_lt_def] >>
+  ‘pf_fetch lfd hw fs (w2, es2.p) = SOME ((w3, ps3), log, gevs)’ by simp[Abbr ‘es2’] >>
+  ‘∀f. MEM f fs ⇒ f = lfd ∨ MEM f (MAP SND es2.p.b.tbl)’ by simp[Abbr ‘es2’] >>
+  drule_all ev_fetch >> strip_tac >>
+  ‘es2 with p := ps3 = es with p := ps3’ by simp[Abbr ‘es2’] >>
+  qpat_x_assum ‘es2 with p := ps3 = _’ (fn th => RULE_ASSUM_TAC (REWRITE_RULE [th])) >>
+  ‘ps3.b.tbl = es.p.b.tbl ∧ ps3.b.nxt = es.p.b.nxt ∧ ps3.b.closing = es.p.b.closing’
+    by gvs[Abbr ‘es2’] >>
+  drule_all l1_reap_l0 >> strip_tac >>
+  qabbrev_tac ‘ps4 = ps3 with <| b := b4; pause := x |>’ >>
+  ‘pown lfd ps4’
+    by (simp[Abbr ‘ps4’] >>
+        ‘ps3 with <| b := b4; pause := x |> = (ps3 with b := b4) with pause := x’ by simp[] >>
+        pop_assum SUBST1_TAC >> simp[rel_pause] >>
+        irule pown_closing_filter >> simp[] >> gvs[eown_def] >> metis_tac[]) >>
+  ‘∀g. g = lfd ∨ MEM g (MAP SND ps3.b.tbl) ∨ MEM g ps3.acq ∨ MEM g (MAP SND es.ctbl) ⇒
+       ¬MEM g ps3.b.closing’
+    by (qpat_x_assum ‘eown _ (es with p := ps3)’ mp_tac >>
+        simp[eown_def, pown_def, ALL_DISTINCT_APPEND] >> metis_tac[]) >>
+  rpt conj_tac
+  >- (‘es with p := ps4 = (es with p := ps3) with p := ps4’ by simp[] >>
+      pop_assum SUBST1_TAC >> simp[Abbr ‘ps4’] >>
+      qmatch_goalsub_abbrev_tac ‘ev_rel _ _ _ (es3 with p := _) _’ >>
+      ‘ev_rel lfd a cm' (es3 with p := ps3) (FOLDL ep_deliver w (MAP (conv a) as))’
+        by simp[Abbr ‘es3’] >>
+      drule_at (Pos last) (iffRL ev_rel_pb) >> disch_then irule >> simp[]) >>
+  TRY (‘es with p := ps4 = (es with p := ps3) with p := ps4’ by simp[] >>
+       pop_assum SUBST1_TAC >> irule eown_p >> simp[Abbr ‘ps4’] >>
+       rpt strip_tac >> gvs[] >> NO_TAC) >>
+  TRY (qpat_x_assum ‘l0owne _ w3 _’ mp_tac >>
+       simp[l0owne_def, l0own_def, Abbr ‘ps4’] >> rpt strip_tac >> gvs[] >>
+       TRY (qpat_x_assum ‘∀g. MEM g (l0_used w3) ∧ ¬MEM g ps3.b.closing ⇒ _’ irule >>
+            simp[] >> NO_TAC) >>
+       qpat_x_assum ‘∀g. MEM g b4.closing ⇒ _’ drule >> simp[] >> NO_TAC) >>
+  TRY (gvs[fds_lt_def] >> rpt strip_tac >> res_tac >> gvs[] >> NO_TAC) >>
+  TRY (simp[] >> NO_TAC) >>
+  drule arrs_new >> strip_tac >> qexists_tac ‘new’ >> simp[] >>
+  qpat_x_assum ‘pf_fetch _ _ _ (w2, es2.p) = _’ assume_tac >>
+  drule_all fetch_acq >> strip_tac >>
+  rpt strip_tac >> gvs[] >>
+  ‘MEM f (l0_used wl)’
+    by (qpat_x_assum ‘l0owne _ wl _’ mp_tac >> simp[l0owne_def] >> strip_tac >>
+        first_x_assum irule >> simp[]) >>
+  qpat_x_assum ‘∀f'. MEM f' (fconns log) ⇒ _’ drule >> simp[]
+QED

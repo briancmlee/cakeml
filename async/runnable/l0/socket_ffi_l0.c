@@ -32,6 +32,18 @@
   | sys_send        | send(fd, data, len, MSG_DONTWAIT [| MSG_NOSIGNAL])    | fd ++ data       | -                   |
   | sys_shutdown    | shutdown(fd, SHUT_WR)                                | fd               | -                   |
   | sys_close       | close(fd)                                            | fd               | -                   |
+  | sys_connect     | socket(AF_INET, SOCK_STREAM, 0); fcntl F_SETFL       | port (2 bytes)   | -                   |
+  |                 | O_NONBLOCK; connect 127.0.0.1:port                   |                  |                     |
+  | sys_connerr     | getsockopt(fd, SOL_SOCKET, SO_ERROR)                 | fd               | -                   |
+
+  sys_connect's value is the new fd as soon as socket() succeeded, also
+  when connect then fails (EINPROGRESS: pending; ECONNREFUSED etc.:
+  failed); the fd stays open until the program closes it.  Value 0: no fd
+  (socket or fcntl failed; fd 0 is always open, by the startup contract,
+  so 0 is never a new fd).
+  sys_connerr: code 0 and value 0: no pending error; code e and value 1:
+  the socket's pending error e (reading it clears it); code e and value
+  0: getsockopt itself failed with e.
 
   What the fixed arguments rule out: blocking I/O (MSG_DONTWAIT; the
   socket's own O_NONBLOCK state is then irrelevant), other address
@@ -191,6 +203,38 @@ void ffisys_send(unsigned char *c, long clen, unsigned char *a, long alen) {
 void ffisys_shutdown(unsigned char *c, long clen, unsigned char *a, long alen) {
   if (clen != 8 || alen != HDR) die("sys_shutdown: lengths");
   put_res(a, shutdown(get_fd(c), SHUT_WR));
+}
+
+/* A result with error e and value v (sys_connect's fd, sys_connerr's flag) */
+static void put_err_val(unsigned char *a, int e, uint64_t v) {
+  a[0] = err_code(e);
+  put_be(a + 1, 8, v);
+  put_be(a + 9, 4, (uint32_t)e);
+}
+
+void ffisys_connect(unsigned char *c, long clen, unsigned char *a, long alen) {
+  if (clen != 2 || alen != HDR) die("sys_connect: lengths");
+  struct sockaddr_in ad;
+  memset(&ad, 0, sizeof ad);
+  ad.sin_family = AF_INET;
+  ad.sin_port = htons((uint16_t)((c[0] << 8) | c[1]));
+  ad.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+  int s = socket(AF_INET, SOCK_STREAM, 0);
+  if (s < 0) { put_res(a, -1); return; }
+  if (fcntl(s, F_SETFL, O_NONBLOCK) < 0) {
+    int e = errno; close(s); put_err_val(a, e, 0); return;
+  }
+  if (connect(s, (struct sockaddr *)&ad, sizeof ad) < 0) { put_err_val(a, errno, (uint64_t)s); return; }
+  put_res(a, s);
+}
+
+void ffisys_connerr(unsigned char *c, long clen, unsigned char *a, long alen) {
+  if (clen != 8 || alen != HDR) die("sys_connerr: lengths");
+  int err = 0;
+  socklen_t len = sizeof err;
+  if (getsockopt(get_fd(c), SOL_SOCKET, SO_ERROR, &err, &len) < 0) { put_res(a, -1); return; }
+  if (err == 0) put_res(a, 0);
+  else put_err_val(a, err, 1);
 }
 
 void ffisys_close(unsigned char *c, long clen, unsigned char *a, long alen) {

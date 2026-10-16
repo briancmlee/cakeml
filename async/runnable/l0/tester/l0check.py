@@ -38,10 +38,11 @@ class Chan:
     def __init__(self):
         self.inbox = b""; self.peer_eof = False; self.err = None; self.broken = False
         self.shut = False; self.sent = b""; self.closed = False; self.aborted = False
+        self.connecting = False
 
     def key(self):
         return (self.inbox, self.peer_eof, self.err, self.broken, self.shut,
-                self.sent, self.closed, self.aborted)
+                self.sent, self.closed, self.aborted, self.connecting)
 
 
 class State:
@@ -54,11 +55,13 @@ class State:
         self.chan_of_client = {}     # client id -> channel
         self.connects = []           # in transit: [(client, port)], in connect order
         self.pending = {}            # client id -> [(kind, payload, optional)]
+        self.conn_chans = []         # channels made by sys_connect, in order
 
     def key(self):
         return (json.dumps(self.listeners), tuple(c.key() for c in self.chans),
                 tuple(self.open_fds), tuple(self.reserved), self.fd_limit,
                 tuple(sorted(self.chan_of_client.items())), tuple(self.connects),
+                tuple(self.conn_chans),
                 json.dumps({k: [(a, p.hex() if isinstance(p, bytes) else p, o) for (a, p, o) in v]
                             for k, v in sorted(self.pending.items())}))
 
@@ -113,6 +116,8 @@ class State:
         kind, payload, _ = self.pending[client].pop(0)
         j = self.chan_of_client[client]
         c = self.chans[j]
+        if c.connecting:                 # the peer acts: the connect completed first
+            c.connecting = False
         if kind == "data":
             if not c.peer_eof and not c.broken:
                 if c.closed:
@@ -187,12 +192,36 @@ def with_connects(states, ok):
     return res
 
 
+def completions(states, j, fail_codes=(E["ECONNREFUSED"],)):
+    """A pending connect may complete at any moment (LConnUp / LConnFail):
+    each state, and if channel j is still connecting, its completions"""
+    res = []
+    for st in states:
+        res.append(st)
+        if j is not None and j < len(st.chans) and st.chans[j].connecting:
+            s = copy.deepcopy(st); s.chans[j].connecting = False; res.append(s)
+            for e in fail_codes:
+                s = copy.deepcopy(st); c = s.chans[j]
+                c.connecting = False; c.broken = True; c.err = e; res.append(s)
+    return res
+
+
+def chan_states(states, f, fail_codes=(E["ECONNREFUSED"],)):
+    """completions for the channel of fd f (in each state)"""
+    res = []
+    for st in states:
+        res += completions([st], st.chan_of(f), fail_codes)
+    return res
+
+
 # -- revents (chan_revents / fd_revents) ---------------------------------
 
 def revents_ok(st, f, ev, r):
     j = st.chan_of(f)
     if j is not None:
         c = st.chans[j]
+        if c.connecting:
+            return r == 0                       # writable only once established
         want_in = bool(ev & IN) and bool(c.inbox or c.peer_eof or c.broken or c.err)
         if bool(r & IN) != want_in: return False
         if (r & OUT) and not (ev & OUT): return False          # OUT only if requested
@@ -221,7 +250,7 @@ def check_poll(states, conf, out):
         def ok(s, f=f, ev=ev, r=r):
             return revents_ok(s, f, ev, r)
         new = []
-        for st in states:
+        for st in chan_states(states, f):
             j = st.chan_of(f)
             if j is not None:
                 new += with_deliveries([st], j, ok)
@@ -267,10 +296,13 @@ def check_recv(states, conf, out, alen):
     code, val = out[0], int.from_bytes(out[1:9], "big")
     data = out[13:13 + val] if code == 0 else b""
     res = []
-    for st in states:
+    for st in chan_states(states, f, (code,) if code else (E["ECONNREFUSED"],)):
         j = st.chan_of(f)
         if j is None:
             if code: res.append(st)
+            continue
+        if st.chans[j].connecting:
+            if code: res.append(st)               # pending_err: the world's choice
             continue
         if code == 0 and val > 0:
             def ok(s): return len(s.chans[j].inbox) >= val and s.chans[j].inbox[:val] == data
@@ -299,12 +331,15 @@ def check_send(states, conf, out):
     f = int.from_bytes(conf[:8], "big"); bs = conf[8:]
     code, val = out[0], int.from_bytes(out[1:9], "big")
     res = []
-    for st in states:
+    for st in chan_states(states, f, (code,) if code else (E["ECONNREFUSED"],)):
         j = st.chan_of(f)
         if j is None:
             if code: res.append(st)
             continue
         c = st.chans[j]
+        if c.connecting:
+            if code: res.append(st)               # pending_err
+            continue
         if code == 0:
             if not c.broken and not c.shut and val <= len(bs) and (val > 0 or not bs):
                 s2 = copy.deepcopy(st); s2.chans[j].sent += bs[:val]; res.append(s2)
@@ -324,10 +359,13 @@ def check_send(states, conf, out):
 def check_shutdown(states, conf, out):
     f = int.from_bytes(conf, "big"); code = out[0]
     res = []
-    for st in states:
+    for st in chan_states(states, f):
         j = st.chan_of(f)
         if j is None:
             if code: res.append(st)
+            continue
+        if st.chans[j].connecting:
+            if code: res.append(st)               # pending_err
             continue
         if code == 0:
             s2 = copy.deepcopy(st); s2.chans[j].shut = True; res.append(s2)
@@ -376,6 +414,49 @@ def check_listen(states, conf, out):
     return res
 
 
+def check_connect(states, conf, out):
+    """l0_connect: value 0: no socket (transient, or EMFILE when no fd is
+    below the limit); else the new fd (the lowest free) and connect_now's
+    outcome: code 0 connected, EINPROGRESS pending, other: failed at once"""
+    code, val = out[0], int.from_bytes(out[1:9], "big")
+    res = []
+    for st in states:
+        if val == 0:
+            if code == E["EMFILE"] and not st.fd_free():
+                res.append(st)
+            elif transient_ok(code):
+                WARN.append("connect: no socket, error %d (transient)" % code); res.append(st)
+            continue
+        if not (st.fd_free() and val == st.lowest_fd()):
+            continue
+        s = copy.deepcopy(st); j = len(s.chans); c = Chan()
+        if code == E["EINPROGRESS"]:
+            c.connecting = True
+        elif code != 0:
+            c.broken = True
+        s.chans.append(c); s.open_fds.insert(0, (val, j)); s.conn_chans.append(j)
+        res.append(s)
+    return res
+
+
+def check_connerr(states, conf, out):
+    """l0_connerr: the pending error (value 1), cleared; code 0: none"""
+    f = int.from_bytes(conf, "big")
+    code, val = out[0], int.from_bytes(out[1:9], "big")
+    res = []
+    for st in chan_states(states, f, (code,) if code and val == 1 else (E["ECONNREFUSED"],)):
+        j = st.chan_of(f)
+        if j is None:
+            if code and val == 0: res.append(st)
+            continue
+        c = st.chans[j]
+        if code == 0 and val == 0 and c.err is None:
+            res.append(st)
+        elif code and val == 1 and c.err == code:
+            s = copy.deepcopy(st); s.chans[j].err = None; res.append(s)
+    return res
+
+
 def dedupe(states, cap=4096):
     seen, out = set(), []
     for s in states:
@@ -409,6 +490,9 @@ def check(log):
                 states = [State(reserved, fd_limit)]
             if ev[0] == "connect":
                 for s in states: s.connects.append((ev[1], ev[2])); s.pending[ev[1]] = []
+            elif ev[0] == "link":                         # peer ev[1] is the far end of
+                for s in states:                          # the program's connect ev[2]
+                    s.chan_of_client[ev[1]] = s.conn_chans[ev[2]]; s.pending[ev[1]] = []
             elif ev[0] == "data":
                 for s in states: s.pending[ev[1]].append(("data", bytes.fromhex(ev[2]), False))
             elif ev[0] == "eof":
@@ -432,9 +516,14 @@ def check(log):
                           "recv": lambda: check_recv(states, conf, out, alen),
                           "send": lambda: check_send(states, conf, out),
                           "shutdown": lambda: check_shutdown(states, conf, out),
-                          "close": lambda: check_close(states, conf, out)}[name]()
+                          "close": lambda: check_close(states, conf, out),
+                          "connect": lambda: check_connect(states, conf, out),
+                          "connerr": lambda: check_connerr(states, conf, out)}[name]()
                 if not states:
-                    if name not in ("poll", "close") and transient_ok(out[0]):
+                    # a transient failure has value 0 (the model's fail);
+                    # connect's fd or connerr's 1 is never one
+                    if (name not in ("poll", "close") and transient_ok(out[0]) and
+                            int.from_bytes(out[1:9], "big") == 0):
                         WARN.append("step %d: %s error %d explained only as transient (POSIX 2.3)"
                                     % (i, name, out[0]))
                         states = prev

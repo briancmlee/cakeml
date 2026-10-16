@@ -114,6 +114,15 @@ class Server:
     def close(self, fd):
         return decode(self.call("close", fd8(fd), HDR))
 
+    def connect(self, port):
+        return decode(self.call("connect", port.to_bytes(2, "big"), HDR))
+
+    def connerr(self, fd):
+        return decode(self.call("connerr", fd8(fd), HDR))
+
+    def peer(self):
+        return Peer(self)
+
     def rlimit(self, n):
         self.log.append(["fd_limit", n])
         return self.raw(["rlimit", n])
@@ -173,3 +182,36 @@ class Client:
         except OSError as e:
             self.s.log.append(["client_err", self.id, e.errno])
             return ("err", e.errno)
+
+
+class Peer:
+    """A loopback listener the program connects to (sys_connect).  Each
+    connection it accepts is the far end of one program connect; its
+    actions are the environment's arrivals for that channel, logged as a
+    client's, after a "link" event naming the connect (0, 1, ... in the
+    order of the program's connects that made a socket)"""
+
+    def __init__(self, server):
+        import socket
+        self.s = server
+        self.lsock = socket.socket()
+        self.lsock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.lsock.bind(("127.0.0.1", 0)); self.lsock.listen(16)
+        self.port = self.lsock.getsockname()[1]
+
+    def accept(self, k, timeout=1.0):
+        """Accept the far end of the program's k-th connect"""
+        self.lsock.settimeout(timeout)
+        sock, _ = self.lsock.accept()
+        return PeerConn(self.s, sock, k)
+
+    def close(self):
+        self.lsock.close()
+
+
+class PeerConn(Client):
+    def __init__(self, server, sock, k):
+        self.s = server
+        self.id = Client.count; Client.count += 1
+        self.sock = sock
+        self.s.log.append(["link", self.id, k])

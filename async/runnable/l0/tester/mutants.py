@@ -49,6 +49,12 @@ def main(path):
        lambda ev: ev[1] == "poll", lambda o: o[:13] + bytes([16])),
       ("EAGAIN from accept with a connection pending", "P8_aborted_pending",
        lambda ev: ev[1] == "accept", lambda o: bytes([1]) + bytes(12)),
+      ("connect returns an fd that is not the lowest free", "P11_connect",
+       lambda ev: ev[1] == "connect", lambda o: o[:8] + bytes([o[8] + 3]) + o[9:]),
+      ("connerr reports an error twice", "P12_refused",
+       nth(2, lambda ev: ev[1] == "connerr"), lambda o: bytes([4]) + bytes(7) + bytes([1]) + o[9:]),
+      ("recv data on a refused connect", "P12_refused",
+       lambda ev: ev[1] == "recv", lambda o: bytes(8) + bytes([1]) + bytes(4) + b"x" + o[14:]),
     ]
     bad = 0
     for desc, name, pred, f in M:

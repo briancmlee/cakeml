@@ -185,8 +185,54 @@ def p10_misc(lib):
     say("close fd 40:", show(s.close(40)))
     finish("P10_misc", s)
 
+def p11_connect(lib):
+    say("\n## P11 connect to a listening peer")
+    s, l, p = setup(lib); peer = s.peer()
+    r = s.connect(peer.port); say("connect:", show(r)); f = r[1]
+    say("poll IN|OUT at once:", pollone(s, f)); time.sleep(SETTLE)
+    say("poll IN|OUT later:", pollone(s, f), "; connerr:", show(s.connerr(f)))
+    pc = peer.accept(0)
+    say("send:", show(s.send(f, b"hello"))); time.sleep(SETTLE)
+    say("peer got:", pc.recv(100))
+    pc.send(b"world"); time.sleep(SETTLE)
+    say("poll:", pollone(s, f), "; recv:", s.recv(f, 100)[3])
+    pc.shutdown(); time.sleep(SETTLE)
+    say("after peer FIN: poll", pollone(s, f), "; recv:", show(s.recv(f, 100)))
+    say("close:", show(s.close(f)))
+    pc.close(); peer.close(); finish("P11_connect", s)
+
+def p12_refused(lib):
+    say("\n## P12 connect to a closed port (refused)")
+    import socket
+    t = socket.socket(); t.bind(("127.0.0.1", 0)); port = t.getsockname()[1]; t.close()
+    s, l, p = setup(lib)
+    r = s.connect(port); say("connect:", show(r)); f = r[1]
+    say("poll IN|OUT at once:", pollone(s, f)); time.sleep(SETTLE)
+    say("poll IN|OUT later:", pollone(s, f))
+    say("connerr:", show(s.connerr(f)), "; again:", show(s.connerr(f)))
+    say("recv:", show(s.recv(f, 10)), "; send:", show(s.send(f, b"x")))
+    say("poll after:", pollone(s, f))
+    say("close:", show(s.close(f)))
+    finish("P12_refused", s)
+
+def p13_pending(lib):
+    say("\n## P13 calls on a pending connect (the peer's backlog full)")
+    s, l, p = setup(lib); peer = s.peer(); peer.lsock.listen(0)
+    fs = []
+    for i in range(6):
+        r = s.connect(peer.port); fs.append(r[1]); say("connect %d:" % i, show(r))
+    time.sleep(SETTLE)
+    say("polls:", [pollone(s, f) for f in fs])
+    f = fs[-1]
+    say("on the last: recv", show(s.recv(f, 10)), "; send", show(s.send(f, b"x")),
+        "; shutdown", show(s.shutdown(f)), "; connerr", show(s.connerr(f)))
+    for f in fs:
+        s.close(f)
+    peer.close(); finish("P13_pending", s)
+
 PROBES = [p1_partial_send, p2_reset, p3_reset_unread, p4_send_then_reset, p5_emfile,
-          p6_rst_on_close, p7_short_reads, p8_aborted, p9_hup, p10_misc]
+          p6_rst_on_close, p7_short_reads, p8_aborted, p9_hup, p10_misc,
+          p11_connect, p12_refused, p13_pending]
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()

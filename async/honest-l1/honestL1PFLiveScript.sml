@@ -123,9 +123,11 @@ Definition fetched_at_def:
       (EL k (SND (SND (SND (prun lfd hw ifds m w0 (SUC k))))))
 End
 
+(* TO PROVE (the statement, kept as a comment until proved; no cheats):
+
 (* PROGRESS: if fd f is an open handle's fd at round n and its channel has
    input pending (data, EOF, or broken), then L1 eventually fetches on f,
-   or f stops being an open handle's fd *)
+   or f stops being an open handle's fd *-)
 Theorem fetch_progress:
   l0_rely w0 ∧ psmall lfd pinit ∧ pl2_ok lfd hw ifds m (w0, pinit) ∧
   F1 lfd hw ifds m w0 ∧ S1 lfd hw ifds m w0 ∧ S3 lfd hw ifds m w0 ∧
@@ -137,6 +139,5 @@ Theorem fetch_progress:
       ∃k. n ≤ k ∧
           (fetched_at lfd hw ifds m w0 k f ∨
            ¬MEM f (MAP SND (rstate lfd hw ifds m w0 (SUC k)).b.tbl))
-Proof
-  cheat
-QED
+(not yet proved)
+*)

@@ -1613,7 +1613,8 @@ Theorem promote_fields:
   (promote es).p.eof = es.p.eof ∧
   (promote es).p.b.tbl = FILTER (λ(h, f). cstat_of es f = CUp) es.ctbl ++ es.p.b.tbl ∧
   (promote es).ctbl = FILTER (λ(h, f). cstat_of es f ≠ CUp) es.ctbl ∧
-  (promote es).p.b.nxt = es.p.b.nxt ∧ (promote es).settling = es.settling
+  (promote es).p.b.nxt = es.p.b.nxt ∧ (promote es).settling = es.settling ∧
+  (promote es).p.b.closing = es.p.b.closing
 Proof
   simp[promote_def]
 QED
@@ -1834,15 +1835,17 @@ Theorem ev_pre_settle:
   arrs lfd (cm, LENGTH w.chans) log = (as, (cm', k')) ∧
   (∀f j. MEM (f, j) cm' ∧ LENGTH w.chans ≤ j ⇒ ∀used. ¬MEM f used ⇒ w.alloc j used = f) ∧
   k' + 1 < dimword (:64) ⇒
-  let es4 = es with p := ps3 with <| b := b4; pause := x |>;
-      wf = FOLDL ep_deliver w (MAP (conv a) as) in
-  ev_rel lfd a cm' es4 wf ∧ eown lfd es4 ∧ l0owne lfd w4 es4 ∧ l0_rely w4 ∧ fds_lt w4 ∧
-  ep_grows w wf ∧ k' = LENGTH wf.chans ∧
-  es4.ctbl = es.ctbl ∧ es4.cst = es.cst ∧ es4.settling = es.settling ∧
-  es4.early = es.early ∧ es4.p.b.nxt = es.p.b.nxt ∧
+  ev_rel lfd a cm' (es with p := ps3 with <| b := b4; pause := ps3.pause − 1 |>)
+    (FOLDL ep_deliver w (MAP (conv a) as)) ∧
+  eown lfd (es with p := ps3 with <| b := b4; pause := ps3.pause − 1 |>) ∧
+  l0owne lfd w4 (es with p := ps3 with <| b := b4; pause := ps3.pause − 1 |>) ∧
+  l0_rely w4 ∧ fds_lt w4 ∧
+  ep_grows w (FOLDL ep_deliver w (MAP (conv a) as)) ∧
+  k' = LENGTH (FOLDL ep_deliver w (MAP (conv a) as)).chans ∧ b4.nxt = es.p.b.nxt ∧
+  b4.tbl = es.p.b.tbl ∧
   ∃new. cm' = new ++ cm ∧ ∀f. MEM f (MAP FST new) ⇒ ¬MEM f (MAP SND es.ctbl)
 Proof
-  strip_tac >> simp[] >>
+  strip_tac >>
   drule_all l1_polls_l0 >> strip_tac >>
   drule_all l1_flush_l0 >> strip_tac >>
   qabbrev_tac ‘es2 = es with p := es.p with b := b2’ >>
@@ -1862,10 +1865,11 @@ Proof
   ‘ps3.b.tbl = es.p.b.tbl ∧ ps3.b.nxt = es.p.b.nxt ∧ ps3.b.closing = es.p.b.closing’
     by gvs[Abbr ‘es2’] >>
   drule_all l1_reap_l0 >> strip_tac >>
-  qabbrev_tac ‘ps4 = ps3 with <| b := b4; pause := x |>’ >>
+  qabbrev_tac ‘ps4 = ps3 with <| b := b4; pause := ps3.pause − 1 |>’ >>
   ‘pown lfd ps4’
     by (simp[Abbr ‘ps4’] >>
-        ‘ps3 with <| b := b4; pause := x |> = (ps3 with b := b4) with pause := x’ by simp[] >>
+        ‘ps3 with <| b := b4; pause := ps3.pause − 1 |> =
+         (ps3 with b := b4) with pause := ps3.pause − 1’ by simp[] >>
         pop_assum SUBST1_TAC >> simp[rel_pause] >>
         irule pown_closing_filter >> simp[] >> gvs[eown_def] >> metis_tac[]) >>
   ‘∀g. g = lfd ∨ MEM g (MAP SND ps3.b.tbl) ∨ MEM g ps3.acq ∨ MEM g (MAP SND es.ctbl) ⇒
@@ -1960,4 +1964,175 @@ Proof
   rename1 ‘ALOOKUP es.ctbl h = SOME g’ >>
   qpat_x_assum ‘∀h f. ALOOKUP es.ctbl h = SOME f ⇒ chan_status _ _ = _ ∧ _’ drule >>
   strip_tac >> simp[] >> Cases_on ‘cstat_of es g’ >> gvs[]
+QED
+
+Theorem ep_deliver_clock:
+  ∀l w. FOLDL ep_deliver (w with clock := c) l = (FOLDL ep_deliver w l) with clock := c
+Proof
+  Induct >> simp[] >> rpt gen_tac >>
+  ‘ep_deliver (w with clock := c) h = (ep_deliver w h) with clock := c’
+    by (Cases_on ‘h’ >> rw[ep_deliver_def, upd_chan_def] >> every_case_tac >> simp[] >>
+        pairarg_tac >> simp[]) >>
+  simp[]
+QED
+
+Theorem settling_simps[simp]:
+  (ev_rel lfd a cm (es with settling := s) w ⇔ ev_rel lfd a cm es w) ∧
+  (ehs_rel hs (es with settling := s) ⇔
+     hs.nxt = es.p.b.nxt ∧
+     (∀h. ALOOKUP hs.tbl h =
+          case ALOOKUP es.p.b.tbl h of SOME f => SOME f | NONE => ALOOKUP es.ctbl h) ∧
+     ∀h. MEM h hs.settling ⇔ MEM h s ∧ ALOOKUP hs.tbl h ≠ NONE)
+Proof
+  simp[ev_rel_def, ehs_rel_def, inb_of_def, cstat_of_def]
+QED
+
+Theorem eown_settling_sub:
+  eown lfd es ∧ (∀h. MEM h s ⇒ MEM h es.settling) ⇒ eown lfd (es with settling := s)
+Proof
+  simp[eown_def, cstat_of_def] >> metis_tac[]
+QED
+
+(* The settle arrivals of a round: the connects that settled in its tail
+   (state es before, es' after) *)
+Definition rsettles_def:
+  rsettles cm es es' =
+    MAP (λ(h, f). Settle (cl cm f) (ALOOKUP es'.ctbl h = NONE))
+      (FILTER (λ(h, f). cstat_of es f = CPending ∧
+                        (ALOOKUP es'.ctbl h = NONE ∨ cstat_of es' f = CRefused)) es.ctbl)
+End
+
+Theorem MAP_FILTER_cong:
+  ∀l. (∀x. MEM x l ⇒ (p1 x ⇔ p2 x) ∧ (p2 x ⇒ g1 x = g2 x)) ⇒
+      MAP g1 (FILTER p1 l) = MAP g2 (FILTER p2 l)
+Proof
+  Induct >> rw[] >> gvs[]
+QED
+
+Theorem rsettles_settles:
+  eown lfd es ∧ es4.ctbl = es.ctbl ∧ es4.cst = es.cst ∧ es5.ctbl = es.ctbl ∧
+  (∀f. MEM f (MAP FST new) ⇒ ¬MEM f (MAP SND es.ctbl)) ⇒
+  rsettles cm es (promote es5 with settling := s) = settles (new ++ cm) es4 es5
+Proof
+  strip_tac >> simp[rsettles_def, settles_def, settled_def, promote_fields] >>
+  irule MAP_FILTER_cong >> simp[FORALL_PROD] >> rpt gen_tac >> strip_tac >>
+  ‘ALL_DISTINCT (MAP FST es.ctbl)’ by gvs[eown_def, ALL_DISTINCT_APPEND] >>
+  ‘ALOOKUP es.ctbl p_1 = SOME p_2’ by (irule ALOOKUP_ALL_DISTINCT_MEM >> simp[]) >>
+  ‘MEM p_2 (MAP SND es.ctbl)’ by (simp[MEM_MAP, EXISTS_PROD] >> metis_tac[]) >>
+  ‘cstat_of es4 p_2 = cstat_of es p_2’ by simp[cstat_of_def] >>
+  ‘cl (new ++ cm) p_2 = cl cm p_2’ by (simp[cl_append] >> metis_tac[]) >>
+  ‘cstat_of (promote es5 with settling := s) p_2 = cstat_of (promote es5) p_2’
+    by simp[cstat_of_def] >>
+  Cases_on ‘cstat_of es5 p_2 = CUp’
+  >- (‘ALOOKUP (FILTER (λ(h, f). cstat_of es5 f ≠ CUp) es.ctbl) p_1 = NONE’
+        by (Cases_on ‘ALOOKUP (FILTER (λ(h, f). cstat_of es5 f ≠ CUp) es.ctbl) p_1’ >>
+            simp[] >> imp_res_tac ALOOKUP_FILTER_IMP >> gvs[]) >>
+      simp[]) >>
+  ‘ALOOKUP (FILTER (λ(h, f). cstat_of es5 f ≠ CUp) es.ctbl) p_1 = SOME p_2’
+    by (irule ALOOKUP_FILTER_SOME >> simp[]) >>
+  drule cstat_of_promote >> simp[] >> strip_tac >>
+  Cases_on ‘cstat_of es5 p_2’ >> gvs[]
+QED
+
+Theorem l0owne_promote:
+  l0owne lfd w es4 ∧ es5.p = es4.p ∧ es5.ctbl = es4.ctbl ∧
+  (∀g. MEM g (l0_used w) ⇒ MEM g (l0_used w')) ⇒
+  l0owne lfd w' (promote es5 with settling := sl)
+Proof
+  simp[l0owne_def, l0own_def, promote_fields] >> strip_tac >>
+  ‘∀f. f = lfd ∨ MEM f (MAP SND es4.p.b.tbl) ∨ MEM f es4.p.b.closing ∨ MEM f es4.p.acq ∨
+       MEM f (MAP SND es4.ctbl) ⇒ MEM f (l0_used w')’
+    by (rpt strip_tac >> qpat_x_assum ‘∀g. MEM g (l0_used w) ⇒ _’ irule >> fs[]) >>
+  rpt strip_tac >> imp_res_tac MEM_MAP_FILTER_IMP >> gvs[]
+QED
+
+(* The round's tail is the layer's poll: time passes in the world, whose
+   arrivals are what L1 fetched and the connects that settled *)
+Theorem ev_tail:
+  etail lfd hw ifs (wl, es) = SOME (rdy, (wl', es'), log, tevs) ∧
+  ev_rel lfd a cm es w ∧ eown lfd es ∧ ehs_rel hs es ∧
+  l0owne lfd wl es ∧ l0_rely wl ∧ fds_lt wl ∧
+  arrs lfd (cm, LENGTH w.chans) log = (as, (cm', k')) ∧
+  (∀f j. MEM (f, j) cm' ∧ LENGTH w.chans ≤ j ⇒ ∀used. ¬MEM f used ⇒ w.alloc j used = f) ∧
+  k' + 1 < dimword (:64) ∧
+  w.env w.clock w.hist = MAP (conv a) as ++ rsettles cm es es' ⇒
+  ∃w' hs'. ehpoll lfd hs ifs w = (rdy, w', hs') ∧
+    ev_rel lfd a cm' es' w' ∧ eown lfd es' ∧ ehs_rel hs' es' ∧
+    l0owne lfd wl' es' ∧ l0_rely wl' ∧ fds_lt wl' ∧
+    LENGTH w'.chans = k' ∧ w'.alloc = w.alloc ∧ w'.env = w.env ∧
+    w'.clock = w.clock + 1 ∧ w'.hist = w.hist ∧ es'.p.b.nxt = es.p.b.nxt
+Proof
+  simp[etail_def] >> strip_tac >>
+  qabbrev_tac ‘fes = pf_poll_set lfd hw es.p ifs ++ MAP (λf. (f, 2n)) (pend_fds es)’ >>
+  gvs[AllCaseEqs()] >>
+  rename1 ‘l1_polls _ wl = SOME (rv, w1, pevs)’ >>
+  rename1 ‘l1_flush _ _ = SOME ((w2, b2), fevs)’ >>
+  rename1 ‘pf_fetch _ _ _ _ = SOME ((w3, ps3), log, gevs)’ >>
+  rename1 ‘l1_reap _ _ = SOME ((w4, b4), cevs)’ >>
+  rename1 ‘settle_fds _ _ = SOME ((w5, es5), sevs)’ >>
+  ‘∀f. MEM f (FILTER (λf. MEM f (in_fds fes)) (readable_fds rv)) ⇒
+       f = lfd ∨ MEM f (MAP SND es.p.b.tbl)’
+    by (rw[MEM_FILTER, Abbr ‘fes’, in_fds_pend] >> drule in_fds_poll_set >> simp[]) >>
+  ‘k' + 1 < dimword (:64)’ by fs[] >>
+  drule_all ev_pre_settle >> strip_tac >>
+  qabbrev_tac ‘es4 = es with p := ps3 with <|b := b4; pause := ps3.pause − 1|>’ >>
+  qabbrev_tac ‘wF = FOLDL ep_deliver w (MAP (conv a) as)’ >>
+  drule_all settle_fds_props >> simp[] >> strip_tac >>
+  ‘∀f. MEM f (MAP SND es4.ctbl) ∧ cstat_of es4 f ≠ CPending ⇒ cstat_of es5 f = cstat_of es4 f’
+    by (rpt strip_tac >>
+        ‘cstat_of es4 f = cstat_of es f’ by simp[Abbr ‘es4’, cstat_of_def] >>
+        ‘¬MEM f (pend_fds es)’
+          by (simp[pend_fds_def, MEM_MAP, MEM_FILTER, EXISTS_PROD] >> gvs[]) >>
+        ‘ALOOKUP es4.early f = NONE’
+          by (simp[ALOOKUP_NONE] >> strip_tac >> gvs[eown_def] >>
+              first_x_assum drule >> simp[]) >>
+        qpat_x_assum ‘∀f. cstat_of es5 f = _ ∨ _’ (qspec_then ‘f’ strip_assume_tac) >>
+        gvs[MEM_FILTER, cstat_of_apply_early]) >>
+  ‘es4.p.b.tbl = es.p.b.tbl ∧ es4.p.b.nxt = es.p.b.nxt ∧ es4.ctbl = es.ctbl ∧
+   es4.settling = es.settling ∧ es4.cst = es.cst ∧ es4.early = es.early’
+    by simp[Abbr ‘es4’] >>
+  ‘ehs_rel hs es4’ by (qpat_x_assum ‘ehs_rel hs es’ mp_tac >> simp[ehs_rel_def] >> fs[]) >>
+  drule_all ev_settle >> strip_tac >>
+  ‘∀sl. rsettles cm es (promote es5 with settling := sl) = settles (new ++ cm) es4 es5’
+    by (gen_tac >> irule rsettles_settles >> simp[] >> qexists_tac ‘lfd’ >> simp[]) >>
+  pop_assum (fn th => RULE_ASSUM_TAC (REWRITE_RULE [th])) >>
+  qpat_x_assum ‘w.env _ _ = _’
+    (fn th => simp[ehpoll_def, ep_tick_def, th, FOLDL_APPEND, ep_deliver_clock]) >>
+  qabbrev_tac ‘wS = FOLDL ep_deliver wF (settles (new ++ cm) es4 es5)’ >>
+  ‘ehs_rel hs (promote es5)’
+    by (qpat_x_assum ‘∀hs. ehs_rel hs es4 ⇒ _’ irule >> simp[]) >>
+  ‘ev_rel lfd a (new ++ cm) (promote es5) (wS with clock := w.clock + 1)’
+    by gvs[Abbr ‘wS’] >>
+  qpat_x_assum ‘eown lfd (promote es5)’ assume_tac >>
+  drule_all ev_rdy >> strip_tac >>
+  conj_tac
+  >- (irule filter_cong >> rpt strip_tac >>
+      qpat_x_assum ‘∀h. (case ALOOKUP (promote es5).ctbl h of NONE => _ | SOME f => _) ⇔ _’
+        (qspec_then ‘x’ mp_tac) >>
+      qpat_x_assum ‘∀h. (case ALOOKUP hs.tbl h of NONE => _ | SOME f => _) ⇔ _’
+        (qspec_then ‘x’ mp_tac) >>
+      rpt (pop_assum kall_tac) >> every_case_tac >> simp[] >> metis_tac[]) >>
+  qpat_x_assum ‘ev_rel lfd a cm' es4 wF’ assume_tac >>
+  qpat_x_assum ‘eown lfd es4’ assume_tac >>
+  drule_all settle_world >> simp[] >> disch_then (qspec_then ‘es5’ strip_assume_tac) >>
+  ‘wF.alloc = w.alloc ∧ wF.env = w.env ∧ wF.hist = w.hist’
+    by (qpat_x_assum ‘ep_grows w wF’ mp_tac >> simp[ep_grows_def]) >>
+  rpt conj_tac
+  >- (qpat_x_assum ‘ev_rel _ _ _ (promote es5) (wS with clock := _)’ mp_tac >> simp[])
+  >- (irule eown_settling_sub >> fs[MEM_FILTER])
+  >- (qpat_x_assum ‘ehs_rel hs es’ mp_tac >> simp[ehs_rel_def, promote_fields] >> fs[])
+  >- (gen_tac >>
+      qpat_x_assum ‘ehs_rel hs (promote es5)’ (strip_assume_tac o REWRITE_RULE [ehs_rel_def]) >>
+      qpat_x_assum ‘∀h. ALOOKUP hs.tbl h = _’ (qspec_then ‘h’ mp_tac) >>
+      rpt (pop_assum kall_tac) >> CASE_TAC >> simp[])
+  >- (gen_tac >> simp[MEM_FILTER] >>
+      qpat_x_assum ‘ehs_rel hs (promote es5)’ (strip_assume_tac o REWRITE_RULE [ehs_rel_def]) >>
+      qpat_x_assum ‘∀h. (case ALOOKUP hs.tbl h of NONE => F | SOME f => _) ⇔ _’
+        (qspec_then ‘h’ mp_tac) >>
+      qpat_x_assum ‘∀h. MEM h hs.settling ⇔ _’ (qspec_then ‘h’ mp_tac) >>
+      qpat_x_assum ‘∀h. ALOOKUP hs.tbl h = _’ (qspec_then ‘h’ mp_tac) >>
+      rpt (pop_assum kall_tac) >> every_case_tac >> simp[] >> metis_tac[])
+  >- (qpat_x_assum ‘l0owne _ w4 _’ assume_tac >>
+      drule_at (Pos hd) l0owne_promote >> disch_then irule >> fs[])
+  >> rpt conj_tac >> fs[fds_lt_def, promote_fields, Abbr ‘wS’]
 QED

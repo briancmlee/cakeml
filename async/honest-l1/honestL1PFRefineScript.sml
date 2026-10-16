@@ -538,6 +538,17 @@ Definition arrs_def:
     (let (as, ck) = arrs lfd (cm, k) l in (Eof2 (cl cm f) :: as, ck))
 End
 
+(* The client count grows by the log's accepted connections (FConn) *)
+Theorem arrs_count:
+  ∀l cm k as cm' k'.
+    arrs lfd (cm, k) l = (as, (cm', k')) ⇒
+    k' = k + LENGTH (FILTER (λx. ∃g. x = FConn g) l)
+Proof
+  Induct >> simp[arrs_def] >> Cases >> simp[arrs_def] >> rpt gen_tac >>
+  pairarg_tac >> gvs[] >> PairCases_on ‘ck’ >> strip_tac >> gvs[] >>
+  first_x_assum drule >> simp[]
+QED
+
 (* Delivering arrivals keeps the world's allocation *)
 Theorem deliver2_alloc[simp]:
   (deliver2 s a).alloc = s.alloc ∧ (deliver2 s a).reserved = s.reserved ∧
@@ -1385,11 +1396,13 @@ QED
    m in the version-2 world psk built from L1's own run, round by round; the
    relation pv_rel (L1's buffers are the world's state) and the invariants
    hold throughout *)
-Theorem l1pf_refines_hl:
+(* As l1pf_refines_hl, with the bound on the client count only for the
+   rounds up to N (for a run looked at up to round N) *)
+Theorem l1pf_refines_hl_upto:
   l0_rely w0 ∧ fds_lt w0 ∧ MEM lfd (l0_used w0) ∧
-  (∀n. SND (pcm lfd hw ifds m w0 n) + 1 < dimword (:64)) ⇒
+  (∀n'. n' ≤ N ⇒ SND (pcm lfd hw ifds m w0 n') + 1 < dimword (:64)) ⇒
   ∀n h ws evs logs.
-    prounds lfd hw ifds m (w0, pinit) n = SOME (h, ws, evs, logs) ⇒
+    n ≤ N ∧ prounds lfd hw ifds m (w0, pinit) n = SOME (h, ws, evs, logs) ⇒
     hhist lfd ifds m (psk lfd hw ifds m w0) n = h ∧
     SND (hst lfd ifds m (psk lfd hw ifds m w0) n) = hs_of (SND ws) ∧
     pv_rel lfd (FST (pcm lfd hw ifds m w0 n)) (SND ws)
@@ -1414,7 +1427,8 @@ Proof
   rpt BasicProvers.VAR_EQ_TAC >>
   rename1 ‘prounds _ _ _ _ _ n = SOME (h0, ws0, evs0, logs0)’ >>
   rename1 ‘pround _ _ _ _ _ = SOME (snap, ws1, log, revs)’ >>
-  first_x_assum drule >> strip_tac >>
+  ‘n ≤ N’ by simp[] >>
+  first_x_assum drule_all >> strip_tac >>
   ‘hacts_of lfd ifds m (psk lfd hw ifds m w0) n = new_actions (log_of m) h0’
     by simp[hacts_of_def] >>
   PairCases_on ‘ws0’ >> rename1 ‘prounds _ _ _ _ _ n = SOME (h0, (w, ps), evs0, logs0)’ >>
@@ -1436,7 +1450,7 @@ Proof
     by (rw[] >> irule run_alloc_eq >> simp[] >> qexists_tac ‘SUC n’ >> simp[]) >>
   ‘LHD s.future = SOME as’ by simp[] >>
   ‘ck1 + 1 < dimword (:64)’
-    by (qpat_assum ‘∀n'. SND (pcm _ _ _ _ _ n') + 1 < _’ (mp_tac o Q.SPEC ‘SUC n’) >>
+    by (qpat_assum ‘∀n'. _ ≤ N ⇒ SND (pcm _ _ _ _ _ n') + 1 < _’ (mp_tac o Q.SPEC ‘SUC n’) >>
         qpat_assum ‘pcm _ _ _ _ _ (SUC n) = _’ (fn th => REWRITE_TAC [th]) >>
         simp[]) >>
   drule_all round_rel >> strip_tac >>
@@ -1445,6 +1459,29 @@ Proof
     by simp[hacts_tot_def] >>
   drule hround_step >> strip_tac >> simp[] >>
   gvs[] >> AP_THM_TAC >> AP_TERM_TAC >> simp[FUN_EQ_THM, ADD_CLAUSES]
+QED
+
+Theorem l1pf_refines_hl:
+  l0_rely w0 ∧ fds_lt w0 ∧ MEM lfd (l0_used w0) ∧
+  (∀n. SND (pcm lfd hw ifds m w0 n) + 1 < dimword (:64)) ⇒
+  ∀n h ws evs logs.
+    prounds lfd hw ifds m (w0, pinit) n = SOME (h, ws, evs, logs) ⇒
+    hhist lfd ifds m (psk lfd hw ifds m w0) n = h ∧
+    SND (hst lfd ifds m (psk lfd hw ifds m w0) n) = hs_of (SND ws) ∧
+    pv_rel lfd (FST (pcm lfd hw ifds m w0 n)) (SND ws)
+      (FST (hst lfd ifds m (psk lfd hw ifds m w0) n)) ∧
+    LENGTH (FST (hst lfd ifds m (psk lfd hw ifds m w0) n)).clients =
+      SND (pcm lfd hw ifds m w0 n) ∧
+    (FST (hst lfd ifds m (psk lfd hw ifds m w0) n)).alloc = run_alloc lfd hw ifds m w0 ∧
+    (FST (hst lfd ifds m (psk lfd hw ifds m w0) n)).future =
+      LGENLIST (λi. parr lfd hw ifds m w0 (n + i)) NONE ∧
+    pown lfd (SND ws) ∧ l0own lfd (FST ws) (SND ws) ∧
+    l0_rely (FST ws) ∧ fds_lt (FST ws)
+Proof
+  strip_tac >> rpt gen_tac >> strip_tac >>
+  mp_tac (Q.SPEC ‘n’ (Q.GEN ‘N’ l1pf_refines_hl_upto)) >>
+  impl_tac >- fs[] >>
+  disch_then (qspecl_then [‘n’, ‘h’, ‘ws’, ‘evs’, ‘logs’] mp_tac) >> simp[]
 QED
 
 (* ------------------------------------------------------------------------

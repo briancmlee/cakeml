@@ -696,3 +696,107 @@ Proof
   first_x_assum drule_all >> strip_tac >> gvs[log_conns_def, wants_input_def] >>
   rpt strip_tac >> gvs[] >> metis_tac[]
 QED
+
+(* ------------------------------------------------------------------------
+   The listener stays a listener, and is no connection's fd
+   ------------------------------------------------------------------------ *)
+
+Definition linv_def:
+  linv l w ⇔ MEM l (MAP FST w.listeners) ∧ ALOOKUP w.open_fds l = NONE
+End
+
+Theorem MAP_FST_AFUPDKEY[simp]:
+  ∀ls. MAP FST (AFUPDKEY k g ls) = MAP FST ls
+Proof
+  Induct >> simp[AFUPDKEY_def, FORALL_PROD] >> rw[]
+QED
+
+Theorem linv_simple[simp]:
+  (linv l (w with hist := h) ⇔ linv l w) ∧ (linv l (w with clock := c) ⇔ linv l w) ∧
+  (linv l (w with chans := cs) ⇔ linv l w) ∧ (linv l (upd_lchan j g w) ⇔ linv l w)
+Proof
+  simp[linv_def, upd_lchan_def]
+QED
+
+Theorem linv_deliver:
+  linv l w ⇒ linv l (l0_deliver w a)
+Proof
+  Cases_on ‘a’ >> rw[l0_deliver_def] >> every_case_tac >> gvs[linv_def]
+QED
+
+Theorem linv_tick:
+  linv l w ⇒ linv l (l0_tick nm w)
+Proof
+  simp[l0_tick_def] >>
+  ‘∀as w. linv l w ⇒ linv l (FOLDL l0_deliver w as)’
+    by (Induct >> simp[] >> metis_tac[linv_deliver]) >>
+  rw[] >> first_x_assum irule >> simp[]
+QED
+
+Theorem linv_ticks:
+  ∀k w. linv l w ⇒ linv l (l0_ticks nm k w)
+Proof
+  Induct >> simp[l0_ticks_def] >> metis_tac[linv_tick]
+QED
+
+Theorem FOLDL_break_fields:
+  ∀q w. (FOLDL (λw j. w with chans := LUPDATE (break_lchan e F (EL j w.chans)) j w.chans)
+           w q).listeners = w.listeners ∧
+        (FOLDL (λw j. w with chans := LUPDATE (break_lchan e F (EL j w.chans)) j w.chans)
+           w q).open_fds = w.open_fds
+Proof
+  Induct >> simp[]
+QED
+
+Theorem linv_ops:
+  (linv l w ∧ l0_listen p w = (x, w') ⇒ linv l w') ∧
+  (linv l w ∧ l0_send g bs w = (r, w') ⇒ linv l w') ∧
+  (linv l w ∧ l0_recv g n w = (r, d, w') ⇒ linv l w') ∧
+  (linv l w ∧ l0_shutdown g w = (r, w') ⇒ linv l w') ∧
+  (linv l w ∧ l0_connerr g w = (y, w') ⇒ linv l w') ∧
+  (linv l w ∧ g ≠ l ∧ l0_close g w = (r, w') ⇒ linv l w') ∧
+  (linv l w ∧ fds_lt w ∧ w.fd_limit ≤ 2 ** 31 ∧ l0_accept g w = (r, w') ⇒ linv l w')
+Proof
+  rpt conj_tac >> strip_tac
+  >- gvs[l0_listen_def, AllCaseEqs(), linv_def]
+  >- gvs[l0_send_def, AllCaseEqs()]
+  >- gvs[l0_recv_def, AllCaseEqs()]
+  >- gvs[l0_shutdown_def, AllCaseEqs()]
+  >- gvs[l0_connerr_def, AllCaseEqs()]
+  >- (gvs[l0_close_def, AllCaseEqs()] >> simp[close_fd_def] >> every_case_tac >>
+      gvs[linv_def, ALOOKUP_ADELKEY, upd_lchan_def, FOLDL_break_fields] >>
+      gvs[MEM_MAP, MEM_FILTER, EXISTS_PROD] >> metis_tac[])
+  >> gvs[l0_accept_def, AllCaseEqs(), fail_def, linv_def, l0_alloc_def] >>
+  ‘¬MEM (lowest_fd w) (l0_used w)’ by (irule lowest_fd_free_lim >> gvs[fds_lt_def]) >>
+  gvs[l0_used_def] >> rw[] >> gvs[] >> strip_tac >> gvs[]
+QED
+
+Theorem linv_call:
+  l0_call n conf bytes w = SOME (FFIreturn bytes' w') ∧ n ≠ «sys_connect» ∧
+  ¬(n = «sys_close» ∧ bytes_fd conf = l) ∧ linv l w ∧ fds_lt w ∧ w.fd_limit ≤ 2 ** 31 ⇒
+  linv l w'
+Proof
+  rw[l0_call_def] >> gvs[AllCaseEqs()] >>
+  rpt (pairarg_tac >> gvs[]) >> imp_res_tac linv_ops >> gvs[] >>
+  metis_tac[linv_ticks, linv_ops]
+QED
+
+Theorem linv_do:
+  l0_do n conf alen w = SOME (out, w', ev) ∧ n ≠ «sys_connect» ∧
+  ¬(n = «sys_close» ∧ bytes_fd conf = l) ∧ linv l w ∧ winv w ⇒ linv l w'
+Proof
+  strip_tac >> drule l0_do_cases >> strip_tac >> gvs[] >>
+  drule linv_call >> simp[] >> disch_then irule >>
+  gvs[winv_def, linv_tick, l0_rely_def]
+QED
+
+Theorem sys_linv:
+  (linv l w ∧ winv w ∧ sys_send g bs w = SOME (out, w', ev) ⇒ linv l w') ∧
+  (linv l w ∧ winv w ∧ g ≠ l ∧ sys_close g w = SOME (out, w', ev) ⇒ linv l w') ∧
+  (linv l w ∧ winv w ∧ sys_recv g k w = SOME (out, w', ev) ⇒ linv l w') ∧
+  (linv l w ∧ winv w ∧ sys_accept g w = SOME (out, w', ev) ⇒ linv l w') ∧
+  (linv l w ∧ winv w ∧ sys_poll fes w = SOME (out, w', ev) ⇒ linv l w')
+Proof
+  rw[sys_close_def, sys_send_def, sys_recv_def, sys_accept_def, sys_poll_def] >>
+  drule_at (Pos (el 1)) linv_do >> simp[]
+QED

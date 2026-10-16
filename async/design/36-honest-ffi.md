@@ -1210,6 +1210,21 @@ and is client j of `psk`. The fetch log is `plog`.
   bytes there. Hypotheses: the run's side conditions, `winv w0`, [F1]
   (D11′), S1, S3, S4 for f. The D16 corollary (hard errors only on a real
   break) and live-conn ([F3]) remain.
+  *Formal shapes for live-conn (agreed).* **[F3]:** infinitely often some
+  fd below the limit is free (`∀n. ∃n' ≥ n. ∃x < fd_limit. n2w x ∉
+  l0_used (rworld n')`). It is a condition on the run, on what the process
+  holds, so it partly depends on the server closing connections. It is not
+  trusted; it is discharged per server. For our servers the plan is to
+  discharge it from facts like S4 and from reply-and-close behaviour, or,
+  more simply, from a bound on concurrent connections (the open
+  connections stay below the limit). That discharge is planned with the
+  per-server obligations (item 5 of the whole-program list), not inside
+  R1-live. **S2:** `(rstate n).acq ≠ [] ⇒` the server issues `Accept lfd`
+  at some later round (the listener is reported ready exactly when acq ≠
+  []). **Statement:** a channel j0 in the listener's accept queue at round n0
+  is eventually accepted (a `Connect2 lfd` in `parr k` matched to j0; the
+  FConn form is a lemma) or dropped (it left the queue broken, by
+  ECONNABORTED or by an EMFILE reset).
 - **(live-conn)** Assume [F3]. Every connection that reaches the
   listener's backlog (`LIncoming` on its port) is eventually a
   `Connect2` in `psk`, unless it is dropped. It is dropped only if it

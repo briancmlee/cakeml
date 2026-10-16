@@ -35,14 +35,29 @@ Further facts proved in the bites file:
   - `chat_prompt_delivers`: chat_prompt implies the delivery clause.
 - **Non-vacuity:** `chat_timely_satisfiable`. ChatSpecBite's ideal trace meets `chat_prompt 0`, `chat_accept_prompt 0` and `chat_live_open`.
 
-The candidate statement is `chat_spec_timely B A lfd prog`: chat_safe ∧ chat_live_open ∧ chat_prompt B ∧ chat_accept_prompt A.
+The candidate statement is `chat_spec_timely B A R lfd prog`: chat_safe ∧ chat_live_open ∧ chat_prompt B ∧ chat_accept_prompt A ∧ chat_read_prompt R.
+
+**Revision after the machine-checked review of ChatSpecTimely (T1, T2), for user review:**
+- **T1 (reading was still "eventually").** New clause `chat_read_prompt R`: the complete lines a client sent within n schedule steps are read by poll `n + R·(1 + nconnects n + bytes sent)`.
+  - The per-byte term is unavoidable: a read may return a single byte.
+  - The per-connection term covers the client waiting to be accepted.
+  - Bite: `broken_reads_late`.
+- **T2 (the accept bound counted every past connection).** `chat_accept_prompt A` is now measured at the n-th poll (the prefix ending with it) against the *current backlog*: `nconnects n − naccepts evs0`.
+  - Bite: `broken_accepts_backlog`. c1 is accepted at once, and leaving c2 pending for A+2 more polls fails. The old bound allowed it.
+- **Non-vacuity with the world's polls** (the reviewer's stutter point): `chat_timely_satisfiable` now uses a trace with one poll per schedule step. It meets every clause with B = A = R = 0.
+- **What is not fixed, and why.** The review's `join_late_A1` and `join_same_round_A0`: a client misses lines completed between its connection becoming pending and its accept.
+  - The suggested fix, "owed from CONNECT", is not implementable in this world. Poll only says the listener is readable, so no server can know when a given connection arrived, or the log position at that time.
+  - The faithful options are:
+    - **(a), this revision:** owed from accept, plus an accept bound on the current backlog. The residual gap is A·backlog polls, plus at most one round.
+    - **(b), follow-up:** a server that drains its accept queue before any read in each round, i.e. A = 0 with no same-round miss. With (b), "owed from the poll at which the connection became pending" becomes provable. It is a change to the server skeleton, with M3/M4 re-proofs.
+- **D20:** the per-byte read bound (T1) and the backlog accept bound (T2) are the tightest bounds a one-accept-per-round, partial-read server can meet. Tighter constants are a server change, not a spec change.
 
 Design decisions:
 - **D14:** the time unit is polls, because they are the only time-like observable in the trace. Rounds are an implementation notion.
 - **D15:** the accept bound is proportional to the backlog (`nconnects`), not a constant. Any server that accepts a bounded number of connections per poll needs this, and ours accepts one per ≤ 2 rounds. A constant K is impossible against bursty arrivals unless the server drains the whole queue every poll.
 - **D16:** C-EOF ends the *owed* range at the EOF read. It does not stop the server from writing: chat_safe still allows writing up to `owed` (half-close semantics). "Owed from connect" for C-JOIN was rejected, because a server cannot know about a connection before it accepts it.
 
-## 3. Proved for the chat program: `chat_prog_timely : chat_spec_timely 4 3 3w chat_prog`
+## 3. Proved for the chat program: `chat_prog_timely : chat_spec_timely 4 3 4 3w chat_prog`
 
 How the bounds are proved:
 - **Delivery within 3 rounds** (`chat_deliver_rounds`). What d is owed at round R is written by the end of round R+2, independent of the number of clients:
@@ -54,6 +69,11 @@ How the bounds are proved:
 - **Accepts** (`chat_accept_rounds`). The connection is accepted by round n + 3·nconnects:
   - `m_queue_progress_at` (generic): a connection at queue position k is handed out within 3(k+1) rounds;
   - `lq_nconnects`: the listener's queue is no longer than the number of connections that arrived, because the world creates connections only on Connect arrivals (`conn_arrived`).
+- **Reads** (`asyncChatTimely2`, `chat_read_trace`): by n + 4·(1 + nconnects + bytes). The client is accepted by n + 3·nconnects, and its reader then gets at least one byte every 4 rounds (`chat_reads`).
+- **Accepts against the backlog** (`chat_accept_backlog`), from three facts:
+  - `rounds_at_poll`: the prefix ending with the n-th poll is exactly the first n rounds;
+  - `naccepts_rounds`: its accept events are the connections handed out;
+  - `acc_lq_nconnects`: handed out plus waiting ≤ arrived.
 - **Departed clients.** The program keeps serving them, so it meets the stronger ChatSpec `chat_live`, and hence `chat_live_open`.
 
 Cost (lines):
@@ -99,7 +119,7 @@ How `gc_trace_eq` is proved:
 
 **In CakeML** (`asyncChatGCProg`, `GCSpec`, `GCMain`, `GCSemantics`, `GCValue`):
 - The GC hub is translated. The tap, the query step and `gc_server` are new CakeML code; with_tap, the skeleton and the handler are reused. CF instances: `gc_tap_s_TAP`, `gdelta3_DELTA`, `gc_server_spec`.
-- `gc_prog_timely : chat_spec_timely 4 3 3w chat_prog_gc`. The GC program's trace is `chat_trace s0` (`gc_trace_eq`), so every chat theorem applies.
+- `gc_prog_timely : chat_spec_timely 4 3 4 3w chat_prog_gc`. The GC program's trace is `chat_trace s0` (`gc_trace_eq`), so every chat theorem applies.
 - `gc_value_space`: the store value `v` the program carries (with `GSTORE st v`) holds its log as a CakeML list of exactly `gend st − cmin st` cells.
 - `make demo-gc` builds the GC binary with the release compiler and passes the same 3-client demo.
 

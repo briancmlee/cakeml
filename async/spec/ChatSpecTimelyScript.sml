@@ -15,11 +15,11 @@
 
   C-JOIN.  What a client is owed starts at the server's accept, so a
   server could leave a connection pending for a long time, and the client
-  misses everything said meanwhile.  chat_accept_prompt A: a connection
-  that arrived within the first n steps of the schedule is accepted by
-  the time of poll n + A * (the number of connections that arrived within
-  those n steps).  The bound grows with the backlog: a server that accepts
-  one connection per round needs that.
+  misses everything said meanwhile.  chat_accept_prompt A: at the n-th
+  poll, a connection that arrived within the first n steps of the
+  schedule is accepted within A more polls per connection still waiting
+  (see T2 below).  A line read in the same round, before the accept, is
+  still not owed to it: a one-round granularity no server can avoid.
 
   C-EOF.  A client whose end-of-stream the server has read stays owed
   every later line forever, so a correct server that stops serving
@@ -28,8 +28,18 @@
   chat_live_open is chat_live with owed_open in the delivery clause.
   Writing more (up to owed) is still allowed by chat_safe.
 
-  chat_spec_timely B A: chat_safe, chat_live_open, chat_prompt B and
-  chat_accept_prompt A.  ChatSpecTimelyBiteScript.sml proves what each
+  T1 (review of this file).  chat_prompt bounds read-to-write, but reading
+  itself was still "eventually".  chat_read_prompt R: the complete lines a
+  client sent within n steps are read within R polls per arrived
+  connection and per byte (a read may return one byte; the client must
+  first be accepted).
+
+  T2 (review of this file).  The accept bound now counts the CURRENT
+  backlog at the n-th poll (connections arrived, less those accepted so
+  far), not every connection since the start.
+
+  chat_spec_timely B A R: chat_safe, chat_live_open, chat_prompt B,
+  chat_accept_prompt A and chat_read_prompt R.  ChatSpecTimelyBiteScript.sml proves what each
   clause rules out and that ChatSpec's chat_live implies chat_live_open.
 *)
 Theory ChatSpecTimely
@@ -94,7 +104,7 @@ Definition chat_prompt_def:
 End
 
 (* ------------------------------------------------------------------------
-   C-JOIN: prompt accepts
+   C-JOIN: prompt accepts, against the current backlog
    ------------------------------------------------------------------------ *)
 
 (* The connections that arrived within the first n steps *)
@@ -104,11 +114,42 @@ Definition nconnects_def:
                     (arrivals_upto n sk.sched))
 End
 
+(* e is a «sock_accept» that returned a connection (status byte 1) *)
+Definition is_accept_ev_def:
+  is_accept_ev (IO_event (ExtCall n) conf bytes) =
+    (n = «sock_accept» ∧ bytes ≠ [] ∧ SND (HD bytes) = 1w) ∧
+  is_accept_ev _ = F
+End
+
+Definition naccepts_def:
+  naccepts evs = LENGTH (FILTER is_accept_ev evs)
+End
+
+(* At the n-th poll (the prefix evs0 of the trace that ends with it), a
+   connection d that arrived within the first n steps is accepted within
+   A more polls per connection still waiting: the connections that have
+   arrived, less those accepted so far. *)
 Definition chat_accept_prompt_def:
   chat_accept_prompt A sk io ⇔
-    ∀d n. connects_upto d n sk ⇒
-          ∃evs. LPREFIX (fromList evs) io ∧ polls evs ≤ n + A * nconnects n sk ∧
-                EXISTS (event_accepts d) evs
+    ∀d n evs0. connects_upto d n sk ∧ LPREFIX (fromList evs0) io ∧
+               polls evs0 = n ∧ (evs0 ≠ [] ⇒ is_poll (LAST evs0)) ⇒
+               ∃evs. LPREFIX (fromList evs) io ∧
+                     polls evs ≤ n + A * (nconnects n sk − naccepts evs0) ∧
+                     EXISTS (event_accepts d) evs
+End
+
+(* ------------------------------------------------------------------------
+   T1: prompt reads
+   ------------------------------------------------------------------------ *)
+
+(* The complete lines c sent within the first n steps are read within
+   R polls per connection that has arrived and per byte sent (a read may
+   return as little as one byte, and c must first be accepted). *)
+Definition chat_read_prompt_def:
+  chat_read_prompt R sk io ⇔
+    ∀c n. ∃evs. LPREFIX (fromList evs) io ∧
+                polls evs ≤ n + R * (1 + nconnects n sk + LENGTH (sent_upto c n sk)) ∧
+                whole_lines (sent_upto c n sk) ≼ bytes_read_from c evs
 End
 
 (* ------------------------------------------------------------------------
@@ -116,10 +157,11 @@ End
    ------------------------------------------------------------------------ *)
 
 Definition chat_spec_timely_def:
-  chat_spec_timely B A lfd (prog : dec list) ⇔
+  chat_spec_timely B A R lfd (prog : dec list) ⇔
     ∀sk. server_world lfd sk ⇒
          ∃io. semantics_prog (init_state (socket_ffi sk)) init_env prog
                 (Diverge io) ∧
               chat_safe io ∧ chat_live_open sk io ∧
-              chat_prompt B io ∧ chat_accept_prompt A sk io
+              chat_prompt B io ∧ chat_accept_prompt A sk io ∧
+              chat_read_prompt R sk io
 End

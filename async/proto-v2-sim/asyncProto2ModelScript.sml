@@ -39,7 +39,7 @@ Overload gtrace2 = “λm lfdn s2. LFLATTEN (LGENLIST
    Any server that uses handed-out connections and stops at EOF
    ------------------------------------------------------------------------ *)
 
-Theorem accepted_bound_gen[local]:
+Theorem accepted_bound_gen:
   uses_ok lfdn m ∧ srv_eof_last m ∧
   s2.listening = [(n2w lfdn, [])] ∧ s2.clients = [] ∧ s2.open_fds = [] ∧
   alloc_ok s2.alloc ∧ sched_wf2 s2 ⇒

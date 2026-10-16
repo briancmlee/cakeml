@@ -1,0 +1,14 @@
+# L2 (peers) 03: the core level for fd-disciplined programs, both directions (echo, HTTP, KV)
+INCLUDES = ../../lifetimes/spec \
+           ../../lifetimes/world \
+           ../lifetimes \
+           ../world \
+           ../../quiet/ffi \
+           ../../servers/http \
+           ../../servers/http-model \
+           ../../spec \
+           ../../world/sockets \
+           $(CAKEMLDIR)/semantics
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

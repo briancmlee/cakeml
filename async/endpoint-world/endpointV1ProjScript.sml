@@ -428,3 +428,36 @@ Proof
   rw[conn_fd_def] >- (numLib.LEAST_ELIM_TAC >> metis_tac[sched_conns_EL]) >>
   metis_tac[]
 QED
+
+(* ------------------------------------------------------------------------
+   The renamed trace, prefix by prefix
+   ------------------------------------------------------------------------ *)
+
+(* Renaming a prefix gives a prefix *)
+Theorem ren_evs_prefix:
+  ∀evs1 evs k opn. evs1 ≼ evs ⇒ ren_evs k opn evs1 ≼ ren_evs k opn evs
+Proof
+  Induct >> simp[ren_evs_def] >> rpt gen_tac >> Cases_on ‘evs’ >> simp[ren_evs_def] >>
+  strip_tac >> gvs[] >> CASE_TAC >> simp[] >> every_case_tac >> simp[]
+QED
+
+(* Episodes not yet opened have no bytes in the renamed trace *)
+Theorem proj_ren_beyond:
+  ∀evs k opn. proj_ok pr ∧ EVERY v1_event evs ∧ (∀p. MEM p opn ⇒ SND p < k) ∧
+              k + LENGTH (opened_fds evs) ≤ j ∧ j < dimword (:64) ⇒
+              FLAT (MAP (pr (n2w j)) (ren_evs k opn evs)) = []
+Proof
+  Induct >> simp[ren_evs_def] >> rpt gen_tac >> strip_tac >>
+  ‘event_closed h = NONE’ by fs[v1_event_closed] >>
+  conj_tac
+  >- (Cases_on ‘rw_fd h’ >> simp[] >> Cases_on ‘ALOOKUP opn x’ >> simp[] >>
+      rename1 ‘ALOOKUP opn f = SOME j'’ >>
+      ‘j' < k’ by (imp_res_tac ALOOKUP_MEM >> res_tac >> fs[]) >>
+      ‘pr (n2w j) (ren_ev (n2w j') h) = if (n2w j : word64) = n2w j' then pr f h else []’
+        by fs[proj_ok_def] >>
+      ‘j' < dimword (:64) ∧ j' ≠ j’ by (fs[opened_fds_cons] >> decide_tac) >>
+      fs[]) >>
+  Cases_on ‘event_opened h’ >> fs[opened_fds_cons] >>
+  first_x_assum irule >> simp[] >>
+  rw[] >> fs[MEM_FILTER, ADELKEY_def] >> res_tac >> decide_tac
+QED

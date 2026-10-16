@@ -88,11 +88,13 @@ End
 Definition core_rel_def:
   core_rel p lfd (w : l0world) (s : sockets2) ⇔
     (∃q. w.listeners = [(lfd, p, q)] ∧ s.listening = [(lfd, q)] ∧
-         EVERY (λj. j < LENGTH w.chans ∧ ¬(EL j w.chans).closed) q) ∧
+         EVERY (λj. j < LENGTH w.chans ∧ ¬(EL j w.chans).closed) q ∧
+         ALL_DISTINCT q ∧ (∀f j. ALOOKUP w.open_fds f = SOME j ⇒ ¬MEM j q)) ∧
     w.open_fds = s.open_fds ∧ w.reserved = s.reserved ∧
     s.alloc = (λj used. lowest_free used) ∧
     LIST_REL chan_rel w.chans s.clients ∧
-    (∀f j. ALOOKUP w.open_fds f = SOME j ⇒ j < LENGTH w.chans ∧ ¬(EL j w.chans).closed)
+    (∀f j. ALOOKUP w.open_fds f = SOME j ⇒ j < LENGTH w.chans ∧ ¬(EL j w.chans).closed) ∧
+    (∀f1 f2 j. ALOOKUP w.open_fds f1 = SOME j ∧ ALOOKUP w.open_fds f2 = SOME j ⇒ f1 = f2)
 End
 
 Definition l1v2_rel_def:
@@ -225,6 +227,8 @@ Proof
       gvs[EVERY_MEM, EL_APPEND1, EL_APPEND2] >> rw[] >>
       TRY (first_x_assum drule >> simp[EL_APPEND1] >> NO_TAC) >>
       TRY (gvs[EL_APPEND_EQN] >> rw[] >> gvs[fresh_lchan_def] >> NO_TAC) >>
+      TRY (simp[ALL_DISTINCT_APPEND] >> strip_tac >> res_tac >> gvs[] >> NO_TAC) >>
+      TRY (strip_tac >> res_tac >> gvs[] >> NO_TAC) >>
       res_tac >> simp[EL_APPEND1])
   (* Incoming on another port: dropped by both *)
   >- (gvs[core_rel_def, l0_deliver_def] >> metis_tac[])

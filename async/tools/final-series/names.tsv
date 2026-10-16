@@ -324,3 +324,5 @@ theory	fdDiscipline2	fdDisciplineEpisodes		fd-discipline
 const	v1_endpoint_run	v1_peer_run	exact
 const	echo_spec2_of_endpoint	echo_episodes_spec_of_peer	exact
 const	echo_episodes_spec_of_endpoint	echo_episodes_spec_of_peer	exact
+# keep: spike http_spec_le is about the bodies spec (identity row stops the http_spec prefix rule)
+const	http_spec_le	http_spec_le	prefix

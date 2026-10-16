@@ -59,6 +59,7 @@ Rules: theory renames apply everywhere, including `XTheory.`, `X$c` and translat
 | `v1_endpoint_run` | `v1_peer_run` | exact |
 | `echo_spec2_of_endpoint` | `echo_episodes_spec_of_peer` | exact |
 | `echo_episodes_spec_of_endpoint` | `echo_episodes_spec_of_peer` | exact |
+| `http_spec_le` | `http_spec_le` | prefix |
 
 ## Libraries
 

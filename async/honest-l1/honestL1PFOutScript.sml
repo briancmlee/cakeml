@@ -1738,3 +1738,113 @@ Proof
   first_x_assum drule_all >> strip_tac >>
   qexists_tac ‘live''’ >> fs[]
 QED
+
+Theorem l1_polls_quiet:
+  ∀chs w rv w' evs. l1_polls chs w = SOME (rv, w', evs) ⇒ ∀f. evs_sent f evs = []
+Proof
+  Induct >> simp[l1_polls_def] >> rpt gen_tac >> strip_tac >> gvs[AllCaseEqs()] >>
+  drule (cj 1 sys_ev_sent) >> first_x_assum drule >> simp[]
+QED
+
+Theorem l1_flush_other:
+  ∀fs w b w' b' evs.
+    l1_flush fs (w, b) = SOME ((w', b'), evs) ∧ outbox_of b f = [] ⇒
+    evs_sent f evs = [] ∧ outbox_of b' f = [] ∧ (MEM f b'.gone ⇔ MEM f b.gone)
+Proof
+  Induct >> simp[l1_flush_def] >> rpt gen_tac >> strip_tac >>
+  qpat_x_assum ‘(if _ then _ else _) = _’ mp_tac >> IF_CASES_TAC >> strip_tac
+  >- (first_x_assum drule_all >> simp[]) >>
+  gvs[AllCaseEqs()] >>
+  ‘h ≠ f’ by (strip_tac >> gvs[]) >>
+  drule_all sys_send_other >> strip_tac >>
+  first_x_assum (qspecl_then [‘w''’, ‘after_send h (l0_res_of out) b’] mp_tac) >>
+  simp[outbox_of_after_send_other]
+QED
+
+Theorem FOLDL_drop_other:
+  ∀dl b. ¬MEM f dl ⇒
+         outbox_of (FOLDL drop_out b dl) f = outbox_of b f ∧
+         (MEM f (FOLDL drop_out b dl).gone ⇔ MEM f b.gone)
+Proof
+  Induct >> simp[] >> rpt gen_tac >> strip_tac >>
+  first_x_assum (qspec_then ‘drop_out b h’ mp_tac) >> simp[] >>
+  simp[drop_out_def, outbox_of_set_outbox, MEM_FILTER]
+QED
+
+Theorem hup_other:
+  ¬MEM f (MAP SND ps.b.tbl) ∧ ¬MEM f ps.b.closing ⇒
+  outbox_of (hup_step hfs ob log ps).b f = outbox_of ps.b f ∧
+  (MEM f (hup_step hfs ob log ps).b.gone ⇔ MEM f ps.b.gone)
+Proof
+  strip_tac >> simp[hup_step_def] >>
+  qmatch_goalsub_abbrev_tac ‘FOLDL drop_out ps.b dl’ >>
+  ‘EVERY (λg. MEM g (MAP SND ps.b.tbl) ∨ MEM g ps.b.closing) dl’
+    by (simp[Abbr ‘dl’, EVERY_MAP, EVERY_FILTER, EVERY_MEM, FORALL_PROD] >>
+        rw[MEM_MAP, MEM_FILTER, EXISTS_PROD] >> gvs[MEM_FILTER, MEM_MAP, MEM_nub] >>
+        every_case_tac >> gvs[]) >>
+  ‘¬MEM f dl’ by (strip_tac >> gvs[EVERY_MEM] >> res_tac) >>
+  drule FOLDL_drop_other >> simp[]
+QED
+
+Theorem l1_reap_other:
+  ∀fs w b w' b' evs.
+    l1_reap fs (w, b) = SOME ((w', b'), evs) ∧ ¬MEM f fs ⇒
+    evs_sent f evs = [] ∧ outbox_of b' f = outbox_of b f ∧ (MEM f b'.gone ⇔ MEM f b.gone)
+Proof
+  Induct >> simp[l1_reap_def] >> rpt gen_tac >> strip_tac >>
+  qpat_x_assum ‘(if _ then _ else _) = _’ mp_tac >> IF_CASES_TAC >> strip_tac
+  >- (gvs[AllCaseEqs()] >> Cases_on ‘ws’ >> gvs[l1_close_def, AllCaseEqs()] >>
+      drule (cj 3 sys_ev_sent) >> strip_tac >>
+      first_x_assum drule_all >> simp[forget_keys, MEM_FILTER])
+  >> first_x_assum drule_all >> simp[]
+QED
+
+Theorem l1_reap_csent:
+  ∀fs w b w' b' evs.
+    l1_reap fs (w, b) = SOME ((w', b'), evs) ∧ winv w ∧ c < LENGTH w.chans ⇒
+    csent w' c = csent w c ∧ evs_sent f evs = []
+Proof
+  Induct >> simp[l1_reap_def] >> rpt gen_tac >> strip_tac >>
+  qpat_x_assum ‘(if _ then _ else _) = _’ mp_tac >> IF_CASES_TAC >> strip_tac
+  >- (gvs[AllCaseEqs()] >> Cases_on ‘ws’ >>
+      drule_all l1_close_csent >> disch_then (qspec_then ‘f’ strip_assume_tac) >> gvs[] >>
+      ‘winv q’ by metis_tac[l1_close_winv] >>
+      first_x_assum drule_all >> simp[])
+  >> first_x_assum drule_all >> simp[]
+QED
+
+Theorem l1_reap_clean:
+  ∀fs w b w' b' evs.
+    l1_reap fs (w, b) = SOME ((w', b'), evs) ∧ outbox_of b f = [] ∧ ¬MEM f b.gone ⇒
+    outbox_of b' f = [] ∧ ¬MEM f b'.gone
+Proof
+  Induct >> simp[l1_reap_def] >> rpt gen_tac >> strip_tac >>
+  qpat_x_assum ‘(if _ then _ else _) = _’ mp_tac >> IF_CASES_TAC >> strip_tac
+  >- (gvs[AllCaseEqs()] >> Cases_on ‘ws’ >> gvs[l1_close_def, AllCaseEqs()] >>
+      first_x_assum drule >> fs[forget_keys, MEM_FILTER] >> rw[] >> fs[])
+  >> first_x_assum drule_all >> simp[]
+QED
+
+(* A closing fd the reap lets go: it had nothing to send (or was gone) *)
+Theorem l1_reap_dead:
+  ∀fs w b w' b' evs.
+    l1_reap fs (w, b) = SOME ((w', b'), evs) ∧ winv w ∧ c < LENGTH w.chans ∧
+    ¬MEM f b'.closing ∧ MEM f b.closing ⇒
+    evs_sent f evs = [] ∧ csent w' c = csent w c ∧
+    (outbox_of b f = [] ∨ MEM f b.gone) ∧ outbox_of b' f = [] ∧ ¬MEM f b'.gone
+Proof
+  Induct >> rpt gen_tac >> strip_tac >>
+  drule_all l1_reap_csent >> strip_tac >> simp[] >>
+  qpat_x_assum ‘l1_reap _ _ = _’ mp_tac >> simp[l1_reap_def]
+  >- (strip_tac >> gvs[]) >>
+  IF_CASES_TAC >> strip_tac
+  >- (gvs[AllCaseEqs()] >> Cases_on ‘ws’ >> rename1 ‘l1_close h _ = SOME ((w1, b1), evs1)’ >>
+      drule_all l1_close_csent >> disch_then (qspec_then ‘f’ strip_assume_tac) >> gvs[] >>
+      ‘winv w1’ by metis_tac[l1_close_winv] >>
+      Cases_on ‘h = f’ >> gvs[] >>
+      TRY (‘outbox_of (forget f b) f = [] ∧ ¬MEM f (forget f b).gone’
+             by simp[forget_keys, MEM_FILTER] >>
+           drule_all l1_reap_clean >> simp[] >> NO_TAC) >>
+      first_x_assum drule >> simp[forget_keys, MEM_FILTER])
+  >> first_x_assum drule_all >> simp[]
+QED

@@ -680,6 +680,13 @@ QED
    before reporting EOF: only a break that flushed the inbox can)
    ------------------------------------------------------------------------ *)
 
+(* f stays open, with L1's view of it kept, in the d rounds from n0 *)
+Definition fopen_def:
+  fopen lfd hw ifds m w0 h f n0 d ⇔
+    ∀i. i < d ⇒ ∃R. fl (rworld lfd hw ifds m w0 (n0 + i)) f R ∧
+                    fkeep lfd h f (rstate lfd hw ifds m w0 (n0 + i))
+End
+
 Theorem stream_progress:
   run_ok lfd hw ifds m w0 ∧ winv w0 ∧ MEM lfd (l0_used w0) ∧
   (∀n. SND (pcm lfd hw ifds m w0 n) + 1 < dimword (:64)) ∧
@@ -687,10 +694,11 @@ Theorem stream_progress:
   S4 lfd hw ifds m w0 f ⇒
   ∀R n0 h. ALOOKUP (rstate lfd hw ifds m w0 n0).b.tbl h = SOME f ∧
            ¬MEM f (rstate lfd hw ifds m w0 n0).eof ∧ fl (rworld lfd hw ifds m w0 n0) f R ⇒
-           ∃d. fend f (rlogs lfd hw ifds m w0 n0 d) ∨ R ≼ fdata f (rlogs lfd hw ifds m w0 n0 d)
+           ∃d. fopen lfd hw ifds m w0 h f n0 d ∧
+               (fend f (rlogs lfd hw ifds m w0 n0 d) ∨ R ≼ fdata f (rlogs lfd hw ifds m w0 n0 d))
 Proof
   strip_tac >> gen_tac >> completeInduct_on ‘LENGTH R’ >> rw[] >>
-  Cases_on ‘R = []’ >- (qexists_tac ‘0’ >> simp[]) >>
+  Cases_on ‘R = []’ >- (qexists_tac ‘0’ >> simp[fopen_def]) >>
   ‘fds_lt w0’ by gvs[winv_def] >>
   ‘fkeep lfd h f (rstate lfd hw ifds m w0 n0)’ by (drule_all fkeep_run >> simp[]) >>
   ‘pend (rworld lfd hw ifds m w0 n0) f’ by metis_tac[fl_pend] >>
@@ -711,6 +719,13 @@ Proof
   ‘rlogs lfd hw ifds m w0 n0 (k' − n0 + 1) =
    rlogs lfd hw ifds m w0 n0 (k' − n0) ++ rlog lfd hw ifds m w0 k'’
     by (simp[rlogs_add] >> simp[rlogs_def]) >>
+  ‘fopen lfd hw ifds m w0 h f n0 (k' − n0 + 1)’
+    by (rw[fopen_def] >> qexists_tac ‘R’ >>
+        mp_tac stay_rounds >> impl_tac >- simp[] >>
+        disch_then (qspec_then ‘i’ mp_tac) >> impl_tac
+        >- (simp[] >> rpt strip_tac >>
+            qpat_x_assum ‘∀j. j < k' ⇒ _’ (qspec_then ‘j’ mp_tac) >> simp[]) >>
+        simp[]) >>
   drule_all stream_step >> strip_tac
   >- (qexists_tac ‘k' − n0 + 1’ >> simp[])
   >- (qexists_tac ‘k' − n0 + 1’ >> simp[]) >>
@@ -738,6 +753,10 @@ Proof
   ‘rlogs lfd hw ifds m w0 n0 (k' − n0 + 1 + d) =
    rlogs lfd hw ifds m w0 n0 (k' − n0 + 1) ++ rlogs lfd hw ifds m w0 (SUC k') d’
     by (simp[rlogs_add] >> simp[ADD1]) >>
+  ‘fopen lfd hw ifds m w0 h f n0 (k' − n0 + 1 + d)’
+    by (gvs[fopen_def] >> rw[] >> Cases_on ‘i < k' − n0 + 1’ >- simp[] >>
+        qpat_x_assum ‘∀i. i < d ⇒ _’ (qspec_then ‘i − (k' − n0 + 1)’ mp_tac) >>
+        simp[ADD1]) >>
   gvs[]
 QED
 
@@ -757,5 +776,7 @@ Theorem live_data_kernel:
                fdata f (rlogs lfd hw ifds m w0 n0 d)
 Proof
   strip_tac >> rpt strip_tac >> mp_tac stream_progress >> impl_tac >- simp[] >>
-  disch_then irule >> simp[fl_def, front_def] >> metis_tac[]
+  disch_then (qspecl_then [‘(EL j (rworld lfd hw ifds m w0 n0).chans).inbox’, ‘n0’, ‘h’]
+                          mp_tac) >>
+  simp[fl_def, front_def] >> rw[] >> metis_tac[]
 QED

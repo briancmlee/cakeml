@@ -155,3 +155,53 @@ Proof
       gvs[pv_rel_def] >> metis_tac[])
   >> irule pf_fetch_conns >> rpt (goal_assum drule) >> metis_tac[fl_used]
 QED
+
+(* ------------------------------------------------------------------------
+   Along the run
+   ------------------------------------------------------------------------ *)
+
+Theorem plog_rlog:
+  run_ok lfd hw ifds m w0 ⇒ plog lfd hw ifds m w0 k = rlog lfd hw ifds m w0 k
+Proof
+  strip_tac >> drule prun_some >> disch_then (qspec_then ‘SUC k’ assume_tac) >>
+  Cases_on ‘prun lfd hw ifds m w0 (SUC k)’ >> PairCases_on ‘r’ >>
+  drule plog_EL >> disch_then (qspec_then ‘k’ mp_tac) >> gvs[rlog_def]
+QED
+
+Theorem refine_at:
+  run_ok lfd hw ifds m w0 ∧ fds_lt w0 ∧ MEM lfd (l0_used w0) ∧
+  (∀n. SND (pcm lfd hw ifds m w0 n) + 1 < dimword (:64)) ⇒
+  ∀k. ∃s. pv_rel lfd (FST (pcm lfd hw ifds m w0 k)) (rstate lfd hw ifds m w0 k) s ∧
+          pown lfd (rstate lfd hw ifds m w0 k)
+Proof
+  rpt strip_tac >> drule prun_some >> disch_then (qspec_then ‘k’ assume_tac) >>
+  ‘l0_rely w0’ by gvs[run_ok_def] >>
+  Cases_on ‘prun lfd hw ifds m w0 k’ >> rename1 ‘_ = (hh, r)’ >> PairCases_on ‘r’ >>
+  mp_tac l1pf_refines_hl >> impl_tac >- simp[] >> disch_then drule >> strip_tac >>
+  gvs[rstate_def] >> metis_tac[]
+QED
+
+(* Round k of the run, seen from client j of f *)
+Theorem client_step:
+  run_ok lfd hw ifds m w0 ∧ winv w0 ∧ MEM lfd (l0_used w0) ∧
+  (∀n. SND (pcm lfd hw ifds m w0 n) + 1 < dimword (:64)) ∧
+  fl (rworld lfd hw ifds m w0 k) f R ∧ fkeep lfd h f (rstate lfd hw ifds m w0 k) ∧
+  ALOOKUP (FST (pcm lfd hw ifds m w0 k)) f = SOME j ⇒
+  cdata j (parr lfd hw ifds m w0 k) = fdata f (rlog lfd hw ifds m w0 k) ∧
+  (cend j (parr lfd hw ifds m w0 k) ⇔ fend f (rlog lfd hw ifds m w0 k)) ∧
+  ALOOKUP (FST (pcm lfd hw ifds m w0 (SUC k))) f = SOME j
+Proof
+  strip_tac >> ‘fds_lt w0’ by gvs[winv_def] >>
+  drule_all refine_at >> disch_then (qspec_then ‘k’ strip_assume_tac) >>
+  drule prun_round' >> disch_then (qspecl_then [‘f’, ‘k’] strip_assume_tac) >>
+  ‘winv (rworld lfd hw ifds m w0 k)’ by (drule_all winv_run >> simp[]) >>
+  drule_all pround_client >> strip_tac >>
+  Cases_on ‘pcm lfd hw ifds m w0 k’ >> rename1 ‘_ = (cm, ck)’ >>
+  ‘ALL_DISTINCT (MAP SND cm) ∧ EVERY (λi. i < ck) (MAP SND cm)’
+    by (qspec_then ‘k’ mp_tac pcm_inv >> simp[]) >>
+  Cases_on ‘arrs lfd (cm, ck) (rlog lfd hw ifds m w0 k)’ >> rename1 ‘_ = (as, cmk)’ >>
+  PairCases_on ‘cmk’ >>
+  drule arrs_client >> simp[] >> disch_then (qspecl_then [‘j’, ‘f’] mp_tac) >> gvs[] >>
+  strip_tac >>
+  gvs[parr_def, pcm_def, plog_rlog]
+QED

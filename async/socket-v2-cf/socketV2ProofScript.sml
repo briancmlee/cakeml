@@ -14,7 +14,7 @@ Theory socketV2Proof
 Ancestors
   ml_translator cfHeapsBase cfMain Marshalling Word8ArrayProof mlstring
   ffiSpikeSocketFFI ffiSpikeSocketProg ffiSpikeSocketProof asyncM3World
-  socketV2FFI socketV2Part socketV2Prog
+  socketV2FFI socketV2Part socketV2Events socketV2Prog
 Libs
   preamble ml_translatorLib ml_progLib cfLib basisFunctionsLib
 
@@ -28,18 +28,7 @@ Definition SOCKETS2_EV_def:
            socket2_names evs)
 End
 
-(* The event of «sock_poll» on fds in state s *)
-Definition spoll2_event_def:
-  spoll2_event fds s =
-    IO_event (ExtCall «sock_poll») (fds_bytes fds)
-      (ZIP (REPLICATE (LENGTH fds) 0w,
-            MAP (λfd. if is_ready2 (tick2 s) fd then 1w else 0w) fds))
-End
-
-(* The event of «sock_close» on c *)
-Definition close_event_def:
-  close_event c = IO_event (ExtCall «sock_close») (fd_bytes c) []
-End
+(* spoll2_event and close_event: socketV2Events *)
 
 Overload bytes_str = “λbs:word8 list. implode (MAP (CHR o w2n) bs)”
 

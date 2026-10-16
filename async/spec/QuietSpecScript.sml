@@ -1,8 +1,8 @@
 (*
   QuietSpec: what the BLOCKING servers must do, CPU included.  A companion
-  to EchoSpec and HttpSpecHeaders, which are unchanged.
+  to EchoSpec and HttpHeadersSpec, which are unchanged.
 
-  EchoSpec and HttpSpecHeaders say nothing about waiting: a server that
+  EchoSpec and HttpHeadersSpec say nothing about waiting: a server that
   polls in a busy loop meets them.  Here the world also offers a blocking
   call, «sock_select», and the statement adds QUIESCENCE:
 
@@ -41,8 +41,8 @@
 *)
 Theory QuietSpec
 Ancestors
-  semantics ffi llist ml_prog ffiSpikeSocketFFI ffiSpikeSocketFair
-  EchoSpec HttpSpec HttpSpecHeaders HttpSpecBodies
+  semantics ffi llist ml_prog socketWorld socketFair
+  EchoSpec HttpGetSpec HttpHeadersSpec HttpSpec
 Libs
   preamble
 
@@ -136,29 +136,29 @@ Definition echo_quiet_def:
              (arrivals_finite sk ⇒ ∃io. asleep b io)
 End
 
-(* The same for HttpSpecHeaders (the header-tolerant stepping stone) *)
+(* The same for HttpHeadersSpec (the header-tolerant stepping stone) *)
+Definition http_headers_quiet_def:
+  http_headers_quiet lfd files (prog : dec list) ⇔
+    ∀sk. server_world lfd sk ⇒
+         ∃b. semantics_prog (init_state (select_ffi sk)) init_env prog b ∧
+             ((∃io. b = Diverge io ∧
+                    http_headers_safe files io ∧ http_headers_live files sk io) ∨
+              (∃io. asleep b io ∧
+                    http_headers_safe files (fromList io) ∧
+                    http_headers_live files sk (fromList io))) ∧
+             (arrivals_finite sk ⇒ ∃io. asleep b io)
+End
+
+(* THE HTTP STATEMENT for the headline HTTP spec (HttpSpec): the
+   same, with http_safe and http_live *)
 Definition http_quiet_def:
   http_quiet lfd files (prog : dec list) ⇔
     ∀sk. server_world lfd sk ⇒
          ∃b. semantics_prog (init_state (select_ffi sk)) init_env prog b ∧
              ((∃io. b = Diverge io ∧
-                    http_safe_h files io ∧ http_live_h files sk io) ∨
+                    http_safe files io ∧ http_live files sk io) ∨
               (∃io. asleep b io ∧
-                    http_safe_h files (fromList io) ∧
-                    http_live_h files sk (fromList io))) ∧
-             (arrivals_finite sk ⇒ ∃io. asleep b io)
-End
-
-(* THE HTTP STATEMENT for the headline HTTP spec (HttpSpecBodies): the
-   same, with http_safe_b and http_live_b *)
-Definition http_quiet_b_def:
-  http_quiet_b lfd files (prog : dec list) ⇔
-    ∀sk. server_world lfd sk ⇒
-         ∃b. semantics_prog (init_state (select_ffi sk)) init_env prog b ∧
-             ((∃io. b = Diverge io ∧
-                    http_safe_b files io ∧ http_live_b files sk io) ∨
-              (∃io. asleep b io ∧
-                    http_safe_b files (fromList io) ∧
-                    http_live_b files sk (fromList io))) ∧
+                    http_safe files (fromList io) ∧
+                    http_live files sk (fromList io))) ∧
              (arrivals_finite sk ⇒ ∃io. asleep b io)
 End

@@ -358,9 +358,9 @@ QED
 
 (* What an action writes to f *)
 Definition wbytes_def:
-  wbytes f (b : l1st) (Write h bs) = (if ALOOKUP b.tbl h = SOME f then bs else []) ∧
-  wbytes f b (Read h n) = [] ∧
-  wbytes f b (Accept l) = []
+  wbytes f (b : l1st) (Write h bs : sact) = (if ALOOKUP b.tbl h = SOME f then bs else []) ∧
+  wbytes f b (Read h n : sact) = [] ∧
+  wbytes f b (Accept l : sact) = []
 End
 
 Theorem pdo_acct:
@@ -412,4 +412,53 @@ Proof
        every_case_tac >> simp[outbox_of_def, ALOOKUP_ADELKEY] >> NO_TAC) >>
   irule acct_after_send_other >> simp[] >>
   gvs[acct_def, outbox_of_set_outbox, set_outbox_def] >> fs[outbox_of_def]
+QED
+
+(* ------------------------------------------------------------------------
+   The handle layer's writes
+   ------------------------------------------------------------------------ *)
+
+(* What an action of the handle layer writes to client j *)
+Definition hwrote_def:
+  hwrote s hs (Write h bs : sact) j =
+    (case ALOOKUP hs.tbl h of
+     | SOME f => if client_of s f = SOME j then bs else []
+     | NONE => []) ∧
+  hwrote s hs (Read h n : sact) j = [] ∧
+  hwrote s hs (Accept l : sact) j = []
+End
+
+Theorem sock_ops_clients:
+  (sock_read2 f n s = SOME (x, s') ⇒
+     LENGTH s'.clients = LENGTH s.clients ∧
+     ∀j. (EL j s'.clients).outgoing = (EL j s.clients).outgoing) ∧
+  (sock_close2 f s = SOME s' ⇒ s'.clients = s.clients) ∧
+  (sock_accept2 l s = SOME (y, s') ⇒ s'.clients = s.clients) ∧
+  (sock_write2 f bs s = SOME s' ⇒
+     LENGTH s'.clients = LENGTH s.clients ∧
+     ∀j. (EL j s'.clients).outgoing =
+         (EL j s.clients).outgoing ++ (if client_of s f = SOME j then bs else []))
+Proof
+  rpt conj_tac >> strip_tac
+  >- (qpat_x_assum ‘sock_read2 _ _ _ = _’ mp_tac >> simp[sock_read2_def] >>
+      Cases_on ‘client_of s f’ >> simp[] >> rw[] >>
+      simp[update_client_def, EL_LUPDATE] >> rw[] >> simp[])
+  >- (qpat_x_assum ‘sock_close2 _ _ = _’ mp_tac >> simp[sock_close2_def] >>
+      Cases_on ‘client_of s f’ >> simp[] >> rw[] >> simp[])
+  >- (qpat_x_assum ‘sock_accept2 _ _ = _’ mp_tac >>
+      PURE_REWRITE_TAC[sock_accept2_def] >>
+      every_case_tac >> fs[LET_THM] >> rpt strip_tac >> rveq >> simp[])
+  >> qpat_x_assum ‘sock_write2 _ _ _ = _’ mp_tac >> simp[sock_write2_def] >>
+  Cases_on ‘client_of s f’ >> simp[] >> strip_tac >> rveq >>
+  simp[update_client_def, EL_LUPDATE] >> gen_tac >> Cases_on ‘j = x’ >> simp[] >>
+  gvs[client_of_def, AllCaseEqs()]
+QED
+
+Theorem hdo_out:
+  hdo lfd (s, hs) a = SOME (r, (s', hs'), evs) ⇒
+  LENGTH s'.clients = LENGTH s.clients ∧
+  ∀j. (EL j s'.clients).outgoing = (EL j s.clients).outgoing ++ hwrote s hs a j
+Proof
+  Cases_on ‘a’ >> PURE_REWRITE_TAC[hdo_def, hwrote_def] >> strip_tac >>
+  gvs[AllCaseEqs()] >> imp_res_tac sock_ops_clients >> gvs[]
 QED

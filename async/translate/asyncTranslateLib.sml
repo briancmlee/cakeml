@@ -242,6 +242,9 @@ fun pure_exp tm =
   else if is_simple tm then
     if is_var tm then ident tm
     else if tm ~~ “()” then "()"
+    else if pairSyntax.is_pair tm then
+      let val (a, b) = pairSyntax.dest_pair tm
+      in "(" ^ ident a ^ ", " ^ ident b ^ ")" end
     else let val (c, args) = strip_comb tm
          in "(" ^ String.concatWith " " (cake_con c :: map ident args) ^ ")" end
   else

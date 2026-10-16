@@ -6,7 +6,8 @@ INCLUDES = ../model ../cf-spike ../cf-actions ../cf-reactive ../ffi-spike \
            ../runnable ../machine-code ../http-model ../http-impl ../http-safety \
            ../headline ../m4-liveness ../http-liveness ../library-liveness \
            ../http-proto ../socket-v2 ../socket-v2-cf ../close-v2-loop \
-           ../http-headers ../http-liveness-h ../http-bodies ../http-proto-inst
+           ../http-headers ../http-liveness-h ../http-bodies ../http-proto-inst \
+           ../http-kv
 ifdef POLY
 HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
 endif

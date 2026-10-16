@@ -24,7 +24,7 @@
 Theory asyncHLModel
 Ancestors
   asyncCore asyncLevel1 asyncChoose asyncCfActModel ffiSpikeSocketFFI ffi
-  asyncM3World socketV2FFI socketV2Proof llist alist
+  asyncM3World socketV2FFI socketV2Events llist alist
 Libs
   preamble
 

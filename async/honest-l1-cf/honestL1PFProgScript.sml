@@ -148,6 +148,7 @@ val r = tr after_send_def;
 val r = tr inb_of_def;
 val r = tr set_inb_def;
 val r = tr pf_chunk_def;
+val r = tr pf_backoff_def;
 val r = tr wants_input_def;
 val r = tr pf_poll_set_def;
 val r = tr in_fds_def;
@@ -224,7 +225,7 @@ Definition fetch_acc_upd_def:
   fetch_acc_upd ps out =
     case l0_res_of out of
     | Ok k => ps with acq := ps.acq ++ [n2w k]
-    | Fail e _ => ps with b := ps.b with exhausted := (e = E_MFILE ∨ e = E_NFILE)
+    | Fail e _ => if e = E_MFILE then ps with pause := pf_backoff else ps
 End
 
 Definition fetch_recv_upd_def:
@@ -246,6 +247,11 @@ End
 
 Definition set_b_def:
   set_b ps b = ps with b := b
+End
+
+(* The round's end: the reaped state, and one round of the listener's pause *)
+Definition end_round_def:
+  end_round ps b = ps with <| b := b; pause := ps.pause − 1 |>
 End
 
 Definition closing_of_def:
@@ -288,6 +294,16 @@ val r = tr fetch_recv_upd_def;
 val r = tr quiet_fd_def;
 val r = tr l1p_b_def;
 val r = tr set_b_def;
+(* As the model's, with the subtraction guarded (the translator's num
+   subtraction needs 1 ≤ pause) *)
+Theorem end_round_guarded:
+  end_round ps b =
+    ps with <| b := b; pause := if ps.pause = 0 then 0 else ps.pause − 1 |>
+Proof
+  rw[end_round_def]
+QED
+
+val r = tr end_round_guarded;
 val r = tr closing_of_def;
 val r = tr filter_in_def;
 val r = tr map_w64_def;
@@ -377,7 +393,7 @@ Quote add_cakeml:
       val b2 = l1_flush (writable_fds rv) (l1p_b ps)
       val ps3 = pf_fetch lfd hw (filter_in (in_fds fes) (readable_fds rv)) (set_b ps b2)
       val b4 = l1_reap (closing_of ps3) (l1p_b ps3)
-      val ps4 = set_b ps3 b4
+      val ps4 = end_round ps3 b4
     in (pf_ready lfd ps4 hs, ps4) end;
 
   fun step_pf st =

@@ -326,7 +326,7 @@ Proof
   xlet ‘POSTv v. &L1ST b4 v * L0_EV w0 w' (evs ++ pevs ++ fevs ++ gevs ++ cevs)’
   >- (xapp_spec l1_reap_spec >> xsimpl >> gvs[l1p_b_def, closing_of_def] >> metis_tac[]) >>
   rpt (xlet_auto >- xsimpl) >>
-  xcon >> xsimpl >> gvs[set_b_def]
+  xcon >> xsimpl >> gvs[end_round_def]
 QED
 
 (* One round of the loop: perform m's actions, then poll, flush, fetch and

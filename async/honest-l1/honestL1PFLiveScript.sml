@@ -153,25 +153,89 @@ QED
 (* Round k's fetch log mentions f *)
 Definition fetched_at_def:
   fetched_at lfd hw ifds m w0 k f ⇔
-    EXISTS (λx. x = FEof f ∨ x = FReset f ∨ ∃bs. x = FData f bs)
-      (EL k (SND (SND (SND (prun lfd hw ifds m w0 (SUC k))))))
+    fetched f (EL k (SND (SND (SND (prun lfd hw ifds m w0 (SUC k))))))
 End
 
-(* TO PROVE (the statement, kept as a comment until it is proved):
+(* Round n, with its events *)
+Theorem prun_round:
+  run_ok lfd hw ifds m w0 ⇒
+  ∀n. ∃snap log rev.
+    pround lfd hw (ifds (rhist lfd hw ifds m w0 n))
+      (rworld lfd hw ifds m w0 n, rstate lfd hw ifds m w0 n)
+      (new_actions (log_of m) (rhist lfd hw ifds m w0 n)) =
+      SOME (snap, (rworld lfd hw ifds m w0 (SUC n), rstate lfd hw ifds m w0 (SUC n)),
+            log, rev) ∧
+    revs lfd hw ifds m w0 (SUC n) = revs lfd hw ifds m w0 n ++ rev ∧
+    fetched_at lfd hw ifds m w0 n f = fetched f log
+Proof
+  rpt strip_tac >> drule prun_some >> strip_tac >>
+  first_assum (qspec_then ‘SUC n’ mp_tac) >> first_x_assum (qspec_then ‘n’ mp_tac) >>
+  simp[prounds_def] >>
+  Cases_on ‘prun lfd hw ifds m w0 n’ >> rename1 ‘_ = (h, r)’ >> PairCases_on ‘r’ >>
+  rename1 ‘_ = (h, (w, ps), evs, logs)’ >> rpt strip_tac >> gvs[AllCaseEqs()] >>
+  PairCases_on ‘ws'’ >>
+  simp[rworld_def, rstate_def, revs_def, fetched_at_def] >>
+  drule prounds_logs >> strip_tac >>
+  qpat_x_assum ‘_ = prun _ _ _ _ _ (SUC n)’ (SUBST1_TAC o SYM) >>
+  simp[rhist_def, EL_APPEND_EQN]
+QED
 
-PROGRESS: if fd f is an open handle's fd at round n and its channel has
-   input pending (data, EOF, or broken), then L1 eventually fetches on f,
-   or f stops being an open handle's fd *-)
-Theorem fetch_progress:
-  l0_rely w0 ∧ psmall lfd pinit ∧ pl2_ok lfd hw ifds m (w0, pinit) ∧
-  F1 lfd hw ifds m w0 ∧ S1 lfd hw ifds m w0 ∧ S3 lfd hw ifds m w0 ∧
-  S4 lfd hw ifds m w0 f ⇒
-  ∀n. MEM f (MAP SND (rstate lfd hw ifds m w0 n).b.tbl) ∧
-      (∃j. l0_chan_of (rworld lfd hw ifds m w0 n) f = SOME j ∧
-           let c = EL j (rworld lfd hw ifds m w0 n).chans in
-             c.inbox ≠ [] ∨ c.peer_eof ∨ c.broken) ⇒
-      ∃k. n ≤ k ∧
-          (fetched_at lfd hw ifds m w0 k f ∨
-           ¬MEM f (MAP SND (rstate lfd hw ifds m w0 (SUC k)).b.tbl))
-(not yet proved)
-*)
+Theorem prun_0:
+  prun lfd hw ifds m w0 0 = ([], (w0, pinit), [], [])
+Proof
+  simp[prun_def, prounds_def]
+QED
+
+(* The world invariant holds along the run *)
+Theorem winv_run:
+  run_ok lfd hw ifds m w0 ∧ winv w0 ⇒ ∀n. winv (rworld lfd hw ifds m w0 n)
+Proof
+  strip_tac >> Induct >- simp[rworld_def, prun_0] >>
+  drule prun_round >> disch_then (qspecl_then [‘ARB’, ‘n’] strip_assume_tac) >>
+  drule_all pround_winv >> simp[]
+QED
+
+(* The event trace only grows *)
+Theorem revs_prefix:
+  run_ok lfd hw ifds m w0 ⇒
+  ∀k n. revs lfd hw ifds m w0 n ≼ revs lfd hw ifds m w0 (n + k)
+Proof
+  strip_tac >> Induct >> simp[] >> gen_tac >>
+  drule prun_round >> disch_then (qspecl_then [‘ARB’, ‘n + k’] strip_assume_tac) >>
+  first_x_assum (qspec_then ‘n’ assume_tac) >> simp[ADD_CLAUSES] >>
+  irule IS_PREFIX_TRANS >> first_assum (irule_at Any) >> simp[IS_PREFIX_APPEND] >>
+  qexists_tac ‘rev’ >> ONCE_REWRITE_TAC [ADD_COMM] >> simp[]
+QED
+
+(* L1's view of an open fd with no EOF, at any round (from R1-safe's
+   invariants) *)
+Theorem fkeep_run:
+  run_ok lfd hw ifds m w0 ∧ fds_lt w0 ∧ MEM lfd (l0_used w0) ∧
+  (∀n. SND (pcm lfd hw ifds m w0 n) + 1 < dimword (:64)) ⇒
+  ∀n h f. ALOOKUP (rstate lfd hw ifds m w0 n).b.tbl h = SOME f ∧
+          ¬MEM f (rstate lfd hw ifds m w0 n).eof ⇒
+          fkeep lfd h f (rstate lfd hw ifds m w0 n)
+Proof
+  rpt strip_tac >> drule prun_some >> disch_then (qspec_then ‘n’ assume_tac) >>
+  ‘l0_rely w0’ by gvs[run_ok_def] >>
+  Cases_on ‘prun lfd hw ifds m w0 n’ >> rename1 ‘_ = (hh, r)’ >> PairCases_on ‘r’ >>
+  gvs[rstate_def] >>
+  mp_tac l1pf_refines_hl >> impl_tac >- simp[] >> disch_then drule >> strip_tac >>
+  ‘l1hdln (w2n lfd) (r1.b.nxt + LENGTH (new_actions (log_of m) hh)) < dimword (:64)’
+    by (gvs[run_ok_def, pl2_ok_def] >> first_x_assum drule >> simp[]) >>
+  gvs[fkeep_def, pown_def] >>
+  ‘MEM f (MAP SND r1.b.tbl)’
+    by (imp_res_tac ALOOKUP_MEM >> simp[MEM_MAP, EXISTS_PROD] >> metis_tac[]) >>
+  ‘ALL_DISTINCT (MAP SND r1.b.tbl) ∧ ¬MEM f r1.b.closing ∧ ¬MEM f r1.acq’
+    by gvs[ALL_DISTINCT_APPEND] >>
+  rpt conj_tac
+  >- metis_tac[alookup_snd_inj]
+  >- simp[]
+  >- simp[]
+  >- (strip_tac >> gvs[])
+  >> rpt strip_tac >> first_x_assum drule >> strip_tac >>
+  qexists_tac ‘i’ >> simp[] >>
+  qspecl_then [‘i’, ‘LENGTH (new_actions (log_of m) (hhist lfd ifds m (psk lfd hw ifds m w0) n)) +
+                     r1.b.nxt’, ‘w2n lfd’] mp_tac (Q.GENL [‘j’, ‘k’, ‘n’] l1hdln_mono) >>
+  simp[]
+QED

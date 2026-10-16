@@ -299,6 +299,20 @@ Definition client_spec'_def:
   connection at every round. It is what makes the client a sink in §2.6.
 - `2 ≤ N`: linearizability with only one connection says almost nothing
   (review item 8).
+- **The rely must be run-local, not plain `ep_rely`** (decision, coordinator,
+  2026-10-17; from close-v2's E1 statement). E1 transfers the client's
+  L1 run to the endpoint handle layer in a world built from that run, as
+  R1-safe does. Connects make the world's channel numbering depend on the
+  program's calls. So the built world's arrivals (`Settle j b`, `PData j`)
+  are sound only along the run's own calls, and `ep_rely` (about *every*
+  call sequence) fails as soon as the run connects.
+  - `rg_spec_term` here is therefore stated with the rely for programs
+    making only given calls (`rely_on Q`, as in the servers' converse,
+    endpointEcho2Conv's `rclass Q`), or with the rely along the run.
+  - E1 gets a corollary that transfers any spec stated in that form.
+  - The environment stays open loop. A history-keyed environment would make
+    plain `ep_rely` hold, but it needs the handle layer to record its calls
+    and costs `open_loop`, so it was not chosen.
 
 ### 2.6 The no-deadlock lemma
 

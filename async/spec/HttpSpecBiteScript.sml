@@ -1,134 +1,304 @@
 (*
-  HttpSpec bites: the statement rules out plausible bugs, and its
-  assumptions are satisfiable.  Everything here is proved.
+  HttpSpec bites: the bodies variant rules out plausible bugs, its
+  assumptions are satisfiable, and it extends HttpHeadersSpec.  Everything
+  here is proved.  DRAFT, for the user's decision.
 
-  A one-file site  files = [("/a", "hi")]  and two requests
-  r1 = GET /a (served) and r2 = GET /b (not found).
-  - Broken servers: answering in the wrong order, answering 200 for a
-    missing file, a wrong Content-Length, answering a request that has not
-    fully arrived, and never answering, each violate the spec.
-  - Non-vacuity: a fair world in which one client sends r1 exists, and the
-    ideal trace (read r1, write its response) is safe and live.
+  - Framing is unique (print_brequest_unique): a printed valid request
+    followed by anything determines the request, hence where its body ends.
+    So the Content-Length framing is the only reading the spec accepts.
+  - Bodiless GET requests without Content-Length / Transfer-Encoding are
+    exactly HttpHeadersSpec' requests (same validity, bytes, responses).
+  - Real clients are in: the request `curl -d hello .../echo` sends.
+  - Broken servers: treating body bytes as the next request, answering
+    before the whole body has arrived, and never answering each violate
+    the spec.
+  - Header names are tokens: whitespace before the colon is not a valid
+    name, and a server that reads "Content-Length\t: 19" as an ordinary
+    header and answers the body as a request violates safety.
+  - Non-vacuity: in the fair world where one client sends a POST /echo
+    whose body looks like a request, the ideal trace is safe and live.
 *)
 Theory HttpSpecBite
 Ancestors
-  HttpSpec EchoSpec EchoSpecBite ffiSpikeSocketFFI ffiSpikeSocketFair llist
-  alist Marshalling ASCIInumbers
+  HttpSpec HttpHeadersSpec HttpGetSpec HttpGetSpecBite EchoSpec EchoSpecBite
+  socketWorld socketFair llist alist Marshalling ASCIInumbers
 Libs
   preamble
 
 Overload site = “[("/a", "hi")] : (string # string) list”
-Overload r1 = “Get "/a"”
-Overload r2 = “Get "/b"”
 
-Theorem requests_NIL[local]:
-  requests rs = [] ⇔ rs = []
+(* A POST /echo whose 19-byte body is itself a printed request *)
+Overload looks_like_request = “"GET /a HTTP/1.0\r\n\r\n"”
+Overload rp = “Req "POST" "/echo" "1.1" [("Content-Length", "19")] looks_like_request”
+
+(* ------------------------------------------------------------------------
+   HttpHeadersSpec is the bodiless case
+   ------------------------------------------------------------------------ *)
+
+(* HttpHeadersSpec' header lines are valid here *)
+Theorem valid_header_bheader:
+  valid_header h ∧ EVERY tchar (FST h) ∧ EVERY field_char (SND h) ⇒
+  valid_bheader h
 Proof
-  Cases_on ‘rs’ >> simp[requests_def, bytes_def] >>
-  Cases_on ‘h’ >> simp[print_request_def]
+  PairCases_on ‘h’ >> simp[valid_header_def, valid_bheader_def]
 QED
 
-(* Nothing is a complete request in the empty rest *)
-Theorem no_full_request_NIL[local]:
-  no_full_request []
+(* MAIN (compatibility): a request of HttpHeadersSpec whose header names
+   are tokens, whose path and header values are made of RFC characters,
+   without Content-Length or Transfer-Encoding headers, is a bodiless GET
+   request here, with the same bytes and the same response *)
+Theorem bodiless_requests:
+  valid_hrequest (GetH p ver hs) ∧ EVERY (λh. EVERY tchar (FST h)) hs ∧
+  EVERY uri_char p ∧ EVERY (λh. EVERY field_char (SND h)) hs ∧
+  ¬EXISTS is_cl hs ∧ ¬EXISTS is_te hs ⇒
+  valid_brequest (Req "GET" p ver hs "") ∧
+  print_brequest (Req "GET" p ver hs "") = print_hrequest (GetH p ver hs) ∧
+  bhandle files (Req "GET" p ver hs "") = handle files (hpath (GetH p ver hs))
 Proof
-  rw[no_full_request_def, requests_NIL]
+  rw[valid_brequest_def, valid_hrequest_def, valid_method_def, framed_def,
+     print_brequest_def, print_hrequest_def, bhandle_def, hpath_def]
+  >- (fs[EVERY_MEM] >> rw[] >> irule valid_header_bheader >>
+      fs[EVERY_MEM] >> metis_tac[]) >>
+  ‘FILTER is_cl hs = []’ by (simp[FILTER_EQ_NIL] >> fs[EVERY_MEM]) >>
+  simp[]
+QED
+
+(* MAIN (real clients are in): curl -d hello http://localhost:7777/echo *)
+Theorem curl_post_request:
+  let r = Req "POST" "/echo" "1.1"
+            [("Host", "localhost:7777"); ("User-Agent", "curl/8.7.1");
+             ("Accept", "*/*"); ("Content-Length", "5");
+             ("Content-Type", "application/x-www-form-urlencoded")] "hello" in
+  valid_brequest r ∧
+  print_brequest r =
+    "POST /echo HTTP/1.1\r\nHost: localhost:7777\r\nUser-Agent: curl/8.7.1\r\n" ++
+    "Accept: */*\r\nContent-Length: 5\r\n" ++
+    "Content-Type: application/x-www-form-urlencoded\r\n\r\nhello" ∧
+  bhandle site r = Ok "hello"
+Proof
+  EVAL_TAC
 QED
 
 (* ------------------------------------------------------------------------
-   Broken servers violate safety
+   Framing is unique
    ------------------------------------------------------------------------ *)
 
-Theorem broken_wrong_order:
-  starts_with [rd c1 (requests [r1; r2]) 100;
-               wr c1 (responses site [r2; r1])] io ⇒
-  ¬http_safe site io
+Theorem split_char[local]:
+  ∀a b s t. ¬MEM c a ∧ ¬MEM c b ∧ a ++ c :: s = b ++ c :: t ⇒ a = b ∧ s = t
 Proof
-  rw[http_safe_def] >>
-  qexistsl [‘[rd c1 (requests [r1; r2]) 100; wr c1 (responses site [r2; r1])]’,
-            ‘c1’, ‘[r1; r2]’, ‘[]’] >>
-  simp[no_full_request_NIL] >> EVAL_TAC
+  Induct >> Cases_on ‘b’ >> rw[] >> gvs[] >> metis_tac[]
 QED
 
-Theorem broken_200_for_missing_file:
-  starts_with [rd c1 (requests [r2]) 100;
-               wr c1 (bytes (print_response (Ok "")))] io ⇒
-  ¬http_safe site io
-Proof
-  rw[http_safe_def] >>
-  qexistsl [‘[rd c1 (requests [r2]) 100; wr c1 (bytes (print_response (Ok "")))]’,
-            ‘c1’, ‘[r2]’, ‘[]’] >>
-  simp[no_full_request_NIL] >> EVAL_TAC
-QED
-
-Theorem broken_wrong_content_length:
-  starts_with [rd c1 (requests [r1]) 100;
-               wr c1 (bytes "HTTP/1.0 200 OK\r\nContent-Length: 3\r\n\r\nhi")] io ⇒
-  ¬http_safe site io
-Proof
-  rw[http_safe_def] >>
-  qexistsl [‘[rd c1 (requests [r1]) 100;
-              wr c1 (bytes "HTTP/1.0 200 OK\r\nContent-Length: 3\r\n\r\nhi")]’,
-            ‘c1’, ‘[r1]’, ‘[]’] >>
-  simp[no_full_request_NIL] >> EVAL_TAC
-QED
-
-(* A request missing its final blank line is not complete yet *)
-Overload partial = “bytes "GET /a HTTP/1.0\r\n"”
-
-Theorem no_full_request_partial[local]:
-  no_full_request partial
-Proof
-  rw[no_full_request_def] >> strip_tac >>
-  imp_res_tac IS_PREFIX_LENGTH >> Cases_on ‘r’ >>
-  fs[requests_def, bytes_def, print_request_def, valid_request_def,
-     valid_path_def] >>
-  Cases_on ‘s’ >> fs[]
-QED
-
-Theorem broken_answers_partial_request:
-  starts_with [rd c1 partial 100; wr c1 (responses site [r1])] io ⇒
-  ¬http_safe site io
-Proof
-  rw[http_safe_def] >>
-  qexistsl [‘[rd c1 partial 100; wr c1 (responses site [r1])]’,
-            ‘c1’, ‘[]’, ‘partial’] >>
-  simp[no_full_request_partial] >> EVAL_TAC
-QED
-
-(* ------------------------------------------------------------------------
-   A fair world with one client sending bs on connection 4
-   ------------------------------------------------------------------------ *)
-
-Definition one_client_def:
-  one_client bs =
-    <| listeners := [(3w, [])]; conns := [];
-       sched := [|[Connect 3w 4w; Data 4w bs]|] |>
+(* The character properties of header lines that framing relies on *)
+Definition hchars_def:
+  hchars (n, v) ⇔
+    n ≠ [] ∧ EVERY (λc. c ≠ #":" ∧ c ≠ #" " ∧ c ≠ #"\r" ∧ c ≠ #"\n") n ∧
+    EVERY (λc. c ≠ #"\r" ∧ c ≠ #"\n") v
 End
 
-Theorem ticks_quiet[local]:
-  s.sched = [||] ⇒ ticks n s = s
+Theorem headers_unique_chars[local]:
+  ∀hs1 hs2 x y.
+    EVERY hchars hs1 ∧ EVERY hchars hs2 ∧
+    FLAT (MAP print_header hs1) ++ "\r\n" ++ x =
+    FLAT (MAP print_header hs2) ++ "\r\n" ++ y ⇒
+    hs1 = hs2 ∧ x = y
 Proof
-  qid_spec_tac ‘s’ >> Induct_on ‘n’ >> rw[ticks_def] >>
-  ‘tick s = s’ by simp[tick_def] >> simp[]
+  Induct
+  >- (Cases >> simp[] >> PairCases_on ‘h’ >>
+      simp[print_header_def, hchars_def] >> Cases_on ‘h0’ >> simp[] >>
+      rpt strip_tac >> gvs[]) >>
+  PairCases >> Cases >> simp[]
+  >- (simp[print_header_def, hchars_def] >> Cases_on ‘h0’ >> simp[] >>
+      rpt strip_tac >> gvs[]) >>
+  PairCases_on ‘h’ >> simp[print_header_def, hchars_def] >>
+  rpt gen_tac >> strip_tac >>
+  qpat_x_assum ‘_ = _’ mp_tac >>
+  REWRITE_TAC[GSYM APPEND_ASSOC, APPEND] >> strip_tac >>
+  ‘h0 = h0' ∧ " " ++ h1 ++ "\r\n" ++ FLAT (MAP print_header hs1) ++ "\r\n" ++ x =
+              " " ++ h1' ++ "\r\n" ++ FLAT (MAP print_header t) ++ "\r\n" ++ y’
+    by (irule split_char >> qexists_tac ‘#":"’ >> fs[EVERY_MEM] >>
+        rpt strip_tac >> res_tac >> fs[] >>
+        qpat_x_assum ‘_ = _’ mp_tac >> REWRITE_TAC[GSYM APPEND_ASSOC, APPEND] >>
+        simp[]) >>
+  gvs[] >>
+  qpat_x_assum ‘_ = _’ mp_tac >> REWRITE_TAC[GSYM APPEND_ASSOC, APPEND] >>
+  strip_tac >>
+  ‘h1 = h1' ∧ "\n" ++ FLAT (MAP print_header hs1) ++ "\r\n" ++ x =
+              "\n" ++ FLAT (MAP print_header t) ++ "\r\n" ++ y’
+    by (irule split_char >> qexists_tac ‘#"\r"’ >> fs[EVERY_MEM] >>
+        rpt strip_tac >> res_tac >> fs[] >>
+        qpat_x_assum ‘_ = _’ mp_tac >> REWRITE_TAC[GSYM APPEND_ASSOC, APPEND] >>
+        simp[]) >>
+  gvs[] >> first_x_assum irule >> simp[]
 QED
 
-Theorem one_client_sched_wf:
-  sched_wf (one_client bs)
+Theorem headers_unique[local]:
+  EVERY valid_bheader hs1 ∧ EVERY valid_bheader hs2 ∧
+  FLAT (MAP print_header hs1) ++ "\r\n" ++ x =
+  FLAT (MAP print_header hs2) ++ "\r\n" ++ y ⇒
+  hs1 = hs2 ∧ x = y
 Proof
-  rw [sched_wf_def] \\ Cases_on ‘n’
-  >- simp [ticks_def, next_step_def, one_client_def, step_ok_def,
-           arrival_ok_def, deliver1_def, is_listener_def, is_conn_def,
-           AFUPDKEY_def, empty_conn_def]
-  \\ ‘(tick (one_client bs)).sched = [||]’
-    by simp [tick_def, one_client_def, deliver_sched]
-  \\ simp [ticks_def, ticks_quiet, next_step_def, step_ok_def]
+  ‘∀h. valid_bheader h ⇒ hchars h’
+    by (Cases >> simp[hchars_def] >> metis_tac[valid_bheader_chars]) >>
+  strip_tac >> irule headers_unique_chars >> simp[] >>
+  conj_tac >> irule EVERY_MONOTONIC >> qexists_tac ‘valid_bheader’ >> simp[]
 QED
 
-Theorem server_world_one_client:
-  server_world 3w (one_client bs)
+Theorem framed_length[local]:
+  framed hs b1 ∧ framed hs b2 ⇒ LENGTH b1 = LENGTH b2
 Proof
-  simp[server_world_def, one_client_sched_wf] >> simp[one_client_def]
+  rw[framed_def] >> Cases_on ‘FILTER is_cl hs’ >> gvs[] >>
+  Cases_on ‘t’ >> gvs[] >> PairCases_on ‘h’ >> gvs[toString_11]
+QED
+
+Theorem method_unique[local]:
+  valid_method m1 ∧ valid_method m2 ∧
+  m1 ++ #" " :: x = m2 ++ #" " :: y ⇒ m1 = m2 ∧ x = y
+Proof
+  rw[valid_method_def] >> gvs[]
+QED
+
+(* MAIN (framing): a printed valid request followed by anything determines
+   the request and the rest; in particular where the body ends *)
+Theorem print_brequest_unique:
+  valid_brequest q1 ∧ valid_brequest q2 ∧
+  print_brequest q1 ++ x = print_brequest q2 ++ y ⇒ q1 = q2 ∧ x = y
+Proof
+  Cases_on ‘q1’ >> Cases_on ‘q2’ >>
+  REWRITE_TAC[valid_brequest_def, valid_path_def, print_brequest_def] >>
+  strip_tac >>
+  rename1 ‘Req m1 p1 v1 hs1 b1 = Req m2 p2 v2 hs2 b2’ >>
+  ‘m1 = m2 ∧ p1 ++ " HTTP/" ++ v1 ++ "\r\n" ++ FLAT (MAP print_header hs1) ++
+             "\r\n" ++ b1 ++ x =
+             p2 ++ " HTTP/" ++ v2 ++ "\r\n" ++ FLAT (MAP print_header hs2) ++
+             "\r\n" ++ b2 ++ y’
+    by (irule method_unique >> simp[] >>
+        qpat_x_assum ‘_ = _’ mp_tac >>
+        REWRITE_TAC[GSYM APPEND_ASSOC, APPEND]) >>
+  rpt BasicProvers.VAR_EQ_TAC >>
+  ‘p1 = p2 ∧ "HTTP/" ++ v1 ++ "\r\n" ++ FLAT (MAP print_header hs1) ++ "\r\n" ++ b1 ++ x =
+             "HTTP/" ++ v2 ++ "\r\n" ++ FLAT (MAP print_header hs2) ++ "\r\n" ++ b2 ++ y’
+    by (irule split_char >> qexists_tac ‘#" "’ >> rpt conj_tac
+        >- (fs[EVERY_MEM] >> metis_tac[])
+        >- (fs[EVERY_MEM] >> metis_tac[]) >>
+        qpat_x_assum ‘_ = _’ mp_tac >>
+        REWRITE_TAC[GSYM APPEND_ASSOC, APPEND, CONS_11]) >>
+  rpt BasicProvers.VAR_EQ_TAC >>
+  ‘v1 = v2 ∧ FLAT (MAP print_header hs1) ++ "\r\n" ++ (b1 ++ x) =
+             FLAT (MAP print_header hs2) ++ "\r\n" ++ (b2 ++ y)’
+    by (qpat_x_assum ‘valid_version v1’ mp_tac >>
+        qpat_x_assum ‘valid_version v2’ mp_tac >>
+        rw[valid_version_def] >>
+        qpat_x_assum ‘_ = _’ mp_tac >>
+        REWRITE_TAC[GSYM APPEND_ASSOC, APPEND, CONS_11] >> simp[]) >>
+  rpt BasicProvers.VAR_EQ_TAC >>
+  drule_all headers_unique >> strip_tac >> rpt BasicProvers.VAR_EQ_TAC >>
+  ‘LENGTH b1 = LENGTH b2’ by metis_tac[framed_length] >>
+  ‘b1 ++ x = b2 ++ y’ by fs[] >>
+  ‘TAKE (LENGTH b1) (b1 ++ x) = TAKE (LENGTH b2) (b2 ++ y) ∧
+   DROP (LENGTH b1) (b1 ++ x) = DROP (LENGTH b2) (b2 ++ y)’ by metis_tac[] >>
+  fs[TAKE_LENGTH_APPEND, DROP_LENGTH_APPEND]
+QED
+
+(* ------------------------------------------------------------------------
+   Bytes
+   ------------------------------------------------------------------------ *)
+
+Theorem bytes_split[local]:
+  ∀s p rest. bytes p ++ rest = bytes s ⇒ ∃s'. s = p ++ s' ∧ rest = bytes s'
+Proof
+  simp[bytes_def] >> Induct_on ‘p’ >> rw[] >>
+  Cases_on ‘s’ >> gvs[] >>
+  ‘ORD h < 256 ∧ ORD h' < 256’ by simp[ORD_BOUND] >> gvs[ORD_11] >>
+  metis_tac[]
+QED
+
+Theorem brequests_CONS[local]:
+  brequests [] = [] ∧
+  brequests (r :: rs) = bytes (print_brequest r) ++ brequests rs
+Proof
+  simp[brequests_def, bytes_def]
+QED
+
+Theorem print_brequest_NIL[local]:
+  print_brequest r ≠ []
+Proof
+  Cases_on ‘r’ >> simp[print_brequest_def]
+QED
+
+Theorem brequests_NIL[local]:
+  brequests rs = [] ⇔ rs = []
+Proof
+  Cases_on ‘rs’ >> simp[brequests_CONS, bytes_def, print_brequest_NIL]
+QED
+
+Theorem no_full_brequest_NIL[local]:
+  no_full_brequest []
+Proof
+  rw[no_full_brequest_def, brequests_NIL]
+QED
+
+(* The only valid request list whose bytes, followed by a rest, are the
+   bytes of r is [r] with an empty rest (or []) *)
+Theorem brequests_of_one[local]:
+  valid_brequest r ∧ EVERY valid_brequest rs ∧
+  brequests rs ++ rest = brequests [r] ⇒
+  rs = [] ∨ (rs = [r] ∧ rest = [])
+Proof
+  Cases_on ‘rs’ >> rw[] >> fs[brequests_CONS] >>
+  ‘bytes (print_brequest h) ++ (brequests t ++ rest) = bytes (print_brequest r)’
+    by fs[] >>
+  drule bytes_split >> strip_tac >>
+  ‘h = r ∧ s' = []’
+    by (irule print_brequest_unique >> fs[]) >>
+  qpat_x_assum ‘print_brequest r = _’ kall_tac >>
+  rpt BasicProvers.VAR_EQ_TAC >>
+  fs[bytes_def, APPEND_eq_NIL, brequests_NIL]
+QED
+
+(* ------------------------------------------------------------------------
+   Broken servers violate the spec
+   ------------------------------------------------------------------------ *)
+
+(* MAIN (framing bite): a server that treats the body bytes as the next
+   request (here: answers the request-looking body GET /a with /a's file)
+   violates safety.  The client sent exactly one request, rp. *)
+Theorem broken_body_as_request:
+  starts_with [rd c1 (brequests [rp]) 100;
+               wr c1 (bytes (print_response (Ok "hi")))] io ⇒
+  ¬http_safe site io
+Proof
+  rw[http_safe_def] >>
+  qexistsl [‘[rd c1 (brequests [rp]) 100; wr c1 (bytes (print_response (Ok "hi")))]’,
+            ‘c1’, ‘[rp]’, ‘[]’] >>
+  simp[no_full_brequest_NIL] >> EVAL_TAC
+QED
+
+(* rp with the last byte of its body missing *)
+Overload partial_b = “bytes (FRONT (print_brequest rp))”
+
+Theorem no_full_brequest_partial[local]:
+  no_full_brequest partial_b
+Proof
+  rw[no_full_brequest_def, IS_PREFIX_APPEND] >> strip_tac >>
+  fs[brequests_CONS] >>
+  drule bytes_split >> strip_tac >>
+  ‘print_brequest r ++ (s' ++ "\n") = print_brequest rp ++ []’
+    by (qpat_x_assum ‘FRONT _ = _’ (mp_tac o SYM) >> EVAL_TAC >> simp[]) >>
+  ‘valid_brequest rp’ by EVAL_TAC >>
+  drule_all print_brequest_unique >> simp[]
+QED
+
+(* MAIN (bite): a server that answers before the whole body has arrived
+   violates safety *)
+Theorem broken_answers_before_body:
+  starts_with [rd c1 partial_b 100; wr c1 (bresponses site [rp])] io ⇒
+  ¬http_safe site io
+Proof
+  rw[http_safe_def] >>
+  qexistsl [‘[rd c1 partial_b 100; wr c1 (bresponses site [rp])]’,
+            ‘c1’, ‘[]’, ‘partial_b’] >>
+  simp[no_full_brequest_partial] >> EVAL_TAC
 QED
 
 Theorem sent_upto_one_client[local]:
@@ -138,84 +308,96 @@ Proof
   Cases_on ‘n'’ >> simp[arrivals_upto_def] >> rw[]
 QED
 
-(* ------------------------------------------------------------------------
-   A server that never answers violates liveness
-   ------------------------------------------------------------------------ *)
-
-Theorem broken_never_answers:
+(* MAIN (bite): a server that never answers violates liveness *)
+Theorem broken_never_answers_b:
   (∀evs. starts_with evs io ⇒ bytes_written_to 4w evs = []) ⇒
-  ¬http_live site (one_client (requests [r1])) io
+  ¬http_live site (one_client (brequests [rp])) io
 Proof
-  rw[http_live_def] >> qexistsl [‘4w’, ‘1’, ‘[r1]’] >>
+  rw[http_live_def] >> qexistsl [‘4w’, ‘1’, ‘[rp]’] >>
   simp[sent_upto_one_client] >> conj_tac >- EVAL_TAC >>
   rw[] >> Cases_on ‘LPREFIX (fromList evs) io’ >> simp[] >> res_tac >>
   simp[] >> EVAL_TAC
 QED
 
 (* ------------------------------------------------------------------------
-   Non-vacuity: the ideal trace for one client sending r1 is safe and live
+   Header names are tokens (RFC 9110)
    ------------------------------------------------------------------------ *)
 
-(* Requests can be read back uniquely: a valid request that is a prefix of
-   another valid request followed by anything is that request. *)
-Theorem bytes_char_11[local]:
-  (n2w (ORD c) : word8) = n2w (ORD d) ⇔ c = d
+(* MAIN (bite): a header name ending in whitespace is not a valid header
+   name: tab, space, vertical tab (\011) *)
+Theorem whitespace_names_invalid:
+  ¬valid_bheader ("Content-Length\t", v) ∧
+  ¬valid_bheader ("Content-Length ", v) ∧
+  ¬valid_bheader ("Content-Length\011", v)
 Proof
-  ‘ORD c < 256 ∧ ORD d < 256’ by simp[ORD_BOUND] >>
-  simp[wordsTheory.n2w_11, ORD_11]
+  simp[valid_bheader_def] >> EVAL_TAC
 QED
 
-Theorem ord_space[local]:
-  ORD c MOD 256 = 32 ⇔ c = #" "
+(* MAIN (bite, RFC character sets): a path with a tab, and a header
+   value with a NUL, are not valid (RFC 9112 frames no message for them,
+   and RFC 9110 §5.5 requires a recipient to reject NUL in a value) *)
+Theorem rfc_chars_bites:
+  ¬valid_brequest (Req "GET" "/a\tb" "1.1" [] "") ∧
+  ¬valid_bheader ("X", "\000")
 Proof
-  ‘ORD c < 256’ by simp[ORD_BOUND] >> simp[] >> eq_tac >> rw[] >>
-  ‘CHR (ORD c) = CHR 32’ by simp[] >> fs[CHR_ORD]
+  simp[valid_brequest_def, valid_bheader_def] >> EVAL_TAC
 QED
 
-Theorem path_prefix_unique[local]:
-  ∀p q t1 t2 x.
-    EVERY (λc. c ≠ #" ") p ∧ EVERY (λc. c ≠ #" ") q ∧
-    bytes p ++ 32w :: t1 ≼ bytes q ++ 32w :: t2 ++ x ⇒ p = q
+(* rp, with a tab before the colon of its Content-Length header: under a
+   lenient reading, a bodiless request followed by its "body" as a second
+   request *)
+Overload tab_req =
+  “"POST /echo HTTP/1.1\r\nContent-Length\t: 19\r\n\r\n" ++ looks_like_request”
+
+(* No valid request is a prefix of tab_req: its header line is not valid *)
+Theorem tab_req_no_full[local]:
+  no_full_brequest (bytes tab_req)
 Proof
-  ‘(32w : word8) = n2w (ORD #" ")’ by EVAL_TAC >>
-  pop_assum SUBST1_TAC >>
-  Induct >> Cases_on ‘q’ >> rw[bytes_def] >> gvs[bytes_char_11] >>
-  fs[GSYM bytes_def] >>
-  rpt (qpat_x_assum ‘ORD _ MOD 256 = ORD _ MOD 256’ mp_tac) >>
-  simp[ORD_BOUND, ORD_11] >> rw[] >>
-  TRY (first_x_assum (qspecl_then [‘t’, ‘t1’, ‘t2’, ‘x’] mp_tac) >> simp[] >> NO_TAC) >>
-  gvs[ord_space]
+  rw[no_full_brequest_def, IS_PREFIX_APPEND, brequests_CONS] >> strip_tac >>
+  drule bytes_split >> strip_tac >>
+  Cases_on ‘r’ >> rename1 ‘Req m p ver hs b’ >>
+  gvs[valid_brequest_def, valid_method_def, print_brequest_def] >>
+  ‘p = "/echo" ∧
+   "HTTP/" ++ ver ++ "\r\n" ++ FLAT (MAP print_header hs) ++ "\r\n" ++ b ++ s' =
+   "HTTP/1.1\r\nContent-Length\t: 19\r\n\r\n" ++ looks_like_request’
+    by (irule split_char >> qexists_tac ‘#" "’ >>
+        fs[valid_path_def, EVERY_MEM] >>
+        rpt conj_tac >> TRY (strip_tac >> res_tac >> fs[] >> NO_TAC) >>
+        qpat_x_assum ‘_ = _’ mp_tac >> REWRITE_TAC[GSYM APPEND_ASSOC, APPEND] >>
+        simp[]) >>
+  gvs[valid_version_def] >>
+  Cases_on ‘hs’ >> gvs[] >> PairCases_on ‘h’ >> gvs[print_header_def] >>
+  ‘h0 = "Content-Length\t"’
+    suffices_by (strip_tac >> gvs[] >> metis_tac[whitespace_names_invalid]) >>
+  ‘"Content-Length\t" = h0 ∧
+   " 19\r\n\r\n" ++ looks_like_request =
+   " " ++ h1 ++ "\r\n" ++ FLAT (MAP print_header t) ++ "\r\n" ++ b ++ s'’
+    suffices_by simp[] >>
+  irule split_char >> qexists_tac ‘#":"’ >>
+  ‘valid_bheader (h0, h1)’ by fs[] >>
+  drule valid_bheader_chars >> simp[EVERY_MEM] >> strip_tac >>
+  rpt conj_tac >> TRY (strip_tac >> res_tac >> fs[] >> NO_TAC) >>
+  qpat_x_assum ‘_ = _’ mp_tac >> REWRITE_TAC[GSYM APPEND_ASSOC, APPEND] >>
+  simp[]
 QED
 
-Theorem prefix_cancel[local]:
-  ∀l a b. l ++ a ≼ l ++ b ⇔ a ≼ b
+(* MAIN (bite): a server that reads a tab before the colon as an
+   ordinary header, and so answers the 19 body bytes as a request (GET /a),
+   violates safety *)
+Theorem broken_tab_header:
+  starts_with [rd c1 (bytes tab_req) 100;
+               wr c1 (bytes (print_response (Ok "hi")))] io ⇒
+  ¬http_safe site io
 Proof
-  Induct >> simp[]
+  rw[http_safe_def] >>
+  qexistsl [‘[rd c1 (bytes tab_req) 100; wr c1 (bytes (print_response (Ok "hi")))]’,
+            ‘c1’, ‘[]’, ‘bytes tab_req’] >>
+  simp[tab_req_no_full] >> EVAL_TAC
 QED
 
-Theorem bytes_request[local]:
-  bytes (print_request (Get p)) =
-    bytes "GET " ++ bytes p ++ 32w :: bytes "HTTP/1.0\r\n\r\n"
-Proof
-  simp[print_request_def, bytes_def] >> EVAL_TAC
-QED
-
-Theorem request_prefix_unique[local]:
-  valid_request r ∧ valid_request r' ∧
-  bytes (print_request r) ≼ bytes (print_request r') ++ x ⇒ r = r'
-Proof
-  Cases_on ‘r’ >> Cases_on ‘r'’ >>
-  rw[valid_request_def, valid_path_def, bytes_request] >>
-  RULE_ASSUM_TAC (REWRITE_RULE [GSYM APPEND_ASSOC, prefix_cancel]) >>
-  irule path_prefix_unique >> fs[EVERY_MEM] >> metis_tac[]
-QED
-
-Theorem requests_CONS[local]:
-  requests [] = [] ∧
-  requests (r :: rs) = bytes (print_request r) ++ requests rs
-Proof
-  simp[requests_def, bytes_def]
-QED
+(* ------------------------------------------------------------------------
+   Non-vacuity
+   ------------------------------------------------------------------------ *)
 
 Theorem LPREFIX_fromList_fromList[local]:
   LPREFIX (fromList xs) (fromList ys) ⇔ xs ≼ ys
@@ -230,69 +412,54 @@ Proof
   Cases_on ‘t'’ >> simp[]
 QED
 
-Overload ideal_http =
-  “[rd c1 (requests [r1]) 100; wr c1 (responses site [r1])]”
+Overload ideal_b = “[rd c1 (brequests [rp]) 100; wr c1 (bresponses site [rp])]”
 
-(* The only valid request list whose bytes are a prefix of requests [r1]
-   followed by something without a full request is [r1] (or []) *)
-Theorem requests_of_r1[local]:
-  EVERY valid_request rs ∧ requests rs ++ rest = requests [r1] ⇒
-  rs = [] ∨ (rs = [r1] ∧ rest = [])
-Proof
-  Cases_on ‘rs’ >> rw[] >> fs[requests_CONS] >>
-  ‘h = r1’
-    by (irule request_prefix_unique >> simp[] >>
-        conj_tac >- EVAL_TAC >>
-        qexists_tac ‘[]’ >> simp[] >>
-        qpat_x_assum ‘_ = _’ (SUBST1_TAC o SYM) >>
-        simp[IS_PREFIX_APPEND] >> metis_tac[APPEND_ASSOC]) >>
-  gvs[] >> fs[APPEND_EQ_SELF, requests_NIL]
-QED
-
-(* What each event of the ideal trace contributes, per connection *)
-Theorem ideal_events[local]:
-  event_read c (rd c1 (requests [r1]) 100) =
-    (if c = c1 then requests [r1] else []) ∧
-  event_written c (rd c1 (requests [r1]) 100) = [] ∧
-  event_read c (wr c1 (responses site [r1])) = [] ∧
-  event_written c (wr c1 (responses site [r1])) =
-    (if c = c1 then responses site [r1] else [])
+Theorem ideal_events_b[local]:
+  event_read c (rd c1 (brequests [rp]) 100) =
+    (if c = c1 then brequests [rp] else []) ∧
+  event_written c (rd c1 (brequests [rp]) 100) = [] ∧
+  event_read c (wr c1 (bresponses site [rp])) = [] ∧
+  event_written c (wr c1 (bresponses site [rp])) =
+    (if c = c1 then bresponses site [rp] else [])
 Proof
   rw[] >> EVAL_TAC >> rw[] >> fs[]
 QED
 
-Theorem ideal_http_safe:
-  http_safe site (fromList ideal_http)
+Theorem ideal_b_safe:
+  http_safe site (fromList ideal_b)
 Proof
   rw[http_safe_def, LPREFIX_fromList_fromList, prefix_two] >>
-  gvs[bytes_read_from_def, bytes_written_to_def, ideal_events] >>
+  gvs[bytes_read_from_def, bytes_written_to_def, ideal_events_b] >>
   Cases_on ‘c = c1’ >> gvs[] >>
-  TRY (gvs[requests_NIL, APPEND_eq_NIL, responses_def] >> NO_TAC) >>
-  ‘requests rs ++ rest = requests [r1]’ by simp[] >>
-  drule_all requests_of_r1 >> rw[] >> gvs[] >>
-  fs[no_full_request_def] >>
-  first_x_assum (qspec_then ‘r1’ mp_tac) >> fs[requests_CONS] >>
-  rw[] >> pop_assum mp_tac >> EVAL_TAC
+  TRY (gvs[brequests_NIL, APPEND_eq_NIL, bresponses_def] >> NO_TAC) >>
+  ‘valid_brequest rp’ by EVAL_TAC >>
+  ‘brequests rs ++ rest = brequests [rp]’ by simp[] >>
+  drule_all brequests_of_one >> rw[] >> gvs[] >>
+  fs[no_full_brequest_def] >>
+  first_x_assum (qspec_then ‘rp’ mp_tac) >> fs[brequests_CONS]
 QED
 
-Theorem ideal_http_live:
-  http_live site (one_client (requests [r1])) (fromList ideal_http)
+Theorem ideal_b_live:
+  http_live site (one_client (brequests [rp])) (fromList ideal_b)
 Proof
   rw[http_live_def, sent_upto_one_client] >>
+  ‘valid_brequest rp’ by EVAL_TAC >>
   Cases_on ‘c = 4w ∧ n ≠ 0’ >> gvs[]
-  >- (fs[IS_PREFIX_APPEND] >> drule_all requests_of_r1 >> rw[]
-      >- (qexists_tac ‘[]’ >> simp[responses_def, bytes_def, bytes_written_to_def])
-      >- (qexists_tac ‘ideal_http’ >>
-          simp[LPREFIX_fromList_fromList, bytes_written_to_def, ideal_events])) >>
-  gvs[requests_NIL] >> qexists_tac ‘[]’ >>
-  simp[responses_def, bytes_def, bytes_written_to_def]
+  >- (fs[IS_PREFIX_APPEND] >> drule_all brequests_of_one >> rw[]
+      >- (qexists_tac ‘[]’ >> simp[bresponses_def, bytes_def, bytes_written_to_def])
+      >- (qexists_tac ‘ideal_b’ >>
+          simp[LPREFIX_fromList_fromList, bytes_written_to_def, ideal_events_b])) >>
+  gvs[brequests_NIL] >> qexists_tac ‘[]’ >>
+  simp[bresponses_def, bytes_def, bytes_written_to_def]
 QED
 
-(* MAIN (non-vacuity): the ideal trace, in the fair world where one client
-   sends r1, is both safe and live *)
-Theorem ideal_http_trace_safe_and_live:
-  http_safe site (fromList ideal_http) ∧
-  http_live site (one_client (requests [r1])) (fromList ideal_http)
+(* MAIN (non-vacuity): a fair world in which one client sends a POST /echo
+   whose body looks like a request exists, and the ideal trace in it
+   (read the request, write the echoed body) is safe and live *)
+Theorem ideal_b_trace_safe_and_live:
+  server_world 3w (one_client (brequests [rp])) ∧
+  http_safe site (fromList ideal_b) ∧
+  http_live site (one_client (brequests [rp])) (fromList ideal_b)
 Proof
-  simp[ideal_http_safe, ideal_http_live]
+  simp[server_world_one_client, ideal_b_safe, ideal_b_live]
 QED

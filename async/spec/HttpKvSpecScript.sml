@@ -1,6 +1,7 @@
 (*
   HttpKvSpec: an HTTP KEY-VALUE server, whose clients share one store.
-  DRAFT, for the user's decision.  TRUSTED SURFACE, with HttpSpecBodies
+  APPROVED by the user (2026-10-16): real time starts at the first byte
+  read; the behaviour is as drafted.  TRUSTED SURFACE, with HttpSpecBodies
   (requests, framing, the response printer) and EchoSpec (the world, the
   per-connection projections), which are unchanged.
 

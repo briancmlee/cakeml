@@ -1,8 +1,8 @@
 (*
-  HttpSpecHeaders: a header-tolerant VARIANT of HttpSpec, for the user's
-  decision.  DRAFT; HttpSpec itself is unchanged.
+  HttpHeadersSpec: a header-tolerant VARIANT of HttpGetSpec, for the user's
+  decision.  DRAFT; HttpGetSpec itself is unchanged.
 
-  HttpSpec's request subset is exactly  GET <path> HTTP/1.0\r\n\r\n , so
+  HttpGetSpec's request subset is exactly  GET <path> HTTP/1.0\r\n\r\n , so
   real clients (curl, browsers), which always send headers, are outside
   it.  Here a request is
 
@@ -13,20 +13,20 @@
   with version 1.0 or 1.1 and arbitrary well-formed headers, except the
   body-framing ones (Content-Length, Transfer-Encoding: there are no
   request bodies in this subset), which the server IGNORES: the response
-  depends only on the path, exactly as in HttpSpec (same print_response, same handle).  The statement keeps
-  HttpSpec's printer-based style: the spec quantifies over printed valid
+  depends only on the path, exactly as in HttpGetSpec (same print_response, same handle).  The statement keeps
+  HttpGetSpec's printer-based style: the spec quantifies over printed valid
   requests with ANY header lists, and never mentions a parser.
 
-  Everything else is HttpSpec's: the world (server_world, socket_ffi), the
+  Everything else is HttpGetSpec's: the world (server_world, socket_ffi), the
   per-connection projections (bytes_read_from, bytes_written_to,
   sent_upto), and the shapes of safety, liveness and the statement.
   HttpSpecHeadersBiteScript.sml gives bite lemmas and non-vacuity, and
-  proves that HttpSpec's requests are the special case of no headers and
+  proves that HttpGetSpec's requests are the special case of no headers and
   version 1.0.
 *)
-Theory HttpSpecHeaders
+Theory HttpHeadersSpec
 Ancestors
-  EchoSpec HttpSpec
+  EchoSpec HttpGetSpec
 Libs
   preamble
 
@@ -94,7 +94,7 @@ Definition hresponses_def:
 End
 
 (* ------------------------------------------------------------------------
-   The specification (HttpSpec's, with hrequest for request)
+   The specification (HttpGetSpec's, with hrequest for request)
    ------------------------------------------------------------------------ *)
 
 (* rest does not start with a complete valid request *)
@@ -106,8 +106,8 @@ End
    server has read so far is some complete requests rs followed by a
    partial one, then what it has written is a prefix of the responses to
    rs. *)
-Definition http_safe_h_def:
-  http_safe_h files io ⇔
+Definition http_headers_safe_def:
+  http_headers_safe files io ⇔
     ∀evs c rs rest.
       LPREFIX (fromList evs) io ∧ EVERY valid_hrequest rs ∧
       bytes_read_from c evs = hrequests rs ++ rest ∧ no_full_hrequest rest ⇒
@@ -116,8 +116,8 @@ End
 
 (* Liveness: if a client has sent the requests rs (within the first n steps
    of the schedule), the server eventually sends all their responses. *)
-Definition http_live_h_def:
-  http_live_h files sk io ⇔
+Definition http_headers_live_def:
+  http_headers_live files sk io ⇔
     ∀c n rs.
       EVERY valid_hrequest rs ∧ hrequests rs ≼ sent_upto c n sk ⇒
       ∃evs. LPREFIX (fromList evs) io ∧
@@ -126,10 +126,10 @@ End
 
 (* THE STATEMENT: in every fair world with one listener lfd, the program
    runs forever, and its I/O trace is safe and live on every connection. *)
-Definition http_spec_h_def:
-  http_spec_h lfd files (prog : dec list) ⇔
+Definition http_headers_spec_def:
+  http_headers_spec lfd files (prog : dec list) ⇔
     ∀sk. server_world lfd sk ⇒
          ∃io. semantics_prog (init_state (socket_ffi sk)) init_env prog
                 (Diverge io) ∧
-              http_safe_h files io ∧ http_live_h files sk io
+              http_headers_safe files io ∧ http_headers_live files sk io
 End

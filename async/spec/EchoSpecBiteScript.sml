@@ -12,7 +12,7 @@
 *)
 Theory EchoSpecBite
 Ancestors
-  EchoSpec ffiSpikeSocketFFI ffiSpikeSocketFair llist Marshalling
+  EchoSpec socketWorld socketFair llist Marshalling
 Libs
   preamble
 

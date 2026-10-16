@@ -18,7 +18,7 @@
 
   fds are 64-bit words, so they always fit the 8-byte encoding.
 *)
-Theory ffiSpikeSocketFFI
+Theory socketWorld
 Ancestors
   cfHeapsBase cfFFIType llist alist nlist numpair Marshalling
 Libs
@@ -64,7 +64,7 @@ End
 (* One arrival.  An arrival that makes no sense in the current state (a
    connection on a non-listener or reusing an fd; data or EOF on an
    unknown fd, data after EOF) is dropped; the assumption sched_wf
-   (ffiSpikeSocketFair) excludes schedules containing such arrivals. *)
+   (socketFair) excludes schedules containing such arrivals. *)
 Definition deliver1_def:
   deliver1 s (Connect l c) =
     (if is_listener s l ∧ ¬is_listener s c ∧ ¬is_conn s c then

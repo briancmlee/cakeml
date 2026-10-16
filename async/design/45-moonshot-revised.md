@@ -1,7 +1,8 @@
 # 45: Moonshot: multi-program linearizability, revised (DESIGN, statements first, for review)
 
-Status: **design only.** Nothing here is built or proved, and there are no
-HOL files on this branch. Every HOL block is a *sketch* of a statement, to
+Status: **design only; decisions recorded (§9, user, 2026-10-16).**
+Nothing here is built or proved, and there are no HOL files on this
+branch. Every HOL block is a *sketch* of a statement, to
 be checked when it is written. Branch `spike/moonshot-design`, from
 `spike/honest-connect` (22bc7c717).
 
@@ -63,10 +64,9 @@ Inputs:
 | connect fairness open (design/36 §6) | **[F4]**, per address, plus L1 retrying transient connect failures (§4.2) | 7 |
 | `kv_relay_closed` (per fd) | **`kv_client_view_safe`** (per episode, with the roles swapped), stated directly between KV's trace and the client's (§4.1) | 8 |
 
-**Decisions needed:** the nine questions in §8. The four that shape the work
-are Q1 (the backpressure mechanism), Q2 (start order or retry), Q5 (the
-scope of the trusted `l0sys`) and Q7 (safety by causality, without
-`sys_run`).
+**Decisions:** the user answered all nine questions of §8 on 2026-10-16
+(§9). The safety path starts when its dependencies land. The coordinator
+assigns the implementation.
 
 ---
 
@@ -634,11 +634,11 @@ foreign episodes.
 
 | name | statement (informal) | why it is needed | status |
 |---|---|---|---|
-| **[F0] scheduling** | `sched_fair`: every process that has not exited takes infinitely many steps. `kernel_fair`: bytes accepted into a channel whose receiver has buffer room are eventually moved; a pending connect is eventually settled | the OS scheduler and the kernel's own progress. Without them nothing moves | **new**, trusted |
+| **[F0] scheduling** | `sched_fair`: every process that has not exited takes infinitely many steps. `kernel_fair`: bytes accepted into a channel whose receiver has buffer room are eventually moved; a pending connect is eventually settled | the OS scheduler and the kernel's own progress. Without them nothing moves | **approved** (Q4), trusted, liveness only |
 | [F1] | per process, per call kind and fd (D11, as built) | transient errors | approved |
 | [F2] | per channel: nothing in flight ⇒ send takes ≥ 1 byte (D12) | window progress | approved |
 | [F3] | per process: fds free up (D14) | accept | approved; here discharged by `fds_ok` |
-| **[F4] connect fairness, per address** | if a process attempts connects to an owned address `p` infinitely often, while p's owner is listening and accepting infinitely often, then infinitely many of the attempts reach Up | each connect is a new fd, so [F1] does not cover it; EADDRNOTAVAIL/ENOBUFS | **new**, trusted. Paired with an L1 change: the connect wrapper retries transient failures (EADDRNOTAVAIL, ENOBUFS, EINTR) itself, and never ECONNREFUSED |
+| **[F4] connect fairness, per address** | the weak form of [F1]: a connect to a listening address that is attempted infinitely often succeeds (reaches Up) infinitely often | each connect is a new fd, so [F1] does not cover it; EADDRNOTAVAIL/ENOBUFS | **approved** (Q3), trusted. A one-shot connect gets nothing from a weak form, so the L1 connect wrapper retries transient failures (EADDRNOTAVAIL, ENOBUFS, EINTR) itself, never ECONNREFUSED |
 | **H-start** (or H-retry) | `start_order`: every connect to `b` follows K's successful `sys_listen`, and every connect to `a` follows P's. Or **H-retry**: the client retries refused connections with back-off, and P and K eventually listen | the startup race | **new**, a launch obligation (e.g. the launch script waits for each port) |
 | **resources** | `fds_ok`: P's `fd_limit` ≥ 2N + 4, C's ≥ N + 4, K's ≥ N + 4. `backlog_ok`: N ≤ backlog. `listen_ok`: no `listen_fails` on a or b | bounded client, so bounds replace [F3] | hypotheses, checkable at launch |
 | **no OOM** | `no_oom`: no process exits by heap exhaustion. With §2's bounds, C's and P's memory is O(N · (hw + pf_chunk)); K's grows with the store | the compiler theorem's caveat | hypothesis, plus a stated heap bound |
@@ -854,3 +854,22 @@ Coordination (each is one message, at the step):
 9. **Q9, memory.** Safety tolerates OOM (it only truncates traces).
    Liveness assumes `no_oom`, with a stated heap bound
    O(N · (hw + pf_chunk)) + store for K. Acceptable?
+
+---
+
+## 9. Decisions (user, 2026-10-16)
+
+| Q | decision |
+|---|---|
+| Q1 backpressure | **APPROVED: (P2).** L1 gets the `pol` parameter (`pol_self` for servers, `pol_never` for the proxy and the client) and the `Level` query, and the proxy manages its interest |
+| Q2 startup | **H-start first**, for liveness: a launch obligation. Client retry (H-retry) comes later, as a variant |
+| Q3 [F4] | **APPROVED, in the same weak form as [F1]:** a connect to a listening address that is attempted infinitely often succeeds infinitely often. The L1 connect wrapper's retry of transient failures (§4.2) is what makes the attempts recur |
+| Q4 [F0] | **APPROVED as trusted** (scheduler and kernel fairness), for liveness only |
+| Q5 `l0sys` scope | **APPROVED at the minimal scope:** per-process fd tables, the shared port namespace, backlog, loopback pairing and close-on-exit concrete; everything else a world choice (§3.1). **CONDITIONAL** on conformance probes like L0's (multi-process, on macOS) |
+| Q6 `isolated` | **accepted** for the headline. The "∃ foreign operations" generalisation comes later |
+| Q7 route | **accepted:** safety via B1 + B2 (causality), without `sys_run`. Liveness on `l1sys_run`. `sys_run'` stays an optional layer |
+| Q8 client | **accepted:** one client binary with N ≥ 2 connections first |
+| Q9 memory | **accepted:** `no_oom` is a hypothesis of liveness only. Safety tolerates OOM |
+
+The safety path (§6, steps 1–4 and 9–12) starts when its dependencies land.
+The coordinator assigns the implementation.

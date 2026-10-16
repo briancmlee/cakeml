@@ -23,3 +23,14 @@ demo: $(BUILD)/chat_server
 
 clean:
 	rm -rf $(BUILD)
+
+# The GC hub variant (asyncChatGCMainScript.sml exports chat_server_gc.sexp)
+$(BUILD)/chat_server_gc.S: chat_server_gc.sexp
+	mkdir -p $(BUILD)
+	$(CAKE) --sexp=true --target=$(TARGET) < $< > $@
+
+$(BUILD)/chat_server_gc: $(BUILD)/chat_server_gc.S ../runnable/socket_ffi.c
+	$(CC) -O2 -o $@ $< $(CAKE_DIR)/basis_ffi.c ../runnable/socket_ffi.c -lm
+
+demo-gc: $(BUILD)/chat_server_gc
+	python3 chat_demo.py --server $(BUILD)/chat_server_gc > chat-demo-gc-transcript.txt 2>&1; cat chat-demo-gc-transcript.txt

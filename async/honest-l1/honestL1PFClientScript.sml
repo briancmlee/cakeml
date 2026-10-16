@@ -205,3 +205,77 @@ Proof
   strip_tac >>
   gvs[parr_def, pcm_def, plog_rlog]
 QED
+
+(* The arrivals of psk's steps n0 … n0 + d − 1 *)
+Definition pars_def:
+  pars lfd hw ifds m w0 n0 d = FLAT (GENLIST (λi. parr lfd hw ifds m w0 (n0 + i)) d)
+End
+
+Theorem cdata_append[simp]:
+  cdata j (a ++ b) = cdata j a ++ cdata j b ∧ (cend j (a ++ b) ⇔ cend j a ∨ cend j b)
+Proof
+  simp[cdata_def, cend_def]
+QED
+
+Theorem pars_rlogs_SUC:
+  pars lfd hw ifds m w0 n0 (SUC d) =
+    pars lfd hw ifds m w0 n0 d ++ parr lfd hw ifds m w0 (n0 + d) ∧
+  rlogs lfd hw ifds m w0 n0 (SUC d) =
+    rlogs lfd hw ifds m w0 n0 d ++ rlog lfd hw ifds m w0 (n0 + d)
+Proof
+  simp[pars_def, rlogs_def, GENLIST, SNOC_APPEND, FLAT_APPEND]
+QED
+
+(* While f stays open, client j's arrivals are exactly L1's fetches on f *)
+Theorem client_rounds:
+  run_ok lfd hw ifds m w0 ∧ winv w0 ∧ MEM lfd (l0_used w0) ∧
+  (∀n. SND (pcm lfd hw ifds m w0 n) + 1 < dimword (:64)) ⇒
+  ∀d. fopen lfd hw ifds m w0 h f n0 d ∧ ALOOKUP (FST (pcm lfd hw ifds m w0 n0)) f = SOME j ⇒
+      cdata j (pars lfd hw ifds m w0 n0 d) = fdata f (rlogs lfd hw ifds m w0 n0 d) ∧
+      (cend j (pars lfd hw ifds m w0 n0 d) ⇔ fend f (rlogs lfd hw ifds m w0 n0 d)) ∧
+      ALOOKUP (FST (pcm lfd hw ifds m w0 (n0 + d))) f = SOME j
+Proof
+  strip_tac >> Induct >- simp[pars_def, rlogs_def] >> strip_tac >>
+  ‘fopen lfd hw ifds m w0 h f n0 d’ by fs[fopen_def] >>
+  qpat_x_assum ‘fopen _ _ _ _ _ _ _ _ d ∧ _ ⇒ _’ mp_tac >> impl_tac >- simp[] >>
+  strip_tac >>
+  ‘∃R. fl (rworld lfd hw ifds m w0 (n0 + d)) f R ∧
+       fkeep lfd h f (rstate lfd hw ifds m w0 (n0 + d))’ by fs[fopen_def] >>
+  drule_all client_step >> strip_tac >> fs[pars_rlogs_SUC, ADD_CLAUSES]
+QED
+
+(* ------------------------------------------------------------------------
+   Live-data (design/36 §6, D16 form): what c's kernel inbox holds at round
+   n0 is eventually client j's data in psk (in order), unless client j's
+   episode ended there first (Eof2 j: L1 saw EOF or a reset on f; only a
+   break that flushed the inbox can lose bytes)
+   ------------------------------------------------------------------------ *)
+
+Theorem live_data:
+  run_ok lfd hw ifds m w0 ∧ winv w0 ∧ MEM lfd (l0_used w0) ∧
+  (∀n. SND (pcm lfd hw ifds m w0 n) + 1 < dimword (:64)) ∧
+  F1 lfd hw ifds m w0 ∧ S1 lfd hw ifds m w0 ∧ S3 lfd hw ifds m w0 ∧
+  S4 lfd hw ifds m w0 f ⇒
+  ∀n0 h c.
+    ALOOKUP (rstate lfd hw ifds m w0 n0).b.tbl h = SOME f ∧
+    ¬MEM f (rstate lfd hw ifds m w0 n0).eof ∧
+    l0_chan_of (rworld lfd hw ifds m w0 n0) f = SOME c ⇒
+    ∃d. cend (cl (FST (pcm lfd hw ifds m w0 n0)) f) (pars lfd hw ifds m w0 n0 d) ∨
+        (EL c (rworld lfd hw ifds m w0 n0).chans).inbox ≼
+        cdata (cl (FST (pcm lfd hw ifds m w0 n0)) f) (pars lfd hw ifds m w0 n0 d)
+Proof
+  strip_tac >> rpt strip_tac >>
+  mp_tac stream_progress >> impl_tac >- simp[] >>
+  disch_then (qspecl_then [‘(EL c (rworld lfd hw ifds m w0 n0).chans).inbox’, ‘n0’, ‘h’]
+                          mp_tac) >>
+  impl_tac >- (simp[fl_def, front_def]) >> strip_tac >>
+  ‘fds_lt w0’ by fs[winv_def] >>
+  ‘∃s. pv_rel lfd (FST (pcm lfd hw ifds m w0 n0)) (rstate lfd hw ifds m w0 n0) s’
+    by (drule_all refine_at >> metis_tac[]) >>
+  ‘∃j. ALOOKUP (FST (pcm lfd hw ifds m w0 n0)) f = SOME j’
+    by (fs[pv_rel_def] >> res_tac >> Cases_on ‘ALOOKUP (FST (pcm lfd hw ifds m w0 n0)) f’ >>
+        gvs[ALOOKUP_NONE]) >>
+  ‘cl (FST (pcm lfd hw ifds m w0 n0)) f = j’ by simp[cl_def] >>
+  drule_all client_rounds >> strip_tac >>
+  qexists_tac ‘d’ >> gvs[]
+QED

@@ -1202,7 +1202,14 @@ and is client j of `psk`. The fetch log is `plog`.
   bytes in `psk` (j = `cl (pcm a) f`), and FEof/FReset on f become
   `Eof2 j` (R1-safe's `arrs`/`pv_rel`). Together they give the text above.
   *Done:* `fetch_progress` (honestL1PFLive): L1 eventually fetches on an
-  open handle's fd with input pending.
+  open handle's fd with input pending. (A): `live_data_kernel`
+  (honestL1PFStream). (A)+(B): **`live_data`** (honestL1PFClient): for an
+  open handle on fd f with no EOF recorded by L1, bound to channel c, and
+  j = `cl (pcm n0) f`: eventually `Eof2 j` is among `psk`'s arrivals from
+  step n0 on, or c's kernel inbox at n0 is a prefix of client j's `Data2`
+  bytes there. Hypotheses: the run's side conditions, `winv w0`, [F1]
+  (D11′), S1, S3, S4 for f. The D16 corollary (hard errors only on a real
+  break) and live-conn ([F3]) remain.
 - **(live-conn)** Assume [F3]. Every connection that reaches the
   listener's backlog (`LIncoming` on its port) is eventually a
   `Connect2` in `psk`, unless it is dropped. It is dropped only if it

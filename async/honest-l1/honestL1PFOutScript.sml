@@ -1185,3 +1185,298 @@ Proof
   rw[MEM_MAP, MEM_FILTER, EXISTS_PROD] >> gvs[MEM_FILTER, MEM_MAP, MEM_nub] >>
   every_case_tac >> gvs[]
 QED
+
+Theorem okeys_forget:
+  okeys b ⇒ okeys (forget g b)
+Proof
+  rw[okeys_def, forget_keys, MEM_FILTER] >> Cases_on ‘f = g’ >> gvs[] >>
+  first_x_assum irule >> gvs[]
+QED
+
+(* The reap closes only closing fds with nothing to send (or gone); any
+   other fd keeps its channel, its account and its outbox *)
+Theorem l1_reap_keep:
+  ∀fs w b w' b' evs.
+    l1_reap fs (w, b) = SOME ((w', b'), evs) ∧ winv w ∧ l0_chan_of w f = SOME c ∧
+    (MEM f fs ⇒ outbox_of b f ≠ [] ∧ ¬MEM f b.gone) ⇒
+    l0_chan_of w' f = SOME c ∧ csent w' c = csent w c ∧ evs_sent f evs = [] ∧
+    outbox_of b' f = outbox_of b f ∧ (MEM f b'.gone ⇔ MEM f b.gone) ∧
+    (okeys b ⇒ okeys b')
+Proof
+  Induct >> simp[l1_reap_def] >> rpt gen_tac >> strip_tac >>
+  qpat_x_assum ‘(if _ then _ else _) = _’ mp_tac >> IF_CASES_TAC >> strip_tac
+  >- (gvs[AllCaseEqs()] >> Cases_on ‘ws’ >> rename1 ‘l1_close h (w, b) = SOME ((w1, b1), evs1)’ >>
+      ‘h ≠ f’ by (strip_tac >> gvs[]) >>
+      ‘c < LENGTH w.chans’ by gvs[l0_chan_of_def, AllCaseEqs()] >>
+      drule_all l1_close_csent >> disch_then (qspec_then ‘f’ strip_assume_tac) >>
+      ‘l0_chan_of w1 f = SOME c’
+        by (qpat_x_assum ‘l1_close _ _ = _’ mp_tac >> simp[l1_close_def, AllCaseEqs()] >>
+            strip_tac >> irule sys_close_chan >> metis_tac[]) >>
+      ‘winv w1’ by metis_tac[l1_close_winv] >>
+      gvs[] >>
+      first_x_assum (drule_at (Pos (el 1))) >> simp[forget_keys] >>
+      ‘MEM f fs ⇒ ¬MEM f (FILTER (λy. h ≠ y) b.gone)’ by rw[MEM_FILTER] >>
+      simp[] >> strip_tac >> gvs[forget_keys, MEM_FILTER] >> metis_tac[okeys_forget])
+  >> ‘MEM f fs ⇒ outbox_of b f ≠ [] ∧ ¬MEM f b.gone’ by metis_tac[] >>
+  first_x_assum drule_all >> simp[]
+QED
+
+Theorem l1_reap_closing:
+  ∀fs w b w' b' evs.
+    l1_reap fs (w, b) = SOME ((w', b'), evs) ∧ MEM f b'.closing ⇒
+    MEM f b.closing ∧ (MEM f fs ⇒ outbox_of b f ≠ [] ∧ ¬MEM f b.gone)
+Proof
+  Induct >> simp[l1_reap_def] >> rpt gen_tac >> strip_tac >>
+  qpat_x_assum ‘(if _ then _ else _) = _’ mp_tac >> IF_CASES_TAC >> strip_tac
+  >- (gvs[AllCaseEqs()] >> Cases_on ‘ws’ >>
+      gvs[l1_close_def, AllCaseEqs()] >>
+      first_x_assum drule_all >> simp[forget_keys, MEM_FILTER] >> rw[] >> gvs[])
+  >> first_x_assum drule_all >> simp[] >> rw[] >> gvs[]
+QED
+
+(* ------------------------------------------------------------------------
+   The version-2 world's side of the tail: a tick only adds clients, and
+   they have nothing written
+   ------------------------------------------------------------------------ *)
+
+Definition cext_def:
+  cext s s' ⇔
+    LENGTH s.clients ≤ LENGTH s'.clients ∧
+    (∀j. j < LENGTH s.clients ⇒ (EL j s'.clients).outgoing = (EL j s.clients).outgoing) ∧
+    (∀j. LENGTH s.clients ≤ j ∧ j < LENGTH s'.clients ⇒ (EL j s'.clients).outgoing = [])
+End
+
+Theorem cext_deliver2:
+  cext s s0 ⇒ cext s (deliver2 s0 a)
+Proof
+  Cases_on ‘a’ >> rw[deliver2_def, update_client_def] >>
+  gvs[cext_def, EL_LUPDATE] >> rw[] >>
+  TRY (first_x_assum drule >> simp[] >> NO_TAC) >>
+  TRY (rw[] >> gvs[] >> NO_TAC) >>
+  Cases_on ‘j < LENGTH s0.clients’ >> gvs[EL_APPEND1, EL_APPEND2] >>
+  ‘j = LENGTH s0.clients’ by simp[] >> gvs[EL_APPEND2, ffiSpikeSocketFFITheory.empty_conn_def]
+QED
+
+Theorem cext_tick2:
+  cext s (tick2 s)
+Proof
+  simp[tick2_def] >> CASE_TAC >- simp[cext_def] >>
+  ‘∀as s0. cext s s0 ⇒ cext s (FOLDL deliver2 s0 as)’
+    by (Induct >> simp[] >> metis_tac[cext_deliver2]) >>
+  first_x_assum irule >> simp[cext_def]
+QED
+
+Theorem cext_hpoll:
+  cext s (SND (hpoll lfd hs hfds s))
+Proof
+  simp[hpoll_def, sock_poll2_def, cext_tick2]
+QED
+
+(* ------------------------------------------------------------------------
+   The tail
+   ------------------------------------------------------------------------ *)
+
+Theorem arrs_fconn:
+  ∀l cm k as cm' k'.
+    arrs lfd (cm, k) l = (as, (cm', k')) ⇒
+    ∃new. cm' = new ++ cm ∧ ∀f. MEM f (MAP FST new) ⇔ MEM (FConn f) l
+Proof
+  Induct >> simp[arrs_def] >> Cases >> simp[arrs_def] >> rpt gen_tac >>
+  pairarg_tac >> gvs[] >> strip_tac >> gvs[] >> first_x_assum drule >> strip_tac >>
+  gvs[] >> TRY (qexists_tac ‘new’ >> simp[] >> NO_TAC) >> metis_tac[]
+QED
+
+Theorem cl_append:
+  (¬MEM f (MAP FST new) ⇒ cl (new ++ cm) f = cl cm f) ∧
+  (MEM f (MAP FST new) ⇒ MEM (f, cl (new ++ cm) f) new)
+Proof
+  rw[cl_def, ALOOKUP_APPEND] >> every_case_tac >> gvs[ALOOKUP_NONE] >>
+  imp_res_tac ALOOKUP_MEM >> gvs[MEM_MAP, EXISTS_PROD] >> metis_tac[]
+QED
+
+Theorem acct_same:
+  acct w b f c out ∧ l0_chan_of w' f = SOME c ∧ csent w' c = csent w c ∧
+  outbox_of b' f = outbox_of b f ∧ (MEM f b'.gone ⇔ MEM f b.gone) ⇒
+  acct w' b' f c out
+Proof
+  simp[acct_def]
+QED
+
+Theorem l1_reap_okeys:
+  ∀fs w b w' b' evs. l1_reap fs (w, b) = SOME ((w', b'), evs) ∧ okeys b ⇒ okeys b'
+Proof
+  Induct >> simp[l1_reap_def] >> rpt gen_tac >> strip_tac >>
+  qpat_x_assum ‘(if _ then _ else _) = _’ mp_tac >> IF_CASES_TAC >> strip_tac
+  >- (gvs[AllCaseEqs()] >> Cases_on ‘ws’ >> gvs[l1_close_def, AllCaseEqs()] >>
+      first_x_assum irule >> metis_tac[okeys_forget])
+  >> metis_tac[]
+QED
+
+Theorem pown_disjoint:
+  pown lfd ps ⇒
+  (MEM f ps.acq ⇒ ¬MEM f (MAP SND ps.b.tbl) ∧ ¬MEM f ps.b.closing) ∧
+  (MEM f (MAP SND ps.b.tbl) ⇒ ¬MEM f ps.b.closing)
+Proof
+  rw[pown_def, ALL_DISTINCT_APPEND] >> metis_tac[]
+QED
+
+Theorem arrs_new:
+  arrs lfd (cm, k) l = (as, (cm', k')) ∧
+  ALL_DISTINCT (MAP SND cm) ∧ EVERY (λj. j < k) (MAP SND cm) ⇒
+  ∃new. cm' = new ++ cm ∧ (∀f. MEM f (MAP FST new) ⇔ MEM (FConn f) l) ∧
+        EVERY (λj. k ≤ j ∧ j < k') (MAP SND new)
+Proof
+  strip_tac >> drule_all arrs_inv >> strip_tac >> drule arrs_fconn >> strip_tac >>
+  rename1 ‘cm' = new1 ++ cm’ >>
+  ‘new1 ++ cm = new ++ cm’ by metis_tac[] >>
+  ‘LENGTH new1 = LENGTH new’
+    by (‘LENGTH (new1 ++ cm) = LENGTH (new ++ cm)’ by metis_tac[] >> fs[]) >>
+  ‘new1 = new’ by metis_tac[APPEND_LENGTH_EQ] >>
+  gvs[EVERY_MEM, MEM_MAP, PULL_EXISTS]
+QED
+
+val not_new_tac =
+  strip_tac >>
+  ‘MEM (FConn f) log’
+    by (qpat_x_assum ‘∀f. MEM f (MAP FST new) ⇔ _’
+          (fn th => qpat_x_assum ‘MEM f (MAP FST new)’ (mp_tac o REWRITE_RULE [th])) >>
+        simp[]) >>
+  qpat_x_assum ‘∀f. MEM (FConn f) log ⇒ _’ drule >> strip_tac >>
+  qpat_x_assum ‘∀c. l0_chan_of w2 f ≠ SOME c’ (qspec_then ‘c’ mp_tac) >> fs[];
+
+Theorem tail_out:
+  pf_tail lfd hw hs (w, ps) = SOME (rdy, (w', ps'), log, evs) ∧
+  pv_rel lfd cm ps s ∧ pown lfd ps ∧ winv w ∧ EVERY small_send evs ∧ out_rel cm w ps s ∧
+  arrs lfd (cm, LENGTH s.clients) log = (as, (cm', k')) ∧ cext s s' ∧
+  k' = LENGTH s'.clients ⇒
+  out_rel cm' w' ps' s'
+Proof
+  simp[pf_tail_def] >> strip_tac >>
+  qabbrev_tac ‘fes = pf_poll_set lfd hw ps hs’ >>
+  Cases_on ‘l1_polls (poll_chunks fes) w’ >> gvs[] >> rename1 ‘_ = SOME x’ >>
+  PairCases_on ‘x’ >> rename1 ‘l1_polls _ _ = SOME (rv, w1, pevs)’ >> gvs[] >>
+  Cases_on ‘l1_flush (writable_fds rv) (w1, ps.b)’ >> gvs[] >> rename1 ‘_ = SOME y’ >>
+  PairCases_on ‘y’ >> rename1 ‘l1_flush _ _ = SOME ((w2, b2), fevs)’ >> gvs[] >>
+  qmatch_asmsub_abbrev_tac ‘pf_fetch _ _ fs (w2, ps2)’ >>
+  Cases_on ‘pf_fetch lfd hw fs (w2, ps2)’ >> gvs[] >> rename1 ‘_ = SOME z’ >>
+  PairCases_on ‘z’ >> rename1 ‘pf_fetch _ _ _ _ = SOME ((w3, ps3f), log3, gevs)’ >> gvs[] >>
+  qabbrev_tac ‘ps3 = hup_step (hup_fds rv) (outbox_of ps.b) log3 ps3f’ >>
+  ‘ps3f.b.closing = ps3.b.closing ∧ ps3f.pause = ps3.pause’ by simp[Abbr ‘ps3’] >>
+  pop_assum (fn th => RULE_ASSUM_TAC (REWRITE_RULE [th]) >> REWRITE_TAC [th]) >>
+  Cases_on ‘l1_reap ps3.b.closing (w3, ps3.b)’ >> gvs[] >> rename1 ‘_ = SOME u’ >>
+  PairCases_on ‘u’ >> rename1 ‘l1_reap _ _ = SOME ((w4, b4), cevs)’ >> gvs[] >>
+  ‘qfresh w ∧ okeys ps.b’ by gvs[out_rel_def] >>
+  ‘winv w1’ by (drule_all l1_polls_winv >> simp[]) >>
+  ‘qfresh w1’ by (drule_all l1_polls_qfresh >> simp[]) >>
+  ‘winv w2’ by (drule_all l1_flush_winv >> simp[]) >>
+  ‘qfresh w2’ by (drule_all l1_flush_qfresh >> simp[]) >>
+  ‘winv w3’ by (drule_all pf_fetch_winv >> simp[]) >>
+  ‘qfresh w3’ by (drule_all pf_fetch_qfresh >> simp[]) >>
+  ‘qfresh w'’ by (drule_all l1_reap_qfresh >> simp[]) >>
+  drule_all pf_fetch_out >> strip_tac >>
+  drule_all l1_flush_keys >> strip_tac >>
+  ‘ps2.b = b2 ∧ ps2.acq = ps.acq’ by simp[Abbr ‘ps2’] >>
+  qspecl_then [‘hup_fds rv’, ‘outbox_of ps.b’, ‘log’, ‘ps3f’] mp_tac
+    (Q.GENL [‘hfs’, ‘ob’, ‘log’, ‘ps’] hup_out) >>
+  qpat_x_assum ‘Abbrev (ps3 = _)’
+    (fn th => REWRITE_TAC [GSYM (REWRITE_RULE [markerTheory.Abbrev_def] th)] >>
+              assume_tac th) >>
+  strip_tac >>
+  ‘okeys b4’ by (drule l1_reap_okeys >> gvs[]) >>
+  ‘b4.tbl = ps3.b.tbl’ by (drule l1_reap_l0 >> gvs[winv_def]) >>
+  ‘ALL_DISTINCT (MAP SND cm) ∧ EVERY (λj. j < LENGTH s.clients) (MAP SND cm)’
+    by fs[pv_rel_def] >>
+  drule_all arrs_new >> strip_tac >> gvs[] >>
+  simp[out_rel_def] >> rpt conj_tac
+  >- ((* held fds *)
+      gen_tac >> disch_then assume_tac >>
+      ‘¬(¬MEM f (MAP SND ps.b.tbl) ∧ ¬MEM f ps.b.closing) ∧
+       (MEM f ps.b.closing ⇒ outbox_of ps3.b f ≠ [] ∧ ¬MEM f ps3.b.gone)’
+        by (qpat_x_assum ‘_ ∨ _’ strip_assume_tac
+            >- (‘MEM f (MAP SND ps.b.tbl)’ by fs[] >> drule pown_disjoint >> fs[])
+            >> drule_all l1_reap_closing >> fs[]) >>
+      ‘MEM f (MAP FST cm) ∧ ∃c. acct w ps.b f c (EL (cl cm f) s.clients).outgoing’
+        by (qpat_x_assum ‘out_rel _ _ _ _’ mp_tac >> simp[out_rel_def] >> strip_tac >>
+            qpat_x_assum ‘∀f. MEM f (MAP SND ps.b.tbl) ∨ _ ⇒ _’ (qspec_then ‘f’ mp_tac) >>
+            impl_tac >- (qpat_x_assum ‘¬(_ ∧ _)’ mp_tac >> simp[]) >>
+            simp[]) >>
+      ‘l0_chan_of w f = SOME c’ by fs[acct_def] >>
+      drule_all l1_polls_csent >> strip_tac >>
+      ‘acct w1 ps.b f c (EL (cl cm f) s.clients).outgoing’
+        by (qpat_x_assum ‘acct w _ _ _ _’ mp_tac >> simp[acct_def]) >>
+      drule_all l1_flush_acct >> strip_tac >>
+      ‘l0_chan_of w2 f = SOME c’ by (qpat_x_assum ‘acct w2 _ _ _ _’ mp_tac >> simp[acct_def]) >>
+      ‘l0_chan_of w3 f = SOME c ∧ csent w3 c = csent w2 c’
+        by (qpat_x_assum ‘∀f c. l0_chan_of w2 f = SOME c ⇒ _’ drule >> simp[]) >>
+      ‘acct w3 ps3f.b f c (EL (cl cm f) s.clients).outgoing’
+        by (qpat_x_assum ‘acct w2 _ _ _ _’ mp_tac >> simp[acct_def]) >>
+      ‘acct w3 ps3.b f c (EL (cl cm f) s.clients).outgoing’
+        by (qpat_x_assum ‘∀w f c out. acct w ps3f.b f c out ⇒ _’ drule >> simp[]) >>
+      ‘l0_chan_of w' f = SOME c ∧ csent w' c = csent w3 c ∧
+       outbox_of b4 f = outbox_of ps3.b f ∧ (MEM f b4.gone ⇔ MEM f ps3.b.gone)’
+        by (qpat_x_assum ‘l1_reap _ _ = _’ assume_tac >> drule l1_reap_keep >>
+            disch_then (qspecl_then [‘f’, ‘c’] mp_tac) >> fs[]) >>
+      ‘¬MEM f (MAP FST new)’ by not_new_tac >>
+      ‘cl (new ++ cm) f = cl cm f’ by (irule (cj 1 cl_append) >> first_assum ACCEPT_TAC) >>
+      ‘cl cm f < LENGTH s.clients’ by (drule cl_mem >> fs[EVERY_MEM]) >>
+      ‘(EL (cl cm f) s'.clients).outgoing = (EL (cl cm f) s.clients).outgoing’
+        by fs[cext_def] >>
+      conj_tac >- fs[] >>
+      qexists_tac ‘c’ >>
+      qpat_x_assum ‘cl (new ++ cm) f = _’ SUBST1_TAC >>
+      qpat_x_assum ‘(EL (cl cm f) s'.clients).outgoing = _’ SUBST1_TAC >>
+      mp_tac (Q.INST [‘w’ |-> ‘w3’, ‘b’ |-> ‘ps3.b’, ‘b'’ |-> ‘b4’,
+                      ‘out’ |-> ‘(EL (cl cm f) s.clients).outgoing’] acct_same) >>
+      disch_then irule >> rpt conj_tac >> first_assum ACCEPT_TAC)
+  >> (* pre-accepted fds *)
+  gen_tac >> strip_tac
+  >~ [‘MEM f ps.acq’]
+  >- (‘∃c. l0_chan_of w f = SOME c ∧ csent w c = [] ∧
+          (EL (cl cm f) s.clients).outgoing = []’
+        by (qpat_x_assum ‘out_rel _ _ _ _’ mp_tac >> simp[out_rel_def] >> strip_tac >>
+            first_x_assum (qspec_then ‘f’ mp_tac) >> fs[]) >>
+      ‘MEM f (MAP FST cm)’ by fs[pv_rel_def] >>
+      ‘¬MEM f (MAP SND ps.b.tbl) ∧ ¬MEM f ps.b.closing’ by (drule pown_disjoint >> fs[]) >>
+      ‘outbox_of ps.b f = [] ∧ ¬MEM f ps.b.gone’
+        by (qpat_x_assum ‘okeys ps.b’ (mp_tac o REWRITE_RULE [okeys_def]) >>
+            disch_then (qspec_then ‘f’ mp_tac) >> fs[]) >>
+      drule_all l1_polls_csent >> strip_tac >>
+      ‘l0_chan_of w2 f = SOME c ∧ csent w2 c = csent w1 c’
+        by (qpat_x_assum ‘l1_flush _ _ = _’ assume_tac >> drule l1_flush_quiet >>
+            disch_then (qspecl_then [‘f’, ‘c’] mp_tac) >> fs[]) >>
+      ‘l0_chan_of w3 f = SOME c ∧ csent w3 c = csent w2 c’
+        by (qpat_x_assum ‘∀f c. l0_chan_of w2 f = SOME c ⇒ _’ drule >> simp[]) >>
+      ‘l0_chan_of w' f = SOME c ∧ csent w' c = csent w3 c’
+        by (qpat_x_assum ‘l1_reap _ _ = _’ assume_tac >> drule l1_reap_keep >>
+            disch_then (qspecl_then [‘f’, ‘c’] mp_tac) >> fs[]) >>
+      ‘¬MEM f (MAP FST new)’ by not_new_tac >>
+      ‘cl (new ++ cm) f = cl cm f’ by (irule (cj 1 cl_append) >> first_assum ACCEPT_TAC) >>
+      ‘cl cm f < LENGTH s.clients’ by (drule cl_mem >> fs[EVERY_MEM]) >>
+      qexists_tac ‘c’ >> fs[cext_def])
+  >> (* fetched in this round *)
+  qpat_x_assum ‘∀f. MEM (FConn f) log ⇒ _’ drule >> strip_tac >>
+  ‘¬MEM f ps.b.closing’
+    by (strip_tac >>
+        ‘∃c'. acct w ps.b f c' (EL (cl cm f) s.clients).outgoing’
+          by (qpat_x_assum ‘out_rel _ _ _ _’ mp_tac >> simp[out_rel_def] >> strip_tac >>
+              qpat_x_assum ‘∀f. MEM f (MAP SND ps.b.tbl) ∨ _ ⇒ _’ (qspec_then ‘f’ mp_tac) >>
+              simp[] >> strip_tac >> qexists_tac ‘c’ >> simp[]) >>
+        ‘l0_chan_of w f = SOME c'’ by fs[acct_def] >>
+        drule_all l1_polls_csent >> strip_tac >>
+        ‘acct w1 ps.b f c' (EL (cl cm f) s.clients).outgoing’
+          by fs[acct_def] >>
+        drule_all l1_flush_acct >> strip_tac >>
+        ‘l0_chan_of w2 f = SOME c'’ by fs[acct_def] >>
+        qpat_x_assum ‘∀c. l0_chan_of w2 f ≠ SOME c’ (qspec_then ‘c'’ mp_tac) >> simp[]) >>
+  ‘l0_chan_of w' f = SOME c ∧ csent w' c = csent w3 c’
+    by (qpat_x_assum ‘l1_reap _ _ = _’ assume_tac >> drule l1_reap_keep >>
+        disch_then (qspecl_then [‘f’, ‘c’] mp_tac) >> fs[]) >>
+  ‘MEM f (MAP FST new)’
+    by (qpat_x_assum ‘∀f. MEM f (MAP FST new) ⇔ _’ (fn th => REWRITE_TAC [th]) >>
+        first_assum ACCEPT_TAC) >>
+  drule (cj 2 cl_append) >> disch_then (qspec_then ‘cm’ assume_tac) >>
+  ‘LENGTH s.clients ≤ cl (new ++ cm) f ∧ cl (new ++ cm) f < LENGTH s'.clients’
+    by (qpat_x_assum ‘EVERY _ (MAP SND new)’ mp_tac >>
+        simp[EVERY_MEM, MEM_MAP, PULL_EXISTS] >> disch_then drule >> simp[]) >>
+  qexists_tac ‘c’ >> fs[cext_def]
+QED

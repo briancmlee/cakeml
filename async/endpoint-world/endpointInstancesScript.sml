@@ -78,7 +78,7 @@ QED
 Theorem ep_tick_open_fds[local]:
   (ep_tick w).open_fds = w.open_fds
 Proof
-  simp[ep_tick_def, ep_deliver_open_fds, settle_def]
+  simp[ep_tick_def, ep_deliver_open_fds]
 QED
 
 Theorem ticks_LNIL[local]:

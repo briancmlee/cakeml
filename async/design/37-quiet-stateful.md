@@ -186,3 +186,42 @@ that the final series has one copy of each:
   `asyncWithStore`;
 - `asyncServerVKvScript.sml`: temporary copy of spike/kv-live's
   `asyncServerVKv` @5a72181db.
+
+## 8. Where KV's CakeML and the option-C loop meet (for E)
+
+*(2026-10-16; D's CakeML is on `spike/quiet-loop`, from `spike/quiet-store`,
+next to `asyncOCLoop`/`asyncOCRun`. No placement commit or frozen copies.)*
+
+The two halves live on different translation chains, and neither has
+both:
+
+- **KV's CakeML** (`http-kv/asyncKvProg`, on the canonical chain:
+  `spike/http-v2-prog`, `translation_extends "asyncHttpSockProgB"`, now
+  under `asyncHLProg`) is a **Level 1** program. Its `with_store` is a
+  residual over `(acts, s)` with no interest. It runs under M3's polling
+  loop.
+- **The option-C loop** (`option-c-loop/asyncOCLoop`/`asyncOCRun`, on
+  option-c-int's chain, `translation_extends "asyncOCProtoProg"`) runs a
+  **Level 2** program (`COMPI`: actions, interest, residual). D's
+  `step_q'` adds the busy test (`Always` in the interest list).
+
+E's CakeML needs a Level 2 KV program, `with_store2 Always` over
+`server_v2 sockV` with query handlers, in CakeML. Its residual must
+report the interest (including `Always` while a query is pending), and it
+must be translated in the **same chain** as `step_q'`, because the loop and
+the server are one program. Today that chain cannot be formed without
+copying across lineages: `asyncKvProg`'s with_store and store code (canonical
+chain) into option C's chain, or option C's loop into the canonical
+chain. **So E's CakeML waits for the final series**, where option C moves
+onto the canonical chain (layer 10, quiescence). There it is the
+Level 2 lift of `asyncKvProg`'s `ws_res` (adding the interest field, which
+`with_store2_def` gives), refined to `store_sleeps`'s program by the same
+`COMPI` argument as `asyncOCProtoModel`'s.
+
+Not blocked before then:
+- E's model side, the KV instance of `store_stable`/`store_sleeps` (with
+  KV's `ansq`/`fin` tagging queries with the fd), as soon as KV's handler
+  is stated as `proto_handler_v sockV P_b (ansq fd) (fin fd)` on this
+  lineage;
+- D's CakeML: `step_q'`/`run_q'` and their specs for any Level 2 program
+  (`COMPI`) whose event list may contain `Always`.

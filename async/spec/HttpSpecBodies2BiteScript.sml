@@ -101,14 +101,15 @@ QED
 (* Safety on one connection that is sent rp: having read nothing, nothing
    is written; having read rp, a prefix of its response is *)
 Theorem safe_rp[local]:
-  EVERY valid_brequest rs ∧ X = brequests rs ++ rest ∧ no_full_brequest rest ∧
-  (X = [] ∧ W = [] ∨ X = R ∧ (W = [] ∨ W = P)) ⇒
-  W ≼ bresponses site rs
+  EVERY valid_brequest rs ∧ xb = brequests rs ++ rest ∧ no_full_brequest rest ∧
+  (xb = [] ∧ wb = [] ∨ xb = R ∧ (wb = [] ∨ wb = P)) ⇒
+  wb ≼ bresponses site rs
 Proof
   rw[] >> simp[] >>
-  qspecl_then [‘rp’, ‘rs’, ‘rest’] mp_tac (GEN_ALL brequests_of_one) >>
-  simp[valid_rp] >> rw[] >> gvs[] >>
-  fs[no_full_brequest_def] >> metis_tac[valid_rp, IS_PREFIX_REFL]
+  ‘rs = [] ∨ rs = [rp] ∧ rest = []’ by metis_tac[brequests_of_one, valid_rp] >>
+  gvs[brequests_CONS] >>
+  fs[no_full_brequest_def] >> metis_tac[valid_rp, IS_PREFIX_REFL, brequests_CONS,
+                                        APPEND_NIL]
 QED
 
 (* ------------------------------------------------------------------------
@@ -129,15 +130,26 @@ QED
 
 (* ... but HttpSpecBodies' per-fd safety does not catch it: on fd c1, rp
    was read and its response written *)
+Theorem answer_leak_cases[local]:
+  n ≤ 5 ⇒
+  bytes_read_from c (TAKE n answer_leak) = [] ∧
+  bytes_written_to c (TAKE n answer_leak) = [] ∨
+  bytes_read_from c (TAKE n answer_leak) = R ∧
+  (bytes_written_to c (TAKE n answer_leak) = [] ∨
+   bytes_written_to c (TAKE n answer_leak) = P)
+Proof
+  strip_tac >>
+  ‘n = 0 ∨ n = 1 ∨ n = 2 ∨ n = 3 ∨ n = 4 ∨ n = 5’ by simp[] >> gvs[] >>
+  EVAL_TAC >> rw[] >> EVAL_TAC
+QED
+
 Theorem v1_misses_answer_leak:
   http_safe_b site (fromList answer_leak) ∧ ¬http_safe_b2 site (fromList answer_leak)
 Proof
   conj_tac
-  >- (rw[http_safe_b_def, LPREFIX_fromList_fromList, prefix_take] >>
-      irule safe_rp >> qexistsl [‘bytes_read_from c (TAKE n answer_leak)’, ‘rest’] >>
-      simp[] >>
-      ‘n = 0 ∨ n = 1 ∨ n = 2 ∨ n = 3 ∨ n = 4 ∨ n = 5’ by gvs[] >> gvs[] >>
-      EVAL_TAC >> rw[] >> EVAL_TAC)
+  >- (rw[http_safe_b_def, LPREFIX_fromList_fromList] >>
+      qpat_x_assum ‘_ ≼ answer_leak’ (strip_assume_tac o REWRITE_RULE [prefix_take]) >>
+      gvs[] >> irule safe_rp >> metis_tac[answer_leak_cases])
   >> irule broken_answers_across_reuse >> simp[]
 QED
 
@@ -188,7 +200,8 @@ Theorem sent2_upto_two_clients[local]:
     if j = 0 ∧ 1 ≤ n then R else if j = 1 ∧ 2 ≤ n then R else []
 Proof
   Cases_on ‘n’ >> simp[sent2_upto_def, arrivals2_upto_def, two_clients_world2_def]
-  >> Cases_on ‘n'’ >> simp[arrivals2_upto_def, arrivals2_upto_nil] >> rw[]
+  >> Cases_on ‘n'’ >> simp[arrivals2_upto_def, arrivals2_upto_nil] >>
+  Cases_on ‘j = 0’ >> Cases_on ‘j = 1’ >> fs[]
 QED
 
 (* What a client of this world has sent is no request, or rp *)
@@ -196,8 +209,11 @@ Theorem sent_rp[local]:
   EVERY valid_brequest rs ∧ brequests rs ≼ sent2_upto j n two_clients_world2 ⇒
   rs = [] ∨ (rs = [rp] ∧ (j = 0 ∧ 1 ≤ n ∨ j = 1 ∧ 2 ≤ n))
 Proof
-  rw[sent2_upto_two_clients] >> gvs[brequests_NIL] >>
-  fs[IS_PREFIX_APPEND] >> drule_all brequests_of_one >> simp[valid_rp]
+  strip_tac >> fs[sent2_upto_two_clients] >>
+  ‘brequests rs ≼ R ⇒ rs = [] ∨ rs = [rp]’
+    by (rw[IS_PREFIX_APPEND] >> metis_tac[brequests_of_one, valid_rp]) >>
+  Cases_on ‘j = 0 ∧ 1 ≤ n’ >> fs[] >>
+  Cases_on ‘j = 1 ∧ 2 ≤ n’ >> fs[brequests_NIL]
 QED
 
 (* ------------------------------------------------------------------------
@@ -210,15 +226,24 @@ Overload ideal_b2 =
   “[acc L 4w; rd 4w R 100; wr 4w P; rdeof 4w 100; cls 4w;
     acc L 4w; rd 4w R 100; wr 4w P; rdeof 4w 100; cls 4w]”
 
-Theorem ideal_b2_safe[local]:
-  http_safe_b2 site (fromList ideal_b2)
+Theorem ideal_b2_cases[local]:
+  n ≤ 10 ⇒
+  ep_read j (TAKE n ideal_b2) = [] ∧ ep_written j (TAKE n ideal_b2) = [] ∨
+  ep_read j (TAKE n ideal_b2) = R ∧
+  (ep_written j (TAKE n ideal_b2) = [] ∨ ep_written j (TAKE n ideal_b2) = P)
 Proof
-  rw[http_safe_b2_def, LPREFIX_fromList_fromList, prefix_take] >>
-  irule safe_rp >> qexistsl [‘ep_read j (TAKE n ideal_b2)’, ‘rest’] >> simp[] >>
-  ‘n ≤ 10’ by gvs[] >>
+  strip_tac >>
   ‘n = 0 ∨ n = 1 ∨ n = 2 ∨ n = 3 ∨ n = 4 ∨ n = 5 ∨ n = 6 ∨ n = 7 ∨
    n = 8 ∨ n = 9 ∨ n = 10’ by simp[] >>
   ‘j = 0 ∨ j = 1 ∨ 2 ≤ j’ by simp[] >> gvs[] >> EVAL_TAC >> simp[]
+QED
+
+Theorem ideal_b2_safe[local]:
+  http_safe_b2 site (fromList ideal_b2)
+Proof
+  rw[http_safe_b2_def, LPREFIX_fromList_fromList] >>
+  qpat_x_assum ‘_ ≼ ideal_b2’ (strip_assume_tac o REWRITE_RULE [prefix_take]) >> gvs[] >>
+  irule safe_rp >> metis_tac[ideal_b2_cases]
 QED
 
 Theorem ideal_b2_live[local]:
@@ -266,18 +291,27 @@ Overload noclose_b2 =
     acc L 5w; rd 5w R 100; wr 5w P; rdeof 5w 100]”
 
 (* NEW: it is safe and live, but violates http_closes_b2 *)
+Theorem noclose_b2_cases[local]:
+  n ≤ 8 ⇒
+  ep_read j (TAKE n noclose_b2) = [] ∧ ep_written j (TAKE n noclose_b2) = [] ∨
+  ep_read j (TAKE n noclose_b2) = R ∧
+  (ep_written j (TAKE n noclose_b2) = [] ∨ ep_written j (TAKE n noclose_b2) = P)
+Proof
+  strip_tac >>
+  ‘n = 0 ∨ n = 1 ∨ n = 2 ∨ n = 3 ∨ n = 4 ∨ n = 5 ∨ n = 6 ∨ n = 7 ∨
+   n = 8’ by simp[] >>
+  ‘j = 0 ∨ j = 1 ∨ 2 ≤ j’ by simp[] >> gvs[] >> EVAL_TAC >> simp[]
+QED
+
 Theorem broken_never_closes_b:
   http_safe_b2 site (fromList noclose_b2) ∧
   http_live_b2 site two_clients_world2 (fromList noclose_b2) ∧
   ¬http_closes_b2 (fromList noclose_b2)
 Proof
   rpt conj_tac
-  >- (rw[http_safe_b2_def, LPREFIX_fromList_fromList, prefix_take] >>
-      irule safe_rp >> qexistsl [‘ep_read j (TAKE n noclose_b2)’, ‘rest’] >>
-      simp[] >> ‘n ≤ 8’ by gvs[] >>
-      ‘n = 0 ∨ n = 1 ∨ n = 2 ∨ n = 3 ∨ n = 4 ∨ n = 5 ∨ n = 6 ∨ n = 7 ∨
-       n = 8’ by simp[] >>
-      ‘j = 0 ∨ j = 1 ∨ 2 ≤ j’ by simp[] >> gvs[] >> EVAL_TAC >> simp[])
+  >- (rw[http_safe_b2_def, LPREFIX_fromList_fromList] >>
+      qpat_x_assum ‘_ ≼ noclose_b2’ (strip_assume_tac o REWRITE_RULE [prefix_take]) >>
+      gvs[] >> irule safe_rp >> metis_tac[noclose_b2_cases])
   >- (rw[http_live_b2_def] >> drule_all sent_rp >> rw[]
       >- (qexists_tac ‘[]’ >> simp[] >> EVAL_TAC)
       >> qexists_tac ‘noclose_b2’ >> simp[LPREFIX_fromList_fromList] >> EVAL_TAC)

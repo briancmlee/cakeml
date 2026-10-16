@@ -104,10 +104,47 @@ Proof
                      AllCaseEqs()] >> gvs[]
 QED
 
-Theorem LENGTH_poll_out:
-  LENGTH (poll_out w fes) = 13 + LENGTH fes
+Theorem LENGTH_FLAT_entries:
+  ∀bs g. LENGTH bs MOD 8 = 0 ∧ (∀i e. LENGTH (g i e) = 2) ⇒
+         LENGTH (FLAT (MAPi (λi e. TAKE 6 e ++ g i e) (pollfd_entries bs))) = LENGTH bs
 Proof
-  simp[poll_out_def]
+  recInduct pollfd_entries_ind >> rw[] >>
+  ONCE_REWRITE_TAC [pollfd_entries_def] >> rw[]
+  >- (‘LENGTH bs MOD 8 = LENGTH bs’ by (irule LESS_MOD >> simp[]) >> fs[])
+  >> simp[o_DEF] >>
+  first_x_assum (drule_then (qspec_then ‘λi. g (SUC i)’ mp_tac)) >> impl_tac
+  >- (simp[] >> qpat_x_assum ‘LENGTH bs MOD 8 = 0’ mp_tac >>
+          ‘LENGTH bs = (LENGTH bs − 8) + 8’ by simp[] >>
+          pop_assum (fn th => ONCE_REWRITE_TAC [th]) >> simp[ADD_MODULUS]) >>
+  simp[]
+QED
+
+Theorem LENGTH_FLAT_entries_MAP:
+  ∀bs. LENGTH bs MOD 8 = 0 ∧ (∀e. LENGTH (g e) = 2) ⇒
+       LENGTH (FLAT (MAP (λe. TAKE 6 e ++ g e) (pollfd_entries bs))) = LENGTH bs
+Proof
+  recInduct pollfd_entries_ind >> rw[] >>
+  ONCE_REWRITE_TAC [pollfd_entries_def] >> rw[]
+  >- (‘LENGTH bs MOD 8 = LENGTH bs’ by (irule LESS_MOD >> simp[]) >> fs[])
+  >> first_x_assum drule >> impl_tac
+  >- (simp[] >> qpat_x_assum ‘LENGTH bs MOD 8 = 0’ mp_tac >>
+          ‘LENGTH bs = (LENGTH bs − 8) + 8’ by simp[] >>
+          pop_assum (fn th => ONCE_REWRITE_TAC [th]) >> simp[ADD_MODULUS]) >>
+  simp[]
+QED
+
+Theorem LENGTH_poll_out:
+  l0_rely w ∧ 16 ≤ LENGTH bytes ∧ (LENGTH bytes − 16) MOD 8 = 0 ⇒
+  LENGTH (poll_out w bytes) = LENGTH bytes ∧ LENGTH (poll_failed w e bytes) = LENGTH bytes
+Proof
+  strip_tac >> drule LENGTH_enc_fail >> strip_tac >>
+  ‘LENGTH (DROP 16 bytes) MOD 8 = 0’ by simp[] >>
+  simp[poll_out_def, poll_failed_def, LENGTH_enc_fail] >> conj_tac
+  >- (qspecl_then [‘λe. abi_rev (pfd_revents w (pe_fe e))’, ‘DROP 16 bytes’] mp_tac
+        (Q.GEN ‘g’ LENGTH_FLAT_entries_MAP) >> simp[abi_rev_def])
+  >> qspecl_then [‘DROP 16 bytes’, ‘λi e. [w.ch.poll_junk w.hist (2 * i);
+                                         w.ch.poll_junk w.hist (2 * i + 1)]’] mp_tac
+       LENGTH_FLAT_entries >> simp[]
 QED
 
 (* MAIN: buffers keep their length *)
@@ -115,7 +152,11 @@ Theorem l0_call_length:
   l0_rely w ∧ l0_call n conf bytes w = SOME (FFIreturn bytes' w') ⇒
   LENGTH bytes' = LENGTH bytes
 Proof
-  rw[l0_call_def] >> gvs[AllCaseEqs(), l0_hdr_def, LENGTH_poll_out, LENGTH_enc_fail]
+  rw[l0_call_def] >> gvs[AllCaseEqs(), l0_hdr_def, LENGTH_enc_fail] >>
+  TRY (irule (cj 1 LENGTH_poll_out) >> simp[] >> NO_TAC) >>
+  TRY (irule (cj 2 LENGTH_poll_out) >> simp[] >> NO_TAC) >>
+  TRY (irule (cj 1 LENGTH_poll_out) >> simp[] >> irule l0_rely_ch >>
+       qexists_tac ‘w’ >> simp[ticks_ch] >> NO_TAC)
   >- (Cases_on ‘ke’ >> gvs[enc_listen_fail_def, LENGTH_n2w8, l0_rely_def])
   >- (pairarg_tac >> gvs[] >>
       ‘∃e. r = Ok (w2n e) ∨ ∃e'. r = fail w e' ∨ r = not_chan w e’ by

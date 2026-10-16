@@ -8,7 +8,8 @@
 # asyncStoreAcc (what it waits for), asyncStorePending (a pending query
 # acts), asyncStoreStable (store_stable, proto_stable's analogue).
 # R1's loop (design/37 §4.1): asyncOCBusy (lbgroundsB, qsel_sleepsB),
-# asyncStoreQuiet (store_sleeps).
+# asyncStoreQuiet (store_sleeps); in CakeML, asyncOCBusyLoop (step_qb,
+# run_qb).
 # asyncWithStore and asyncServerVKv are spike/kv-live's, placed here as is.
 INCLUDES = ../../model/core \
            ../../model/level2 \
@@ -36,7 +37,11 @@ INCLUDES = ../../model/core \
            ../library-liveness \
            ../option-c-proto \
            $(CAKEMLDIR)/semantics \
-           ../proto-stable
+           ../proto-stable \
+           ../http-proto-inst \
+           ../../programs/http \
+           ../../programs/http-b \
+           ../../programs/http-h
 ifdef POLY
 HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
 endif

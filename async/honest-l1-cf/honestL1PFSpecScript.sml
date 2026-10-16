@@ -512,9 +512,9 @@ Theorem run_pf_spec:
   WORD lfd lfdv ∧ NUM hw hwv ∧ LIST_TYPE NUM (MAP w2n fds0) fdsv ∧
   L1P ps0 psv ∧ COMP p SACT A (SNAPSHOT SREADY SRESP) m cv ⇒
   app (p:'ffi ffi_proj) run_pf_v [Conv NONE [lfdv; hwv; fdsv; psv; cv]]
-    (L0_EV w0 w [])
-    (POSTd io. io = LFLATTEN (LGENLIST
-       (λi. fromList (pround_evs lfd hw (interest fds0) m (w, ps0) i)) NONE))
+    (L0_EV w0 w evs0)
+    (POSTd io. io = LAPPEND (fromList evs0) (LFLATTEN (LGENLIST
+       (λi. fromList (pround_evs lfd hw (interest fds0) m (w, ps0) i)) NONE)))
 Proof
   strip_tac >>
   ‘∀n. prounds_t lfd hw (interest fds0) m (w, ps0) n ≠ NONE’
@@ -522,7 +522,7 @@ Proof
         first_x_assum (qspec_then ‘n’ strip_assume_tac) >> simp[]) >>
   xcf_div_rule IMP_app_POSTd_one_FFI_part_FLATTEN "run_pf" st >>
   qexists_tac ‘K emp’ >>
-  qexists_tac ‘λi. if i = 0 then [] else pround_evs lfd hw (interest fds0) m (w, ps0) (i - 1)’ >>
+  qexists_tac ‘λi. if i = 0 then evs0 else pround_evs lfd hw (interest fds0) m (w, ps0) (i - 1)’ >>
   qexists_tac ‘λi stv. ∃fdsv psv cv.
                  stv = Conv NONE [lfdv; hwv; fdsv; psv; cv] ∧
                  LIST_TYPE NUM (MAP w2n (interest fds0

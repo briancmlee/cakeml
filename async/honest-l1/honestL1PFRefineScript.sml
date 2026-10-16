@@ -504,3 +504,163 @@ Proof
   ‘w.fd_limit ≤ 2 ** 31’ by gvs[l0_rely_def] >>
   drule_all lowest_fd_fresh >> simp[]
 QED
+
+(* ------------------------------------------------------------------------
+   The fetch: what L1 fetched arrives in the version-2 world
+   ------------------------------------------------------------------------ *)
+
+(* The arrivals of a fetch log, given the client map cm and the number of
+   clients k so far; and the client map and count after *)
+Definition arrs_def:
+  arrs lfd (cm, k) [] = ([], (cm, k)) ∧
+  arrs lfd (cm, k) (FConn f :: l) =
+    (let (as, ck) = arrs lfd ((f, k) :: cm, k + 1) l in (Connect2 lfd :: as, ck)) ∧
+  arrs lfd (cm, k) (FData f bs :: l) =
+    (let (as, ck) = arrs lfd (cm, k) l in (Data2 (cl cm f) bs :: as, ck)) ∧
+  arrs lfd (cm, k) (FEof f :: l) =
+    (let (as, ck) = arrs lfd (cm, k) l in (Eof2 (cl cm f) :: as, ck)) ∧
+  arrs lfd (cm, k) (FReset f :: l) =
+    (let (as, ck) = arrs lfd (cm, k) l in (Eof2 (cl cm f) :: as, ck))
+End
+
+(* Delivering arrivals keeps the world's allocation *)
+Theorem deliver2_alloc[simp]:
+  (deliver2 s a).alloc = s.alloc ∧ (deliver2 s a).reserved = s.reserved ∧
+  (deliver2 s a).open_fds = s.open_fds
+Proof
+  Cases_on ‘a’ >> rw[deliver2_def, update_client_def]
+QED
+
+Theorem sys_accept_adds:
+  sys_accept l w = SOME (out, w', ev) ∧ l0_rely w ∧ l0_res_of out = Ok k ⇒
+  MEM (n2w k) (l0_used w')
+Proof
+  rw[sys_accept_def, l0_do_def, l0_ffi_fn_def, AllCaseEqs()] >>
+  gvs[l0_call_def, AllCaseEqs()] >> pairarg_tac >> gvs[] >>
+  ‘l0_rely (l0_tick «sys_accept» w)’ by (irule l0_rely_ch >> qexists_tac ‘w’ >> simp[]) >>
+  drule_all l0_accept_res >> strip_tac >> gvs[l0_res_of_enc] >>
+  gvs[l0_accept_def, AllCaseEqs(), fail_def, l0_alloc_def] >>
+  rpt (pairarg_tac >> gvs[]) >> gvs[AllCaseEqs(), fail_def, l0_used_def]
+QED
+
+(* One fetch step on the listener *)
+Theorem fetch_accept_rel:
+  pv_rel lfd cm ps s ∧ pown lfd ps ∧ l0own lfd w ps ∧ l0_rely w ∧ fds_lt w ∧
+  wants_input lfd hw ps lfd ∧ sys_accept lfd w = SOME (out, w1, ev) ∧
+  (case l0_res_of out of
+   | Ok k => (ps with acq := ps.acq ++ [n2w k], [FConn (n2w k)])
+   | Fail e _ => (ps with b := ps.b with exhausted := (e = E_MFILE ∨ e = E_NFILE), []))
+    = (ps1, fl) ∧
+  arrs lfd (cm, LENGTH s.clients) fl = (as, (cm1, k1)) ∧
+  (∀f. MEM (f, LENGTH s.clients) cm1 ⇒ ∀used. ¬MEM f used ⇒ s.alloc (LENGTH s.clients) used = f) ⇒
+  pv_rel lfd cm1 ps1 (FOLDL deliver2 s as) ∧ pown lfd ps1 ∧ l0own lfd w1 ps1 ∧
+  k1 = LENGTH (FOLDL deliver2 s as).clients ∧
+  ps1.b.tbl = ps.b.tbl ∧ ps1.b.nxt = ps.b.nxt ∧ ps1.b.closing = ps.b.closing ∧
+  ps1.inb = ps.inb ∧ ps1.eof = ps.eof
+Proof
+  strip_tac >>
+  ‘ps.acq = [] ∧ ¬ps.b.exhausted’ by gvs[wants_input_def] >>
+  ‘∀g. MEM g (l0_used w) ⇒ MEM g (l0_used w1)’
+    by (gvs[sys_accept_def] >> drule l0_do_used >> simp[]) >>
+  Cases_on ‘l0_res_of out’ >> gvs[arrs_def]
+  >- (rename1 ‘l0_res_of out = Ok k’ >>
+      drule_all sys_accept_fresh >> strip_tac >>
+      drule_all sys_accept_adds >> strip_tac >>
+      qabbrev_tac ‘f : word64 = n2w k’ >>
+      ‘f ≠ lfd ∧ ¬MEM f (MAP SND ps.b.tbl) ∧ ¬MEM f ps.b.closing’
+        by (gvs[l0own_def] >> metis_tac[]) >>
+      ‘EVERY (λj. j < LENGTH s.clients) (MAP SND cm) ∧ ALL_DISTINCT (MAP SND cm)’
+        by gvs[pv_rel_def] >>
+      ‘¬MEM (LENGTH s.clients) (MAP SND cm)’
+        by (strip_tac >> gvs[EVERY_MEM] >> res_tac >> gvs[]) >>
+      ‘cl ((f, LENGTH s.clients) :: cm) f = LENGTH s.clients’ by simp[cl_def] >>
+      ‘∀g. g ≠ f ⇒ cl ((f, LENGTH s.clients) :: cm) g = cl cm g’ by simp[cl_def] >>
+      simp[deliver2_def] >>
+      ‘ALOOKUP s.listening lfd = SOME []’ by gvs[pv_rel_def] >>
+      simp[] >> rpt conj_tac
+      >- (qpat_x_assum ‘pv_rel _ _ _ _’ mp_tac >>
+          simp[pv_rel_def, AFUPDKEY_def, inb_of_def] >> strip_tac >>
+          gvs[AFUPDKEY_def, EL_APPEND1, EL_APPEND2, EVERY_MEM] >> rw[] >>
+          TRY (simp[empty_conn_def] >> NO_TAC) >>
+          TRY (res_tac >> simp[] >> NO_TAC) >>
+          ‘f' ≠ f’ by metis_tac[ALOOKUP_SOME_MEM_SND] >>
+          first_x_assum drule >> strip_tac >>
+          ‘cl cm f' < LENGTH s.clients’
+            by (simp[cl_def] >> Cases_on ‘ALOOKUP cm f'’ >> gvs[ALOOKUP_NONE] >>
+                metis_tac[ALOOKUP_SOME_MEM_SND]) >>
+          gvs[EL_APPEND1])
+      >- (gvs[pown_def, inb_of_def, ALL_DISTINCT_APPEND] >> metis_tac[])
+      >> gvs[l0own_def] >> metis_tac[]) >>
+  rpt conj_tac
+  >- (‘(ps with b := ps.b with exhausted := (e = E_MFILE ∨ e = E_NFILE)).b.tbl = ps.b.tbl’
+        by simp[] >> simp[pv_rel_b])
+  >- (simp[pown_b])
+  >> gvs[l0own_def] >> metis_tac[]
+QED
+
+(* Changing one open connection's buffers is updating its client *)
+Theorem pv_rel_update_client:
+  pv_rel lfd cm ps s ∧ pown lfd ps ∧ ALOOKUP ps.b.tbl h = SOME f ∧
+  ps1.b = ps.b ∧ ps1.acq = ps.acq ∧
+  (∀g. g ≠ f ⇒ inb_of ps1 g = inb_of ps g ∧ (MEM g ps1.eof ⇔ MEM g ps.eof)) ∧
+  (gc (EL (cl cm f) s.clients)).incoming = inb_of ps1 f ∧
+  ((gc (EL (cl cm f) s.clients)).peer_closed ⇔ MEM f ps1.eof) ⇒
+  pv_rel lfd cm ps1 (update_client (cl cm f) gc s)
+Proof
+  strip_tac >> drule_all cl_tbl_ne >> strip_tac >>
+  ‘cl cm f < LENGTH s.clients’ by (drule_all pv_rel_tbl >> simp[]) >>
+  qpat_x_assum ‘pv_rel _ _ _ _’ mp_tac >>
+  simp[pv_rel_def, update_client_def, EL_LUPDATE] >> strip_tac >>
+  rw[] >> gvs[] >> res_tac >> gvs[] >>
+  Cases_on ‘f' = f’ >> gvs[]
+QED
+
+Theorem tbl_alookup_exists:
+  ALL_DISTINCT (MAP FST tbl) ∧ MEM f (MAP SND tbl) ⇒ ∃h. ALOOKUP tbl h = SOME f
+Proof
+  rw[MEM_MAP] >> rename1 ‘MEM p tbl’ >> PairCases_on ‘p’ >>
+  qexists_tac ‘p0’ >> irule ALOOKUP_ALL_DISTINCT_MEM >> gvs[]
+QED
+
+(* One fetch step on a connection fd f *)
+Theorem fetch_recv_rel:
+  pv_rel lfd cm ps s ∧ pown lfd ps ∧ l0own lfd w ps ∧ l0_rely w ∧ fds_lt w ∧
+  wants_input lfd hw ps f ∧ f ≠ lfd ∧ MEM f (MAP SND ps.b.tbl) ∧
+  sys_recv f pf_chunk w = SOME (out, w1, ev) ∧
+  (case l0_res_of out of
+   | Ok k =>
+       if 0 < k then (set_inb f (TAKE k (DROP 13 out)) ps,
+                      [FData f (TAKE k (DROP 13 out))])
+       else (ps with eof := f :: ps.eof, [FEof f])
+   | Fail e _ =>
+       if l1_transient e then (ps, [])
+       else (ps with eof := f :: ps.eof, [FReset f])) = (ps1, fl) ∧
+  arrs lfd (cm, LENGTH s.clients) fl = (as, (cm1, k1)) ⇒
+  pv_rel lfd cm1 ps1 (FOLDL deliver2 s as) ∧ pown lfd ps1 ∧ l0own lfd w1 ps1 ∧
+  cm1 = cm ∧ k1 = LENGTH (FOLDL deliver2 s as).clients ∧
+  ps1.b = ps.b ∧ ps1.acq = ps.acq
+Proof
+  strip_tac >>
+  ‘∃h. ALOOKUP ps.b.tbl h = SOME f’
+    by (irule tbl_alookup_exists >> gvs[pown_def]) >>
+  drule_all pv_rel_tbl >> strip_tac >>
+  ‘inb_of ps f = [] ∧ ¬MEM f ps.eof’ by gvs[wants_input_def] >>
+  ‘l0_used w1 = l0_used w’ by (gvs[sys_recv_def] >> drule l0_do_used >> simp[]) >>
+  ‘l0own lfd w1 ps1’ by (gvs[l0own_def, AllCaseEqs()] >> rw[] >> gvs[]) >>
+  Cases_on ‘l0_res_of out’ >> gvs[]
+  >- (Cases_on ‘0 < n’ >> gvs[arrs_def, deliver2_def] >> (rpt conj_tac
+       >- (drule pv_rel_update_client >> rpt (disch_then drule) >>
+           disch_then irule >> simp[] >> rw[inb_of_def] >> gvs[inb_of_def])
+       >- (qpat_x_assum ‘pown _ _’ mp_tac >> simp[pown_def] >> rw[] >>
+           gvs[] >> Cases_on ‘f' = f’ >> gvs[] >>
+           first_x_assum irule >> fs[inb_of_def])
+       >> simp[update_client_def])) >>
+  Cases_on ‘l1_transient e’ >> gvs[arrs_def, deliver2_def] >> (rpt conj_tac
+       >- (drule pv_rel_update_client >> rpt (disch_then drule) >>
+           disch_then irule >> simp[] >> rw[inb_of_def] >> gvs[inb_of_def])
+       >- (qpat_x_assum ‘pown _ _’ mp_tac >> simp[pown_def] >> rw[] >>
+           gvs[] >> Cases_on ‘f' = f’ >> gvs[] >>
+           first_x_assum irule >> fs[inb_of_def])
+       >> simp[update_client_def])
+QED
+

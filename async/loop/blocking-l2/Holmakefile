@@ -1,0 +1,8 @@
+# Generated from the review-series layout (see REVIEW-SERIES-PLAN.md).
+INCLUDES = ../../cakeml/library \
+           ../../model/core \
+           ../../model/level2 \
+           ../../model/sched
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

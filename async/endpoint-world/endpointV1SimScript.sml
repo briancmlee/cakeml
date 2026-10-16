@@ -367,3 +367,68 @@ Proof
   qexistsl_tac [‘cs’, ‘k + 1’] >> fs[v12core_def] >>
   simp[GSYM ADD1, GENLIST, REVERSE_SNOC]
 QED
+
+(* The connection of an fd a disciplined program may name *)
+Theorem v12_conn_of[local]:
+  v12core lfd cs k s1 s2 ∧ v12ok lfd s2 f ⇒
+  (f = lfd ∧ ALOOKUP s1.conns f = NONE ∧ client_of s2 f = NONE) ∨
+  (∃j cn. j < k ∧ f = EL j cs ∧ client_of s2 f = SOME j ∧
+          ALOOKUP s1.conns f = SOME cn ∧ cn.incoming = (EL j s2.clients).incoming ∧
+          cn.peer_closed = (EL j s2.clients).peer_closed)
+Proof
+  strip_tac >> drule v12core_open >> strip_tac >>
+  qpat_x_assum ‘v12core _ _ _ _ _’ (strip_assume_tac o REWRITE_RULE [v12core_def]) >>
+  qpat_x_assum ‘v12ok _ _ _’ (strip_assume_tac o REWRITE_RULE [v12ok_def])
+  >- (disj1_tac >> qpat_x_assum ‘f = lfd’ SUBST_ALL_TAC >> simp[] >>
+      conj_tac >- metis_tac[ALOOKUP_conns_MEM] >>
+      ‘¬MEM lfd (MAP FST s2.open_fds)’
+        by (strip_tac >> ‘∃j. j < k ∧ lfd = EL j cs’ by metis_tac[] >>
+            ‘j < LENGTH cs’ by decide_tac >> metis_tac[MEM_EL]) >>
+      ‘ALOOKUP s2.open_fds lfd = NONE’ by simp[ALOOKUP_NONE] >>
+      simp[client_of_def] >> qpat_x_assum ‘s2.open_fds = _’ (fn th => fs[GSYM th])) >>
+  disj2_tac >>
+  ‘∃j. j < k ∧ f = EL j cs’ by metis_tac[] >>
+  qexists_tac ‘j’ >> simp[] >>
+  ‘j < LENGTH cs’ by decide_tac >>
+  qpat_x_assum ‘∀j. j < LENGTH cs ⇒ _’ (qspec_then ‘j’ mp_tac) >> simp[] >> metis_tac[]
+QED
+
+(* MAIN: read agrees on the listener and accepted connections *)
+Theorem v12rel_read:
+  v12rel lfd ll0 s1 s2 ∧ v12ok lfd s2 f ⇒
+  (sock_read f n s1 = NONE ⇔ sock_read2 f n s2 = NONE) ∧
+  ∀r s1'. sock_read f n s1 = SOME (r, s1') ⇒
+          ∃s2'. sock_read2 f n s2 = SOME (r, s2') ∧ v12rel lfd ll0 s1' s2'
+Proof
+  strip_tac >> fs[v12rel_def] >>
+  drule_all v12_conn_of >> strip_tac
+  >- simp[sock_read_def, sock_read2_def] >>
+  simp[sock_read_def, sock_read2_def] >>
+  rw[] >> qexistsl_tac [‘cs’, ‘k’] >> simp[] >>
+  fs[v12core_def, update_client_def, MAP_FST_AFUPDKEY] >>
+  rw[] >> rename1 ‘j' < LENGTH cs’ >>
+  qpat_x_assum ‘∀j. j < LENGTH cs ⇒ ∃cn. _’ (qspec_then ‘j'’ mp_tac) >> simp[] >> strip_tac >>
+  simp[AFUPDKEY_ALOOKUP, EL_LUPDATE] >>
+  Cases_on ‘j' = j’ >> gvs[] >>
+  ‘EL j' cs ≠ EL j cs’ by metis_tac[ALL_DISTINCT_EL_IMP, LESS_LESS_EQ_TRANS] >> simp[]
+QED
+
+(* MAIN: write agrees on the listener and accepted connections *)
+Theorem v12rel_write:
+  v12rel lfd ll0 s1 s2 ∧ v12ok lfd s2 f ⇒
+  (sock_write f bs s1 = NONE ⇔ sock_write2 f bs s2 = NONE) ∧
+  ∀s1'. sock_write f bs s1 = SOME s1' ⇒
+        ∃s2'. sock_write2 f bs s2 = SOME s2' ∧ v12rel lfd ll0 s1' s2'
+Proof
+  strip_tac >> fs[v12rel_def] >>
+  drule_all v12_conn_of >> strip_tac
+  >- simp[sock_write_def, sock_write2_def] >>
+  simp[sock_write_def, sock_write2_def] >>
+  rw[] >> qexistsl_tac [‘cs’, ‘k’] >> simp[] >>
+  fs[v12core_def, update_client_def, MAP_FST_AFUPDKEY] >>
+  rw[] >> rename1 ‘j' < LENGTH cs’ >>
+  qpat_x_assum ‘∀j. j < LENGTH cs ⇒ ∃cn. _’ (qspec_then ‘j'’ mp_tac) >> simp[] >> strip_tac >>
+  simp[AFUPDKEY_ALOOKUP, EL_LUPDATE] >>
+  Cases_on ‘j' = j’ >> gvs[] >>
+  ‘EL j' cs ≠ EL j cs’ by metis_tac[ALL_DISTINCT_EL_IMP, LESS_LESS_EQ_TRANS] >> simp[]
+QED

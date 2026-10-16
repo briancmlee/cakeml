@@ -46,6 +46,15 @@ Proof
   simp[fd_bytes_def, LENGTH_n2w8]
 QED
 
+(* As honest-l1's fd_ok_fd_bytes; local, so that the spec's bites need no
+   L1 theory *)
+Theorem fd_bytes_app[local,simp]:
+  TAKE 8 (fd_bytes f ++ bs) = fd_bytes f ∧ DROP 8 (fd_bytes f ++ bs) = bs
+Proof
+  ‘8 = LENGTH (fd_bytes f)’ by simp[] >> pop_assum SUBST1_TAC >>
+  simp_tac std_ss [TAKE_LENGTH_APPEND, DROP_LENGTH_APPEND]
+QED
+
 Theorem bytes_fd_fd_bytes[local,simp]:
   bytes_fd (fd_bytes f) = f
 Proof

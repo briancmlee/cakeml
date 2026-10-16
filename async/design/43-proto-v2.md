@@ -38,6 +38,12 @@ Milestones 1 and 2 are proved (`async/proto-v2-sim`):
 - `proto_rounds_safe`, `proto2_safe`, `proto2_live` and **`proto2_model`**;
 - `http_spec_b2_proto` (the approved spec is the generic one for `P_b`).
 
+Milestone 3 is proved too (`asyncProtoSemB2`): **`http_prog_pb2_spec :
+http_spec_b2 3w demo_files http_prog_pb2`**. It is built on the
+canonical library translation chain, where `asyncHttpSockProg` extends
+`asyncHLProg`, so there are no copies. `http_prog_pb2` is `http_prog_pb`
+with `main2 u = run_h (3, [3], ([], 0), proto_server b_parse bresp_demo 3)`.
+
 ## Milestones (one PR each)
 
 1. **Generic simulation.** `hrun_sim_gen` and `sock_eof_last_gen`, then

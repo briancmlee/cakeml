@@ -2,7 +2,8 @@
 # (asyncWithStore2); the library skeleton server_v's per-action facts
 # (asyncSVActs) and its query handler's (asyncProtoVActs); then the
 # stability lemma for with_store2 over server_v2.
-# asyncWithStore is spike/kv-live's (http-kv), placed here as is.
+# (asyncWrapActs carries them through the store wrapper.)
+# asyncWithStore and asyncServerVKv are spike/kv-live's, placed here as is.
 INCLUDES = ../../model/core \
            ../../model/level2 \
            ../../model/sched \

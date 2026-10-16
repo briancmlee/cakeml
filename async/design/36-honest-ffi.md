@@ -1249,6 +1249,24 @@ and is client j of `psk`. The fetch log is `plog`.
   ECONNABORTED from L1's accepts on lfd really dropped a queued
   connection" (stated on the run's observed events and the listener's
   queue where possible), (c) is gone: j0 is accepted or dropped.
+  *Refinement while proving (agreed with the coordinator):* the main
+  form needs no [F3]. If j0 is never resolved, pops stop after finitely
+  many (j0's position is finite), and L1 keeps accepting (S1, S2, the
+  pause countdown, [F1] on lfd's poll), so every later accept fails,
+  which is (c). [F3] moves to the corollary, whose hypotheses are:
+  (H1) every failed accept on lfd whose error is not `l1_transient`,
+  EMFILE or ENFILE removed a connection from the queue (the observed
+  event plus the queue before and after); this covers ECONNABORTED and
+  Linux's pending network errors. (H2) [F3]. (H3) the weak, **joint**
+  form: if L1 attempts accept on lfd infinitely often, infinitely many
+  attempts fail neither with an `l1_transient` error nor with ENFILE
+  (this is [F1]'s accept clause with ENFILE added, as a hypothesis). It
+  must be joint: two separate weak forms ("infinitely many accepts not
+  transient", from [F1], and "infinitely many not ENFILE") are both
+  met by a run alternating EINTR, ENFILE, EINTR, ..., where every accept
+  fails and j0 waits forever. It is still a weak form, which allows
+  recurring ENFILE and EINTR (the user's rule: fairness only in weak
+  "infinitely often" forms that do not exclude realistic runs).
   **EMFILE needs no new assumption:** while no accept succeeds, nothing
   allocates an fd (L1 makes no connects or listens), so the set of used
   fds only shrinks. A fd that [F3] finds free therefore stays free until

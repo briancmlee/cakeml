@@ -1028,6 +1028,74 @@ QED
 
 (* The fetch: the fetched arrivals delivered to the endpoint world keep the
    relation (with the accepted connections' channels numbered next) *)
+(* The arrivals are valid (the run-local rely): a fetch's data and EOFs
+   are on polled fds other than the listener's, so on up channels *)
+Definition fdata_def:
+  fdata [] = [] ∧
+  fdata (FConn f :: l) = fdata l ∧
+  fdata (FData f bs :: l) = f :: fdata l ∧
+  fdata (FEof f :: l) = f :: fdata l ∧
+  fdata (FReset f :: l) = f :: fdata l
+End
+
+Theorem fdata_APPEND[simp]:
+  ∀l l'. fdata (l ++ l') = fdata l ++ fdata l'
+Proof
+  Induct >> simp[fdata_def] >> Cases >> simp[fdata_def]
+QED
+
+Theorem pf_fetch_fds:
+  ∀fs w ps ws log evs.
+    pf_fetch lfd hw fs (w, ps) = SOME (ws, log, evs) ⇒
+    ∀f. MEM f (fdata log) ⇒ MEM f fs ∧ f ≠ lfd
+Proof
+  Induct >> simp[pf_fetch_def, fdata_def] >> rpt gen_tac >>
+  IF_CASES_TAC >- metis_tac[] >>
+  simp[AllCaseEqs()] >> strip_tac >> gvs[] >>
+  Cases_on ‘l0_res_of out’ >> gvs[] >>
+  TRY (Cases_on ‘0 < n’) >> TRY (Cases_on ‘l1_transient e’) >>
+  TRY (Cases_on ‘e = E_MFILE’) >> gvs[AllCaseEqs(), fdata_def] >> metis_tac[]
+QED
+
+Theorem arrs_targets:
+  ∀l cm k as cm' k'.
+    arrs lfd (cm, k) l = (as, (cm', k')) ⇒
+    ∀j. (∃bs. MEM (Data2 j bs) as) ∨ MEM (Eof2 j) as ⇒
+        ∃f. MEM f (fdata l) ∧ (j = cl cm f ∨ k ≤ j)
+Proof
+  Induct >> simp[arrs_def] >> Cases >> simp[arrs_def, fdata_def] >> rpt gen_tac >>
+  pairarg_tac >> gvs[] >> strip_tac >> gvs[] >> first_x_assum drule >> strip_tac >>
+  rpt strip_tac >> gvs[] >> TRY (metis_tac[] >> NO_TAC) >>
+  first_x_assum (qspec_then ‘j’ mp_tac) >> (impl_tac >- metis_tac[]) >> strip_tac >>
+  qexists_tac ‘f’ >> gvs[cl_def] >> Cases_on ‘c = f’ >> gvs[]
+QED
+
+Theorem ep_step_ok_APPEND:
+  ∀l w. ep_step_ok w (l ++ l') ⇔ ep_step_ok w l ∧ ep_step_ok (FOLDL ep_deliver w l) l'
+Proof
+  Induct >> simp[ep_step_ok_def] >> metis_tac[]
+QED
+
+Theorem vagree_step_ok:
+  ∀as s w. vagree lfd a s w ∧ w.reserved = [] ∧
+           EVERY (λx. ∀l. x = Connect2 l ⇒ l = lfd) as ∧ step_ok2 s as ∧
+           (∀j. ((∃bs. MEM (Data2 j bs) as) ∨ MEM (Eof2 j) as) ∧ j < LENGTH w.chans ⇒
+                (EL j w.chans).status = Up) ⇒
+           ep_step_ok w (MAP (conv a) as)
+Proof
+  Induct >> simp[ep_step_ok_def] >> rpt gen_tac >> strip_tac >>
+  rename1 ‘conv a x’ >>
+  ‘arrival_ok2 s x ∧ step_ok2 (deliver2 s x) as’ by gvs[socketV2FairTheory.step_ok2_def] >>
+  ‘(∀l. x = Connect2 l ⇒ l = lfd)’ by gvs[] >>
+  drule_all vagree_deliver >> strip_tac >> conj_tac
+  >- (Cases_on ‘x’ >> gvs[conv_def, ep_arrival_ok_def, socketV2FairTheory.arrival_ok2_def, vagree_def] >>
+      ‘(EL n w.chans).status = Up’ by (first_x_assum irule >> simp[]) >> gvs[]) >>
+  qpat_x_assum ‘∀s w. _’ (qspecl_then [‘deliver2 s x’, ‘ep_deliver w (conv a x)’] mp_tac) >>
+  impl_tac >- (gvs[ep_grows_def] >> rpt strip_tac >>
+               Cases_on ‘j < LENGTH w.chans’ >> gvs[] >> metis_tac[]) >>
+  simp[]
+QED
+
 Theorem ev_fetch:
   ev_rel lfd a cm es w ∧ eown lfd es ∧ l0owne lfd w0 es ∧ l0_rely w0 ∧ fds_lt w0 ∧
   pf_fetch lfd hw fs (w0, es.p) = SOME ((w0', ps'), log, evs) ∧
@@ -1040,7 +1108,8 @@ Theorem ev_fetch:
   l0_rely w0' ∧ fds_lt w0' ∧
   ep_grows w (FOLDL ep_deliver w (MAP (conv a) as)) ∧
   k' = LENGTH (FOLDL ep_deliver w (MAP (conv a) as)).chans ∧
-  ps'.b.tbl = es.p.b.tbl ∧ ps'.b.nxt = es.p.b.nxt ∧ ps'.b.closing = es.p.b.closing
+  ps'.b.tbl = es.p.b.tbl ∧ ps'.b.nxt = es.p.b.nxt ∧ ps'.b.closing = es.p.b.closing ∧
+  ep_step_ok w (MAP (conv a) as)
 Proof
   strip_tac >>
   drule_all ev_pv >> strip_tac >>
@@ -1069,7 +1138,23 @@ Proof
   >- (irule eown_p_disj >> simp[] >> rpt strip_tac >> gvs[MEM_APPEND] >>
       gvs[eown_def, ALL_DISTINCT_APPEND, l0owne_def, l0own_def] >> metis_tac[])
   >- (gvs[l0owne_def])
-  >> gvs[]
+  >> TRY (gvs[] >> NO_TAC)
+  >> irule vagree_step_ok >>
+  ‘w.reserved = []’ by gvs[ev_rel_def] >>
+  rpt conj_tac
+  >- (‘ALL_DISTINCT (MAP FST es.p.b.tbl)’ by gvs[eown_def, ALL_DISTINCT_APPEND] >>
+      rpt strip_tac >> (qpat_x_assum ‘arrs _ (cm, LENGTH s.clients) _ = _’ assume_tac >>
+         drule arrs_targets >> disch_then (qspec_then ‘j’ mp_tac) >>
+         (impl_tac >- metis_tac[]) >> strip_tac >> gvs[] >>
+         qpat_x_assum ‘pf_fetch _ _ _ _ = _’ assume_tac >>
+         drule pf_fetch_fds >> disch_then drule >> strip_tac >>
+         ‘MEM f (MAP SND es.p.b.tbl)’ by metis_tac[] >>
+         ‘∃h. ALOOKUP es.p.b.tbl h = SOME f’
+           by (gvs[MEM_MAP] >> rename1 ‘MEM y es.p.b.tbl’ >> PairCases_on ‘y’ >>
+               qexists_tac ‘y0’ >> irule ALOOKUP_ALL_DISTINCT_MEM >> gvs[]) >>
+         drule_all ev_rel_tbl >> simp[]))
+  >- first_assum ACCEPT_TAC >>
+  qexistsl_tac [‘lfd’, ‘s’] >> simp[]
 QED
 
 (* ------------------------------------------------------------------------
@@ -1469,12 +1554,13 @@ Theorem settles_deliver:
           w'.listening = w.listening ∧ w'.open_fds = w.open_fds ∧ w'.reserved = w.reserved ∧
           w'.alloc = w.alloc ∧ w'.takes = w.takes ∧ w'.env = w.env ∧ w'.clock = w.clock ∧
           w'.hist = w.hist ∧ w'.calls = w.calls ∧
+          ep_step_ok w (MAP (λ(j, b). Settle j b) l) ∧
           ∀k. k < LENGTH w.chans ⇒
               EL k w'.chans = case ALOOKUP l k of
                               | SOME b => EL k w.chans with status := (if b then Up else Refused)
                               | NONE => EL k w.chans
 Proof
-  Induct >> simp[FORALL_PROD] >> rpt gen_tac >> strip_tac >>
+  Induct >> simp[FORALL_PROD, ep_step_ok_def] >> rpt gen_tac >> strip_tac >>
   rename1 ‘Settle j b’ >>
   first_x_assum (qspec_then ‘ep_deliver w (Settle j b)’ mp_tac) >>
   ‘ep_deliver w (Settle j b) =
@@ -1483,7 +1569,7 @@ Proof
   simp[] >> impl_tac
   >- (rw[] >> res_tac >> simp[upd_chan_def, EL_LUPDATE] >> rw[] >> gvs[MEM_MAP] >>
       metis_tac[FST]) >>
-  strip_tac >> simp[] >> rw[] >> simp[upd_chan_def, EL_LUPDATE] >> rw[] >>
+  strip_tac >> simp[ep_arrival_ok_def] >> rw[] >> simp[upd_chan_def, EL_LUPDATE] >> rw[] >>
   gvs[] >> Cases_on ‘ALOOKUP l j’ >> gvs[] >>
   imp_res_tac ALOOKUP_MEM >> gvs[MEM_MAP] >> metis_tac[FST]
 QED
@@ -1536,7 +1622,7 @@ Theorem settle_world:
     LENGTH w'.chans = LENGTH w.chans ∧
     w'.listening = w.listening ∧ w'.open_fds = w.open_fds ∧ w'.reserved = w.reserved ∧
     w'.alloc = w.alloc ∧ w'.takes = w.takes ∧ w'.env = w.env ∧ w'.clock = w.clock ∧
-    w'.hist = w.hist ∧ w'.calls = w.calls ∧
+    w'.hist = w.hist ∧ w'.calls = w.calls ∧ ep_step_ok w (settles cm es es5) ∧
     (∀h f. ALOOKUP es.ctbl h = SOME f ⇒
        EL (cl cm f) w'.chans =
          if cstat_of es f = CPending ∧ cstat_of es5 f ≠ CPending
@@ -1573,7 +1659,8 @@ Proof
         drule ALL_DISTINCT_MAP >> simp[]) >>
   ‘∀j b. MEM (j, b) l ⇒ j < LENGTH w.chans ∧ (EL j w.chans).status = Connecting’
     by (rw[] >> drule_all ev_rel_ctbl >> simp[cstat_of_def] >> gvs[cstat_of_def]) >>
-  drule_all settles_deliver >> simp[] >> strip_tac >> simp[] >> conj_tac
+  drule_all settles_deliver >> simp[] >> strip_tac >> simp[] >>
+  conj_tac
   >- (rpt gen_tac >> strip_tac >>
       ‘cl cm f < LENGTH w.chans’ by (drule_all ev_rel_ctbl >> simp[]) >> simp[] >>
       IF_CASES_TAC
@@ -1842,7 +1929,7 @@ Theorem ev_pre_settle:
   l0_rely w4 ∧ fds_lt w4 ∧
   ep_grows w (FOLDL ep_deliver w (MAP (conv a) as)) ∧
   k' = LENGTH (FOLDL ep_deliver w (MAP (conv a) as)).chans ∧ b4.nxt = es.p.b.nxt ∧
-  b4.tbl = es.p.b.tbl ∧
+  b4.tbl = es.p.b.tbl ∧ ep_step_ok w (MAP (conv a) as) ∧
   ∃new. cm' = new ++ cm ∧ ∀f. MEM f (MAP FST new) ⇒ ¬MEM f (MAP SND es.ctbl)
 Proof
   strip_tac >>
@@ -1893,6 +1980,7 @@ Proof
        qpat_x_assum ‘∀g. MEM g b4.closing ⇒ _’ drule >> simp[] >> NO_TAC) >>
   TRY (gvs[fds_lt_def] >> rpt strip_tac >> res_tac >> gvs[] >> NO_TAC) >>
   TRY (simp[] >> NO_TAC) >>
+  TRY (first_assum ACCEPT_TAC >> NO_TAC) >>
   drule arrs_new >> strip_tac >> qexists_tac ‘new’ >> simp[] >>
   qpat_x_assum ‘pf_fetch _ _ _ (w2, es2.p) = _’ assume_tac >>
   drule_all fetch_acq >> strip_tac >>
@@ -1974,6 +2062,15 @@ Proof
     by (Cases_on ‘h’ >> rw[ep_deliver_def, upd_chan_def] >> every_case_tac >> simp[] >>
         pairarg_tac >> simp[]) >>
   simp[]
+QED
+
+Theorem ep_step_ok_clock:
+  ∀l w. ep_step_ok (w with clock := c) l ⇔ ep_step_ok w l
+Proof
+  Induct >> simp[ep_step_ok_def] >> rpt gen_tac >>
+  ‘ep_deliver (w with clock := c) h = (ep_deliver w h) with clock := c’
+    by (qspecl_then [‘[h]’, ‘w’] mp_tac ep_deliver_clock >> simp[]) >>
+  fs[] >> Cases_on ‘h’ >> simp[ep_arrival_ok_def]
 QED
 
 Theorem settling_simps[simp]:
@@ -2060,7 +2157,8 @@ Theorem ev_tail:
     ev_rel lfd a cm' es' w' ∧ eown lfd es' ∧ ehs_rel hs' es' ∧
     l0owne lfd wl' es' ∧ l0_rely wl' ∧ fds_lt wl' ∧
     LENGTH w'.chans = k' ∧ w'.alloc = w.alloc ∧ w'.env = w.env ∧
-    w'.clock = w.clock + 1 ∧ w'.hist = w.hist ∧ es'.p.b.nxt = es.p.b.nxt
+    w'.clock = w.clock + 1 ∧ w'.hist = w.hist ∧ es'.p.b.nxt = es.p.b.nxt ∧
+    ep_step_ok (w with clock := w.clock + 1) (w.env w.clock w.hist)
 Proof
   simp[etail_def] >> strip_tac >>
   qabbrev_tac ‘fes = pf_poll_set lfd hw es.p ifs ++ MAP (λf. (f, 2n)) (pend_fds es)’ >>
@@ -2134,7 +2232,13 @@ Proof
       rpt (pop_assum kall_tac) >> every_case_tac >> simp[] >> metis_tac[])
   >- (qpat_x_assum ‘l0owne _ w4 _’ assume_tac >>
       drule_at (Pos hd) l0owne_promote >> disch_then irule >> fs[])
-  >> rpt conj_tac >> fs[fds_lt_def, promote_fields, Abbr ‘wS’]
+  >> rpt conj_tac >> TRY (fs[fds_lt_def, promote_fields, Abbr ‘wS’] >> NO_TAC) >>
+  simp[ep_step_ok_clock, ep_step_ok_APPEND] >> fs[markerTheory.Abbrev_def] >>
+  ‘∀sl. rsettles cm es (promote es5 with settling := sl) = settles (new ++ cm) es4 es5’
+    by (gen_tac >> irule rsettles_settles >> simp[] >> qexists_tac ‘lfd’ >> simp[]) >>
+  pop_assum (fn th => REWRITE_TAC [th]) >>
+  qpat_x_assum ‘ep_step_ok wF _’ mp_tac >>
+  qpat_x_assum ‘wF = _’ (fn th => REWRITE_TAC [th])
 QED
 
 (* ------------------------------------------------------------------------
@@ -2350,6 +2454,16 @@ Proof
   simp[no_socketless_def] >> metis_tac[]
 QED
 
+(* The run-local rely (design/45 §2.5): round n's arrivals make sense in
+   the world the round's own actions left *)
+Definition eh_round_ok_def:
+  eh_round_ok lfd ifds m W n ⇔
+    ∀rs w1 hs1.
+      ehacts_tot lfd (ehst lfd ifds m W n)
+        (new_actions (log_of m) (ehhist lfd ifds m W n)) = (rs, (w1, hs1)) ⇒
+      ep_step_ok (w1 with clock := w1.clock + 1) (w1.env w1.clock w1.hist)
+End
+
 (* MAIN (R1-safe), for a run looked at up to round N: in ANY L0 world, the
    prefetching L1 with connects running the computation m has exactly the
    history of the endpoint handle layer running m in the endpoint world pew
@@ -2374,7 +2488,8 @@ Theorem l1ep_refines_ehl_upto:
     (FST (ehst lfd ifds m (pew lfd a hw ifds m w0 calls) n)).clock = n ∧
     (FST (ehst lfd ifds m (pew lfd a hw ifds m w0 calls) n)).hist = [] ∧
     eown lfd (SND ws) ∧ l0owne lfd (FST ws) (SND ws) ∧
-    l0_rely (FST ws) ∧ fds_lt (FST ws)
+    l0_rely (FST ws) ∧ fds_lt (FST ws) ∧
+    ∀n'. n' < n ⇒ eh_round_ok lfd ifds m (pew lfd a hw ifds m w0 calls) n'
 Proof
   strip_tac >> Induct
   >- (simp[erounds_def, ehhist_def, ehst_def, ehrounds_def, ecm_def, pew_def] >>
@@ -2446,7 +2561,15 @@ Proof
   rename1 ‘ehpoll lfd hs1 _ w1 = (rdy, w2, hs2)’ >>
   ‘ehacts_tot lfd (ehst lfd ifds m W0 n) (new_actions (log_of m) (ehhist lfd ifds m W0 n)) =
    (rs, (w1, hs1))’ by simp[ehacts_tot_def] >>
-  drule_all ehround_step >> strip_tac >> simp[] >> fs[] >>
+  drule_all ehround_step >> strip_tac >>
+  ‘eh_round_ok lfd ifds m W0 n’
+    by (simp[eh_round_ok_def] >> rpt gen_tac >>
+        qpat_x_assum ‘ehacts_tot _ _ _ = (rs, w1, hs1)’ (fn th => REWRITE_TAC [th]) >>
+        simp[] >> rpt strip_tac >> rpt BasicProvers.VAR_EQ_TAC >> first_assum ACCEPT_TAC) >>
+  ‘∀n'. n' < SUC n ⇒ eh_round_ok lfd ifds m W0 n'’
+    by (rpt strip_tac >> Cases_on ‘n' = n’ >- fs[] >> ‘n' < n’ by decide_tac >>
+        qpat_x_assum ‘∀n'. n' < n ⇒ _’ drule >> simp[]) >>
+  simp[] >> fs[] >>
   qpat_x_assum ‘ev_rel _ _ cm' ws1 w2’ mp_tac >>
   qpat_x_assum ‘cm' = _’ (fn th => rewrite_tac[th]) >>
   rewrite_tac[APPEND_ASSOC]
@@ -2454,7 +2577,8 @@ QED
 
 (* E1, interim form (a): every run of L1 whose responses include no
    socketless connect is refined by the endpoint handle layer, in the world
-   built from that run *)
+   built from that run; and the world's arrivals were valid at every round
+   of the run (eh_round_ok: the run-local rely) *)
 Theorem l1ep_refines_ehl:
   l0_rely w0 ∧ fds_lt w0 ∧ MEM lfd (l0_used w0) ∧
   (∀n. SND (ecm lfd hw ifds m w0 n) + 1 < dimword (:64)) ⇒
@@ -2468,7 +2592,8 @@ Theorem l1ep_refines_ehl:
     LENGTH (FST (ehst lfd ifds m (pew lfd a hw ifds m w0 calls) n)).chans =
       SND (ecm lfd hw ifds m w0 n) ∧
     eown lfd (SND ws) ∧ l0owne lfd (FST ws) (SND ws) ∧
-    l0_rely (FST ws) ∧ fds_lt (FST ws)
+    l0_rely (FST ws) ∧ fds_lt (FST ws) ∧
+    ∀n'. n' < n ⇒ eh_round_ok lfd ifds m (pew lfd a hw ifds m w0 calls) n'
 Proof
   strip_tac >> rpt gen_tac >> strip_tac >>
   mp_tac (Q.SPEC ‘n’ (Q.GEN ‘N’ l1ep_refines_ehl_upto)) >>

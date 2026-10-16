@@ -9,6 +9,7 @@
 *)
 Theory honestL1PFConn
 Ancestors
+  honestL0WorldProps
   honestL1PFClient honestL1PFStream honestL1PFLive honestL1PFRound honestL1PFRefine
   honestL1PFModel honestL1Steps honestL1Inv honestL1Model honestL0WorldInv honestL0Rely
   honestL0World honestL0 asyncCore alist
@@ -620,10 +621,13 @@ Proof
   drule_all l1_flush_winv >> strip_tac >>
   ‘l0_rely w1’ by gvs[winv_def] >>
   drule_all l1_flush_l0 >> strip_tac >>
-  rename1 ‘pf_fetch _ _ _ _ = SOME ((w3, ps3), log, gevs)’ >>
+  rename1 ‘pf_fetch _ _ _ _ = SOME ((w3, ps3f), log, gevs)’ >>
   drule_all pf_fetch_queue >> strip_tac >>
   drule pf_fetch_closing >> strip_tac >>
   drule_all pf_fetch_winv >> strip_tac >>
+  qabbrev_tac ‘ps3 = hup_step (hup_fds rv) (outbox_of pa.b) log ps3f’ >>
+  ‘ps3f.b.closing = ps3.b.closing’ by simp[Abbr ‘ps3’] >>
+  pop_assum (fn th => RULE_ASSUM_TAC (REWRITE_RULE [th])) >>
   ‘∀g. MEM (FConn g) log ⇒ ¬MEM g ps3.b.closing’
     by (rpt strip_tac >>
         ‘MEM g (l0_used w2)’ by gvs[l0own_def] >>
@@ -1096,15 +1100,15 @@ Proof
   drule_all l1_flush_winv >> strip_tac >>
   ‘l0_rely w1’ by gvs[winv_def] >>
   drule_all l1_flush_l0 >> strip_tac >>
-  rename1 ‘pf_fetch _ _ _ _ = SOME ((w3, ps3), log, gevs)’ >>
+  rename1 ‘pf_fetch _ _ _ _ = SOME ((w3, ps3f), log, gevs)’ >>
   drule_all pf_fetch_lfd >> strip_tac >>
   drule_all pf_fetch_linv >> strip_tac >>
   drule_all pf_fetch_winv >> strip_tac >>
   drule pf_fetch_closing >> strip_tac >>
   drule pf_fetch_names >> strip_tac >>
-  rename1 ‘l1_reap _ (w3, ps3.b) = SOME ((w4, b4), cevs)’ >>
+  rename1 ‘l1_reap _ (w3, _) = SOME ((w4, b4), cevs)’ >>
   drule l1_reap_names >> strip_tac >>
-  ‘¬MEM lfd ps3.b.closing’ by gvs[pown_def, ALL_DISTINCT_APPEND] >>
+  ‘¬MEM lfd ps3f.b.closing’ by gvs[pown_def, ALL_DISTINCT_APPEND] >>
   drule_all l1_reap_linv >> strip_tac >>
   (* the round's accepts are the fetch's *)
   ‘∀ev. MEM ev (aevs ++ pevs ++ fevs ++ cevs) ⇒ ¬ev_on «sys_accept» lfd ev’

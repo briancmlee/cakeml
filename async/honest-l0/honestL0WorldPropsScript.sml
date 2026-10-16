@@ -150,3 +150,34 @@ Proof
   drule_all l0_call_length >> simp[] >> strip_tac >>
   imp_res_tac l0_call_ch >> irule l0_rely_ch >> qexists_tac ‘w’ >> simp[]
 QED
+
+(* ------------------------------------------------------------------------
+   Every fd in use stays below the limit (moved from honestL1Steps)
+   ------------------------------------------------------------------------ *)
+
+Definition fds_lt_def:
+  fds_lt (w : l0world) ⇔ ∀x. MEM x (l0_used w) ⇒ w2n x < w.fd_limit
+End
+
+Theorem used_deliver[simp]:
+  l0_used (l0_deliver w a) = l0_used w ∧ (l0_deliver w a).fd_limit = w.fd_limit
+Proof
+  Cases_on ‘a’ >> rw[l0_deliver_def, l0_used_def, upd_lchan_def] >>
+  every_case_tac >> gvs[] >>
+  simp[AFUPDKEY_def] >> rpt (pop_assum mp_tac) >>
+  qid_spec_tac ‘w.listeners’ >> Induct >> simp[AFUPDKEY_def, FORALL_PROD] >> rw[]
+QED
+
+Theorem used_FOLDL_deliver[simp]:
+  ∀as w. l0_used (FOLDL l0_deliver w as) = l0_used w
+Proof
+  Induct >> simp[]
+QED
+
+Theorem fds_lt_tick[simp]:
+  fds_lt (l0_tick nm w) ⇔ fds_lt w
+Proof
+  simp[fds_lt_def, l0_tick_def] >>
+  ‘l0_used (w with clock := w.clock + 1) = l0_used w’ by simp[l0_used_def] >>
+  simp[]
+QED

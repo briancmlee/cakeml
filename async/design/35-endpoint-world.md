@@ -203,8 +203,8 @@ rule.
   a schedule connecting fd 5 with data, then the calls poll, read fd 5.
   The same program-level gap makes the version-1 equivalences
   (`echo_sym_equiv`, `http_sym_equiv`, `kv_sym_equiv`) false for programs
-  that touch fds they have not accepted. **[PENDING USER DECISION]**
-  Proposed: restrict them to **fd-disciplined** programs, a trace
+  that touch fds they have not accepted. **[DECIDED 2026-10-16: option A]**
+  The version-1 claims are stated for **fd-disciplined** programs, a trace
   property (`fd_disciplined lfd io`: every socket event names `lfd` or an
   fd opened and not yet closed; `v1_disciplined`, `v1_instance_disc`,
   drafted). Our programs would then be proved disciplined, which turns
@@ -249,21 +249,64 @@ rule.
 | 4. Input liveness | **Adopted** as an additive guarantee (`input_live`) with a bite; the headline specs are unchanged |
 | Half-close (relay) | **Adopted**: `«sock_shutdown»` |
 | 5. Progress relies must be per-guarantee | **Adopted** (§3) |
-| Open n-ary systems with an external io_event view; the buffer-closure lemma (proxy ‖ U meets U's spec, and KV stays linearizable behind a proxy) | **Drafted** (§7), after your approval of decision 5 |
+| Open n-ary systems with an external io_event view; the buffer-closure lemma (proxy ‖ U meets U's spec, and KV stays linearizable behind a proxy) | **Drafted** (§7), after your approval of decision 5; relay closure proved for echo, HTTP and KV |
 | Terminating clients (`rg_spec_term`) | **Drafted** (§7), after your approval of decision 6 |
 | Select, clock, timers, scopes | **Deferred** |
 
 ## 6. Decisions for you
 
-1. **[PENDING USER DECISION]** The acceptance policy `takes j b n` gives one number per call. A policy
-   that varies with time, beyond the bytes in flight, would need the
-   environment.
-2. **[PENDING USER DECISION]** A connect's outcome is the world's choice (`accepts a j`), settled at the
-   next tick. A refused channel reads as EOF.
-3. **[PENDING USER DECISION]** `«sock_write»` stays a full write; under backpressure a full write that
-   doesn't fit is a misuse.
-4. **[PENDING USER DECISION]** Writability is a separate call (`«sock_writable»`), so `«sock_poll»` is
-   unchanged and version 1 is an exact instance.
+Items 1–4 were decided on 2026-10-16:
+
+1. **[ACCEPTED 2026-10-16]** The acceptance policy `takes j b n` gives one
+   number per call. This is the "n accepted" of design/36's single
+   non-blocking L0 send. A policy that varies with time, beyond the bytes
+   in flight, would need the environment.
+2. **[CHANGED 2026-10-16]** A connect's outcome is still the world's
+   choice (`accepts a j`), settled at the next tick, but it is now
+   three-way: pending, connected or refused. A refused channel does not
+   read as EOF. Read, write and poll on it return an **error result** (an
+   ordinary return, not `FFI_failed`), and connect's FFI result gains a
+   status byte. To follow, coordinated with design/36's error encoding:
+   - `http_client_term_spec`: on refusal the client reports it and ends
+     cleanly;
+   - `proxy_spec`: an upstream refusal closes the client's episode or
+     answers an error (our choice, documented with the statement);
+   - a bite: a client that treats refusal as success fails its spec;
+   - a check that the v1 and v2 instance proofs are unaffected.
+
+   **Implemented** (branch `spike/refused-connect`), with design/36
+   §4.1's encoding:
+   - `cstatus` gains `Failed`. `Refused` means the error has not been
+     reported yet; `Failed` means it has.
+   - `«sock_connect»` answers the 13-byte L0 header: code 3 with the fd,
+     or 10 (EMFILE). In this world a connect is always pending.
+   - `«sock_read»` on a `Refused` channel returns status 3 with code 4
+     (ECONNREFUSED) and moves it to `Failed`. After that it reads as EOF.
+   - `«sock_send»` answers the L0 header: 0 with the count, 1 (EAGAIN)
+     when nothing is accepted, 4 while the error is pending, and 6 (EPIPE)
+     when shut or `Failed`. This fixes design/36's M2 and M3.
+   - Poll and `«sock_writable»` report refused channels readable and
+     writable.
+   - `«sock_write»`, the full write of v1/v2, is unchanged and
+     model-only. A full write on a refused channel is still a misuse.
+   - `client_guar`: if the server refuses, the client is told so and
+     closes. Once told, it reads no EOF. `refusal_bite` shows that a
+     client which reads on through the refusal to the EOF fails the
+     guarantee.
+   - `proxy_guar`: a refused backend makes the proxy close the client's
+     episode.
+   - The v1/v2 instance proofs needed only that a world whose channels
+     are all up has no pending error (`core_conn_err`).
+   - M1 and M4 (the fd limit, time-varying acceptance) are fixed in
+     honest-ffi's L0 world (`async/honest-l0`), not here; agreed with
+     honest-ffi.
+3. **[SUPERSEDED by design/36 (pending review)]** The full-write
+   `«sock_write»`, and full-write misuse under backpressure, are not
+   hard-coded further. Design/36 has an honest, layered FFI: L0 honest
+   syscalls with a single non-blocking send, L1 verified wrappers, and L2
+   servers proved against L1.
+4. **[SUPERSEDED by design/36 (pending review)]** A separate writability
+   call (`«sock_writable»`) is not pursued further, for the same reason.
 5. **[APPROVED 2026-10-16: go to n-ary open systems + buffer closure]**
    Composition is binary and closed (client + server) in this round. The
    stress test recommends, as the next step:
@@ -325,7 +368,42 @@ Not claimed:
 - liveness with feedback under backpressure, which needs its own
   induction per application (report §B-6).
 
-Questions for you:
-- (a) is `buf_rel`'s per-episode prefix form the relay relation you want?
-- (b) should `sys_spec` quantify the process worlds existentially (as
-  drafted: "the system can be run") or universally over wired worlds?
+**Revision (`endpointBuffer`).** The draft `buf_rel` is too weak. It
+relates each outside prefix to *some* inside prefix, independently, so it
+loses the common instant a relay works at. At each instant t of the joint
+run, per front episode:
+- what U has read is a prefix of what the proxy read outside;
+- what the proxy wrote outside is a prefix of what U wrote.
+
+A per-connection safety predicate survives relaying if it is closed under
+reading more and writing less (`relay_closed`). Then U's safety at every
+instant gives the system's (`relay_safety`, proved).
+- Echo's predicate is relay-closed (`echo_relay_closed`, proved).
+- HTTP's is relay-closed (`http_relay_closed`, proved in
+  `endpointBufferHttp`). Request parsing is monotone (`parse_mono`) because
+  a printed valid request is never a proper prefix of another
+  (`print_prefix_free`).
+- KV's is relay-closed too (`kv_relay_closed`, proved in
+  `endpointBufferKv`). `kv_safe` is not a per-connection predicate, since
+  its real-time `precedes` compares positions across connections. So the
+  setting is a **relay run** (`relay_run`): inside and outside traces at
+  the instants of a joint run, monotone, every outside prefix observed,
+  and `relays` on every connection at every instant. At an outside point,
+  the server has read a prefix of each connection's requests
+  (`parse_mono`). `kv_safe` inside orders those. The order is extended by
+  the unread requests at the end (`extra`). The store is sequential, so
+  the earlier replies are unchanged. Real time transfers at the instant of
+  the outside witness, since a relay only widens request intervals. An
+  appended request cannot have been answered outside, because what was
+  written outside is a prefix of what the server wrote.
+
+`buffer_closed` also cannot give the outside world `ticks_forever` from
+the relay facts alone. The system's clock is the proxy's, so that part
+needs the proxy's own `ticks_forever`.
+
+Decisions (2026-10-16):
+- (a) **APPROVED**: the per-instant `relays` relation replaces the draft
+  `buf_rel`.
+- (b) **DECIDED**: `sys_spec` quantifies over **every** wired, fair system
+  run (∀). Each concrete system we compose gets a separate non-vacuity
+  (existence) lemma.

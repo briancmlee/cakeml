@@ -136,7 +136,7 @@ Proof
   gvs[ep_server_world_def] >>
   simp[early_calls_def, run_calls_def, ep_ffi_def, ep_oracle_def, ep_ffi_fn_def,
        ep_call_def, v1_calls_def, bytes_fds_nil] >>
-  simp[ep_read_def, ep_chan_of_def, ep_tick_open_fds]
+  simp[ep_conn_err_def, ep_read_def, ep_chan_of_def, ep_tick_open_fds]
 QED
 
 (* ------------------------------------------------------------------------
@@ -146,7 +146,7 @@ QED
 (* The fds a socket event names *)
 Definition event_fds_def:
   event_fds (IO_event (ExtCall n) conf bytes) =
-    (if n = «sock_poll» then bytes_fds conf
+    (if n = «sock_poll» ∨ n = «sock_select» then bytes_fds conf
      else if n = «sock_write» ∨ n = «sock_send» then [bytes_fd (TAKE 8 conf)]
      else if n = «sock_connect» then []
      else [bytes_fd conf]) ∧

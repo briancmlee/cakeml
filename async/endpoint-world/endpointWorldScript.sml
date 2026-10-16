@@ -18,8 +18,10 @@
   creation; the kernel gives a new channel ANY free fd (alloc), and close
   frees it for reuse.
   New:
-   - connect a: a new channel to address a; whether the peer accepts is
-     the world's choice (accepts), settled at the next tick.  A refused
+   - connect a: a new channel to address a, Connecting until the
+     environment SETTLES it (Settle j b: Up if b, refused otherwise),
+     whenever it chooses, as a kernel completes a handshake after any
+     number of rounds (design/36 §4.1's LConnUp/LConnFail).  A refused
      channel has a PENDING ERROR (as the kernel's so_error): the next read
      or send on it reports ECONNREFUSED, and clears it; after that it
      reads as EOF and sends fail with EPIPE.  It keeps its fd until the
@@ -66,6 +68,7 @@ Datatype:
              | PData num (word8 list) (* the peer of channel j sends bytes *)
              | PEof num               (* the peer of channel j closes its side *)
              | Drain num              (* the peer of channel j reads all in flight *)
+             | Settle num bool        (* channel j's connect completes: Up if T, refused if F *)
 End
 
 (* A call the program made: name, config, buffer in *)
@@ -78,7 +81,6 @@ Datatype:
             ; open_fds : (word64 # num) list   (* open channel fd, its channel *)
             ; reserved : word64 list      (* the process's other fds *)
             ; alloc : num -> word64 list -> word64     (* as version 2 *)
-            ; accepts : num -> num -> bool    (* does address a accept channel j? *)
             ; takes : num -> num -> num -> num
                         (* bytes channel j accepts of n offered, b in flight *)
             ; calls : mlstring list       (* the calls the world supports *)
@@ -127,24 +129,15 @@ Definition ep_deliver_def:
      then upd_chan j (λc. c with peer_eof := T) w else w) ∧
   ep_deliver w (Drain j) =
     (if j < LENGTH w.chans
-     then upd_chan j (λc. c with <| inflight := 0; drained := c.drained + 1 |>) w else w)
+     then upd_chan j (λc. c with <| inflight := 0; drained := c.drained + 1 |>) w else w) ∧
+  ep_deliver w (Settle j b) =
+    (if j < LENGTH w.chans ∧ (EL j w.chans).status = Connecting
+     then upd_chan j (λc. c with status := if b then Up else Refused) w else w)
 End
 
-(* Pending connects are settled *)
-Definition settle_def:
-  settle w =
-    w with chans := MAPi (λj c. if c.status = Connecting then
-                                  c with status := (case c.peer_addr of
-                                                    | SOME a => if w.accepts a j then Up
-                                                                else Refused
-                                                    | NONE => Up)
-                                else c) w.chans
-End
-
-(* Time passes: connects settle, and the environment's next arrivals come *)
+(* Time passes: the environment's next arrivals come *)
 Definition ep_tick_def:
-  ep_tick w =
-    FOLDL ep_deliver (settle w with clock := w.clock + 1) (w.env w.clock w.hist)
+  ep_tick w = FOLDL ep_deliver (w with clock := w.clock + 1) (w.env w.clock w.hist)
 End
 
 Definition ep_readable_def:

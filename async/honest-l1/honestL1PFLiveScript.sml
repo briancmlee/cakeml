@@ -4,15 +4,15 @@
   run (psk) misses nothing a client sent.  WORK IN PROGRESS.
 
   The run: an infinite run of L1 in the L0 world w0 (total by
-  honestL1PFInv's prun_total).  Its CALL SEQUENCE is the L0 world's
-  history, which only grows; [F1] is stated on it as approved (D11): per
-  call kind and per fd (a poll involves every fd it lists), calls made
-  infinitely often do not fail transiently (the world's choice
-  `transient`) infinitely often.
+  honestL1PFInv's prun_total).  Its IO-event trace, which only grows,
+  records each call with its observed result; [F1] is stated on it as
+  approved (D11′): per call kind and per fd (a poll involves every fd it
+  lists), calls made infinitely often do not return a retried outcome
+  (honestL1PFRound's `retried`) infinitely often.
 *)
 Theory honestL1PFLive
 Ancestors
-  honestL1PFInv honestL1PFRefine honestL1PFModel honestL1Inv honestL1Model honestL0Rely honestL0World
+  honestL1PFRound honestL1PFInv honestL1PFRefine honestL1PFModel honestL1Inv honestL1Model honestL0Rely honestL0World
   honestL0 asyncCore asyncLevel1 asyncM3World alist
 Libs
   preamble
@@ -38,39 +38,30 @@ Definition rhist_def:
   rhist lfd hw ifds m w0 n = FST (prun lfd hw ifds m w0 n)
 End
 
-(* The calls made so far *)
-Definition rcalls_def:
-  rcalls lfd hw ifds m w0 n = (rworld lfd hw ifds m w0 n).hist
+(* The IO events so far: each call with its observed result *)
+Definition revs_def:
+  revs lfd hw ifds m w0 n = FST (SND (SND (prun lfd hw ifds m w0 n)))
 End
 
 (* ------------------------------------------------------------------------
-   [F1] (D11, weak fairness, trusted): on the run's call sequence
+   [F1] (D11′, weak fairness on observed outcomes, trusted): on the run's
+   IO-event trace
    ------------------------------------------------------------------------ *)
 
-(* The fds a call involves: its fd, or every fd a poll lists *)
-Definition call_fds_def:
-  call_fds (nm : mlstring) (conf : word8 list) =
-    if nm = «sys_poll» then MAP FST (poll_entries (DROP 1 conf))
-    else [bytes_fd (TAKE 8 conf)]
-End
-
-(* Call i of the run is a call nm involving fd f *)
+(* Event i of the run is a call nm involving fd f *)
 Definition call_at_def:
   call_at lfd hw ifds m w0 i nm f ⇔
-    ∃n. i < LENGTH (rcalls lfd hw ifds m w0 n) ∧
-        FST (EL i (rcalls lfd hw ifds m w0 n)) = nm ∧
-        MEM f (call_fds nm (FST (SND (EL i (rcalls lfd hw ifds m w0 n)))))
+    ∃n. i < LENGTH (revs lfd hw ifds m w0 n) ∧ ev_on nm f (EL i (revs lfd hw ifds m w0 n))
 End
 
-(* Call i did not fail transiently: the world's choice on the calls before *)
+(* Event i's result is not one L1 retries *)
 Definition call_ok_at_def:
   call_ok_at lfd hw ifds m w0 i ⇔
-    ∃n. i < LENGTH (rcalls lfd hw ifds m w0 n) ∧
-        w0.ch.transient (TAKE i (rcalls lfd hw ifds m w0 n)) = NONE
+    ∃n. i < LENGTH (revs lfd hw ifds m w0 n) ∧ ¬retried (EL i (revs lfd hw ifds m w0 n))
 End
 
-(* [F1]: per call kind and per fd: made infinitely often, it does not fail
-   transiently infinitely often *)
+(* [F1]: per call kind and per fd: made infinitely often, it does not
+   return a retried outcome infinitely often *)
 Definition F1_def:
   F1 lfd hw ifds m w0 ⇔
     ∀nm f.
@@ -99,17 +90,19 @@ Definition S3_def:
     ∀n f. ∃n'. n ≤ n' ∧ inb_of (rstate lfd hw ifds m w0 n') f = []
 End
 
-(* S4 (for fd f): eventually, f's outbox stays within hw until f is next
-   fetched (servers that write only in reply: nothing new is written while
-   nothing new is read) *)
+(* S4 (for fd f; design/36 §6's formal shape): eventually, until f is next
+   fetched, the server issues no Write on f's handle and f's outbox stays
+   within hw (servers that write only in reply: nothing new is written
+   while nothing new is read) *)
 Definition S4_def:
   S4 lfd hw ifds m w0 f ⇔
     ∀n. ∃n'. n ≤ n' ∧
          ∀n''. n' ≤ n'' ∧
                (∀k. n' ≤ k ∧ k < n'' ⇒
-                    ¬EXISTS (λx. x = FEof f ∨ x = FReset f ∨ ∃bs. x = FData f bs)
-                       (EL k (SND (SND (SND (prun lfd hw ifds m w0 (SUC k))))))) ⇒
-               LENGTH (outbox_of (rstate lfd hw ifds m w0 n'').b f) ≤ hw
+                    ¬fetched f (EL k (SND (SND (SND (prun lfd hw ifds m w0 (SUC k))))))) ⇒
+               LENGTH (outbox_of (rstate lfd hw ifds m w0 n'').b f) ≤ hw ∧
+               ∀h bs. ALOOKUP (rstate lfd hw ifds m w0 n'').b.tbl h = SOME f ⇒
+                      ¬MEM (Write h bs) (new_actions (log_of m) (rhist lfd hw ifds m w0 n''))
 End
 
 (* ------------------------------------------------------------------------

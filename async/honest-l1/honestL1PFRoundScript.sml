@@ -366,6 +366,12 @@ Proof
   simp[outbox_of_def]
 QED
 
+Theorem fkeep_hup[simp]:
+  fkeep lfd h f (hup_step hfs ob log ps) ⇔ fkeep lfd h f ps
+Proof
+  simp[fkeep_def]
+QED
+
 Theorem fkeep_pause[simp]:
   fkeep lfd h f (ps with pause := x) ⇔ fkeep lfd h f ps
 Proof
@@ -925,6 +931,12 @@ Proof
   >- ((* a recv on f happens only in the fetch *)
       rpt strip_tac >> imp_res_tac ev_on_name >> fs[EVERY_MEM] >> res_tac >> fs[])
   >> strip_tac >> gvs[] >>
+  qabbrev_tac ‘ps3 = hup_step (hup_fds rv) (outbox_of pa.b) log ps3'’ >>
+  ‘fkeep lfd h f ps3 ∧ inb_of ps3 f = inb_of ps3' f’ by simp[Abbr ‘ps3’, inb_of_def] >>
+  ‘ps3'.b.closing = ps3.b.closing’ by simp[Abbr ‘ps3’] >>
+  pop_assum (fn th => RULE_ASSUM_TAC (REWRITE_RULE [th])) >>
+  ‘ps3'.pause = ps3.pause’ by simp[Abbr ‘ps3’] >>
+  pop_assum (fn th => REWRITE_TAC [th]) >>
   ‘¬MEM f ps3.b.closing’ by (qpat_x_assum ‘fkeep _ _ _ ps3’ mp_tac >> simp[fkeep_def]) >>
   drule_all l1_reap_f >> strip_tac >>
   ‘fkeep lfd h f (ps3 with b := b4)’ by (irule fkeep_b_same >> fs[]) >>

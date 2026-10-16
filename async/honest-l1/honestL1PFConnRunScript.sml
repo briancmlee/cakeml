@@ -295,6 +295,10 @@ Proof
   drule_all pacts_noob >> strip_tac >>
   drule_all l1_flush_noob >> strip_tac >>
   drule pf_fetch_b >> strip_tac >> gvs[] >>
+  qmatch_asmsub_abbrev_tac ‘l1_reap _ (_, ps3.b)’ >>
+  ‘noob lfd ps3.b’
+    by (simp[Abbr ‘ps3’, noob_def] >> strip_tac >>
+        drule (cj 3 hup_step_outbox) >> gvs[noob_def]) >>
   drule_all l1_reap_noob >> simp[]
 QED
 

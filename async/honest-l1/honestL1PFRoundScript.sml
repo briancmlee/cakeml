@@ -358,6 +358,12 @@ Proof
   simp[outbox_of_def]
 QED
 
+Theorem fkeep_exhausted[simp]:
+  fkeep lfd h f (ps with b := ps.b with exhausted := x) ⇔ fkeep lfd h f ps
+Proof
+  simp[fkeep_def]
+QED
+
 Theorem fkeep_b_same:
   fkeep lfd h f ps ∧ b'.tbl = ps.b.tbl ∧ b'.nxt = ps.b.nxt ∧
   (∀x. MEM x b'.closing ⇒ MEM x ps.b.closing) ⇒
@@ -608,6 +614,13 @@ Proof
   rw[fail_def] >> irule l0_res_of_enc_app >> simp[l0_res_ok_def]
 QED
 
+Theorem pend_used:
+  pend w f ⇒ MEM f (l0_used w)
+Proof
+  rw[pend_def, l0_chan_of_def, AllCaseEqs(), l0_used_def] >>
+  imp_res_tac ALOOKUP_MEM >> simp[MEM_MAP, EXISTS_PROD] >> metis_tac[]
+QED
+
 Theorem readable_zip:
   ∀fes. MEM (f, e) fes ∧ (g (f, e)).rin ⇒
         MEM f (readable_fds (ZIP (MAP FST fes, MAP g fes)))
@@ -672,10 +685,17 @@ Proof
   rw[] >> gvs[] >> metis_tac[]
 QED
 
-(* ------------------------------------------------------------------------
-   WORK IN PROGRESS (kept as a comment until proved; the statements are
-   the plan for R1-live's round step, design/36 §6; the *_winv lemmas
-   below loop on TRY metis_tac[] and need targeted tactics):
+Theorem pf_fetch_names:
+  ∀fs w ps w' ps' log evs.
+    pf_fetch lfd hw fs (w, ps) = SOME ((w', ps'), log, evs) ⇒
+    EVERY (λev. ev_name ev = ExtCall «sys_accept» ∨ ev_name ev = ExtCall «sys_recv») evs
+Proof
+  Induct >> simp[pf_fetch_def] >> rpt gen_tac >> rw[] >>
+  TRY (first_x_assum drule >> simp[] >> NO_TAC) >>
+  gvs[AllCaseEqs()] >> pairarg_tac >> gvs[AllCaseEqs()] >>
+  first_x_assum drule >> simp[] >>
+  gvs[sys_recv_def, sys_accept_def] >> drule l0_do_cases >> rw[] >> simp[ev_name_def]
+QED
 
 Theorem pf_fetch_f:
   ∀fs w ps w' ps' log evs.
@@ -687,8 +707,74 @@ Theorem pf_fetch_f:
     (∀ev. MEM ev evs ∧ ev_on «sys_recv» f ev ∧ ¬retried ev ⇒ fetched f log) ∧
     (¬fetched f log ⇒ pend w' f ∧ fkeep lfd h f ps' ∧ outbox_of ps'.b f = outbox_of ps.b f)
 Proof
-  cheat
+  Induct >- simp[pf_fetch_def, fetched_def] >>
+  rpt gen_tac >> rename1 ‘g :: fs’ >> strip_tac >>
+  ‘inb_of ps f = [] ∧ ¬MEM f ps.eof ∧ f ≠ lfd’
+    by (qpat_x_assum ‘fkeep _ _ _ _’ mp_tac >> simp[fkeep_def]) >>
+  ‘wants_input lfd hw ps f’ by simp[wants_input_def] >>
+  qpat_x_assum ‘pf_fetch _ _ _ _ = _’ mp_tac >> simp[Once pf_fetch_def] >>
+  IF_CASES_TAC
+  >- (strip_tac >> ‘g ≠ f’ by (strip_tac >> fs[]) >>
+      first_x_assum (drule_all_then strip_assume_tac) >> simp[] >> metis_tac[])
+  >> IF_CASES_TAC
+  >- ((* accept on the listener *)
+      ‘g ≠ f’ by (strip_tac >> fs[]) >>
+      simp[AllCaseEqs(), PULL_EXISTS] >> rpt gen_tac >> strip_tac >>
+      pairarg_tac >> fs[AllCaseEqs()] >> rveq >>
+      ‘winv w1 ∧ pend w1 f ∧ ev_name ev = ExtCall «sys_accept»’
+        by (fs[sys_accept_def] >> rpt conj_tac
+            >- (drule_at (Pos last) winv_do >> simp[])
+            >- (drule_at (Pos last) pend_do >> simp[])
+            >> drule l0_do_cases >> rw[] >> simp[ev_name_def]) >>
+      ‘¬ev_on «sys_recv» f ev’ by (Cases_on ‘ev’ >> gvs[ev_on_def, ev_name_def]) >>
+      gvs[AllCaseEqs()] >>
+      first_x_assum drule >> impl_tac
+      >- (simp[] >>
+          TRY (qpat_x_assum ‘fkeep _ _ _ _’ mp_tac >> simp[fkeep_def] >> NO_TAC) >>
+          ‘¬MEM (n2w k) (l0_used w)’
+            by (irule sys_accept_fresh >> gvs[winv_def] >> metis_tac[]) >>
+          ‘n2w k ≠ f’ by metis_tac[pend_used] >>
+          qpat_x_assum ‘fkeep _ _ _ _’ mp_tac >> simp[fkeep_def])
+      >> strip_tac >> fs[fetched_def] >> rpt strip_tac >> gvs[] >> res_tac >> fs[])
+  >> Cases_on ‘g = f’
+  >- ((* recv on f *)
+      gvs[] >> simp[AllCaseEqs(), PULL_EXISTS] >> rpt gen_tac >> strip_tac >>
+      ‘l0_rely w’ by fs[winv_def] >>
+      qpat_assum ‘sys_recv _ _ _ = _’ (strip_assume_tac o REWRITE_RULE [sys_recv_def]) >>
+      drule_all ev_do >> strip_tac >>
+      ‘winv w1 ∧ ev_name ev = ExtCall «sys_recv» ∧ ev_on «sys_recv» f ev’
+        by (rpt conj_tac
+            >- (drule_at (Pos last) winv_do >> simp[])
+            >> drule l0_do_cases >> rw[] >> simp[ev_name_def, ev_on_def]) >>
+      Cases_on ‘∃e x. l0_res_of out = Fail e x ∧ l1_transient e’
+      >- ((* retried: L1 keeps its state, the input stays pending *)
+          gvs[AllCaseEqs()] >> ‘retried ev’ by simp[] >>
+          ‘pf_chunk < 256 ** 8’ by EVAL_TAC >>
+          drule_all pend_recv_retried >> strip_tac >>
+          first_x_assum drule_all >> strip_tac >> simp[] >>
+          rpt strip_tac >> gvs[] >> metis_tac[])
+      >> (* logged *)
+      Cases_on ‘l0_res_of out’ >> gvs[] >> TRY (rename1 ‘Ok n’ >> Cases_on ‘0 < n’) >>
+      gvs[AllCaseEqs()] >>
+      drule_all pf_fetch_winv >> drule pf_fetch_names >> rw[] >> gvs[fetched_def])
+  >> (* recv on another fd *)
+  simp[AllCaseEqs(), PULL_EXISTS] >> rpt gen_tac >> strip_tac >>
+  pairarg_tac >> fs[AllCaseEqs()] >> rveq >>
+  ‘winv w1 ∧ pend w1 f ∧ ev_name ev = ExtCall «sys_recv» ∧ ¬ev_on «sys_recv» f ev’
+    by (fs[sys_recv_def] >> rpt conj_tac
+        >- (drule_at (Pos last) winv_do >> simp[])
+        >- (drule_at (Pos last) pend_do >> simp[])
+        >> drule l0_do_cases >> rw[] >> simp[ev_name_def, ev_on_def]) >>
+  gvs[AllCaseEqs()] >>
+  first_x_assum drule >> impl_tac >>
+  TRY (simp[] >> qpat_x_assum ‘fkeep _ _ _ _’ mp_tac >> simp[fkeep_def] >> NO_TAC) >>
+  strip_tac >> fs[fetched_def] >> rpt strip_tac >> gvs[] >> res_tac >> fs[]
 QED
+
+(* ------------------------------------------------------------------------
+   WORK IN PROGRESS (kept as a comment until proved; the statements are
+   the plan for R1-live's round step, design/36 §6; the *_winv lemmas
+   below loop on TRY metis_tac[] and need targeted tactics):
 
 Theorem pround_f:
   pround lfd hw hs (w, ps) acts = SOME (snap, (w', ps'), log, evs) ∧

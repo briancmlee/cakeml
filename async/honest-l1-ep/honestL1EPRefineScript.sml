@@ -267,6 +267,19 @@ Proof
   simp[upd_chan_def]
 QED
 
+(* The prefetching part changed within its own fds and handles: L1's
+   invariant kept *)
+Theorem eown_p:
+  eown lfd es ∧ pown lfd ps' ∧ ps'.b.nxt = es.p.b.nxt ∧
+  (∀g. MEM g (MAP SND ps'.b.tbl) ∨ MEM g ps'.b.closing ∨ MEM g ps'.acq ⇒
+       MEM g (MAP SND es.p.b.tbl) ∨ MEM g es.p.b.closing ∨ MEM g es.p.acq) ∧
+  (∀k. MEM k (MAP FST ps'.b.tbl) ⇒ MEM k (MAP FST es.p.b.tbl)) ⇒
+  eown lfd (es with p := ps')
+Proof
+  simp[eown_def, cstat_of_def] >> strip_tac >>
+  gvs[pown_def, ALL_DISTINCT_APPEND] >> metis_tac[]
+QED
+
 (* One channel changed: the relation holds if its fd's view is right *)
 Theorem ev_rel_upd:
   ev_rel lfd a cm es w ∧ eown lfd es ∧
@@ -382,4 +395,213 @@ Proof
   conj_tac
   >- (gen_tac >> Cases_on ‘h = h'’ >> simp[])
   >> gen_tac >> Cases_on ‘h = h'’ >> simp[] >> metis_tac[]
+QED
+
+Theorem cstat_of_ec_del:
+  cstat_of (ec_del h f es) g = if g = f then CPending else cstat_of es g
+Proof
+  rw[cstat_of_def, ec_del_def, ALOOKUP_ADELKEY]
+QED
+
+(* A refused connect handle forgotten: L1's invariant kept *)
+Theorem eown_ec_del:
+  eown lfd es ∧ ALOOKUP es.ctbl h = SOME f ∧ cstat_of es f = CRefused ⇒
+  eown lfd (ec_del h f es)
+Proof
+  strip_tac >>
+  ‘ALL_DISTINCT (MAP FST es.ctbl) ∧ ALL_DISTINCT (MAP SND es.ctbl)’
+    by gvs[eown_def, ALL_DISTINCT_APPEND] >>
+  ‘∀g. MEM g (MAP SND (ADELKEY h es.ctbl)) ⇔ MEM g (MAP SND es.ctbl) ∧ g ≠ f’
+    by metis_tac[MEM_SND_ADELKEY] >>
+  qpat_x_assum ‘eown _ _’ mp_tac >>
+  simp[eown_def, cstat_of_ec_del] >> simp[ec_del_def] >> strip_tac >>
+  gvs[ALL_DISTINCT_APPEND, ALL_DISTINCT_MAP_FST_ADELKEY, ALL_DISTINCT_MAP_SND_ADELKEY,
+      MEM_FST_ADELKEY, ALOOKUP_ADELKEY, MEM_FILTER, FILTER_ALL_DISTINCT] >>
+  rpt conj_tac >> rpt strip_tac >> gvs[AllCaseEqs()] >>
+  res_tac >> gvs[]
+QED
+
+Theorem pown_set_inb:
+  pown lfd ps ∧ MEM f (MAP SND ps.b.tbl) ⇒ pown lfd (set_inb f x ps)
+Proof
+  simp[pown_def] >> rw[] >> Cases_on ‘f' = f’ >> gvs[]
+QED
+
+(* ERead on a connect handle: pending (nothing yet), or refused (reported,
+   the fd closed in both) *)
+Theorem ev_read_conn:
+  ev_rel lfd a cm es w ∧ eown lfd es ∧ ehs_rel hs es ∧ ALOOKUP es.ctbl h = SOME f ∧
+  edo lfd hw (wl, es) (ERead h n) = SOME (r, (wl', es'), evs) ⇒
+  ∃w' hs'. ehdo lfd (w, hs) (ERead h n) = SOME (r, (w', hs')) ∧
+           ev_rel lfd a cm es' w' ∧ eown lfd es' ∧ ehs_rel hs' es' ∧
+           w'.listening = w.listening ∧ w'.alloc = w.alloc ∧ w'.env = w.env ∧
+           w'.clock = w.clock ∧ w'.hist = w.hist ∧ LENGTH w'.chans = LENGTH w.chans ∧
+           es'.p.b.nxt = es.p.b.nxt ∧ es'.p.acq = es.p.acq ∧ es'.early = es.early
+Proof
+  strip_tac >>
+  ‘ALOOKUP es.p.b.tbl h = NONE’
+    by (gvs[eown_def, ALL_DISTINCT_APPEND, ALOOKUP_NONE] >>
+        metis_tac[ALOOKUP_SOME_MEM_FST]) >>
+  ‘ALOOKUP hs.tbl h = SOME f’ by gvs[ehs_rel_def] >>
+  drule_all ev_rel_ctbl >> strip_tac >>
+  qpat_x_assum ‘edo _ _ _ _ = _’ mp_tac >> simp[edo_def] >>
+  Cases_on ‘0 < n ∧ n < 256 ** 8’ >> simp[] >> simp[ehdo_def] >>
+  Cases_on ‘cstat_of es f = CRefused’ >> simp[]
+  >- ((* refused *)
+      strip_tac >> rename1 ‘l1_close f _ = SOME z’ >> PairCases_on ‘z’ >> gvs[] >>
+      rename1 ‘l1_close f _ = SOME ((wl', b'), evs)’ >>
+      drule l1_close_b >> strip_tac >>
+      simp[ep_conn_err_def] >>
+      qabbrev_tac ‘w1 = upd_chan (cl cm f) (λc. c with status := Failed) w’ >>
+      ‘∃w2. ep_close f w1 = SOME w2’
+        by simp[ep_close_def, ep_chan_of_def, Abbr ‘w1’] >>
+      ‘¬MEM f es.p.b.closing’
+        by (gvs[eown_def, ALL_DISTINCT_APPEND] >> metis_tac[ALOOKUP_SOME_MEM_SND]) >>
+      ‘b'.closing = es.p.b.closing’ by simp[FILTER_EQ_ID, EVERY_MEM] >>
+      ‘eown lfd (es with p := es.p with b := b')’
+        by (irule eown_p >> simp[] >> gvs[eown_def, pown_b]) >>
+      ‘ev_rel lfd a cm (ec_del h f (es with p := es.p with b := b')) w2 ∧
+       ehs_rel (eh_del h hs) (ec_del h f (es with p := es.p with b := b'))’
+        by (irule ev_rel_close >> qexistsl_tac [‘es’, ‘f’, ‘w’, ‘w1’] >>
+            simp[ec_del_def, cstat_of_ec_del, inb_of_def, Abbr ‘w1’, MEM_FILTER] >>
+            simp[upd_chan_def, EL_LUPDATE] >> rw[] >>
+            gvs[ALOOKUP_NONE, ADELKEY_not_MEM, cstat_of_def]) >>
+      simp[] >> conj_tac
+      >- (irule eown_ec_del >> simp[ec_del_def, cstat_of_def] >> gvs[cstat_of_def]) >>
+      qpat_x_assum ‘ep_close _ _ = _’ mp_tac >>
+      simp[ep_close_def, ep_chan_of_def, Abbr ‘w1’] >> strip_tac >> gvs[] >>
+      simp[ec_del_def])
+  >> strip_tac >> gvs[] >>
+  simp[ep_conn_err_def, ep_read_def]
+QED
+
+(* ERead on any other handle: the prefetching part's read (data, nothing
+   yet, or EOF and the fd closed in both) *)
+Theorem ev_read_pf:
+  ev_rel lfd a cm es w ∧ eown lfd es ∧ ehs_rel hs es ∧ ALOOKUP es.ctbl h = NONE ∧
+  edo lfd hw (wl, es) (ERead h n) = SOME (r, (wl', es'), evs) ⇒
+  ∃w' hs'. ehdo lfd (w, hs) (ERead h n) = SOME (r, (w', hs')) ∧
+           ev_rel lfd a cm es' w' ∧ eown lfd es' ∧ ehs_rel hs' es' ∧
+           w'.listening = w.listening ∧ w'.alloc = w.alloc ∧ w'.env = w.env ∧
+           w'.clock = w.clock ∧ w'.hist = w.hist ∧ LENGTH w'.chans = LENGTH w.chans ∧
+           es'.p.b.nxt = es.p.b.nxt ∧ es'.p.acq = es.p.acq ∧ es'.early = es.early
+Proof
+  strip_tac >>
+  ‘ALOOKUP hs.tbl h = ALOOKUP es.p.b.tbl h’
+    by (gvs[ehs_rel_def] >> Cases_on ‘ALOOKUP es.p.b.tbl h’ >> simp[]) >>
+  qpat_x_assum ‘edo _ _ _ _ = _’ mp_tac >> simp[edo_def] >> strip_tac >>
+  rename1 ‘pdo _ _ _ = SOME z’ >> PairCases_on ‘z’ >> gvs[] >>
+  rename1 ‘pdo _ _ _ = SOME (rr, (wl', ps'), evs)’ >>
+  ‘0 < n ∧ n < 256 ** 8’ by gvs[pdo_def, AllCaseEqs()] >>
+  simp[ehdo_def] >>
+  Cases_on ‘ALOOKUP es.p.b.tbl h’ >> simp[]
+  >- (gvs[pdo_def] >>
+      ‘es with p := es.p = es’ by simp[l1e_component_equality] >> simp[]) >>
+  rename1 ‘ALOOKUP es.p.b.tbl h = SOME f’ >>
+  drule_all ev_rel_tbl >> strip_tac >>
+  simp[ep_conn_err_def, ep_read_def] >>
+  Cases_on ‘inb_of es.p f = []’ >> simp[]
+  >- (Cases_on ‘MEM f es.p.eof’ >> simp[]
+      >- ((* EOF: closed *)
+          drule_all pdo_read_eof >> disch_then (fn th => map_every assume_tac (CONJUNCTS th)) >>
+          gvs[] >>
+          ‘ADELKEY h es.ctbl = es.ctbl’ by gvs[ALOOKUP_NONE, ADELKEY_not_MEM] >>
+          (* both closing outcomes alike *)
+          (‘∃w2. ep_close f w = SOME w2’ by simp[ep_close_def] >>
+          qexists_tac ‘w2’ >> simp[] >>
+          ‘ev_rel lfd a cm (es with p := ps') w2 ∧ ehs_rel (eh_del h hs) (es with p := ps')’
+            by (irule ev_rel_close >> qexistsl_tac [‘es’, ‘f’, ‘w’, ‘w’] >>
+                simp[inb_of_def, cstat_of_def, MEM_FILTER]) >>
+          ‘MEM f (MAP SND es.p.b.tbl)’ by metis_tac[ALOOKUP_SOME_MEM_SND] >>
+          simp[] >> conj_tac
+          >- (irule eown_p >> simp[MEM_FST_ADELKEY] >> conj_tac
+              >- (rpt strip_tac >> gvs[MEM_FILTER] >> metis_tac[MEM_SND_ADELKEY_sub]) >>
+              irule read_eof_pown >> qexistsl_tac [‘f’, ‘h’, ‘es.p’] >>
+              gvs[eown_def]) >>
+          qpat_x_assum ‘ep_close _ _ = _’ mp_tac >> simp[ep_close_def] >>
+          disch_then (SUBST_ALL_TAC o SYM) >> simp[])) >>
+      gvs[pdo_def] >>
+      ‘es with p := es.p = es’ by simp[l1e_component_equality] >> simp[]) >>
+  (* data *)
+  ‘∃x xs. TAKE n (inb_of es.p f) = x :: xs’
+    by (Cases_on ‘inb_of es.p f’ >> gvs[] >> Cases_on ‘n’ >> gvs[]) >>
+  gvs[pdo_def] >>
+  ‘¬MEM f (MAP SND es.ctbl)’
+    by (gvs[eown_def, ALL_DISTINCT_APPEND] >> metis_tac[ALOOKUP_SOME_MEM_SND]) >>
+  rpt conj_tac
+  >- (irule ev_rel_upd >> qexists_tac ‘es’ >> simp[cstat_of_def] >>
+      metis_tac[ALOOKUP_SOME_MEM_SND])
+  >- (irule eown_p >> simp[] >> irule pown_set_inb >> gvs[eown_def] >>
+      metis_tac[ALOOKUP_SOME_MEM_SND])
+  >> gvs[ehs_rel_def]
+QED
+
+Theorem ev_read:
+  ev_rel lfd a cm es w ∧ eown lfd es ∧ ehs_rel hs es ∧
+  edo lfd hw (wl, es) (ERead h n) = SOME (r, (wl', es'), evs) ⇒
+  ∃w' hs'. ehdo lfd (w, hs) (ERead h n) = SOME (r, (w', hs')) ∧
+           ev_rel lfd a cm es' w' ∧ eown lfd es' ∧ ehs_rel hs' es' ∧
+           w'.listening = w.listening ∧ w'.alloc = w.alloc ∧ w'.env = w.env ∧
+           w'.clock = w.clock ∧ w'.hist = w.hist ∧ LENGTH w'.chans = LENGTH w.chans ∧
+           es'.p.b.nxt = es.p.b.nxt ∧ es'.p.acq = es.p.acq ∧ es'.early = es.early
+Proof
+  strip_tac >> Cases_on ‘ALOOKUP es.ctbl h’
+  >- (drule_all ev_read_pf >> simp[])
+  >> drule_all ev_read_conn >> simp[]
+QED
+
+Theorem ev_rel_b:
+  b'.tbl = es.p.b.tbl ⇒
+  (ev_rel lfd a cm (es with p := es.p with b := b') w ⇔ ev_rel lfd a cm es w)
+Proof
+  simp[ev_rel_def, inb_of_def, cstat_of_def]
+QED
+
+(* EWrite: a refused connect handle takes nothing; an accepted handle
+   takes everything (the world's policy takes all) *)
+Theorem ev_write:
+  ev_rel lfd a cm es w ∧ eown lfd es ∧ ehs_rel hs es ∧
+  edo lfd hw (wl, es) (EWrite h bs) = SOME (r, (wl', es'), evs) ⇒
+  ∃w' hs'. ehdo lfd (w, hs) (EWrite h bs) = SOME (r, (w', hs')) ∧
+           ev_rel lfd a cm es' w' ∧ eown lfd es' ∧ ehs_rel hs' es' ∧
+           w'.listening = w.listening ∧ w'.alloc = w.alloc ∧ w'.env = w.env ∧
+           w'.clock = w.clock ∧ w'.hist = w.hist ∧ LENGTH w'.chans = LENGTH w.chans ∧
+           es'.p.b.nxt = es.p.b.nxt ∧ es'.p.acq = es.p.acq ∧ es'.early = es.early
+Proof
+  strip_tac >> qpat_x_assum ‘edo _ _ _ _ = _’ mp_tac >> simp[edo_def] >>
+  Cases_on ‘ALOOKUP es.ctbl h’ >> simp[]
+  >- ((* the prefetching part's write *)
+      strip_tac >> pairarg_tac >> gvs[pdo_def] >>
+      rename1 ‘l1do _ _ _ = SOME z’ >> PairCases_on ‘z’ >> gvs[] >>
+      rename1 ‘l1do _ _ _ = SOME (r1, (wl', b'), evs)’ >>
+      drule l1do_write_tbl >> strip_tac >> gvs[] >>
+      ‘ALOOKUP hs.tbl h = ALOOKUP es.p.b.tbl h’
+        by (gvs[ehs_rel_def] >> Cases_on ‘ALOOKUP es.p.b.tbl h’ >> simp[]) >>
+      ‘eown lfd (es with p := es.p with b := b')’
+        by (irule eown_p >> simp[pown_b] >> gvs[eown_def]) >>
+      ‘ehs_rel hs (es with p := es.p with b := b')’ by gvs[ehs_rel_def] >>
+      simp[ehdo_def] >>
+      Cases_on ‘ALOOKUP es.p.b.tbl h’ >> simp[ev_rel_b] >>
+      rename1 ‘ALOOKUP es.p.b.tbl h = SOME f’ >>
+      drule_all ev_rel_tbl >> strip_tac >>
+      simp[chan_status_def, ep_send_def] >>
+      ‘w.takes = (λj b n. n)’ by gvs[ev_rel_def] >> simp[] >>
+      ‘¬MEM f (MAP SND es.ctbl)’
+        by (gvs[eown_def, ALL_DISTINCT_APPEND] >> metis_tac[ALOOKUP_SOME_MEM_SND]) >>
+      irule ev_rel_upd >> qexists_tac ‘es’ >> simp[inb_of_def, cstat_of_def] >>
+      metis_tac[ALOOKUP_SOME_MEM_SND]) >>
+  (* a refused connect handle *)
+  rename1 ‘ALOOKUP es.ctbl h = SOME f’ >>
+  rw[] >>
+  ‘ALOOKUP es.p.b.tbl h = NONE’
+    by (gvs[eown_def, ALL_DISTINCT_APPEND, ALOOKUP_NONE] >>
+        metis_tac[ALOOKUP_SOME_MEM_FST]) >>
+  ‘ALOOKUP hs.tbl h = SOME f’ by gvs[ehs_rel_def] >>
+  drule_all ev_rel_ctbl >> strip_tac >>
+  simp[ehdo_def, chan_status_def, ep_send_def] >>
+  ‘es with p := es.p = es’ by simp[l1e_component_equality] >>
+  ‘MEM f (MAP SND es.ctbl) ∧ ¬MEM f (MAP SND es.p.b.tbl)’
+    by (imp_res_tac ALOOKUP_SOME_MEM_SND >> gvs[eown_def, ALL_DISTINCT_APPEND] >>
+        metis_tac[]) >>
+  irule ev_rel_upd >> qexists_tac ‘es’ >> simp[]
 QED

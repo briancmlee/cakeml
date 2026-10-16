@@ -322,6 +322,30 @@ Proof
 QED
 
 (* The handle layer's auto-close at EOF, against L1's *)
+(* An EOF read forgets the handle: L1's invariant kept *)
+Theorem read_eof_pown:
+  pown lfd ps ∧ ALOOKUP ps.b.tbl h = SOME f ∧ inb_of ps f = [] ∧
+  ps'.b.tbl = ADELKEY h ps.b.tbl ∧ ps'.b.nxt = ps.b.nxt ∧ ps'.acq = ps.acq ∧
+  ps'.inb = ps.inb ∧ ps'.eof = FILTER ($≠ f) ps.eof ∧
+  (ps'.b.closing = FILTER ($≠ f) ps.b.closing ∨ ps'.b.closing = f :: ps.b.closing) ⇒
+  pown lfd ps'
+Proof
+  strip_tac >> (
+  ‘ALL_DISTINCT (MAP FST ps.b.tbl) ∧ ALL_DISTINCT (MAP SND ps.b.tbl) ∧
+   lfd ≠ f ∧ ¬MEM f ps.b.closing ∧ ¬MEM f ps.acq ∧ ¬MEM lfd (MAP SND ps.b.tbl)’
+    by (‘MEM f (MAP SND ps.b.tbl)’ by metis_tac[ALOOKUP_SOME_MEM_SND] >>
+        gvs[pown_def, ALL_DISTINCT_APPEND] >> metis_tac[]) >>
+  ‘∀g. MEM g (MAP SND (ADELKEY h ps.b.tbl)) ⇔ MEM g (MAP SND ps.b.tbl) ∧ g ≠ f’
+    by metis_tac[MEM_SND_ADELKEY] >>
+  ‘inb_of ps' = inb_of ps’ by simp[FUN_EQ_THM, inb_of_def] >>
+  qpat_x_assum ‘pown _ _’ mp_tac >>
+  simp[pown_def, ALOOKUP_ADELKEY, ALL_DISTINCT_MAP_FST_ADELKEY, MEM_FILTER] >>
+  strip_tac >>
+  ‘ALL_DISTINCT (MAP SND (ADELKEY h ps.b.tbl))’
+    by simp[ALL_DISTINCT_MAP_SND_ADELKEY] >>
+  gvs[ALL_DISTINCT_APPEND, MEM_FILTER, FILTER_ALL_DISTINCT] >> metis_tac[])
+QED
+
 Theorem read_eof_rel:
   pv_rel lfd cm ps s ∧ pown lfd ps ∧ ALOOKUP ps.b.tbl h = SOME f ∧
   inb_of ps f = [] ∧
@@ -345,12 +369,22 @@ Proof
       strip_tac >> rw[] >>
       gvs[ALOOKUP_ADELKEY, AllCaseEqs()] >>
       metis_tac[alookup_snd_inj]) >>
-  qpat_x_assum ‘pown _ _’ mp_tac >>
-  simp[pown_def, ALOOKUP_ADELKEY, ALL_DISTINCT_MAP_FST_ADELKEY, MEM_FILTER] >>
-  strip_tac >>
-  ‘ALL_DISTINCT (MAP SND (ADELKEY h ps.b.tbl))’
-    by simp[ALL_DISTINCT_MAP_SND_ADELKEY] >>
-  gvs[ALL_DISTINCT_APPEND, MEM_FILTER, FILTER_ALL_DISTINCT] >> metis_tac[])
+  irule read_eof_pown >> metis_tac[])
+QED
+
+(* A read at EOF: the handle forgotten, the fd closed or left flushing *)
+Theorem pdo_read_eof:
+  pdo lfd (w, ps) (Read h n) = SOME (r, (w', ps'), evs) ∧
+  ALOOKUP ps.b.tbl h = SOME f ∧ inb_of ps f = [] ∧ MEM f ps.eof ⇒
+  r = Got (SOME []) ∧ ps'.b.tbl = ADELKEY h ps.b.tbl ∧ ps'.b.nxt = ps.b.nxt ∧
+  ps'.acq = ps.acq ∧ ps'.inb = ps.inb ∧ ps'.eof = FILTER ($≠ f) ps.eof ∧
+  (ps'.b.closing = FILTER ($≠ f) ps.b.closing ∨ ps'.b.closing = f :: ps.b.closing)
+Proof
+  simp[pdo_def] >> strip_tac >> gvs[] >>
+  qpat_x_assum ‘(if _ then _ else _) = _’ mp_tac >> rw[] >> gvs[] >>
+  Cases_on ‘l1_close f (w, ps.b with tbl := ADELKEY h ps.b.tbl)’ >>
+  gvs[] >> rename1 ‘l1_close _ _ = SOME x’ >> PairCases_on ‘x’ >>
+  gvs[] >> drule l1_close_b >> simp[]
 QED
 
 Theorem pdo_read:

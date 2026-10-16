@@ -329,11 +329,19 @@ Proof
   xcon >> xsimpl >> gvs[end_round_def]
 QED
 
+(* The round's guard: room in the handle counter for the round's actions *)
+val guard_tac =
+  xlet ‘POSTv v. &NUM (LENGTH (m []).actions) v * L0_EV w0 w evs’
+  >- (xapp_spec (INST_TYPE [alpha |-> “:sact”] (fetch "ListProg" "length_v_thm")) >>
+      xsimpl >> metis_tac[]) >>
+  rpt (xlet_auto >- xsimpl);
+
 (* One round of the loop: perform m's actions, then poll, flush, fetch and
    reap on the interest fds, and poll m with the snapshot *)
 Theorem step_pf_spec:
   COMP p SACT A (SNAPSHOT SREADY SRESP) m cv ∧ WORD lfd lfdv ∧ NUM hw hwv ∧
   LIST_TYPE NUM (MAP w2n fds) fdsv ∧ L1P ps psv ∧
+  hdl_room lfd ps (LENGTH (m []).actions) ∧
   pround lfd hw fds (w, ps) (m []).actions = SOME (snap, (w', ps'), log, evs1) ⇒
   app (p:'ffi ffi_proj) step_pf_v [Conv NONE [lfdv; hwv; fdsv; psv; cv]]
     (L0_EV w0 w evs)
@@ -349,6 +357,7 @@ Proof
     (strip_assume_tac o REWRITE_RULE[COMP_def, POLL_RESULT_def]) >>
   gvs[pround_def, AllCaseEqs()] >>
   xcf_with_def (fetch "honestL1PFProg" "step_pf_v_def") >> xmatch >> xmatch >>
+  guard_tac >> xif >> qexists_tac ‘F’ >> simp[] >>
   PairCases_on ‘ws1’ >>
   xlet ‘POSTv v. &(∃psv' rsv. v = Conv NONE [psv'; rsv] ∧ L1P ws11 psv' ∧
                               LIST_TYPE SRESP rs rsv) * L0_EV w0 ws10 (evs ++ evs')’
@@ -380,13 +389,77 @@ Proof
   xcon >> xsimpl >> simp[ssnap_def]
 QED
 
+(* Without room the step does nothing *)
+Theorem step_pf_stop_spec:
+  COMP p SACT A (SNAPSHOT SREADY SRESP) m cv ∧ WORD lfd lfdv ∧ L1P ps psv ∧
+  ¬hdl_room lfd ps (LENGTH (m []).actions) ⇒
+  app (p:'ffi ffi_proj) step_pf_v [Conv NONE [lfdv; hwv; fdsv; psv; cv]]
+    (L0_EV w0 w evs)
+    (POSTv v. &(v = Conv NONE [lfdv; hwv; fdsv; psv; cv]) * L0_EV w0 w evs)
+Proof
+  rpt strip_tac >>
+  qpat_assum ‘COMP _ _ _ _ _ _’
+    (strip_assume_tac o REWRITE_RULE[COMP_def, POLL_RESULT_def]) >>
+  gvs[] >>
+  xcf_with_def (fetch "honestL1PFProg" "step_pf_v_def") >> xmatch >> xmatch >>
+  guard_tac >> xif >> qexists_tac ‘T’ >> simp[] >> xvar >> xsimpl
+QED
+
 (* ------------------------------------------------------------------------
    The loop diverges
    ------------------------------------------------------------------------ *)
 
-(* The run after n rounds (total under prun_total), and round n's events *)
+(* The loop's rounds: prounds's, while the handle counter has room for the
+   round's actions; then the loop stops (the state no longer changes) *)
+Definition prounds_t_def:
+  prounds_t lfd hw ifds m ws0 0 = SOME ([], ws0, [], []) ∧
+  prounds_t lfd hw ifds m ws0 (SUC n) =
+    case prounds_t lfd hw ifds m ws0 n of
+    | NONE => NONE
+    | SOME (h, ws, evs, logs) =>
+        if hdl_room lfd (SND ws) (LENGTH (new_actions (log_of m) h)) then
+          case pround lfd hw (ifds h) ws (new_actions (log_of m) h) of
+          | NONE => NONE
+          | SOME (snap, ws', log, revs) =>
+              SOME (h ++ [snap], ws', evs ++ revs, logs ++ [log])
+        else SOME (h, ws, evs, logs)
+End
+
+(* What the server must do in every round it runs: pact_ok actions *)
+Definition pt_ok_def:
+  pt_ok lfd hw ifds m ws0 ⇔
+    ∀n h ws evs logs. prounds_t lfd hw ifds m ws0 n = SOME (h, ws, evs, logs) ⇒
+      EVERY (pact_ok lfd) (new_actions (log_of m) h)
+End
+
+Theorem pround_ok_room[local]:
+  l0_rely w ∧ psmall lfd ps ∧ EVERY (pact_ok lfd) acts ∧ hdl_room lfd ps (LENGTH acts) ⇒
+  ∃snap w' ps' log evs. pround lfd hw hs (w, ps) acts = SOME (snap, (w', ps'), log, evs) ∧
+                        l0_rely w' ∧ psmall lfd ps'
+Proof
+  strip_tac >>
+  ‘l1hdln (w2n lfd) (ps.b.nxt + LENGTH acts) < dimword (:64)’ by fs[hdl_room_def] >>
+  drule_all pround_ok >> metis_tac[]
+QED
+
+Theorem prounds_t_total:
+  l0_rely w0 ∧ psmall lfd ps0 ∧ pt_ok lfd hw ifds m (w0, ps0) ⇒
+  ∀n. ∃h w ps evs logs.
+        prounds_t lfd hw ifds m (w0, ps0) n = SOME (h, (w, ps), evs, logs) ∧
+        l0_rely w ∧ psmall lfd ps
+Proof
+  strip_tac >> Induct >- simp[prounds_t_def] >>
+  gvs[] >> simp[prounds_t_def] >>
+  IF_CASES_TAC >> simp[] >>
+  qpat_x_assum ‘pt_ok _ _ _ _ _’ (mp_tac o REWRITE_RULE [pt_ok_def]) >>
+  disch_then drule >> strip_tac >>
+  drule_all pround_ok_room >>
+  disch_then (qspecl_then [‘hw’, ‘ifds h’] strip_assume_tac) >> simp[]
+QED
+
+(* The run after n rounds, and round n's events *)
 Definition prun_def:
-  prun lfd hw ifds m ws0 n = THE (prounds lfd hw ifds m ws0 n)
+  prun lfd hw ifds m ws0 n = THE (prounds_t lfd hw ifds m ws0 n)
 End
 
 Definition pround_evs_def:
@@ -395,32 +468,38 @@ Definition pround_evs_def:
          (FST (SND (SND (prun lfd hw ifds m ws0 (SUC n)))))
 End
 
-Theorem prun_SUC:
-  (∀n. prounds lfd hw ifds m ws0 n ≠ NONE) ⇒
-  ∃snap ws' log revs.
-    pround lfd hw (ifds (FST (prun lfd hw ifds m ws0 n)))
-      (FST (SND (prun lfd hw ifds m ws0 n)))
-      (new_actions (log_of m) (FST (prun lfd hw ifds m ws0 n))) =
-      SOME (snap, ws', log, revs) ∧
-    prun lfd hw ifds m ws0 (SUC n) =
-      (FST (prun lfd hw ifds m ws0 n) ++ [snap], ws',
-       FST (SND (SND (prun lfd hw ifds m ws0 n))) ++ revs,
-       SND (SND (SND (prun lfd hw ifds m ws0 n))) ++ [log]) ∧
-    pround_evs lfd hw ifds m ws0 n = revs
-Proof
-  strip_tac >>
-  first_assum (qspec_then ‘n’ mp_tac) >> first_x_assum (qspec_then ‘SUC n’ mp_tac) >>
-  simp[prun_def, pround_evs_def, prounds_def] >>
-  Cases_on ‘prounds lfd hw ifds m ws0 n’ >> simp[] >>
-  rename1 ‘SOME x’ >> PairCases_on ‘x’ >> simp[AllCaseEqs(), PULL_EXISTS] >>
-  strip_tac >> Cases_on ‘pround lfd hw (ifds x0) (x1,x2) (new_actions (log_of m) x0)’ >> gvs[] >>
-  rename1 ‘SOME y’ >> PairCases_on ‘y’ >> simp[rich_listTheory.DROP_LENGTH_APPEND]
-QED
-
 Theorem prun_0[simp]:
   prun lfd hw ifds m ws0 0 = ([], ws0, [], [])
 Proof
-  simp[prun_def, prounds_def]
+  simp[prun_def, prounds_t_def]
+QED
+
+Theorem prun_SUC:
+  (∀n. prounds_t lfd hw ifds m ws0 n ≠ NONE) ⇒
+  if hdl_room lfd (SND (FST (SND (prun lfd hw ifds m ws0 n))))
+       (LENGTH (new_actions (log_of m) (FST (prun lfd hw ifds m ws0 n)))) then
+    ∃snap ws' log revs.
+      pround lfd hw (ifds (FST (prun lfd hw ifds m ws0 n)))
+        (FST (SND (prun lfd hw ifds m ws0 n)))
+        (new_actions (log_of m) (FST (prun lfd hw ifds m ws0 n))) =
+        SOME (snap, ws', log, revs) ∧
+      prun lfd hw ifds m ws0 (SUC n) =
+        (FST (prun lfd hw ifds m ws0 n) ++ [snap], ws',
+         FST (SND (SND (prun lfd hw ifds m ws0 n))) ++ revs,
+         SND (SND (SND (prun lfd hw ifds m ws0 n))) ++ [log]) ∧
+      pround_evs lfd hw ifds m ws0 n = revs
+  else
+    prun lfd hw ifds m ws0 (SUC n) = prun lfd hw ifds m ws0 n ∧
+    pround_evs lfd hw ifds m ws0 n = []
+Proof
+  strip_tac >>
+  first_assum (qspec_then ‘n’ mp_tac) >> first_x_assum (qspec_then ‘SUC n’ mp_tac) >>
+  simp[prun_def, pround_evs_def, prounds_t_def] >>
+  Cases_on ‘prounds_t lfd hw ifds m ws0 n’ >> simp[] >>
+  rename1 ‘SOME x’ >> PairCases_on ‘x’ >> simp[] >>
+  Cases_on ‘hdl_room lfd x2 (LENGTH (new_actions (log_of m) x0))’ >> simp[] >>
+  Cases_on ‘pround lfd hw (ifds x0) (x1,x2) (new_actions (log_of m) x0)’ >> simp[] >>
+  rename1 ‘SOME y’ >> PairCases_on ‘y’ >> simp[rich_listTheory.DROP_LENGTH_APPEND]
 QED
 
 (* MAIN (P2): the prefetching L1 loop, running m with interest fds0 (plus
@@ -429,7 +508,7 @@ QED
    pround_evs *)
 Theorem run_pf_spec:
   limited_parts l0_names p ∧ wf m ∧ l0_reach w0 w ∧ psmall lfd ps0 ∧
-  pl2_ok lfd hw (interest fds0) m (w, ps0) ∧
+  pt_ok lfd hw (interest fds0) m (w, ps0) ∧
   WORD lfd lfdv ∧ NUM hw hwv ∧ LIST_TYPE NUM (MAP w2n fds0) fdsv ∧
   L1P ps0 psv ∧ COMP p SACT A (SNAPSHOT SREADY SRESP) m cv ⇒
   app (p:'ffi ffi_proj) run_pf_v [Conv NONE [lfdv; hwv; fdsv; psv; cv]]
@@ -438,8 +517,9 @@ Theorem run_pf_spec:
        (λi. fromList (pround_evs lfd hw (interest fds0) m (w, ps0) i)) NONE))
 Proof
   strip_tac >>
-  ‘∀n. prounds lfd hw (interest fds0) m (w, ps0) n ≠ NONE’
-    by (irule prun_total >> gvs[l0_reach_def]) >>
+  ‘∀n. prounds_t lfd hw (interest fds0) m (w, ps0) n ≠ NONE’
+    by (gvs[l0_reach_def] >> drule_all prounds_t_total >> rw[] >>
+        first_x_assum (qspec_then ‘n’ strip_assume_tac) >> simp[]) >>
   xcf_div_rule IMP_app_POSTd_one_FFI_part_FLATTEN "run_pf" st >>
   qexists_tac ‘K emp’ >>
   qexists_tac ‘λi. if i = 0 then [] else pround_evs lfd hw (interest fds0) m (w, ps0) (i - 1)’ >>
@@ -455,14 +535,24 @@ Proof
   qexists_tac ‘l0_next w0’ >>
   simp[] >> rpt conj_tac
   >- (simp[L0_EV_def] >> xsimpl)
-  >- ((* one iteration: step_pf_spec, with the model, the world, the L1
-         state and the interest list advanced *)
+  >- ((* one iteration: a round (step_pf_spec), or the stop (step_pf_stop_spec) *)
       rpt strip_tac >> gvs[] >>
-      drule prun_SUC >> disch_then (qspec_then ‘i’ strip_assume_tac) >>
+      drule prun_SUC >> disch_then (qspec_then ‘i’ assume_tac) >>
       qabbrev_tac ‘r = prun lfd hw (interest fds0) m (w, ps0) i’ >>
-      PairCases_on ‘r’ >> gvs[] >> PairCases_on ‘ws'’ >> gvs[] >>
+      PairCases_on ‘r’ >> gvs[] >>
       ‘(suspended m r0 []).actions = new_actions (log_of m) r0’
         by simp[suspended_first_poll] >>
+      reverse (Cases_on ‘hdl_room lfd r2 (LENGTH (new_actions (log_of m) r0))’) >> gvs[]
+      >- (sg ‘app p step_pf_v [Conv NONE [lfdv; hwv; fdsv'; psv'; cv']] (L0_EV w0 r1 [])
+                (POSTv v. &(v = Conv NONE [lfdv; hwv; fdsv'; psv'; cv']) * L0_EV w0 r1 [])’
+          >- (irule step_pf_stop_spec >> simp[] >> metis_tac[]) >>
+          gvs[L0_EV_def, SEP_CLAUSES] >>
+          xlet ‘POSTv v. &(v = Conv NONE [lfdv; hwv; fdsv'; psv'; cv']) *
+                         (one (FFI_part (l0_enc w0 r1) (l0_next w0) l0_names []) *
+                          &l0_reach w0 r1)’
+          >- (qpat_x_assum ‘app _ step_pf_v _ _ _’ xapp_spec >> xsimpl) >>
+          xvar >> xsimpl) >>
+      PairCases_on ‘ws'’ >> gvs[] >>
       sg ‘app p step_pf_v [Conv NONE [lfdv; hwv; fdsv'; psv'; cv']] (L0_EV w0 r1 [])
             (POSTv v.
                &(∃fdsv2 psv2 cv2. v = Conv NONE [lfdv; hwv; fdsv2; psv2; cv2] ∧

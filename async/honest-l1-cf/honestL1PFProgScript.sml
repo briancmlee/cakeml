@@ -249,6 +249,20 @@ Definition set_b_def:
   set_b ps b = ps with b := b
 End
 
+(* Room for n more handles: a round with at most n accepts cannot overflow
+   the handle counter.  Without room the loop stops (spins without I/O):
+   after 2^64 accepted connections, unreachable in practice; a deliberate
+   choice over wrapping the counter (which would reuse handles) *)
+Definition hdl_room_def:
+  hdl_room (lfd:word64) ps n ⇔ l1hdln (w2n lfd) (ps.b.nxt + n) < dimword (:64)
+End
+
+Theorem hdl_room_num:
+  hdl_room (lfd:word64) ps n ⇔ l1hdln (w2n lfd) (ps.b.nxt + n) < 18446744073709551616
+Proof
+  simp[hdl_room_def]
+QED
+
 (* The round's end: the reaped state, and one round of the listener's pause *)
 Definition end_round_def:
   end_round ps b = ps with <| b := b; pause := ps.pause − 1 |>
@@ -304,6 +318,7 @@ Proof
 QED
 
 val r = tr end_round_guarded;
+val r = tr hdl_room_num;
 val r = tr closing_of_def;
 val r = tr filter_in_def;
 val r = tr map_w64_def;
@@ -399,6 +414,7 @@ Quote add_cakeml:
   fun step_pf st =
     case st of (lfd, hw, fds, ps, c) =>
     case c of (acts, s) =>
+    if not (hdl_room lfd ps (List.length acts)) then st else
     case pacts lfd ps acts of (ps1, rs) =>
     case pf_tail lfd hw (map_w64 fds) ps1 of (rdy, ps2) =>
       (lfd, hw, add_accepted fds rs, ps2, Async.poll c (map_num rdy, 0, rs));

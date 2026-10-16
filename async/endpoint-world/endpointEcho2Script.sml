@@ -893,14 +893,16 @@ QED
 
 (* MAIN: a program meeting the endpoint form of EchoSpec2 in the simple
    class meets EchoSpec2 *)
-(* MAIN (helper): in the drained world of a version-2 world, the endpoint
-   liveness of a run is EchoSpec2's *)
-Theorem echo_live2_of_dworld:
+(* MAIN (helper): in the drained world of a version-2 world, endpoint
+   liveness for P (weaker for a shorter input, stronger for a longer
+   output) is liveness per episode against the schedule *)
+Theorem live2_of_dworld:
+  (∀x x' y y'. P x' y ∧ x ≼ x' ∧ y ≼ y' ⇒ P x y') ∧ P [] [] ∧
   server_world2 lfd sk ∧
   semantics_prog (init_state (socket2_ffi sk)) init_env prog (Diverge io) ∧
   semantics_prog (init_state (ep_ffi (dworld lfd a sk))) init_env prog (Diverge io) ∧
-  sym_live (λx y. x ≼ y) (dworld lfd a sk) io ∧ ticks_forever (dworld lfd a sk) io ⇒
-  echo_live2 sk io
+  sym_live P (dworld lfd a sk) io ∧ ticks_forever (dworld lfd a sk) io ⇒
+  ∀j n. ∃evs. LPREFIX (fromList evs) io ∧ P (sent2_upto j n sk) (ep_written j evs)
 Proof
   strip_tac >>
   drule_then (qspec_then ‘a’ strip_assume_tac) dworld_props >>
@@ -912,10 +914,11 @@ Proof
           (fn th => mp_tac (MATCH_MP (REWRITE_RULE [GSYM AND_IMP_INTRO]
              (Q.INST [‘P’ |-> ‘no_conn_send’] run_events_ok)) th)) >>
         simp[socket2_ffi_def, socket2_oracle_ok]) >>
-  rw[echo_live2_def] >>
+  rpt gen_tac >>
   qpat_assum ‘ticks_forever _ _’ (strip_assume_tac o SIMP_RULE std_ss [ticks_forever_def, eventually_def] o Q.SPEC ‘n’ o REWRITE_RULE [ticks_forever_def]) >>
   rename1 ‘n ≤ (ep_replay w evs1).clock’ >>
-  Cases_on ‘sent2_upto j n sk = []’ >- (qexists_tac ‘[]’ >> simp[]) >>
+  Cases_on ‘sent2_upto j n sk = []’
+  >- (qexists_tac ‘[]’ >> simp[ep_written_def, accepted_fds_def] >> fs[]) >>
   ‘dgood lfd a sk evs1 (ep_replay w evs1)’ by metis_tac[dworld_inv] >>
   ‘peer_sent_at w evs1 j = sent2_upto j (ep_replay w evs1).clock sk’
     by fs[dgood_def, peer_at_of] >>
@@ -932,7 +935,21 @@ Proof
   rename1 ‘ep_chan w evs2 j' = SOME j’ >>
   ‘j' = j’ by metis_tac[dworld_chan] >> gvs[] >>
   qexists_tac ‘evs2’ >> simp[] >>
-  metis_tac[ch_sent_ep_written, IS_PREFIX_TRANS]
+  ‘ch_sent j evs2 = ep_written j evs2’ by metis_tac[ch_sent_ep_written] >>
+  qpat_x_assum ‘∀x x' y y'. _’ irule >> fs[] >> metis_tac[IS_PREFIX_REFL]
+QED
+
+(* EchoSpec2's liveness *)
+Theorem echo_live2_of_dworld:
+  server_world2 lfd sk ∧
+  semantics_prog (init_state (socket2_ffi sk)) init_env prog (Diverge io) ∧
+  semantics_prog (init_state (ep_ffi (dworld lfd a sk))) init_env prog (Diverge io) ∧
+  sym_live (λx y. x ≼ y) (dworld lfd a sk) io ∧ ticks_forever (dworld lfd a sk) io ⇒
+  echo_live2 sk io
+Proof
+  strip_tac >> simp[echo_live2_def] >>
+  mp_tac (BETA_RULE (Q.INST [‘P’ |-> ‘λx y. x ≼ y’] live2_of_dworld)) >>
+  impl_tac >- (simp[] >> metis_tac[IS_PREFIX_TRANS]) >> simp[]
 QED
 
 Theorem echo_spec2_of_endpoint:

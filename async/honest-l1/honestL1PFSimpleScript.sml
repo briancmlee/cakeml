@@ -295,7 +295,7 @@ QED
 Definition wch_def:
   wch (a : lchan) (v : conn) ⇔
     ¬a.connecting ∧ ¬a.broken ∧ a.err = NONE ∧ (a.peer_eof ⇔ v.peer_closed) ∧
-    a.peer_sent = v.incoming
+    a.peer_sent = v.incoming ∧ (a.shut ⇒ a.closed)
 End
 
 (* One channel against L1's fetches from it: d, the data fetched, then the
@@ -320,7 +320,9 @@ End
 Definition lk_def:
   lk lfd a cm D E (w : l0world) ⇔
     qof w lfd = GENLIST (λi. a + i) (LENGTH w.chans − a) ∧ a ≤ LENGTH w.chans ∧
-    (∀f c. ALOOKUP w.open_fds f = SOME c ⇒ ALOOKUP cm f = SOME c ∧ c < a) ∧
+    (∀f c. ALOOKUP w.open_fds f = SOME c ⇒
+           ALOOKUP cm f = SOME c ∧ c < a ∧ ¬(EL c w.chans).closed) ∧
+    (∀f g c. ALOOKUP w.open_fds f = SOME c ∧ ALOOKUP w.open_fds g = SOME c ⇒ f = g) ∧
     (∀c. c < LENGTH w.chans ⇒ dch (D c) (E c) (EL c w.chans)) ∧
     (∀c. a ≤ c ⇒ D c = [] ∧ ¬E c)
 End
@@ -408,7 +410,7 @@ Proof
           >> ‘c = LENGTH w.chans’ by simp[] >> gvs[EL_APPEND2, ch_fresh])
       >- (‘q = GENLIST (λi. a + i) (LENGTH s.clients − a)’ by gvs[qof_def] >>
           simp[GENLIST_plus_SNOC])
-      >- metis_tac[]
+      >- (rpt strip_tac >> res_tac >> ‘c < LENGTH w.chans’ by simp[] >> gvs[EL_APPEND1])
       >> rpt strip_tac >> Cases_on ‘c < LENGTH w.chans’
       >- gvs[EL_APPEND1]
       >> ‘c = LENGTH w.chans’ by simp[] >> simp[EL_APPEND2] >>
@@ -426,7 +428,7 @@ Proof
       simp_tac std_ss [sinv_def, wk_def, lk_def] >> simp[qof_def] >>
       rpt conj_tac
       >- (rpt strip_tac >> simp[EL_LUPDATE] >> IF_CASES_TAC >> gvs[])
-      >- metis_tac[]
+      >- (rpt strip_tac >> res_tac >> fs[EL_LUPDATE] >> every_case_tac >> gvs[])
       >- (rpt strip_tac >> simp[EL_LUPDATE] >> IF_CASES_TAC >> gvs[])
       >> metis_tac[])
   >- ((* LEof *)
@@ -441,7 +443,7 @@ Proof
       simp_tac std_ss [sinv_def, wk_def, lk_def] >> simp[qof_def] >>
       rpt conj_tac
       >- (rpt strip_tac >> simp[EL_LUPDATE] >> IF_CASES_TAC >> gvs[])
-      >- metis_tac[]
+      >- (rpt strip_tac >> res_tac >> fs[EL_LUPDATE] >> every_case_tac >> gvs[])
       >- (rpt strip_tac >> simp[EL_LUPDATE] >> IF_CASES_TAC >> gvs[])
       >> metis_tac[])
   >- ((* LBreak: excluded *) fs[])
@@ -452,7 +454,7 @@ Proof
           simp[qof_def] >> rpt conj_tac
           >- (rpt strip_tac >> simp[EL_LUPDATE] >> IF_CASES_TAC >> gvs[] >>
               metis_tac[ch_drain])
-          >- metis_tac[]
+          >- (rpt strip_tac >> res_tac >> fs[EL_LUPDATE] >> every_case_tac >> gvs[])
           >- (rpt strip_tac >> simp[EL_LUPDATE] >> IF_CASES_TAC >> gvs[] >>
               metis_tac[ch_drain])
           >> metis_tac[])
@@ -552,7 +554,8 @@ QED
 Theorem sinv_upd:
   sinv lfd p a cm D E s w ∧
   (∀v. wch (EL j w.chans) v ∧ dch (D j) (E j) (EL j w.chans) ⇒
-       wch (g (EL j w.chans)) v ∧ dch (D j) (E j) (g (EL j w.chans))) ⇒
+       wch (g (EL j w.chans)) v ∧ dch (D j) (E j) (g (EL j w.chans))) ∧
+  ((g (EL j w.chans)).closed ⇒ (EL j w.chans).closed ∨ ∀f. ALOOKUP w.open_fds f ≠ SOME j) ⇒
   sinv lfd p a cm D E s (upd_lchan j g w)
 Proof
   rpt strip_tac >> qpat_x_assum ‘sinv _ _ _ _ _ _ _ _’
@@ -561,9 +564,19 @@ Proof
   rpt conj_tac >> rpt strip_tac >>
   TRY (res_tac >> NO_TAC) >>
   TRY (gvs[qof_def] >> NO_TAC) >>
-  simp[EL_LUPDATE] >> IF_CASES_TAC >> gvs[] >>
-  ‘wch (EL c w.chans) (EL c s.clients) ∧ dch (D c) (E c) (EL c w.chans)’ by fs[] >>
-  qpat_x_assum ‘∀v. _’ (qspecl_then [‘EL c s.clients’] mp_tac) >> simp[]
+  rpt conj_tac
+  >- (Cases_on ‘c = j’
+      >- (pop_assum SUBST_ALL_TAC >> simp[EL_LUPDATE] >>
+          ‘j < LENGTH w.chans’ by fs[] >>
+          first_x_assum (qspec_then ‘EL j s.clients’ mp_tac) >> simp[])
+      >> simp[EL_LUPDATE])
+  >- (qpat_x_assum ‘_.closed’ mp_tac >> simp[EL_LUPDATE] >> rw[] >> res_tac >> fs[] >>
+      metis_tac[])
+  >> (Cases_on ‘c = j’
+      >- (pop_assum SUBST_ALL_TAC >> simp[EL_LUPDATE] >>
+          ‘j < LENGTH w.chans’ by fs[] >>
+          first_x_assum (qspec_then ‘EL j s.clients’ mp_tac) >> simp[])
+      >> simp[EL_LUPDATE])
 QED
 
 (* Fewer open fds keep it *)
@@ -610,8 +623,11 @@ Proof
   ‘FILTER (λ(l,p,q). l = f) w.listeners = []’ by fs[sinv_def, wk_def] >>
   simp[close_fd_def] >> Cases_on ‘l0_chan_of w f’ >> fs[] >>
   ‘E x’ by (fs[l0_chan_of_def, AllCaseEqs()] >> res_tac) >>
-  irule sinv_upd >> conj_tac
+  ‘ALOOKUP w.open_fds f = SOME x’ by fs[l0_chan_of_def, AllCaseEqs()] >>
+  irule sinv_upd >> rpt conj_tac
   >- (simp[] >> rpt strip_tac >> drule_all ch_close >> simp[])
+  >- (simp[] >> disj2_tac >> rw[ALOOKUP_ADELKEY] >>
+      fs[sinv_def, lk_def] >> metis_tac[])
   >> irule sinv_open_fds >> simp[] >> metis_tac[ALOOKUP_ADELKEY_SOME]
 QED
 
@@ -700,7 +716,8 @@ QED
 (* A change to one channel that L1 fetched from, with its new fetched data *)
 Theorem sinv_upd_D:
   sinv lfd p a cm D E s w ∧ c < a ∧
-  (∀v. wch (EL c w.chans) v ⇒ wch (g (EL c w.chans)) v) ∧ dch x (E c) (g (EL c w.chans)) ⇒
+  (∀v. wch (EL c w.chans) v ⇒ wch (g (EL c w.chans)) v) ∧ dch x (E c) (g (EL c w.chans)) ∧
+  ((g (EL c w.chans)).closed ⇔ (EL c w.chans).closed) ⇒
   sinv lfd p a cm ((c =+ x) D) E s (upd_lchan c g w)
 Proof
   rpt strip_tac >> qpat_x_assum ‘sinv _ _ _ _ _ _ _ _’
@@ -710,7 +727,7 @@ Proof
   >- (rpt strip_tac >> simp[EL_LUPDATE] >> IF_CASES_TAC
       >- (gvs[] >> qpat_x_assum ‘∀v. wch _ v ⇒ _’ irule >> fs[])
       >> fs[])
-  >- (rpt strip_tac >> res_tac)
+  >- (rpt strip_tac >> res_tac >> fs[EL_LUPDATE] >> every_case_tac >> gvs[])
   >- (rpt strip_tac >> simp[EL_LUPDATE, APPLY_UPDATE_THM] >> IF_CASES_TAC >> gvs[])
   >> rpt strip_tac >> simp[APPLY_UPDATE_THM] >> IF_CASES_TAC >> gvs[]
 QED
@@ -768,8 +785,12 @@ Proof
   >- (strip_tac >> gvs[] >>
       conj_tac >- (irule lowest_fd_fresh >> simp[]) >>
       simp_tac std_ss [sinv_def, wk_def, lk_def] >>
+      ‘¬(EL a w.chans).closed’
+        by (‘dch (D a) (E a) (EL a w.chans) ∧ ¬E a’ by fs[] >> fs[dch_def]) >>
       simp[AFUPDKEY_def, qof_def] >> rpt conj_tac >> rpt strip_tac >>
       TRY (Cases_on ‘f = lowest_fd w’ >> gvs[] >> res_tac >> simp[] >> NO_TAC) >>
+      TRY (Cases_on ‘f = lowest_fd w’ >> Cases_on ‘g = lowest_fd w’ >> gvs[] >>
+           res_tac >> fs[] >> NO_TAC) >>
       fs[])
   >> strip_tac >> gvs[] >>
   simp_tac std_ss [sinv_def, wk_def, lk_def] >> simp[qof_def]
@@ -805,10 +826,9 @@ Proof
   IF_CASES_TAC >> simp[]
   >- (strip_tac >> gvs[] >> conj_tac
       >- (Cases_on ‘(EL c w.chans).inbox’ >> gvs[])
-      >> conj_tac >- simp[upd_lchan_def]
-      >> irule sinv_upd_D >> simp[] >> conj_tac
-      >- simp[wch_def]
-      >> irule ch_recv >> fs[])
+      >> TRY (conj_tac >- simp[upd_lchan_def])
+      >> irule sinv_upd_D >> simp[] >> rpt conj_tac >>
+      TRY (simp[wch_def] >> NO_TAC) >> irule ch_recv >> fs[])
   >> IF_CASES_TAC >> simp[] >> strip_tac >> gvs[fail_def, l1_transient_def]
 QED
 

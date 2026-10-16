@@ -1,0 +1,7 @@
+# Generated from the review-series layout (see REVIEW-SERIES-PLAN.md).
+INCLUDES = $(CAKEMLDIR)/semantics \
+           $(CAKEMLDIR)/semantics/proofs \
+           $(CAKEMLDIR)/semantics/ffi
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

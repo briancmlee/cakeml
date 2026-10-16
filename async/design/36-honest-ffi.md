@@ -1290,7 +1290,10 @@ and is client j of `psk`. The fetch log is `plog`.
   from [F1], S1, S2 (L1's accepted fds are eventually asked for) and
   the run's hypotheses, with `linv lfd w0` (lfd is a listener and no
   connection's fd); and `live_conn_psk`, where an accepted j0 is a
-  `Connect2 lfd` in its round's arrivals under a new client number.
+  `Connect2 lfd` in its round's arrivals under a new client number;
+  and `live_conn_cor` (255d198d7), the corollary from H1 (`H1_def`) and
+  H3′ (`H3_def`, errors in `kept_err`): accepted or dropped. All in
+  honestL1PFConnRun, Holmake green, no cheats.
 - **(live-conn)** Assume [F3]. Every connection that reaches the
   listener's backlog (`LIncoming` on its port) is eventually a
   `Connect2` in `psk`, unless it is dropped. It is dropped only if it

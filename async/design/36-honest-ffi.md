@@ -1255,6 +1255,32 @@ Connect action). The options:
   answering would-block without a syscall mean the call-level traces
   differ. This would need a weaker relation, so I don't recommend it.
 
+**Decision (coordinator, 2026-10-16): (E1).**
+- I build the endpoint handle layer in new theories, modelled on
+  asyncHLModel. `endpointWorld` is unchanged, and close-v2 confirms the
+  encoding.
+- **Deferred:** a write-completion event (or an outbox level as a
+  readiness event) for the proxy's cross-fd backpressure (§5.4). It will
+  be an addition to this layer later, not a change.
+
+**New trusted items (L0 connect), for the user's review**
+(`honestL0WorldScript.sml`):
+
+| item | what | cited |
+|---|---|---|
+| channel state | `connecting : bool` (a connect is pending) | [P connect] |
+| world choice | `connect_now`: EINPROGRESS (pending) / connected at once / failed at once with e (the socket then broken, its state "unspecified") | [P connect]: EINPROGRESS with O_NONBLOCK, ECONNREFUSED, "the state of the socket is unspecified" |
+| world choice | `pending_err`: the error of recv, send or shutdown on a pending socket | [P send, shutdown] ENOTCONN; [P recv] "not connected"; Linux EAGAIN |
+| arrivals | `LConnUp j` (the pending connect completes); `LConnFail j e` (it fails: e becomes the pending socket error, read by `sys_connerr`) | [P connect]: "established asynchronously"; SO_ERROR |
+| readiness | a pending socket shows no revents; it is "ready for writing" only once established | [P connect], [P poll] |
+| calls | `l0_connect`: the lowest free fd [P 2.6], EMFILE at the limit, value 0 when there is no socket. `l0_connerr`: getsockopt(SO_ERROR), reading clears it | [P 2.6], [P getsockopt] |
+| not linked | a connect to the program's own listener also arrives there as `LIncoming`, by the environment's choice. The two ends are not linked: an over-approximation, so every real pairing is a behaviour | D1 |
+
+**Not tested:** macOS conformance never observed the pending state. Every
+connect completed (P13, even with backlog 0), so `pending_err` and "no
+revents while pending" rest on the standard alone until a platform shows
+them, for example Linux or a peer that withholds the handshake.
+
 **(R3) Per-wrapper lemmas** (model level, on L1's functional core; the
 cheap part). For example:
 

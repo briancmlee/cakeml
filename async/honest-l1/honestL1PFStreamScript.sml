@@ -318,3 +318,48 @@ Proof
   drule_at (Pos last) recv_fl >> simp[] >> disch_then (qspec_then ‘R’ mp_tac) >>
   simp[] >> strip_tac >> simp[TAKE_LENGTH_APPEND]
 QED
+
+(* ------------------------------------------------------------------------
+   The round's stages
+   ------------------------------------------------------------------------ *)
+
+Theorem sys_fl:
+  (winv w ∧ fl w f R ∧ sys_send g bs w = SOME (out, w', ev) ⇒ fl w' f R) ∧
+  (winv w ∧ fl w f R ∧ g ≠ f ∧ sys_close g w = SOME (out, w', ev) ⇒ fl w' f R) ∧
+  (winv w ∧ fl w f R ∧ g ≠ f ∧ sys_recv g k w = SOME (out, w', ev) ⇒ fl w' f R) ∧
+  (winv w ∧ fl w f R ∧ sys_accept g w = SOME (out, w', ev) ⇒ fl w' f R) ∧
+  (winv w ∧ fl w f R ∧ sys_poll fes w = SOME (out, w', ev) ⇒ fl w' f R)
+Proof
+  rw[sys_close_def, sys_send_def, sys_recv_def, sys_accept_def, sys_poll_def] >>
+  drule_at (Pos last) fl_do >> simp[]
+QED
+
+Theorem l1_close_fl:
+  l1_close g (w, st) = SOME ((w', st'), evs) ∧ winv w ∧ fl w f R ∧ g ≠ f ⇒ fl w' f R
+Proof
+  rw[l1_close_def, AllCaseEqs()] >> gvs[] >> metis_tac[sys_fl]
+QED
+
+Theorem pdo_fl:
+  pdo lfd (w, ps) a = SOME (r, (w', ps'), evs) ∧ winv w ∧ fl w f R ∧
+  fkeep lfd h f ps ⇒ fl w' f R
+Proof
+  Cases_on ‘a’ >> simp[pdo_def] >> rw[AllCaseEqs()] >> gvs[] >>
+  PairCases_on ‘z’ >> gvs[] >>
+  TRY (drule_all l1_close_fl >> simp[] >> NO_TAC) >>
+  TRY (rename1 ‘l1_close g _ = _’ >>
+       ‘g ≠ f’ by (strip_tac >> gvs[fkeep_def]) >>
+       drule_all l1_close_fl >> simp[] >> NO_TAC) >>
+  gvs[l1do_def, AllCaseEqs()] >> metis_tac[sys_fl]
+QED
+
+Theorem pacts_fl:
+  ∀acts w ps rs evs w' ps'.
+    pacts lfd (w, ps) acts = SOME (rs, evs, (w', ps')) ∧ winv w ∧ fl w f R ∧
+    fkeep lfd h f ps ⇒ fl w' f R
+Proof
+  Induct >> simp[pacts_def] >> rpt gen_tac >> strip_tac >>
+  gvs[AllCaseEqs()] >> PairCases_on ‘ws1’ >>
+  drule_all pdo_fl >> strip_tac >> drule_all pdo_f >> strip_tac >>
+  first_x_assum drule_all >> simp[]
+QED

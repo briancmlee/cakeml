@@ -1,9 +1,9 @@
 (*
-  HttpSpecHeaders bites: the header-tolerant variant rules out plausible
-  bugs, its assumptions are satisfiable, and it extends HttpSpec.
+  HttpHeadersSpec bites: the header-tolerant variant rules out plausible
+  bugs, its assumptions are satisfiable, and it extends HttpGetSpec.
   Everything here is proved.  DRAFT, for the user's decision.
 
-  - Backward compatibility: HttpSpec's requests are the requests with no
+  - Backward compatibility: HttpGetSpec's requests are the requests with no
     headers and version 1.0 (same bytes, same responses).
   - Real clients are in: the request curl sends by default is a printed
     valid request.
@@ -16,10 +16,10 @@
   - Non-vacuity: in the fair world where one client sends a request with a
     header, the ideal trace (read it, write its response) is safe and live.
 *)
-Theory HttpSpecHeadersBite
+Theory HttpHeadersSpecBite
 Ancestors
-  HttpSpecHeaders HttpSpec HttpSpecBite EchoSpec EchoSpecBite
-  ffiSpikeSocketFFI ffiSpikeSocketFair llist alist Marshalling ASCIInumbers
+  HttpHeadersSpec HttpGetSpec HttpGetSpecBite EchoSpec EchoSpecBite
+  socketWorld socketFair llist alist Marshalling ASCIInumbers
 Libs
   preamble
 
@@ -29,14 +29,14 @@ Overload ra = “GetH "/a" "1.1" [("Host", "x")]”
 Overload rb = “GetH "/b" "1.1" [("Host", "x")]”
 
 (* ------------------------------------------------------------------------
-   HttpSpec is the special case of no headers, version 1.0
+   HttpGetSpec is the special case of no headers, version 1.0
    ------------------------------------------------------------------------ *)
 
 Definition plain_def:
   plain (Get p) = GetH p "1.0" []
 End
 
-(* MAIN (backward compatibility): an HttpSpec request is a header-tolerant
+(* MAIN (backward compatibility): an HttpGetSpec request is a header-tolerant
    request with no headers and version 1.0: same validity, same bytes,
    same responses *)
 Theorem plain_requests:
@@ -213,9 +213,9 @@ QED
 Theorem broken_header_changes_response:
   starts_with [rd c1 (hrequests [rb]) 100;
                wr c1 (bytes (print_response (Ok "hi")))] io ⇒
-  ¬http_safe_h site io
+  ¬http_headers_safe site io
 Proof
-  rw[http_safe_h_def] >>
+  rw[http_headers_safe_def] >>
   qexistsl [‘[rd c1 (hrequests [rb]) 100; wr c1 (bytes (print_response (Ok "hi")))]’,
             ‘c1’, ‘[rb]’, ‘[]’] >>
   simp[no_full_hrequest_NIL] >> EVAL_TAC
@@ -240,9 +240,9 @@ QED
    headers has arrived violates safety *)
 Theorem broken_answers_before_blank_line:
   starts_with [rd c1 partial_h 100; wr c1 (hresponses site [ra])] io ⇒
-  ¬http_safe_h site io
+  ¬http_headers_safe site io
 Proof
-  rw[http_safe_h_def] >>
+  rw[http_headers_safe_def] >>
   qexistsl [‘[rd c1 partial_h 100; wr c1 (hresponses site [ra])]’,
             ‘c1’, ‘[]’, ‘partial_h’] >>
   simp[no_full_hrequest_partial] >> EVAL_TAC
@@ -259,9 +259,9 @@ QED
    with a header violates liveness *)
 Theorem broken_never_answers_h:
   (∀evs. starts_with evs io ⇒ bytes_written_to 4w evs = []) ⇒
-  ¬http_live_h site (one_client (hrequests [ra])) io
+  ¬http_headers_live site (one_client (hrequests [ra])) io
 Proof
-  rw[http_live_h_def] >> qexistsl [‘4w’, ‘1’, ‘[ra]’] >>
+  rw[http_headers_live_def] >> qexistsl [‘4w’, ‘1’, ‘[ra]’] >>
   simp[sent_upto_one_client] >> conj_tac >- EVAL_TAC >>
   rw[] >> Cases_on ‘LPREFIX (fromList evs) io’ >> simp[] >> res_tac >>
   simp[] >> EVAL_TAC
@@ -335,9 +335,9 @@ QED
 Theorem broken_answers_body_request:
   starts_with [rd c1 (hrequests [rcl]) 100;
                wr c1 (bytes (print_response (Ok "hi")))] io ⇒
-  ¬http_safe_h site io
+  ¬http_headers_safe site io
 Proof
-  rw[http_safe_h_def] >>
+  rw[http_headers_safe_def] >>
   qexistsl [‘[rd c1 (hrequests [rcl]) 100; wr c1 (bytes (print_response (Ok "hi")))]’,
             ‘c1’, ‘[]’, ‘hrequests [rcl]’] >>
   simp[no_full_hrequest_rcl] >> EVAL_TAC
@@ -374,9 +374,9 @@ Proof
 QED
 
 Theorem ideal_h_safe:
-  http_safe_h site (fromList ideal_h)
+  http_headers_safe site (fromList ideal_h)
 Proof
-  rw[http_safe_h_def, LPREFIX_fromList_fromList, prefix_two] >>
+  rw[http_headers_safe_def, LPREFIX_fromList_fromList, prefix_two] >>
   gvs[bytes_read_from_def, bytes_written_to_def, ideal_events_h] >>
   Cases_on ‘c = c1’ >> gvs[] >>
   TRY (gvs[hrequests_NIL, APPEND_eq_NIL, hresponses_def] >> NO_TAC) >>
@@ -388,9 +388,9 @@ Proof
 QED
 
 Theorem ideal_h_live:
-  http_live_h site (one_client (hrequests [ra])) (fromList ideal_h)
+  http_headers_live site (one_client (hrequests [ra])) (fromList ideal_h)
 Proof
-  rw[http_live_h_def, sent_upto_one_client] >>
+  rw[http_headers_live_def, sent_upto_one_client] >>
   ‘valid_hrequest ra’ by EVAL_TAC >>
   Cases_on ‘c = 4w ∧ n ≠ 0’ >> gvs[]
   >- (fs[IS_PREFIX_APPEND] >> drule_all hrequests_of_one >> rw[]
@@ -405,8 +405,8 @@ QED
    with a header exists, and the ideal trace in it is safe and live *)
 Theorem ideal_h_trace_safe_and_live:
   server_world 3w (one_client (hrequests [ra])) ∧
-  http_safe_h site (fromList ideal_h) ∧
-  http_live_h site (one_client (hrequests [ra])) (fromList ideal_h)
+  http_headers_safe site (fromList ideal_h) ∧
+  http_headers_live site (one_client (hrequests [ra])) (fromList ideal_h)
 Proof
   simp[server_world_one_client, ideal_h_safe, ideal_h_live]
 QED

@@ -1,6 +1,6 @@
 (*
-  FRAMING AGREEMENT between HttpSpecBodies (with the tchar fix,
-  HttpSpecBodiesTchar) and the independent RFC 9112 reference
+  FRAMING AGREEMENT between HttpSpec (with the tchar fix,
+  HttpSpecRfcNames) and the independent RFC 9112 reference
   (rfc9112Framing).
 
   MAIN results:
@@ -22,7 +22,7 @@
 *)
 Theory rfcAgree
 Ancestors
-  rfc9112Framing HttpSpecBodiesTchar HttpSpecBodies HttpSpecHeaders HttpSpec
+  rfc9112Framing HttpSpecRfcNames HttpSpec HttpHeadersSpec HttpGetSpec
   ASCIInumbers words
 Libs
   preamble
@@ -64,7 +64,7 @@ Proof
 QED
 
 (* valid_bheader, with the character facts it implies (the review's copy
-   of HttpSpecBodies stated these directly) *)
+   of HttpSpec stated these directly) *)
 Theorem valid_bheader_exp[local]:
   valid_bheader (n, v) ⇔
     n ≠ [] ∧ EVERY tchar n ∧ EVERY field_char v ∧
@@ -391,8 +391,8 @@ QED
 
 (* The review's examples tab_path_valid_but_not_rfc and
    nul_value_valid_but_not_rfc (a TAB in the path, NUL in a header value)
-   showed this gap; with the RFC character sets in HttpSpecBodies they are
-   no longer valid requests (HttpSpecBodiesBite's rfc_chars_bites), and
+   showed this gap; with the RFC character sets in HttpSpec they are
+   no longer valid requests (HttpSpecBite's rfc_chars_bites), and
    every valid request has rfc_chars (rfcAgreeValid). *)
 
 (* ------------------------------------------------------------------------

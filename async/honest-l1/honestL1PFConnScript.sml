@@ -9,6 +9,7 @@
 *)
 Theory honestL1PFConn
 Ancestors
+  honestL0WorldProps
   honestL1PFClient honestL1PFStream honestL1PFLive honestL1PFRound honestL1PFRefine
   honestL1PFModel honestL1Steps honestL1Inv honestL1Model honestL0WorldInv honestL0Rely
   honestL0World honestL0 asyncCore alist

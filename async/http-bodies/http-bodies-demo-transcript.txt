@@ -24,7 +24,7 @@ $ time curl -s -i -A '<146-character User-Agent>' -d hello http://127.0.0.1:7850
 HTTP/1.0 200 OK
 Content-Length: 5
 
-hello  (took 0.035 s)
+hello  (took 0.040 s)
 
 $ curl -s -i -d ignored http://127.0.0.1:7850/other
 HTTP/1.0 404 Not Found
@@ -42,3 +42,10 @@ Hello from a verified CakeML HTTP server!
 
 $ printf 'POST /echo HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n3\r\nabc\r\n0\r\n\r\n' | nc -w 1 127.0.0.1 7850   # chunked: out of scope
   (no response: Transfer-Encoding makes the request invalid)
+
+$ printf 'POST /echo HTTP/1.1\r\nContent-Length\t: 19\r\n\r\nGET /a HTTP/1.0\r\n\r\n' | nc -w 1 127.0.0.1 7850   # tab before the colon
+  (no response: a header name must be an RFC 9110 token, so the request is invalid;
+   the 19 body bytes are not answered as a second request)
+
+$ printf 'GET /a\tb HTTP/1.0\r\n\r\n' | nc -w 1 127.0.0.1 7850   # a tab in the path
+  (no response: paths are RFC 3986 characters, header values RFC 9110 field characters)

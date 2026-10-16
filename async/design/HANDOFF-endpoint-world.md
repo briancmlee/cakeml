@@ -32,7 +32,9 @@ Write-up and decisions for review: `35-endpoint-world.md`.
   fixed here, M1/M4 in honest-ffi's `async/honest-l0`.
 - Queue: HTTP on v2 (`spike/http-v2`, spec first) →
   `v1_instance_disc` (non-saturation hypothesis: ≤M connects, M+3 < 2^64)
-  on `spike/v1-disc` → disciplined echo sym_equiv → http_b → kv.
+  on `spike/v1-disc`: PROVED as `endpointV1Inst.v1_instance_disc_thm`
+  (PR #135, needs user review of the statement; endpointV1Sim → V1Run →
+  V1Inst) → disciplined echo sym_equiv → http_b → kv.
 - `endpointV2Sim`'s relation `v2rel` (core + al_rel of the futures) is the
   template for the version-1 disciplined instance.
 

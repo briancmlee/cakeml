@@ -54,7 +54,7 @@ Ancestors
   llist ffi semantics ml_prog
   honestL0 honestL0World honestL0WorldProps honestL0Rely honestL0Part
   honestL1Model honestL1Refine honestL1PFModel honestL1PFRefine
-  honestL1PFRound honestL1PFLive honestL1PFConnRun socketV2FFI asyncCore
+  honestL1PFRound honestL1PFLive honestL1PFConnRun socketV2FFI socketV2Fair asyncCore
   honestEchoL0Spec
 Libs
   preamble
@@ -150,12 +150,18 @@ Definition round_instant_def:
 End
 
 (* R2′, the headline (user decision Q-L3-2), for the server m (its type is the server's).  w1 is the world just
-   after the listen.  F1 is not a hypothesis:
+   after the listen.  Two simple-class conditions (coordinator-approved):
+   sched_wf2 of the kernel's schedule (sk_of): otherwise the schedule may
+   hold arrivals the world drops (data for a channel not yet connected), and
+   no delay relation can hold; no emfile_drops: otherwise the world may
+   reset a queued connection under EMFILE and L1 fetches an EOF the kernel's
+   schedule never sent.  F1 is not a hypothesis:
    simple worlds have no transient failures *)
 Definition l1pf_simple_claim_def:
   l1pf_simple_claim m ⇔
     ∀p lfd sched hw ifds w1.
-      simple_v2 p lfd sched w1 ∧ winv w1 ∧ w1.listeners = [(lfd, p, [])] ∧
+      simple_v2 p lfd sched w1 ∧ sched_wf2 (sk_of p lfd sched w1) ∧
+      (∀h. ¬w1.ch.emfile_drops h) ∧ winv w1 ∧ w1.listeners = [(lfd, p, [])] ∧
       w1.chans = [] ∧ w1.open_fds = [] ∧
       run_ok lfd hw ifds m w1 ∧ (∀n. SND (pcm lfd hw ifds m w1 n) + 1 < dimword (:64)) ∧
       S1 lfd hw ifds m w1 ∧ S2 lfd hw ifds m w1 ∧ S3 lfd hw ifds m w1 ∧
@@ -169,7 +175,8 @@ End
 Definition l1pf_simple_eq_claim_def:
   l1pf_simple_eq_claim m ⇔
     ∀p lfd sched hw ifds w1.
-      simple_v2 p lfd sched w1 ∧ winv w1 ∧ w1.listeners = [(lfd, p, [])] ∧
+      simple_v2 p lfd sched w1 ∧ sched_wf2 (sk_of p lfd sched w1) ∧
+      (∀h. ¬w1.ch.emfile_drops h) ∧ winv w1 ∧ w1.listeners = [(lfd, p, [])] ∧
       w1.chans = [] ∧ w1.open_fds = [] ∧
       run_ok lfd hw ifds m w1 ∧ (∀n. SND (pcm lfd hw ifds m w1 n) + 1 < dimword (:64)) ∧
       S1 lfd hw ifds m w1 ∧ S2 lfd hw ifds m w1 ∧ S3 lfd hw ifds m w1 ∧

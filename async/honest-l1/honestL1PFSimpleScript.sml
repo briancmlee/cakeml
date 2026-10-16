@@ -675,3 +675,117 @@ Proof
   rw[sys_poll_def, sys_send_def, sys_close_def] >>
   drule_at (Pos (el 3)) kinv_do_quiet >> simp[poll_conf_def, quiet_call_def]
 QED
+
+(* ========================================================================
+   D. The fetch: accepts and recvs
+   ======================================================================== *)
+
+(* A change to one channel that L1 fetched from, with its new fetched data *)
+Theorem sinv_upd_D:
+  sinv lfd p a cm D E s w ∧ c < a ∧
+  (∀v. wch (EL c w.chans) v ⇒ wch (g (EL c w.chans)) v) ∧ dch x (E c) (g (EL c w.chans)) ⇒
+  sinv lfd p a cm ((c =+ x) D) E s (upd_lchan c g w)
+Proof
+  rpt strip_tac >> qpat_x_assum ‘sinv _ _ _ _ _ _ _ _’
+    (strip_assume_tac o SIMP_RULE std_ss [sinv_def, wk_def, lk_def]) >>
+  simp_tac std_ss [sinv_def, wk_def, lk_def] >> simp[upd_lchan_def, qof_def] >>
+  rpt conj_tac
+  >- (rpt strip_tac >> simp[EL_LUPDATE] >> IF_CASES_TAC
+      >- (gvs[] >> qpat_x_assum ‘∀v. wch _ v ⇒ _’ irule >> fs[])
+      >> fs[])
+  >- (rpt strip_tac >> res_tac)
+  >- (rpt strip_tac >> simp[EL_LUPDATE, APPLY_UPDATE_THM] >> IF_CASES_TAC >> gvs[])
+  >> rpt strip_tac >> simp[APPLY_UPDATE_THM] >> IF_CASES_TAC >> gvs[]
+QED
+
+(* The peer's EOF fetched *)
+Theorem sinv_E:
+  sinv lfd p a cm D E s w ∧ c < LENGTH w.chans ∧ c < a ∧ (EL c w.chans).peer_eof ⇒
+  sinv lfd p a cm D ((c =+ T) E) s w
+Proof
+  rpt strip_tac >> qpat_x_assum ‘sinv _ _ _ _ _ _ _ _’
+    (strip_assume_tac o SIMP_RULE std_ss [sinv_def, wk_def, lk_def]) >>
+  simp_tac std_ss [sinv_def, wk_def, lk_def] >> simp[APPLY_UPDATE_THM] >>
+  rpt conj_tac >> rpt strip_tac >>
+  TRY (res_tac >> NO_TAC) >>
+  TRY (Cases_on ‘c = c'’
+       >- (gvs[] >> ‘dch (D c) (E c) (EL c w.chans)’ by fs[] >> fs[dch_def])
+       >> fs[] >> NO_TAC) >>
+  fs[]
+QED
+
+Theorem GENLIST_plus_CONS:
+  a < n ⇒ GENLIST (λi. a + i) (n − a) = a :: GENLIST (λi. a + 1 + i) (n − (a + 1))
+Proof
+  strip_tac >> ‘n − a = SUC (n − (a + 1))’ by simp[] >>
+  pop_assum SUBST1_TAC >> rewrite_tac[GENLIST_CONS] >>
+  simp[combinTheory.o_DEF] >> AP_THM_TAC >> AP_TERM_TAC >> simp[FUN_EQ_THM]
+QED
+
+(* An accept on the listener: nothing changes, or the next queued channel
+   (number a) is opened on a fresh fd *)
+Theorem sinv_accept:
+  sinv lfd p a cm D E s w ∧ (∀h. w.ch.transient h = NONE) ∧
+  (∀h. ¬w.ch.emfile_drops h) ∧ fds_lt w ∧ w.fd_limit ≤ 2 ** 31 ∧
+  l0_accept lfd w = (r, w') ⇒
+  (sinv lfd p a cm D E s w' ∧ ∀k. r ≠ Ok k) ∨
+  (∃f. r = Ok (w2n f) ∧ ¬MEM f (l0_used w) ∧ sinv lfd p (a + 1) ((f, a) :: cm) D E s w')
+Proof
+  strip_tac >>
+  qpat_assum ‘sinv _ _ _ _ _ _ _ _’
+    (strip_assume_tac o SIMP_RULE std_ss [sinv_def, wk_def, lk_def]) >>
+  ‘q = GENLIST (λi. a + i) (LENGTH w.chans − a)’
+    by (qpat_x_assum ‘qof _ _ = _’ (SUBST1_TAC o SYM) >> fs[qof_def]) >>
+  qpat_x_assum ‘l0_accept _ _ = _’ mp_tac >>
+  qpat_x_assum ‘(w:l0world).listeners = _’ (fn th => simp[l0_accept_def, th]) >>
+  reverse (Cases_on ‘a < LENGTH w.chans’)
+  >- (‘LENGTH s.clients − a = 0’ by fs[] >>
+      pop_assum (fn th => simp[th, fail_def]) >> strip_tac >> gvs[]) >>
+  ‘GENLIST (λi. a + i) (LENGTH w.chans − a) =
+   a :: GENLIST (λi. a + 1 + i) (LENGTH w.chans − (a + 1))’ by simp[GENLIST_plus_CONS] >>
+  simp[] >>
+  ‘¬(EL a w.chans).broken’ by (‘wch (EL a w.chans) (EL a s.clients)’ by fs[] >> fs[wch_def]) >>
+  simp[l0_alloc_def] >> IF_CASES_TAC >> simp[fail_def]
+  >- (strip_tac >> gvs[] >>
+      conj_tac >- (irule lowest_fd_fresh >> simp[]) >>
+      simp_tac std_ss [sinv_def, wk_def, lk_def] >>
+      simp[AFUPDKEY_def, qof_def] >> rpt conj_tac >> rpt strip_tac >>
+      TRY (Cases_on ‘f = lowest_fd w’ >> gvs[] >> res_tac >> simp[] >> NO_TAC) >>
+      fs[])
+  >> strip_tac >> gvs[] >>
+  simp_tac std_ss [sinv_def, wk_def, lk_def] >> simp[qof_def]
+QED
+
+Theorem ch_recv:
+  dch d e a ⇒ dch (d ++ TAKE k a.inbox) e (a with inbox := DROP k a.inbox)
+Proof
+  rw[dch_def] >> metis_tac[TAKE_DROP, APPEND_ASSOC]
+QED
+
+(* A recv on an open fd of channel c: EOF, a retried failure, or data, which
+   L1's fetched data for c gains *)
+Theorem sinv_recv:
+  sinv lfd p a cm D E s w ∧ (∀h. w.ch.transient h = NONE) ∧ (∀j h x. w.ch.short j h x = x) ∧
+  ALOOKUP w.open_fds g = SOME c ∧ 0 < n ∧ l0_recv g n w = (r, d, w') ⇒
+  (r = Ok 0 ∧ d = [] ∧ w' = w ∧ c < LENGTH w.chans ∧ c < a ∧ (EL c w.chans).peer_eof) ∨
+  (∃e x. r = Fail e x ∧ l1_transient e ∧ d = [] ∧ w' = w) ∨
+  (∃k. r = Ok k ∧ 0 < k ∧ LENGTH d = k ∧ sinv lfd p a cm ((c =+ D c ++ d) D) E s w')
+Proof
+  strip_tac >>
+  qpat_assum ‘sinv _ _ _ _ _ _ _ _’
+    (strip_assume_tac o SIMP_RULE std_ss [sinv_def, wk_def, lk_def]) >>
+  ‘ALOOKUP cm g = SOME c ∧ c < a’ by metis_tac[] >>
+  ‘c < LENGTH w.chans’ by simp[] >>
+  ‘l0_chan_of w g = SOME c’ by simp[l0_chan_of_def] >>
+  ‘wch (EL c w.chans) (EL c s.clients) ∧ dch (D c) (E c) (EL c w.chans)’ by fs[] >>
+  ‘¬(EL c w.chans).connecting ∧ ¬(EL c w.chans).broken ∧ (EL c w.chans).err = NONE’
+    by fs[wch_def] >>
+  qpat_x_assum ‘l0_recv _ _ _ = _’ mp_tac >> simp[l0_recv_def] >>
+  IF_CASES_TAC >> simp[]
+  >- (strip_tac >> gvs[] >> conj_tac
+      >- (Cases_on ‘(EL c w.chans).inbox’ >> gvs[])
+      >> irule sinv_upd_D >> simp[] >> conj_tac
+      >- simp[wch_def]
+      >> irule ch_recv >> fs[])
+  >> IF_CASES_TAC >> simp[] >> strip_tac >> gvs[fail_def, l1_transient_def]
+QED

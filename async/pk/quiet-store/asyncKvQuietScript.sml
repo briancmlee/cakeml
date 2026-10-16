@@ -69,7 +69,7 @@ Theorem kv_stable:
                      (srelabel (SM kv_delta (λk. NONE) P_b kv_ansq (K kv_fin) lfdn)) s0 n)
                   (n2w x)
 Proof
-  strip_tac >> irule store_stable >> simp[proto_ok_b, kv_ansq_tags]
+  strip_tac >> irule store_stable >> rw[proto_ok_b, kv_ansq_def] >> rw[]
 QED
 
 (* MAIN (Q2 for KV): R1's loop running KV blocks forever in select *)
@@ -85,5 +85,5 @@ Theorem kv_sleeps:
     sock_wait (qsel (srelabel2 (SM2 kv_delta (λk. NONE) P_b kv_ansq (K kv_fin) lfdn)) kept) s
       = NONE
 Proof
-  strip_tac >> irule store_sleeps >> simp[proto_ok_b, kv_ansq_tags]
+  strip_tac >> irule store_sleeps >> rw[proto_ok_b, kv_ansq_def] >> rw[]
 QED

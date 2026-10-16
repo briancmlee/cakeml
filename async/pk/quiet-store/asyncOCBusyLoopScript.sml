@@ -31,38 +31,13 @@ Ancestors
   ffiSpikeSocketFFI ffiSpikeSocketProg ffiSpikeSocketProof
   ffiSpikeSocketDiv ffiSpikeSocketFair ffiSpikeSocketSelect cfDiv
   asyncOCModel asyncOCProg asyncOCSpec asyncOCProtoProg asyncOCFinite
-  asyncOCSel asyncOCLoop asyncOCRun asyncOCRelabel asyncOCBusy
+  asyncOCSel asyncOCLoop asyncOCRun asyncOCRelabel asyncOCBusy asyncOCBusyCode
   ml_translator mlstring Marshalling std_prelude llist misc
 Libs
   preamble basis cfDivLib cfTacticsLib ml_progLib basisFunctionsLib
   ml_translatorLib
 
-val _ = translation_extends "asyncOCRun"
-
-(* ------------------------------------------------------------------------
-   The code
-   ------------------------------------------------------------------------ *)
-
-Quote add_cakeml:
-  fun step_qb bz st =
-    case st of (fds, c) =>
-    case c of (acts, s) =>
-      let
-        val rs = perform acts
-        val u = (case acts of [] => (if bz c then ()
-                                     else q_wait_ready (sort_num (interest c)))
-                            | a :: rest => ())
-        val rdy = Socket.poll fds
-      in (add_accepted fds rs, poll2 c (rdy, 0, rs)) end;
-End
-
-Quote add_cakeml:
-  fun step_qb2 x = case x of (bz, st) => (bz, step_qb bz st);
-End
-
-Quote add_cakeml:
-  fun run_qb x = run_qb (step_qb2 x);
-End
+val _ = translation_extends "asyncOCBusyCode"
 
 val st = get_ml_prog_state ();
 
@@ -107,7 +82,7 @@ Proof
   rpt strip_tac >>
   qpat_assum ‘COMPI _ _ _ _ _ _ _’
     (strip_assume_tac o REWRITE_RULE[COMPI_def, POLL_RESULT2_def]) >>
-  gvs[] >> xcf_with_def (fetch "-" "step_qb_v_def") >> xmatch >> xmatch >>
+  gvs[] >> xcf_with_def (fetch "asyncOCBusyCode" "step_qb_v_def") >> xmatch >> xmatch >>
   ‘app p perform_v [av] (SSEL s evs)
      (POSTv v. &LIST_TYPE SRESP rs v * SSEL s1 (evs ++ evs1))’
     by (irule perform_spec_sel >> metis_tac[]) >>
@@ -159,7 +134,7 @@ Proof
   rpt strip_tac >>
   qpat_assum ‘COMPI _ _ _ _ _ _ _’
     (strip_assume_tac o REWRITE_RULE[COMPI_def, POLL_RESULT2_def]) >>
-  gvs[] >> xcf_with_def (fetch "-" "step_qb_v_def") >> xmatch >> xmatch >>
+  gvs[] >> xcf_with_def (fetch "asyncOCBusyCode" "step_qb_v_def") >> xmatch >> xmatch >>
   ‘app p perform_v [av] (SSEL s evs)
      (POSTv v. &LIST_TYPE SRESP [] v * SSEL s (evs ++ []))’
     by (irule perform_spec_sel >> qexists_tac ‘[]’ >> simp[sock_acts_def]) >>
@@ -219,7 +194,7 @@ Proof
     by (irule interest_specI >> metis_tac[]) >>
   qpat_assum ‘COMPI _ _ _ _ _ _ _’
     (strip_assume_tac o REWRITE_RULE[COMPI_def, POLL_RESULT2_def]) >>
-  gvs[] >> xcf_with_def (fetch "-" "step_qb_v_def") >> xmatch >> xmatch >>
+  gvs[] >> xcf_with_def (fetch "asyncOCBusyCode" "step_qb_v_def") >> xmatch >> xmatch >>
   ‘app p perform_v [av] (SSEL s evs)
      (POSTv v. &LIST_TYPE SRESP [] v * SSEL s (evs ++ []))’
     by (irule perform_spec_sel >> qexists_tac ‘[]’ >> simp[sock_acts_def]) >>
@@ -288,7 +263,7 @@ Proof
     by (irule interest_specI >> metis_tac[]) >>
   qpat_assum ‘COMPI _ _ _ _ _ _ _’
     (strip_assume_tac o REWRITE_RULE[COMPI_def, POLL_RESULT2_def]) >>
-  gvs[] >> xcf_with_def (fetch "-" "step_qb_v_def") >> xmatch >> xmatch >>
+  gvs[] >> xcf_with_def (fetch "asyncOCBusyCode" "step_qb_v_def") >> xmatch >> xmatch >>
   ‘app p perform_v [av] (SSEL s evs)
      (POSTv v. &LIST_TYPE SRESP [] v * SSEL s (evs ++ []))’
     by (irule perform_spec_sel >> qexists_tac ‘[]’ >> simp[sock_acts_def]) >>
@@ -311,4 +286,366 @@ Proof
           xapp >> xsimpl >> qexists_tac ‘MAP w2n l’ >> simp[]) >>
       xapp_spec q_wait_ready_stuck_spec >> simp[]) >>
   xsimpl
+QED
+
+(* ------------------------------------------------------------------------
+   The rounds' events, and the model facts the loop needs
+   ------------------------------------------------------------------------ *)
+
+Overload CE = “λce. srelabel2 ce”
+
+(* Round n's events: select on the declared fds, then poll; or (actions,
+   or busy) the round's socket calls, then the poll *)
+Definition lbroundB_events_def:
+  lbroundB_events ce fds0 s0 n =
+    case lbgroundsB ce fds0 s0 n of
+    | NONE => []
+    | SOME (h, N, s) =>
+        let acts = new_actions (log_of (srelabel ce.run)) h;
+            fds = interest fds0 h
+        in if acts = [] ∧ ¬busy ce (MAP sfs h) then
+             case sock_wait (qsel (CE ce) h) s of
+             | NONE => []
+             | SOME k => [select_event (qsel (CE ce) h); spoll_event fds (ticks k s)]
+           else
+             FST (SND (sock_acts_tot s acts)) ++
+             [spoll_event fds (SND (SND (sock_acts_tot s acts)))]
+End
+
+Overload lblockB_io = “λce fds0 s0.
+  LFLATTEN (LGENLIST (λi. fromList (lbroundB_events ce fds0 s0 i)) NONE)”
+
+Theorem lbgroundsB_SOME_LE:
+  ∀n x i. lbgroundsB ce fds0 s0 n = SOME x ∧ i ≤ n ⇒
+          ∃k N s. lbgroundsB ce fds0 s0 i = SOME (k, N, s)
+Proof
+  Induct >> rpt strip_tac
+  >- (gvs[] >> PairCases_on ‘x’ >> metis_tac[])
+  >> Cases_on ‘i = SUC n’
+  >- (gvs[] >> PairCases_on ‘x’ >> metis_tac[])
+  >> PairCases_on ‘x’ >> drule lbgroundsB_SUC_SOME >> strip_tac >>
+  first_x_assum irule >> simp[] >> metis_tac[]
+QED
+
+Theorem lbgroundsB_sock_acts:
+  wf ce.run ∧ quiet_nb ce ∧ finite2 ce ∧
+  grun_ok (interest fds0) (srelabel ce.run) s0 ∧
+  lbgroundsB ce fds0 s0 n = SOME (kept, N, s) ⇒
+  sock_acts s (new_actions (log_of (srelabel ce.run)) kept) ≠ NONE
+Proof
+  strip_tac >> drule_all lbgroundsB_inv >> rw[lbinvB_def] >>
+  drule same_for_c >> strip_tac >>
+  gvs[grun_ok_def, gacts_def, new_actions_relabel] >> metis_tac[]
+QED
+
+Theorem wf_CE[local]:
+  wf ce.run ⇒ wf (CE ce).run
+Proof
+  simp[relabel2_def, wf_relabel]
+QED
+
+(* One iteration of the loop, for a round that returns *)
+Theorem step_qb_lbgroundsB:
+  wf ce.run ∧ quiet_nb ce ∧ finite2 ce ∧
+  grun_ok (interest fds0) (srelabel ce.run) s0 ∧ BZ p A ce bzv ∧
+  lbgroundsB ce fds0 s0 i = SOME (kept, N, s) ∧
+  lbgroundsB ce fds0 s0 (SUC i) = SOME (kept', N', s') ∧
+  LIST_TYPE NUM (MAP w2n (interest fds0 kept)) fdsv ∧
+  COMPI p SACT A SEV SSNAP (suspended2 (CE ce) kept) cv ⇒
+  app (p:'ffi ffi_proj) step_qb_v [bzv; Conv NONE [fdsv; cv]] (SSEL s evs)
+    (POSTv v.
+       &(∃fdsv' cv'. v = Conv NONE [fdsv'; cv'] ∧
+               LIST_TYPE NUM (MAP w2n (interest fds0 kept')) fdsv' ∧
+               COMPI p SACT A SEV SSNAP (suspended2 (CE ce) kept') cv') *
+       SSEL s' (evs ++ lbroundB_events ce fds0 s0 i))
+Proof
+  strip_tac >>
+  ‘wf (CE ce).run’ by simp[wf_CE] >>
+  ‘((suspended2 (CE ce) kept).run []).actions =
+   new_actions (log_of (srelabel ce.run)) kept’
+    by (simp[suspended2_run, relabel2_def] >> irule suspended_first_poll >>
+        simp[wf_relabel]) >>
+  ‘sock_acts s (new_actions (log_of (srelabel ce.run)) kept) ≠ NONE’
+    by (irule lbgroundsB_sock_acts >> simp[] >> metis_tac[]) >>
+  ‘finite2 (suspended2 (CE ce) kept)’
+    by simp[finite2_suspended2, finite2_srelabel2] >>
+  ‘app p bzv [cv] emp (POSTv v. &BOOL (busy ce (MAP sfs kept)) v)’
+    by fs[BZ_def] >>
+  qpat_x_assum ‘lbgroundsB _ _ _ (SUC _) = _’ mp_tac >>
+  simp[lbgroundsB_def, lbroundB_events_def] >>
+  Cases_on ‘new_actions (log_of (srelabel ce.run)) kept = [] ∧ ¬busy ce (MAP sfs kept)’
+  >- ((* select, then poll *)
+      gvs[] >>
+      Cases_on ‘sock_wait (qsel (CE ce) kept) s’ >> simp[] >>
+      strip_tac >> gvs[] >>
+      qabbrev_tac ‘fds = interest fds0 kept’ >>
+      ‘app p step_qb_v [bzv; Conv NONE [fdsv; cv]] (SSEL s evs)
+         (POSTv v.
+            &(∃fdsv' cv'. v = Conv NONE [fdsv'; cv'] ∧
+                    LIST_TYPE NUM (MAP w2n fds) fdsv' ∧
+                    COMPI p SACT A SEV SSNAP
+                      (suspended2 (suspended2 (CE ce) kept)
+                         [ssnap (FST (sock_poll fds (ticks x s))) []]) cv') *
+            SSEL (SND (sock_poll fds (ticks x s)))
+              (evs ++ [select_event (qsel (suspended2 (CE ce) kept) []);
+                       spoll_event fds (ticks x s)]))’
+        by (irule step_qb_wait_spec >> simp[qsel_suspended2_NIL]) >>
+      irule app_weaken >> first_x_assum (irule_at Any) >>
+      xsimpl >> rw[] >>
+      gvs[suspended2_suspended2_one, interest_SNOC, Abbr ‘fds’,
+          qsel_suspended2_NIL] >>
+      TRY (simp[SEP_IMP_REFL] >> NO_TAC) >>
+      gvs[ssnap_def, add_accepted_def])
+  >> Cases_on ‘new_actions (log_of (srelabel ce.run)) kept = []’
+  (* busy, nothing to do: poll at once *)
+  >- (gvs[sock_acts_tot_def, sock_acts_def] >> strip_tac >> gvs[] >>
+      qabbrev_tac ‘fds = interest fds0 kept’ >>
+      ‘app p step_qb_v [bzv; Conv NONE [fdsv; cv]] (SSEL s evs)
+         (POSTv v.
+            &(∃fdsv' cv'. v = Conv NONE [fdsv'; cv'] ∧
+                    LIST_TYPE NUM (MAP w2n fds) fdsv' ∧
+                    COMPI p SACT A SEV SSNAP
+                      (suspended2 (suspended2 (CE ce) kept)
+                         [ssnap (FST (sock_poll fds s)) []]) cv') *
+            SSEL (SND (sock_poll fds s)) (evs ++ [spoll_event fds s]))’
+        by (irule step_qb_busy_spec >> gvs[]) >>
+      irule app_weaken >> first_x_assum (irule_at Any) >>
+      xsimpl >> rw[] >>
+      gvs[suspended2_suspended2_one, interest_SNOC, Abbr ‘fds’] >>
+      gvs[ssnap_def, add_accepted_def])
+  (* actions to perform *)
+  >> Cases_on ‘sock_acts s (new_actions (log_of (srelabel ce.run)) kept)’ >> gvs[] >>
+  rename1 ‘_ = SOME x’ >> PairCases_on ‘x’ >>
+  simp[sock_acts_tot_def] >> strip_tac >> gvs[] >>
+  qabbrev_tac ‘fds = interest fds0 kept’ >>
+  ‘app p step_qb_v [bzv; Conv NONE [fdsv; cv]] (SSEL s evs)
+     (POSTv v.
+        &(∃fdsv' cv'. v = Conv NONE [fdsv'; cv'] ∧
+                LIST_TYPE NUM (MAP w2n (add_accepted fds x0)) fdsv' ∧
+                COMPI p SACT A SEV SSNAP
+                  (suspended2 (suspended2 (CE ce) kept)
+                     [ssnap (FST (sock_poll fds x2)) x0]) cv') *
+        SSEL (SND (sock_poll fds x2)) (evs ++ x1 ++ [spoll_event fds x2]))’
+    by (irule step_qb_spec >> simp[]) >>
+  irule app_weaken >> first_x_assum (irule_at Any) >>
+  xsimpl >> rw[] >>
+  gvs[suspended2_suspended2_one, interest_SNOC, Abbr ‘fds’] >>
+  gvs[ssnap_def]
+QED
+
+(* The loop's state: the busy test, the interest list, the program *)
+Theorem step_qb2_lbgroundsB:
+  wf ce.run ∧ quiet_nb ce ∧ finite2 ce ∧
+  grun_ok (interest fds0) (srelabel ce.run) s0 ∧ BZ p A ce bzv ∧
+  lbgroundsB ce fds0 s0 i = SOME (kept, N, s) ∧
+  lbgroundsB ce fds0 s0 (SUC i) = SOME (kept', N', s') ∧
+  LIST_TYPE NUM (MAP w2n (interest fds0 kept)) fdsv ∧
+  COMPI p SACT A SEV SSNAP (suspended2 (CE ce) kept) cv ⇒
+  app (p:'ffi ffi_proj) step_qb2_v [Conv NONE [bzv; Conv NONE [fdsv; cv]]] (SSEL s evs)
+    (POSTv v.
+       &(∃fdsv' cv'. v = Conv NONE [bzv; Conv NONE [fdsv'; cv']] ∧
+               LIST_TYPE NUM (MAP w2n (interest fds0 kept')) fdsv' ∧
+               COMPI p SACT A SEV SSNAP (suspended2 (CE ce) kept') cv') *
+       SSEL s' (evs ++ lbroundB_events ce fds0 s0 i))
+Proof
+  strip_tac >>
+  drule_all step_qb_lbgroundsB >> strip_tac >>
+  xcf_with_def (fetch "asyncOCBusyCode" "step_qb2_v_def") >> xmatch >>
+  xlet ‘POSTv v.
+          &(∃fdsv' cv'. v = Conv NONE [fdsv'; cv'] ∧
+                  LIST_TYPE NUM (MAP w2n (interest fds0 kept')) fdsv' ∧
+                  COMPI p SACT A SEV SSNAP (suspended2 (CE ce) kept') cv') *
+          SSEL s' (evs ++ lbroundB_events ce fds0 s0 i)’
+  >- (xapp >> xsimpl) >>
+  xcon >> xsimpl >> metis_tac[]
+QED
+
+Theorem step_qb2_stuck_spec:
+  COMPI p SACT A SEV SSNAP c cv ∧ finite2 c ∧
+  LIST_TYPE NUM (MAP w2n (fds : word64 list)) fdsv ∧
+  (c.run []).actions = [] ∧
+  app p bzv [cv] emp (POSTv v. &BOOL F v) ∧
+  sock_wait (qsel c []) s = NONE ⇒
+  app (p:'ffi ffi_proj) step_qb2_v [Conv NONE [bzv; Conv NONE [fdsv; cv]]] (SSEL s evs)
+    (POSTf n. λcf b. &(n = «sock_select» ∧ cf = fds_bytes (qsel c []) ∧ b = []) *
+                   SSEL s evs * SEP_EXISTS av. W8ARRAY av [])
+Proof
+  strip_tac >>
+  xcf_with_def (fetch "asyncOCBusyCode" "step_qb2_v_def") >> xmatch >>
+  xlet ‘POSTf n. λcf b. &(n = «sock_select» ∧ cf = fds_bytes (qsel c []) ∧ b = []) *
+                      SSEL s evs * SEP_EXISTS av. W8ARRAY av []’
+  >- (xapp_spec step_qb_stuck_spec >> metis_tac[]) >>
+  xsimpl
+QED
+
+Theorem FLAT_GENLIST_SUC[local]:
+  FLAT (GENLIST f (SUC n)) = FLAT (GENLIST f n) ++ f n
+Proof
+  simp[GENLIST, SNOC_APPEND, FLAT_APPEND]
+QED
+
+Definition qbkept_def:
+  qbkept ce fds0 s0 i = FST (THE (lbgroundsB ce fds0 s0 i))
+End
+
+Definition qbstate_def:
+  qbstate ce fds0 s0 i = SND (SND (THE (lbgroundsB ce fds0 s0 i)))
+End
+
+(* MAIN (outcome 1): if the loop never blocks forever, it diverges, and its
+   trace is the rounds' events *)
+Theorem run_qb_spec:
+  limited_parts ssel_names p ∧ wf ce.run ∧ quiet_nb ce ∧ finite2 ce ∧
+  grun_ok (interest fds0) (srelabel ce.run) s0 ∧ BZ p A ce bzv ∧
+  (∀n. lbgroundsB ce fds0 s0 n ≠ NONE) ∧
+  LIST_TYPE NUM (MAP w2n fds0) fdsv ∧
+  COMPI p SACT A SEV SSNAP (CE ce) cv ⇒
+  app (p:'ffi ffi_proj) run_qb_v [Conv NONE [bzv; Conv NONE [fdsv; cv]]] (SSEL s0 [])
+    (POSTd io. io = lblockB_io ce fds0 s0)
+Proof
+  xcf_div_rule IMP_app_POSTd_one_FFI_part_FLATTEN "run_qb" st >>
+  qexists_tac ‘K emp’ >>
+  qexists_tac ‘λi. if i = 0 then []
+                   else lbroundB_events ce fds0 s0 (i - 1)’ >>
+  qexists_tac ‘λi stv. ∃fdsv cv. stv = Conv NONE [bzv; Conv NONE [fdsv; cv]] ∧
+                 LIST_TYPE NUM (MAP w2n (interest fds0 (qbkept ce fds0 s0 i))) fdsv ∧
+                 COMPI p SACT A SEV SSNAP (suspended2 (CE ce) (qbkept ce fds0 s0 i)) cv’ >>
+  qexists_tac ‘λi. sockets_encode (qbstate ce fds0 s0 i)’ >>
+  qexists_tac ‘mk_ffi_next ssel_ffi_part’ >>
+  simp[qbkept_def, qbstate_def, CONJUNCT1 lbgroundsB_def] >> rpt conj_tac
+  >- (simp[SSEL_def] >> xsimpl)
+  >- (rpt strip_tac >> gvs[] >> simp[GSYM SSEL_def] >>
+      ‘∃k1 N1 s1. lbgroundsB ce fds0 s0 i = SOME (k1, N1, s1)’
+        by metis_tac[optionTheory.option_CASES, pairTheory.PAIR] >>
+      ‘∃k2 N2 s2. lbgroundsB ce fds0 s0 (SUC i) = SOME (k2, N2, s2)’
+        by metis_tac[optionTheory.option_CASES, pairTheory.PAIR] >>
+      gvs[] >>
+      sg ‘app p step_qb2_v [Conv NONE [bzv; Conv NONE [fdsv'; cv']]] (SSEL s1 [])
+            (POSTv v.
+               &(∃fdsv2 cv2. v = Conv NONE [bzv; Conv NONE [fdsv2; cv2]] ∧
+                       LIST_TYPE NUM (MAP w2n (interest fds0 k2)) fdsv2 ∧
+                       COMPI p SACT A SEV SSNAP (suspended2 (CE ce) k2) cv2) *
+               SSEL s2 ([] ++ lbroundB_events ce fds0 s0 i))’
+      >- (irule step_qb2_lbgroundsB >> simp[] >> metis_tac[]) >>
+      xlet ‘POSTv v.
+              &(∃fdsv2 cv2. v = Conv NONE [bzv; Conv NONE [fdsv2; cv2]] ∧
+                      LIST_TYPE NUM (MAP w2n (interest fds0 k2)) fdsv2 ∧
+                      COMPI p SACT A SEV SSNAP (suspended2 (CE ce) k2) cv2) *
+              SSEL s2 (lbroundB_events ce fds0 s0 i)’
+      >- (qpat_x_assum ‘app _ step_qb2_v _ _ _’ xapp_spec >> xsimpl) >>
+      xvar >> xsimpl >> metis_tac[])
+  >> CONV_TAC (LAND_CONV (ONCE_REWRITE_CONV [LGENLIST_NONE_UNFOLD])) >>
+     simp[combinTheory.o_DEF]
+QED
+
+(* MAIN (outcome 2): if the loop blocks forever in select (not busy, on
+   the declared fds) in round n, the run ends in an FFI divergence of
+   «sock_select», after the events of the first n rounds *)
+Theorem run_qb_stuck_spec:
+  wf ce.run ∧ quiet_nb ce ∧ finite2 ce ∧
+  grun_ok (interest fds0) (srelabel ce.run) s0 ∧ BZ p A ce bzv ∧
+  lbgroundsB ce fds0 s0 n = SOME (kept, N, s) ∧
+  new_actions (log_of (srelabel ce.run)) kept = [] ∧
+  ¬busy ce (MAP sfs kept) ∧
+  sock_wait (qsel (CE ce) kept) s = NONE ∧
+  LIST_TYPE NUM (MAP w2n fds0) fdsv ∧
+  COMPI p SACT A SEV SSNAP (CE ce) cv ⇒
+  app (p:'ffi ffi_proj) run_qb_v [Conv NONE [bzv; Conv NONE [fdsv; cv]]] (SSEL s0 [])
+    (POSTf nm. λcf b.
+       &(nm = «sock_select» ∧ cf = fds_bytes (qsel (CE ce) kept) ∧ b = []) *
+       SSEL s (FLAT (GENLIST (lbroundB_events ce fds0 s0) n)) *
+       SEP_EXISTS av. W8ARRAY av [])
+Proof
+  strip_tac >>
+  ‘∀j i k1 N1 s1 fdsv cv.
+     i + j = n ∧ lbgroundsB ce fds0 s0 i = SOME (k1, N1, s1) ∧
+     LIST_TYPE NUM (MAP w2n (interest fds0 k1)) fdsv ∧
+     COMPI p SACT A SEV SSNAP (suspended2 (CE ce) k1) cv ⇒
+     app p run_qb_v [Conv NONE [bzv; Conv NONE [fdsv; cv]]]
+       (SSEL s1 (FLAT (GENLIST (lbroundB_events ce fds0 s0) i)))
+       (POSTf nm. λcf b.
+          &(nm = «sock_select» ∧ cf = fds_bytes (qsel (CE ce) kept) ∧ b = []) *
+          SSEL s (FLAT (GENLIST (lbroundB_events ce fds0 s0) n)) *
+          SEP_EXISTS av. W8ARRAY av [])’
+    suffices_by (disch_then (qspecl_then [‘n’, ‘0’] mp_tac) >>
+                 simp[lbgroundsB_def, interest_def]) >>
+  Induct
+  >- ((* round n: select blocks forever *)
+      rpt strip_tac >> ‘i = n’ by simp[] >> pop_assum SUBST_ALL_TAC >>
+      ‘k1 = kept ∧ s1 = s’ by gvs[] >>
+      qpat_x_assum ‘k1 = kept’ SUBST_ALL_TAC >>
+      qpat_x_assum ‘s1 = s’ SUBST_ALL_TAC >>
+      ‘wf (CE ce).run’ by simp[wf_CE] >>
+      ‘((suspended2 (CE ce) kept).run []).actions = []’
+        by gvs[suspended2_run, suspended_first_poll, relabel2_def] >>
+      ‘app p bzv [cv'] emp (POSTv v. &BOOL F v)’
+        by (fs[BZ_def] >> first_x_assum drule >> simp[]) >>
+      xcf_with_def (fetch "asyncOCBusyCode" "run_qb_v_def") >>
+      xlet ‘POSTf nm. λcf b.
+              &(nm = «sock_select» ∧ cf = fds_bytes (qsel (CE ce) kept) ∧ b = []) *
+              SSEL s (FLAT (GENLIST (lbroundB_events ce fds0 s0) n)) *
+              SEP_EXISTS av. W8ARRAY av []’
+      >- (‘qsel (CE ce) kept = qsel (suspended2 (CE ce) kept) []’
+            by simp[qsel_suspended2_NIL] >>
+          pop_assum SUBST1_TAC >>
+          xapp_spec step_qb2_stuck_spec >>
+          simp[finite2_suspended2, finite2_srelabel2, qsel_suspended2_NIL] >>
+          metis_tac[]) >>
+      xsimpl)
+  >- ((* round i < n returns *)
+      rpt strip_tac >>
+      ‘∃k2 N2 s2. lbgroundsB ce fds0 s0 (SUC i) = SOME (k2, N2, s2)’
+        by (irule lbgroundsB_SOME_LE >> qexistsl [‘n’, ‘(kept, N, s)’] >> simp[]) >>
+      ‘app p step_qb2_v [Conv NONE [bzv; Conv NONE [fdsv'; cv']]]
+         (SSEL s1 (FLAT (GENLIST (lbroundB_events ce fds0 s0) i)))
+         (POSTv v.
+            &(∃fdsv2 cv2. v = Conv NONE [bzv; Conv NONE [fdsv2; cv2]] ∧
+                    LIST_TYPE NUM (MAP w2n (interest fds0 k2)) fdsv2 ∧
+                    COMPI p SACT A SEV SSNAP (suspended2 (CE ce) k2) cv2) *
+            SSEL s2 (FLAT (GENLIST (lbroundB_events ce fds0 s0) i) ++
+                     lbroundB_events ce fds0 s0 i))’
+        by (irule step_qb2_lbgroundsB >> simp[] >> metis_tac[]) >>
+      xcf_with_def (fetch "asyncOCBusyCode" "run_qb_v_def") >>
+      xlet ‘POSTv v.
+              &(∃fdsv2 cv2. v = Conv NONE [bzv; Conv NONE [fdsv2; cv2]] ∧
+                      LIST_TYPE NUM (MAP w2n (interest fds0 k2)) fdsv2 ∧
+                      COMPI p SACT A SEV SSNAP (suspended2 (CE ce) k2) cv2) *
+              SSEL s2 (FLAT (GENLIST (lbroundB_events ce fds0 s0) (SUC i)))’
+      >- (qpat_x_assum ‘app _ step_qb2_v _ _ _’ xapp_spec >>
+          simp[FLAT_GENLIST_SUC] >> xsimpl) >>
+      first_x_assum (qspecl_then [‘SUC i’, ‘k2’, ‘N2’, ‘s2’, ‘fdsv2’, ‘cv2’] mp_tac) >>
+      impl_tac >- simp[] >> strip_tac >>
+      qpat_x_assum ‘v = _’ SUBST_ALL_TAC >> xapp)
+QED
+
+(* MAIN: the loop's two outcomes, at the level of the code *)
+Theorem run_qb_two_outcomes:
+  limited_parts ssel_names p ∧ wf ce.run ∧ quiet_nb ce ∧ finite2 ce ∧
+  grun_ok (interest fds0) (srelabel ce.run) s0 ∧ BZ p A ce bzv ∧
+  LIST_TYPE NUM (MAP w2n fds0) fdsv ∧
+  COMPI p SACT A SEV SSNAP (CE ce) cv ⇒
+  ((∀n. lbgroundsB ce fds0 s0 n ≠ NONE) ∧
+   app (p:'ffi ffi_proj) run_qb_v [Conv NONE [bzv; Conv NONE [fdsv; cv]]] (SSEL s0 [])
+     (POSTd io. io = lblockB_io ce fds0 s0)) ∨
+  (∃n kept N s.
+     lbgroundsB ce fds0 s0 n = SOME (kept, N, s) ∧
+     new_actions (log_of (srelabel ce.run)) kept = [] ∧
+     ¬busy ce (MAP sfs kept) ∧
+     sock_wait (qsel (CE ce) kept) s = NONE ∧
+     app (p:'ffi ffi_proj) run_qb_v [Conv NONE [bzv; Conv NONE [fdsv; cv]]] (SSEL s0 [])
+       (POSTf nm. λcf b.
+          &(nm = «sock_select» ∧ cf = fds_bytes (qsel (CE ce) kept) ∧ b = []) *
+          SSEL s (FLAT (GENLIST (lbroundB_events ce fds0 s0) n)) *
+          SEP_EXISTS av. W8ARRAY av []))
+Proof
+  strip_tac >> Cases_on ‘∀n. lbgroundsB ce fds0 s0 n ≠ NONE’
+  >- (disj1_tac >> simp[] >> irule run_qb_spec >> simp[] >> metis_tac[])
+  >- (disj2_tac >>
+      ‘∃n kept N s. lbgroundsB ce fds0 s0 n = SOME (kept, N, s) ∧
+                    new_actions (log_of (srelabel ce.run)) kept = [] ∧
+                    ¬busy ce (MAP sfs kept) ∧
+                    sock_wait (qsel (CE ce) kept) s = NONE’
+        by metis_tac[lbgroundsB_two_outcomes] >>
+      qexistsl [‘n’, ‘kept’, ‘N’, ‘s’] >> simp[] >>
+      irule run_qb_stuck_spec >> simp[] >> metis_tac[])
 QED

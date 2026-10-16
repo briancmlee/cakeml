@@ -1,0 +1,7 @@
+# The endpoint handle layer (design/36 §6, decision E1): a handle loop over
+# close-v2's endpoint world, as asyncHLModel is over the version-2 world.
+INCLUDES = ../endpoint-world ../close-v2-loop ../socket-v2 ../model ../m3-assembly \
+           ../ffi-spike ../cf-actions
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

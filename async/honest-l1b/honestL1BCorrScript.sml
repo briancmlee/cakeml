@@ -168,3 +168,189 @@ Proof
   drule lift_replay >> disch_then (fn th => REWRITE_TAC[th]) >>
   asm_rewrite_tac[optionTheory.OPTION_MAP_DEF]
 QED
+
+Theorem REPLICATE_SNOC_APP[local]:
+  ∀k. REPLICATE k x ++ [x] = REPLICATE (SUC k) x
+Proof
+  Induct >> simp[]
+QED
+
+Theorem sys_pollb_length:
+  l0_rely w ∧ sys_pollb fes w = SOME (INL (out, w', ev)) ⇒ LENGTH out = LENGTH fes + 13
+Proof
+  rw[sys_pollb_def, AllCaseEqs()] >> drule_all l0_ffi_fn_length >> simp[]
+QED
+
+(* A prefix ending inside an idle round, after its blocking poll *)
+Theorem b2p_idle:
+  l0_rely w0 ∧
+  binv_at lfd hw ifds bz m w0 ps0 N full xs pevs plogs h w ps evs ∧
+  brounds lfd hw ifds bz m (w0, ps0) n = SOME (BRun h (w, ps) evs logs) ∧
+  brounds lfd hw ifds bz m (w0, ps0) (SUC n) = SOME (BRun h' (w', ps') evs' logs') ∧
+  bidle lfd hw ifds bz m h ps ∧ fes = pf_poll_set lfd hw ps (ifds h) ∧
+  sys_pollb fes w = SOME (INL (out, w2, ev)) ∧
+  pf_after lfd hw (ifds h) ps fes (poll_revents fes out, w2, []) = SOME (rdy, (w', ps'), log, tevs) ∧
+  pollb_wait fes w = SOME k ∧ EVERY (epoll fes) es ∧ LENGTH es = k ∧ t ≼ tevs ⇒
+  ∃wb hp. world_at w0 (evs ++ ev :: t) = SOME wb ∧
+          world_at (reindex (btr lfd hw ifds bz m (w0, ps0)) w0)
+            (pevs ++ es ++ IO_event (ExtCall «sys_poll») (poll_conf fes)
+                             (ZIP (REPLICATE (LENGTH fes + 13) 0w, out)) :: t) =
+            SOME (lift (btr lfd hw ifds bz m (w0, ps0)) hp wb)
+Proof
+  strip_tac >>
+  qpat_assum ‘binv_at _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _’
+    (strip_assume_tac o REWRITE_RULE[binv_at_def]) >>
+  qabbrev_tac ‘tr = btr lfd hw ifds bz m (w0, ps0)’ >>
+  ‘world_at w0 evs = SOME w ∧ l0_rely w’ by metis_tac[bworld] >>
+  ‘world_at (reindex tr w0) pevs = SOME (lift tr (w0.hist ++ xs) w)’ by metis_tac[pworld] >>
+  (* the blocking side *)
+  ‘l0_step (SOME w) (ev_lcall ev) = SOME w2 ∧ l0_rely w2’
+    by (qpat_assum ‘sys_pollb _ _ = _’ (mp_tac o MATCH_MP rplays_pollb) >>
+        REWRITE_TAC[rplays_def, MAP, FOLDL] >> disch_then drule >> REWRITE_TAC[]) >>
+  ‘FOLDL l0_step (SOME w2) (MAP ev_lcall tevs) = SOME w'’
+    by (qpat_assum ‘pf_after _ _ _ _ _ _ = _’ (mp_tac o MATCH_MP rplays_after) >>
+        REWRITE_TAC[rplays_def] >> disch_then drule >> strip_tac) >>
+  ‘∃rest. tevs = t ++ rest’ by metis_tac[IS_PREFIX_APPEND] >>
+  qpat_x_assum ‘FOLDL _ _ (MAP _ tevs) = _’ mp_tac >>
+  qpat_assum ‘tevs = _’ SUBST1_TAC >> REWRITE_TAC[MAP_APPEND] >> strip_tac >>
+  drule FOLDL_step_prefix >> strip_tac >>
+  (* the PF side *)
+  ‘poll_ok fes’
+    by (irule sys_pollb_ok >> rpt conj_tac >>
+        TRY (qexists_tac ‘w’ >>
+             qpat_assum ‘sys_pollb _ _ = _’ (fn th => REWRITE_TAC[th, optionTheory.NOT_SOME_NONE]) >>
+             NO_TAC) >>
+        TRY (qpat_assum ‘fes = _’ SUBST1_TAC >> REWRITE_TAC[pf_poll_set_small] >> NO_TAC) >>
+        qpat_assum ‘bidle _ _ _ _ _ _ _’ mp_tac >> qpat_assum ‘fes = _’ SUBST1_TAC >>
+        REWRITE_TAC[bidle_def, pf_idle_def] >> rpt strip_tac) >>
+  ‘LENGTH out = LENGTH fes + 13’
+    by metis_tac[sys_pollb_length] >>
+  ‘ev_lcall (IO_event (ExtCall «sys_poll») (poll_conf fes)
+               (ZIP (REPLICATE (LENGTH fes + 13) 0w, out))) = pcall fes’
+    by simp[ev_lcall_def, MAP_ZIP] >>
+  imp_res_tac epolls_lcall >>
+  drule hgrows_after >> strip_tac >>
+  ‘LENGTH w.hist + 1 + LENGTH (MAP ev_lcall t) ≤ LENGTH w'.hist’
+    by (qpat_assum ‘sys_pollb _ _ = _’ (assume_tac o MATCH_MP sys_pollb_hist) >>
+        qpat_assum ‘hgrows _ _ _’ (strip_assume_tac o REWRITE_RULE[hgrows_def]) >>
+        qpat_x_assum ‘w'.hist = _’ SUBST1_TAC >> qpat_x_assum ‘w2.hist = _’ SUBST1_TAC >>
+        qpat_assum ‘tevs = _’ (fn th => RULE_ASSUM_TAC (REWRITE_RULE[th])) >> fs[]) >>
+  drule_all idle_tr >> strip_tac >> qpat_x_assum ‘fes = _’ kall_tac >>
+  qexistsl_tac [‘w1’, ‘w0.hist ++ xs ++ REPLICATE (SUC k) (pcall fes) ++ MAP ev_lcall t’] >>
+  conj_tac
+  >- (REWRITE_TAC[world_at_append] >> asm_rewrite_tac[optionTheory.OPTION_BIND_def] >>
+      BETA_TAC >> REWRITE_TAC[MAP, FOLDL] >> asm_rewrite_tac[]) >>
+  REWRITE_TAC[GSYM APPEND_ASSOC] >> REWRITE_TAC[world_at_append] >>
+  asm_rewrite_tac[optionTheory.OPTION_BIND_def] >> BETA_TAC >>
+  REWRITE_TAC[MAP_APPEND, MAP] >>
+  qpat_assum ‘MAP ev_lcall es = _’ (fn th => REWRITE_TAC[th]) >>
+  qpat_assum ‘ev_lcall _ = pcall fes’ (fn th => REWRITE_TAC[th]) >>
+  qpat_assum ‘LENGTH es = k’ (fn th => REWRITE_TAC[th]) >>
+  ‘REPLICATE k (pcall fes) ++ pcall fes :: MAP ev_lcall t =
+     REPLICATE (SUC k) (pcall fes) ++ MAP ev_lcall t’
+    by (REWRITE_TAC[GSYM REPLICATE_SNOC_APP, GSYM APPEND_ASSOC, APPEND]) >>
+  pop_assum (fn th => REWRITE_TAC[th]) >> REWRITE_TAC[FOLDL_APPEND] >>
+  ‘FOLDL l0_step (SOME (lift tr (w0.hist ++ xs) w)) (REPLICATE (SUC k) (pcall fes)) =
+     SOME (lift tr (w0.hist ++ xs ++ REPLICATE (SUC k) (pcall fes)) w2)’
+    by (qunabbrev_tac ‘tr’ >> irule replay_wake >> rpt conj_tac >>
+        TRY (first_assum ACCEPT_TAC) >> metis_tac[]) >>
+  pop_assum (fn th => REWRITE_TAC[th]) >>
+  ‘tr_from tr (w0.hist ++ xs ++ REPLICATE (SUC k) (pcall fes)) w2.hist (LENGTH (MAP ev_lcall t))’
+    by (qunabbrev_tac ‘tr’ >> first_assum ACCEPT_TAC) >>
+  drule lift_replay >> disch_then (fn th => REWRITE_TAC[th]) >>
+  qpat_assum ‘FOLDL _ (SOME w2) (MAP ev_lcall t) = _’ (fn th => REWRITE_TAC[th]) >>
+  REWRITE_TAC[optionTheory.OPTION_MAP_DEF, APPEND_ASSOC]
+QED
+
+Theorem bpre_BRun:
+  bpre lfd hw ifds bz m ws0 bp ⇒
+  ∃n h ws evs logs. brounds lfd hw ifds bz m ws0 n = SOME (BRun h ws evs logs) ∧ bp ≼ evs
+Proof
+  rw[bpre_def] >- metis_tac[] >>
+  drule brounds_BSlept >> strip_tac >>
+  drule bround_asleep >> strip_tac >> gvs[] >> metis_tac[]
+QED
+
+Theorem prefix_app[local]:
+  ∀l. t ≼ u ⇒ l ++ t ≼ l ++ u
+Proof
+  Induct >> simp[]
+QED
+
+Theorem ppre_intro:
+  prounds lfd hw ifds m ws0 N = SOME (a, b, evs, c) ⇒ ∀pp. pp ≼ evs ⇒ ppre lfd hw ifds m ws0 pp
+Proof
+  rw[ppre_def] >> metis_tac[]
+QED
+
+Theorem poll_nopoll[local]:
+  nopoll [IO_event (ExtCall «sys_poll») conf bs] = []
+Proof
+  simp[nopoll_def, is_poll_def]
+QED
+
+(* MAIN: every prefix of the blocking trace has a prefix of the PF trace
+   with the same non-poll events, in the lifted world *)
+Theorem b2p:
+  bquiet m ifds bz ∧ l0_rely w0 ∧ bpre lfd hw ifds bz m (w0, ps0) bp ⇒
+  ∃pp wb hp.
+    ppre lfd hw ifds m (reindex (btr lfd hw ifds bz m (w0, ps0)) w0, ps0) pp ∧
+    nopoll pp = nopoll bp ∧ world_at w0 bp = SOME wb ∧
+    world_at (reindex (btr lfd hw ifds bz m (w0, ps0)) w0) pp =
+      SOME (lift (btr lfd hw ifds bz m (w0, ps0)) hp wb)
+Proof
+  strip_tac >> drule bpre_BRun >> strip_tac >>
+  pop_assum mp_tac >> pop_assum mp_tac >>
+  MAP_EVERY qid_spec_tac [‘bp’, ‘evs’, ‘logs’, ‘ws’, ‘h’, ‘n’] >>
+  Induct
+  >- (rw[brounds_def] >> qexistsl_tac [‘[]’, ‘w0’, ‘w0.hist’] >>
+      simp[ppre_def, world_at_def, l0_replay_def, lift_reindex] >>
+      qexists_tac ‘0’ >> simp[prounds_def]) >>
+  rpt gen_tac >> strip_tac >> drule brounds_SUC_BRun >> strip_tac >>
+  rename1 ‘brounds _ _ _ _ _ _ n = SOME (BRun h0 wsa evs0 logs0)’ >>
+  rename1 ‘bround _ _ _ _ _ _ = SOME (BRound snap wsb log rvs)’ >>
+  strip_tac >> gvs[] >>
+  drule prefix_append_cases >> strip_tac
+  >- (first_x_assum drule_all >> simp[]) >>
+  gvs[] >> PairCases_on ‘wsa’ >> PairCases_on ‘wsb’ >>
+  ‘binv lfd hw ifds bz m w0 ps0 h0 wsa0 wsa1 evs0’
+    by (qpat_assum ‘brounds _ _ _ _ _ _ n = _’ mp_tac >>
+        qpat_assum ‘bquiet _ _ _’ (fn th => REWRITE_TAC[MATCH_MP l1b_refines_pf th])) >>
+  pop_assum (strip_assume_tac o REWRITE_RULE[binv_def]) >>
+  drule bround_cases >> strip_tac >> gvs[]
+  >- (RULE_ASSUM_TAC (REWRITE_RULE [GSYM APPEND_ASSOC]) >>
+      drule_all b2p_plain >> strip_tac >>
+      drule_all binv_plain >> strip_tac >>
+      qexistsl_tac [‘pevs ++ t’, ‘wb’, ‘hp’] >>
+      rpt conj_tac >> TRY (first_assum ACCEPT_TAC)
+      >- (fs[binv_at_def, ppre_def] >> qexists_tac ‘SUC N’ >>
+          qpat_assum ‘prounds _ _ _ _ _ (SUC N) = _’ (fn th => REWRITE_TAC[th]) >> simp[] >>
+          REWRITE_TAC[GSYM APPEND_ASSOC] >> irule prefix_app >> first_assum ACCEPT_TAC)
+      >> fs[binv_at_def] >> imp_res_tac evrel_nopoll >> simp[]) >>
+  rename1 ‘sys_pollb _ _ = SOME (INL (out, w2, ev))’ >>
+  qpat_x_assum ‘t ≼ _’ mp_tac >> qpat_x_assum ‘t ≠ []’ mp_tac >>
+  Cases_on ‘t’ >> REWRITE_TAC[isPREFIX_THM, NOT_CONS_NIL] >> rpt strip_tac >>
+  qpat_x_assum ‘h = ev’ SUBST_ALL_TAC >>
+  rename1 ‘t ≼ tevs’ >>
+  drule_all binv_idle >> strip_tac >>
+  qabbrev_tac ‘fes = pf_poll_set lfd hw wsa1 (ifds h0)’ >>
+  ‘fes = pf_poll_set lfd hw wsa1 (ifds h0)’ by simp[Abbr ‘fes’] >>
+  drule_all b2p_idle >> strip_tac >>
+  qexistsl_tac [‘pevs ++ es ++ IO_event (ExtCall «sys_poll») (poll_conf fes)
+                                 (ZIP (REPLICATE (LENGTH fes + 13) 0w, out)) :: t’, ‘wb’, ‘hp’] >>
+  rpt conj_tac >> TRY (first_assum ACCEPT_TAC)
+  >- (qpat_assum ‘binv_at _ _ _ _ _ _ _ (SUC (N + k)) _ _ _ _ _ _ _ _’
+        (strip_assume_tac o REWRITE_RULE[binv_at_def]) >>
+      qpat_assum ‘prounds _ _ _ _ _ (SUC (N + k)) = _’ (fn th => irule (MATCH_MP ppre_intro th)) >>
+      irule prefix_app >> REWRITE_TAC[isPREFIX_THM] >> first_assum ACCEPT_TAC)
+  >> qpat_assum ‘binv_at _ _ _ _ _ _ _ N _ _ _ _ _ _ _ _’
+       (strip_assume_tac o REWRITE_RULE[binv_at_def]) >>
+  qpat_assum ‘evrel pevs _’ (assume_tac o MATCH_MP evrel_nopoll) >>
+  qpat_assum ‘EVERY (epoll _) es’ (assume_tac o MATCH_MP nopoll_epolls) >>
+  qpat_assum ‘ev = _’ SUBST1_TAC >>
+  ‘∀conf bs l. nopoll (IO_event (ExtCall «sys_poll») conf bs :: l) = nopoll l’
+    by simp[nopoll_def, is_poll_def] >>
+  pop_assum (fn th => REWRITE_TAC[th, nopoll_append]) >>
+  qpat_assum ‘nopoll pevs = _’ (fn th => REWRITE_TAC[th]) >>
+  qpat_assum ‘nopoll es = _’ (fn th => REWRITE_TAC[th, APPEND_NIL])
+QED

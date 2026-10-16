@@ -86,7 +86,7 @@ Proof
       drule_all sys_accept_ok >> strip_tac >> simp[] >>
       pairarg_tac >> simp[] >>
       ‘psmall f ps1 ∧ ps1.b.nxt = ps.b.nxt’
-        by (Cases_on ‘r’ >> gvs[psmall_def, small_fds_def, small_def]) >>
+        by (Cases_on ‘r’ >> gvs[psmall_def, small_fds_def, small_def] >> rw[] >> gvs[]) >>
       first_x_assum drule_all >> strip_tac >> simp[]) >>
   ‘0 < pf_chunk ∧ small f’ by (gvs[] >> EVAL_TAC) >>
   drule_all sys_recv_ok >> strip_tac >>

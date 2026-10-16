@@ -1,0 +1,52 @@
+
+$ curl -s -i http://127.0.0.1:7860/greeting    # the store starts empty
+HTTP/1.0 404 Not Found
+Content-Length: 0
+
+
+$ curl -s -i -d hello http://127.0.0.1:7860/greeting    # client 1 stores a value
+HTTP/1.0 200 OK
+Content-Length: 0
+
+
+$ curl -s -i http://127.0.0.1:7860/greeting    # client 2, on another connection, reads it
+HTTP/1.0 200 OK
+Content-Length: 5
+
+hello
+$ curl -s -i -d bonjour http://127.0.0.1:7860/greeting    # overwrite
+HTTP/1.0 200 OK
+Content-Length: 0
+
+HTTP/1.0 200 OK
+Content-Length: 7
+
+bonjour
+$ two concurrent clients, each POSTs its own key; then a third reads both
+  client A: POST /a -> 200
+  client B: POST /b -> 200
+  client C: GET /a -> from-A
+  client C: GET /b -> from-B
+
+$ a slow client holds a half-sent request open while another client is served
+  fast client: GET /b -> from-B   (answered while the slow request is pending)
+  slow client: HTTP/1.0 200 OK
+
+$ printf 'POST /k HTTP/1.1\r\nContent-Length: 2\r\n\r\nv1GET /k HTTP/1.0\r\n\r\n' | nc -w 1 127.0.0.1 7860   # pipelined: write then read
+HTTP/1.0 200 OK
+Content-Length: 0
+
+HTTP/1.0 200 OK
+Content-Length: 2
+
+v1
+
+$ time curl -s -i -A '<146-character User-Agent>' http://127.0.0.1:7860/greeting   # long header value (linear-time parsing)
+HTTP/1.0 200 OK
+Content-Length: 7
+
+bonjour
+  (took 0.045 s)
+
+$ curl -s -i -X DELETE http://127.0.0.1:7860/greeting    # only GET and POST
+  (no response: HttpKvSpec has only GET and POST)

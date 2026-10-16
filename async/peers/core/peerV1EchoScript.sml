@@ -22,7 +22,7 @@ Theorem echo_spec_of_peer_disc:
   ∃io. semantics_prog (init_state (socket_ffi sk)) init_env prog (Diverge io) ∧
        echo_safe io ∧ echo_live sk io
 Proof
-  strip_tac >> drule_all v1_endpoint_run >> strip_tac >>
+  strip_tac >> drule_all v1_peer_run >> strip_tac >>
   qexists_tac ‘io’ >> fs[ep_echo_guar_def] >> conj_tac
   >- (rw[echo_safe_def] >> drule_all v1_bytes >> strip_tac >>
       reverse (Cases_on ‘MEM c (opened_fds evs)’) >- simp[] >>

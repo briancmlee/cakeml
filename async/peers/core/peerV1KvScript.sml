@@ -276,7 +276,7 @@ Theorem kv_spec_of_peer_disc:
   ∃io. semantics_prog (init_state (socket_ffi sk)) init_env prog (Diverge io) ∧
        kv_safe io ∧ kv_live sk io
 Proof
-  strip_tac >> drule_all v1_endpoint_run >> strip_tac >>
+  strip_tac >> drule_all v1_peer_run >> strip_tac >>
   qexists_tac ‘io’ >> fs[ep_kv_guar_def] >> conj_tac
   >- (rw[kv_safe_def] >> irule kv_safe_of_ren >> simp[] >>
       fs[sym_safe_def, always_def] >> metis_tac[]) >>

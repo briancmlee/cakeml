@@ -7,7 +7,7 @@
   From a version-1 server world sk that connects at most M clients
   (M + 3 < 2^64): its version-2 world v2of1 lfd sk, and that world's
   drained peer world (peerEchoEpisodes's dworld) with version 1's calls.
-   - v1_endpoint_run: the program's disciplined run io in sk is its run
+   - v1_peer_run: the program's disciplined run io in sk is its run
      in that peer world (v1_ep_diverge), so the peer guarantee
      holds of io (v1_run_ok collects the facts the rest uses);
    - v1_bytes: per-fd bytes of io are the renamed trace's (peerServers'
@@ -40,7 +40,7 @@ End
 (* MAIN: a disciplined program meeting a peer spec with version 1's
    calls runs in a bounded version-1 server world as in its peer
    world, so the peer guarantee holds of its run *)
-Theorem v1_endpoint_run:
+Theorem v1_peer_run:
   v1_disciplined lfd prog ∧
   rg_spec (λw. ep_server_world v1_calls lfd a w ∧ no_backpressure w ∧ open_loop w) G prog ∧
   server_world lfd sk ∧ sched_connects_le M sk.sched ∧ M + 3 < dimword (:64) ⇒

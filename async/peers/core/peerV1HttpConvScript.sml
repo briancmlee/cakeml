@@ -16,8 +16,8 @@ Libs
 
 (* HttpSpec, over the version-1 server worlds connecting at most M
    clients (peerV1Http's http_spec_of_peer_disc concludes this) *)
-Definition http_get_spec_le_def:
-  http_get_spec_le lfd files prog ⇔
+Definition http_spec_le_def:
+  http_spec_le lfd files prog ⇔
     ∀sk M. server_world lfd sk ∧ sched_connects_le M sk.sched ∧ M + 3 < dimword (:64) ⇒
            ∃io. semantics_prog (init_state (socket_ffi sk)) init_env prog (Diverge io) ∧
                 http_safe files io ∧ http_live files sk io
@@ -41,7 +41,7 @@ QED
    spec with version 1's calls, in every world leaving room for one more
    client *)
 Theorem peer_of_http_spec_le:
-  v1_disciplined lfd prog ∧ http_get_spec_le lfd files prog ⇒
+  v1_disciplined lfd prog ∧ http_spec_le lfd files prog ⇒
   rg_spec (λw. ep_server_world v1_calls lfd a w ∧ no_backpressure w ∧ open_loop w ∧
                nonsat1 lfd a w)
     (ep_http_guar files) prog
@@ -65,7 +65,7 @@ Proof
             rpt strip_tac >>
             ‘LENGTH sk.reserved + N + 3 < dimword (:64)’ by fs[] >>
             drule_all v1of2_props >> strip_tac >>
-            qpat_x_assum ‘http_get_spec_le _ _ _’ (mp_tac o REWRITE_RULE [http_get_spec_le_def]) >>
+            qpat_x_assum ‘http_spec_le _ _ _’ (mp_tac o REWRITE_RULE [http_spec_le_def]) >>
             disch_then (qspecl_then [‘v1of2 lfd sk’, ‘N’] mp_tac) >>
             impl_tac >- (fs[sched_connects_le_conns] >> decide_tac) >> strip_tac >>
             qexists_tac ‘io’ >> fs[http_live_def] >> metis_tac[]) >>
@@ -87,14 +87,14 @@ Theorem http_peer_equiv_disc_thm:
   ∀lfd a files prog.
     v1_disciplined lfd prog ⇒
     (rg_spec (λw. ep_server_world v1_calls lfd a w ∧ no_backpressure w ∧ open_loop w)
-       (ep_http_guar files) prog ⇒ http_get_spec_le lfd files prog) ∧
-    (http_get_spec_le lfd files prog ⇒
+       (ep_http_guar files) prog ⇒ http_spec_le lfd files prog) ∧
+    (http_spec_le lfd files prog ⇒
      rg_spec (λw. ep_server_world v1_calls lfd a w ∧ no_backpressure w ∧ open_loop w ∧
                   nonsat1 lfd a w)
        (ep_http_guar files) prog)
 Proof
   rpt strip_tac
-  >- (REWRITE_TAC[http_get_spec_le_def] >> rpt strip_tac >>
+  >- (REWRITE_TAC[http_spec_le_def] >> rpt strip_tac >>
       drule_all http_spec_of_peer_disc >> simp[])
   >> metis_tac[peer_of_http_spec_le]
 QED

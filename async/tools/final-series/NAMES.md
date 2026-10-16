@@ -39,6 +39,14 @@ Rules: theory renames apply everywhere, including `XTheory.`, `X$c` and translat
 | `echo_live_spec` | `echo_blocking_spec` | exact |
 | `echo_live_unwaited` | `echo_blocking_unwaited` | exact |
 | `echo_live_list_covers` | `echo_blocking_list_covers` | exact |
+| `echo2_sym_equiv_thm` | `echo_episodes_peer_equiv_thm` | exact |
+| `echo2_sym_equiv` | `echo_episodes_peer_equiv` | exact |
+| `echo_sym_equiv` | `echo_peer_equiv` | exact |
+| `http_sym_equiv` | `http_peer_equiv` | exact |
+| `kv_sym_equiv` | `kv_peer_equiv` | exact |
+| `echo_spec_of_endpoint_disc` | `echo_spec_of_peer_disc` | exact |
+| `http_spec_b_of_endpoint_disc` | `http_spec_of_peer_disc` | exact |
+| `kv_spec_of_endpoint_disc` | `kv_spec_of_peer_disc` | exact |
 
 ## Libraries
 
@@ -67,7 +75,31 @@ Rules: theory renames apply everywhere, including `XTheory.`, `X$c` and translat
 | cakeml/library | `asyncCfChooseModel` | `libChooseModel` |
 | cakeml/library | `asyncCfDet` | `libDet` |
 | cakeml/library | `asyncCfReactWorld` | `libReactWorld` |
+| endpoint-world | `endpointBuffer` | `peerBuffer` |
+| endpoint-world | `endpointBufferHttp` | `peerBufferHttp` |
+| endpoint-world | `endpointBufferKv` | `peerBufferKv` |
+| endpoint-world | `endpointClients` | `peerClients` |
+| endpoint-world | `endpointCompose` | `peerCompose` |
+| endpoint-world | `endpointEcho2` | `peerEchoEpisodes` |
+| endpoint-world | `endpointEcho2Conv` | `peerEchoEpisodesConv` |
 | endpoint-world | `endpointFair` | `peerFair` |
+| endpoint-world | `endpointInstances` | `peerInstances` |
+| endpoint-world | `endpointOpen` | `peerOpen` |
+| endpoint-world | `endpointSemantics` | `peerSemantics` |
+| endpoint-world | `endpointServers` | `peerServers` |
+| endpoint-world | `endpointSpecForms` | `peerSpecForms` |
+| endpoint-world | `endpointTrace` | `peerTrace` |
+| endpoint-world | `endpointV1Conv` | `peerV1Conv` |
+| endpoint-world | `endpointV1Disc` | `peerV1Disc` |
+| endpoint-world | `endpointV1Echo` | `peerV1Echo` |
+| endpoint-world | `endpointV1Http` | `peerV1Http` |
+| endpoint-world | `endpointV1Inst` | `peerV1Inst` |
+| endpoint-world | `endpointV1Kv` | `peerV1Kv` |
+| endpoint-world | `endpointV1Proj` | `peerV1Proj` |
+| endpoint-world | `endpointV1Run` | `peerV1Run` |
+| endpoint-world | `endpointV1Sim` | `peerV1Sim` |
+| endpoint-world | `endpointV2Prefix` | `peerV2Prefix` |
+| endpoint-world | `endpointV2Sim` | `peerV2Sim` |
 | endpoint-world | `endpointWorld` | `peerWorld` |
 | headline | `asyncHLEchoSpec2` | `echoEpisodesHeadline` |
 | headline | `asyncM4EchoSpec` | `echoHeadline` |
@@ -94,6 +126,7 @@ Rules: theory renames apply everywhere, including `XTheory.`, `X$c` and translat
 | kv-live | `asyncKvLiveStore` | `kvLiveStore` |
 | kv-live | `asyncKvProgSpec` | `kvHeadline` |
 | kv-live | `asyncServerVKv` | `skeletonVKv` |
+| l2-statements | `l2Statements` | `peerStatements` |
 | library-liveness | `asyncServerVLiveP` | `skeletonVLiveP` |
 | loop/blocking | `asyncM4BlkLoop` | `loopSelect` |
 | loop/blocking | `asyncM4BlkTrace` | `loopSelectTrace` |

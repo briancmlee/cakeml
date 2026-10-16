@@ -158,19 +158,20 @@ Proof
   strip_tac >> qexistsl [‘a’, ‘g’] >> simp[]
 QED
 
-(* MAIN: the hub's answers to d's writer eventually cover what d is owed *)
-Theorem chat_cover:
+(* MAIN: two rounds after round R, the hub's answers to d's writer cover
+   what d was owed at round R *)
+Theorem chat_cover_at:
   s0.listeners = [(n2w lfdn, [])] ∧ s0.conns = [] ∧
   MEM d (wacc (SPg (chat_server lfdn) ifds s0 R)) ⇒
-  ∃N. owed_m (w2n d) (TSg (chat_server lfdn) ifds s0 R) ≼
-      CONCAT (cout (DROP 1 (conn_answers chatV CWr CIn chat_handler lfdn ifds s0 N d)))
+  owed_m (w2n d) (TSg (chat_server lfdn) ifds s0 R) ≼
+  CONCAT (cout (DROP 1 (conn_answers chatV CWr CIn chat_handler lfdn ifds s0 (R + 2) d)))
 Proof
   rpt strip_tac >>
-  ‘fds_ok (TSg (chat_server lfdn) ifds s0 (3 * R + 4))’ by simp[fds_ok_TSg_chat] >>
-  ‘fresh (TSg (chat_server lfdn) ifds s0 (3 * R + 4)) ∧
+  ‘fds_ok (TSg (chat_server lfdn) ifds s0 (R + 2))’ by simp[fds_ok_TSg_chat] >>
+  ‘fresh (TSg (chat_server lfdn) ifds s0 (R + 2)) ∧
    ∀k. fresh (TSg (chat_server lfdn) ifds s0 k)’
     by metis_tac[gen_fresh, chat_uses_ok_v] >>
-  qabbrev_tac ‘N = 3 * R + 4’ >> qexists_tac ‘N’ >>
+  qabbrev_tac ‘N = R + 2’ >>
   ‘R ≤ N’ by simp[Abbr ‘N’] >>
   (* d's handler's view *)
   drule_all chat_view >> strip_tac >>
@@ -237,7 +238,7 @@ Proof
   ‘FILTER (wq fd) (trans CM (TAKE a IH)) = [(Kv (fd, Start), NONE)]’
     by metis_tac[FILTER_wq_on_fd_v] >>
   ‘PA ++ Xa = TT ∧ PR ++ XR = TT’ by (simp[Abbr ‘TT’] >> metis_tac[]) >>
-  ‘LENGTH G ≠ 0 ∧ R − a + R + 4 ≤ LENGTH G’
+  ‘LENGTH G ≠ 0 ∧ LENGTH G = R − a + 2’
     by (qpat_x_assum ‘a + LENGTH g = N’ mp_tac >> qpat_x_assum ‘a ≤ R’ mp_tac >>
         qpat_x_assum ‘LENGTH G = LENGTH g’ mp_tac >> qunabbrev_tac ‘N’ >>
         rpt (pop_assum kall_tac) >> rpt strip_tac >> intLib.ARITH_TAC) >>
@@ -366,10 +367,7 @@ Proof
         drule joins_accept >>
         disch_then (qspec_then ‘empty_store’ (qx_choose_then ‘j1’ assume_tac)) >>
         pop_assum mp_tac >> simp[]) >>
-  (* counting: more answered Fetches by round N than possible by round R *)
-  ‘(LENGTH G − 1) DIV 2 ≤ nfa fd WR’
-    by (qunabbrev_tac ‘WR’ >> irule writer_nfa_lower >> conj_tac >>
-        first_assum ACCEPT_TAC) >>
+  (* the writer's window: a new answered Fetch in rounds R, R + 1 *)
   ‘R − a ≤ LENGTH g’
     by (qpat_x_assum ‘a + LENGTH g = N’ mp_tac >> qpat_x_assum ‘a ≤ R’ mp_tac >>
         qunabbrev_tac ‘N’ >> rpt (pop_assum kall_tac) >> intLib.ARITH_TAC) >>
@@ -384,25 +382,35 @@ Proof
         disch_then (mp_tac o AP_TERM “FILTER (wq fd)”) >>
         REWRITE_TAC[FILTER_wq_on_fd_v] >> disch_then SUBST1_TAC >>
         qpat_assum ‘∀j. FILTER (wq fd) _ = _’ (qspec_then ‘R − a’ ACCEPT_TAC)) >>
-  ‘nfa fd (trans CM (TAKE R IH)) ≤ R − a’
-    by (ONCE_REWRITE_TAC[GSYM nfa_FILTER_wq] >> pop_assum SUBST1_TAC >>
-        irule LESS_EQ_TRANS >> qexists_tac ‘LENGTH (TAKE (R − a) G)’ >>
-        REWRITE_TAC[writer_nfa_upper] >> simp[LENGTH_TAKE_EQ]) >>
-  ‘nfa fd PR ≤ R − a’
-    by (pop_assum mp_tac >> qpat_assum ‘trans CM (TAKE R IH) = _’ SUBST1_TAC >>
+  ‘nfa fd (trans CM (TAKE R IH)) = nfa fd (trans (writer fd) (TAKE (R − a) G))’
+    by (pop_assum (SUBST1_TAC o SYM) >> REWRITE_TAC[nfa_FILTER_wq]) >>
+  ‘nfa fd PR ≤ nfa fd (trans (writer fd) (TAKE (R − a) G))’
+    by (pop_assum (SUBST1_TAC o SYM) >>
+        qpat_assum ‘trans CM (TAKE R IH) = _’ SUBST1_TAC >>
         REWRITE_TAC[nfa_APPEND2] >> rpt (pop_assum kall_tac) >> intLib.ARITH_TAC) >>
-  ‘R − a + 1 ≤ (LENGTH G − 1) DIV 2’
-    by (qpat_x_assum ‘R − a + R + 4 ≤ LENGTH G’ mp_tac >> rpt (pop_assum kall_tac) >>
-        strip_tac >> simp[X_LE_DIV] >> intLib.ARITH_TAC) >>
+  ‘nfa fd (trans (writer fd) (TAKE (R − a) G)) <
+   nfa fd (trans (writer fd) (TAKE (R − a + 2) G))’
+    by (qspecl_then [‘fd’, ‘G’, ‘R − a’] mp_tac (Q.GENL [‘fd’, ‘G’, ‘m’] writer_window) >>
+        ‘trans (writer fd) G = WR’ by simp[Abbr ‘WR’] >>
+        pop_assum (fn th => REWRITE_TAC[th]) >>
+        impl_tac >- (rpt conj_tac >> TRY (first_assum ACCEPT_TAC) >>
+                     qpat_assum ‘LENGTH G = _’ SUBST1_TAC >> REWRITE_TAC[LESS_EQ_REFL]) >>
+        REWRITE_TAC[]) >>
+  ‘TAKE (R − a + 2) G = G’
+    by (qpat_assum ‘LENGTH G = _’ (SUBST1_TAC o SYM) >> REWRITE_TAC[TAKE_LENGTH_ID]) >>
+  ‘nfa fd PR < nfa fd WR’
+    by (‘trans (writer fd) G = WR’ by simp[Abbr ‘WR’] >>
+        qpat_x_assum ‘nfa fd (trans (writer fd) (TAKE (R − a) G)) < _’ mp_tac >>
+        qpat_x_assum ‘nfa fd PR ≤ _’ mp_tac >>
+        qpat_assum ‘TAKE (R − a + 2) G = G’ (fn th => REWRITE_TAC[th]) >>
+        pop_assum (fn th => REWRITE_TAC[th]) >>
+        rpt (pop_assum kall_tac) >> intLib.ARITH_TAC) >>
   ‘nfa fd PR < nfa fd (PR ++ XR)’
     by (‘nfa fd (PR ++ XR) = nfa fd WR’
           by (qpat_assum ‘PR ++ XR = TT’ SUBST1_TAC >>
               qpat_assum ‘FILTER (wq fd) TT = WR’ (SUBST1_TAC o SYM) >>
               REWRITE_TAC[nfa_FILTER_wq]) >>
-        pop_assum SUBST1_TAC >>
-        qpat_x_assum ‘nfa fd PR ≤ _’ mp_tac >> qpat_x_assum ‘R − a + 1 ≤ _’ mp_tac >>
-        qpat_x_assum ‘(LENGTH G − 1) DIV 2 ≤ _’ mp_tac >> rpt (pop_assum kall_tac) >>
-        intLib.ARITH_TAC) >>
+        pop_assum SUBST1_TAC >> first_assum ACCEPT_TAC) >>
   drule nfa_split_exists >>
   qpat_assum ‘PR ++ XR = TT’ SUBST1_TAC >>
   disch_then (qx_choose_then ‘p’ strip_assume_tac) >>
@@ -537,4 +545,14 @@ Proof
   ‘TAKE p TT = PR ++ TAKE (p − LENGTH PR) XR’
     by (qpat_assum ‘PR ++ XR = TT’ (SUBST1_TAC o SYM) >> simp[TAKE_APPEND2]) >>
   pop_assum SUBST1_TAC >> simp[]
+QED
+
+Theorem chat_cover:
+  s0.listeners = [(n2w lfdn, [])] ∧ s0.conns = [] ∧
+  MEM d (wacc (SPg (chat_server lfdn) ifds s0 R)) ⇒
+  ∃N. owed_m (w2n d) (TSg (chat_server lfdn) ifds s0 R) ≼
+      CONCAT (cout (DROP 1 (conn_answers chatV CWr CIn chat_handler lfdn ifds s0 N d)))
+Proof
+  strip_tac >> drule_all chat_cover_at >> strip_tac >>
+  qexists_tac ‘R + 2’ >> first_assum ACCEPT_TAC
 QED

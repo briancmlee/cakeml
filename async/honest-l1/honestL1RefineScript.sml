@@ -99,16 +99,24 @@ Definition l1v2_rel_def:
   l1v2_rel p lfd sched (w : l0world, st : l1st) (s : sockets2, hs : hstate) ⇔
     st.tbl = hs.tbl ∧ st.nxt = hs.nxt ∧ st.outbox = [] ∧ st.closing = [] ∧
     st.gone = [] ∧ ¬st.exhausted ∧ core_rel p lfd w s ∧
-    s.future = fut_of p lfd sched (npolls w.hist)
+    s.future = fut_of p lfd sched (npolls w.hist) ∧
+    (∀h f. ALOOKUP st.tbl h = SOME f ⇒ ALOOKUP w.open_fds f ≠ NONE ∧ f ≠ lfd) ∧
+    (∀h1 h2 f. ALOOKUP st.tbl h1 = SOME f ∧ ALOOKUP st.tbl h2 = SOME f ⇒ h1 = h2) ∧
+    (∀h f. ALOOKUP st.tbl h = SOME f ⇒ ∃i. i < st.nxt ∧ h = l1hdl lfd i)
 End
 
-(* The round discipline: an fd polled at the last poll and not readable
-   since has nothing to read *)
+(* The round discipline.  polp: the (handle, fd) pairs polled at the
+   last poll (handles that existed then; the listener as (lfd, lfd)).  A
+   polled handle whose fd is not in L1's readable set has nothing to read;
+   and every polled handle was issued before (so a handle issued since is
+   not among them: handles are never reused, fds are). *)
 Definition rdy_ok_def:
-  rdy_ok lfd pol (w : l0world) (st : l1st) ⇔
-    (∀f j. MEM f pol ∧ ¬MEM f st.rdy ∧ ALOOKUP w.open_fds f = SOME j ⇒
-           (EL j w.chans).inbox = [] ∧ ¬(EL j w.chans).peer_eof) ∧
-    (MEM lfd pol ∧ ¬MEM lfd st.rdy ⇒ ∀p q. MEM (lfd, p, q) w.listeners ⇒ q = [])
+  rdy_ok lfd polp (w : l0world) (st : l1st) ⇔
+    (∀h f j. MEM (h, f) polp ∧ ALOOKUP st.tbl h = SOME f ∧ ¬MEM f st.rdy ∧
+             ALOOKUP w.open_fds f = SOME j ⇒
+             (EL j w.chans).inbox = [] ∧ ¬(EL j w.chans).peer_eof) ∧
+    (MEM (lfd, lfd) polp ∧ ¬MEM lfd st.rdy ⇒ ∀p q. MEM (lfd, p, q) w.listeners ⇒ q = []) ∧
+    (∀h f. MEM (h, f) polp ∧ h ≠ lfd ⇒ ∃i. i < st.nxt ∧ h = l1hdl lfd i)
 End
 
 (* ------------------------------------------------------------------------

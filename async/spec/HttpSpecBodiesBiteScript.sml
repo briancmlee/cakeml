@@ -12,6 +12,9 @@
   - Broken servers: treating body bytes as the next request, answering
     before the whole body has arrived, and never answering each violate
     the spec.
+  - Header names are tokens: whitespace before the colon is not a valid
+    name, and a server that reads "Content-Length\t: 19" as an ordinary
+    header and answers the body as a request violates safety.
   - Non-vacuity: in the fair world where one client sends a POST /echo
     whose body looks like a request, the ideal trace is safe and live.
 *)
@@ -34,23 +37,25 @@ Overload rp = “Req "POST" "/echo" "1.1" [("Content-Length", "19")] looks_like_
 
 (* HttpSpecHeaders' header lines are valid here *)
 Theorem valid_header_bheader:
-  valid_header h ⇒ valid_bheader h
+  valid_header h ∧ EVERY tchar (FST h) ⇒ valid_bheader h
 Proof
   PairCases_on ‘h’ >> simp[valid_header_def, valid_bheader_def]
 QED
 
-(* MAIN (compatibility): a request of HttpSpecHeaders without
-   Content-Length or Transfer-Encoding headers is a bodiless GET request
-   here, with the same bytes and the same response *)
+(* MAIN (compatibility): a request of HttpSpecHeaders whose header names
+   are tokens, without Content-Length or Transfer-Encoding headers, is a
+   bodiless GET request here, with the same bytes and the same response *)
 Theorem bodiless_requests:
-  valid_hrequest (GetH p ver hs) ∧ ¬EXISTS is_cl hs ∧ ¬EXISTS is_te hs ⇒
+  valid_hrequest (GetH p ver hs) ∧ EVERY (λh. EVERY tchar (FST h)) hs ∧
+  ¬EXISTS is_cl hs ∧ ¬EXISTS is_te hs ⇒
   valid_brequest (Req "GET" p ver hs "") ∧
   print_brequest (Req "GET" p ver hs "") = print_hrequest (GetH p ver hs) ∧
   bhandle files (Req "GET" p ver hs "") = handle files (hpath (GetH p ver hs))
 Proof
   rw[valid_brequest_def, valid_hrequest_def, valid_method_def, framed_def,
      print_brequest_def, print_hrequest_def, bhandle_def, hpath_def]
-  >- (fs[EVERY_MEM] >> metis_tac[valid_header_bheader]) >>
+  >- (fs[EVERY_MEM] >> rw[] >> irule valid_header_bheader >>
+      fs[EVERY_MEM] >> metis_tac[]) >>
   ‘FILTER is_cl hs = []’ by (simp[FILTER_EQ_NIL] >> fs[EVERY_MEM]) >>
   simp[]
 QED
@@ -81,21 +86,28 @@ Proof
   Induct >> Cases_on ‘b’ >> rw[] >> gvs[] >> metis_tac[]
 QED
 
-Theorem headers_unique[local]:
+(* The character properties of header lines that framing relies on *)
+Definition hchars_def:
+  hchars (n, v) ⇔
+    n ≠ [] ∧ EVERY (λc. c ≠ #":" ∧ c ≠ #" " ∧ c ≠ #"\r" ∧ c ≠ #"\n") n ∧
+    EVERY (λc. c ≠ #"\r" ∧ c ≠ #"\n") v
+End
+
+Theorem headers_unique_chars[local]:
   ∀hs1 hs2 x y.
-    EVERY valid_bheader hs1 ∧ EVERY valid_bheader hs2 ∧
+    EVERY hchars hs1 ∧ EVERY hchars hs2 ∧
     FLAT (MAP print_header hs1) ++ "\r\n" ++ x =
     FLAT (MAP print_header hs2) ++ "\r\n" ++ y ⇒
     hs1 = hs2 ∧ x = y
 Proof
   Induct
   >- (Cases >> simp[] >> PairCases_on ‘h’ >>
-      simp[print_header_def, valid_bheader_def] >> Cases_on ‘h0’ >> simp[] >>
+      simp[print_header_def, hchars_def] >> Cases_on ‘h0’ >> simp[] >>
       rpt strip_tac >> gvs[]) >>
   PairCases >> Cases >> simp[]
-  >- (simp[print_header_def, valid_bheader_def] >> Cases_on ‘h0’ >> simp[] >>
+  >- (simp[print_header_def, hchars_def] >> Cases_on ‘h0’ >> simp[] >>
       rpt strip_tac >> gvs[]) >>
-  PairCases_on ‘h’ >> simp[print_header_def, valid_bheader_def] >>
+  PairCases_on ‘h’ >> simp[print_header_def, hchars_def] >>
   rpt gen_tac >> strip_tac >>
   qpat_x_assum ‘_ = _’ mp_tac >>
   REWRITE_TAC[GSYM APPEND_ASSOC, APPEND] >> strip_tac >>
@@ -115,6 +127,18 @@ Proof
         qpat_x_assum ‘_ = _’ mp_tac >> REWRITE_TAC[GSYM APPEND_ASSOC, APPEND] >>
         simp[]) >>
   gvs[] >> first_x_assum irule >> simp[]
+QED
+
+Theorem headers_unique[local]:
+  EVERY valid_bheader hs1 ∧ EVERY valid_bheader hs2 ∧
+  FLAT (MAP print_header hs1) ++ "\r\n" ++ x =
+  FLAT (MAP print_header hs2) ++ "\r\n" ++ y ⇒
+  hs1 = hs2 ∧ x = y
+Proof
+  ‘∀h. valid_bheader h ⇒ hchars h’
+    by (Cases >> simp[hchars_def] >> metis_tac[valid_bheader_chars]) >>
+  strip_tac >> irule headers_unique_chars >> simp[] >>
+  conj_tac >> irule EVERY_MONOTONIC >> qexists_tac ‘valid_bheader’ >> simp[]
 QED
 
 Theorem framed_length[local]:
@@ -290,6 +314,72 @@ Proof
   simp[sent_upto_one_client] >> conj_tac >- EVAL_TAC >>
   rw[] >> Cases_on ‘LPREFIX (fromList evs) io’ >> simp[] >> res_tac >>
   simp[] >> EVAL_TAC
+QED
+
+(* ------------------------------------------------------------------------
+   Header names are tokens (RFC 9110)
+   ------------------------------------------------------------------------ *)
+
+(* MAIN (bite): a header name ending in whitespace is not a valid header
+   name: tab, space, vertical tab (\011) *)
+Theorem whitespace_names_invalid:
+  ¬valid_bheader ("Content-Length\t", v) ∧
+  ¬valid_bheader ("Content-Length ", v) ∧
+  ¬valid_bheader ("Content-Length\011", v)
+Proof
+  simp[valid_bheader_def] >> EVAL_TAC
+QED
+
+(* rp, with a tab before the colon of its Content-Length header: under a
+   lenient reading, a bodiless request followed by its "body" as a second
+   request *)
+Overload tab_req =
+  “"POST /echo HTTP/1.1\r\nContent-Length\t: 19\r\n\r\n" ++ looks_like_request”
+
+(* No valid request is a prefix of tab_req: its header line is not valid *)
+Theorem tab_req_no_full[local]:
+  no_full_brequest (bytes tab_req)
+Proof
+  rw[no_full_brequest_def, IS_PREFIX_APPEND, brequests_CONS] >> strip_tac >>
+  drule bytes_split >> strip_tac >>
+  Cases_on ‘r’ >> rename1 ‘Req m p ver hs b’ >>
+  gvs[valid_brequest_def, valid_method_def, print_brequest_def] >>
+  ‘p = "/echo" ∧
+   "HTTP/" ++ ver ++ "\r\n" ++ FLAT (MAP print_header hs) ++ "\r\n" ++ b ++ s' =
+   "HTTP/1.1\r\nContent-Length\t: 19\r\n\r\n" ++ looks_like_request’
+    by (irule split_char >> qexists_tac ‘#" "’ >>
+        fs[valid_path_def, EVERY_MEM] >>
+        rpt conj_tac >> TRY (strip_tac >> res_tac >> fs[] >> NO_TAC) >>
+        qpat_x_assum ‘_ = _’ mp_tac >> REWRITE_TAC[GSYM APPEND_ASSOC, APPEND] >>
+        simp[]) >>
+  gvs[valid_version_def] >>
+  Cases_on ‘hs’ >> gvs[] >> PairCases_on ‘h’ >> gvs[print_header_def] >>
+  ‘h0 = "Content-Length\t"’
+    suffices_by (strip_tac >> gvs[] >> metis_tac[whitespace_names_invalid]) >>
+  ‘"Content-Length\t" = h0 ∧
+   " 19\r\n\r\n" ++ looks_like_request =
+   " " ++ h1 ++ "\r\n" ++ FLAT (MAP print_header t) ++ "\r\n" ++ b ++ s'’
+    suffices_by simp[] >>
+  irule split_char >> qexists_tac ‘#":"’ >>
+  ‘valid_bheader (h0, h1)’ by fs[] >>
+  drule valid_bheader_chars >> simp[EVERY_MEM] >> strip_tac >>
+  rpt conj_tac >> TRY (strip_tac >> res_tac >> fs[] >> NO_TAC) >>
+  qpat_x_assum ‘_ = _’ mp_tac >> REWRITE_TAC[GSYM APPEND_ASSOC, APPEND] >>
+  simp[]
+QED
+
+(* MAIN (bite): a server that reads a tab before the colon as an
+   ordinary header, and so answers the 19 body bytes as a request (GET /a),
+   violates safety *)
+Theorem broken_tab_header:
+  starts_with [rd c1 (bytes tab_req) 100;
+               wr c1 (bytes (print_response (Ok "hi")))] io ⇒
+  ¬http_safe_b site io
+Proof
+  rw[http_safe_b_def] >>
+  qexistsl [‘[rd c1 (bytes tab_req) 100; wr c1 (bytes (print_response (Ok "hi")))]’,
+            ‘c1’, ‘[]’, ‘bytes tab_req’] >>
+  simp[tab_req_no_full] >> EVAL_TAC
 QED
 
 (* ------------------------------------------------------------------------

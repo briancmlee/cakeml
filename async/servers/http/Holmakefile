@@ -1,0 +1,10 @@
+# Generated from the review-series layout (see REVIEW-SERIES-PLAN.md).
+INCLUDES = ../../model/core \
+           ../../model/level2 \
+           ../../spec \
+           ../../world/sockets \
+           ../echo \
+           ../skeleton
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

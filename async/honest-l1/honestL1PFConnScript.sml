@@ -206,3 +206,85 @@ Proof
   disj2_tac >> qexists_tac ‘j’ >> gvs[] >>
   TRY (qexists_tac ‘w2n k’ >> simp[] >> NO_TAC)
 QED
+
+(* ------------------------------------------------------------------------
+   L1's round and the listener's queue: only the fetch's accepts take from
+   it (L1 never closes the listener)
+   ------------------------------------------------------------------------ *)
+
+Theorem sys_qof:
+  (sys_send g bs w = SOME (out, w', ev) ⇒ ∃t. qof w' l = qof w l ++ t) ∧
+  (g ≠ l ∧ sys_close g w = SOME (out, w', ev) ⇒ ∃t. qof w' l = qof w l ++ t) ∧
+  (sys_recv g k w = SOME (out, w', ev) ⇒ ∃t. qof w' l = qof w l ++ t) ∧
+  (g ≠ l ∧ sys_accept g w = SOME (out, w', ev) ⇒ ∃t. qof w' l = qof w l ++ t) ∧
+  (sys_poll fes w = SOME (out, w', ev) ⇒ ∃t. qof w' l = qof w l ++ t)
+Proof
+  rw[sys_close_def, sys_send_def, sys_recv_def, sys_accept_def, sys_poll_def] >>
+  drule_at (Pos last) qof_do >> simp[]
+QED
+
+Theorem l1_close_qof:
+  l1_close g (w, st) = SOME ((w', st'), evs) ∧ g ≠ l ⇒ ∃t. qof w' l = qof w l ++ t
+Proof
+  rw[l1_close_def, AllCaseEqs()] >> gvs[] >> metis_tac[sys_qof]
+QED
+
+Theorem pdo_qof:
+  pdo lfd (w, ps) a = SOME (r, (w', ps'), evs) ∧ pown lfd ps ⇒
+  ∃t. qof w' lfd = qof w lfd ++ t
+Proof
+  Cases_on ‘a’ >> simp[pdo_def] >> rw[AllCaseEqs()] >> gvs[] >>
+  TRY (qexists_tac ‘[]’ >> simp[] >> NO_TAC) >>
+  PairCases_on ‘z’ >> gvs[] >>
+  TRY (rename1 ‘l1_close g _ = _’ >>
+       ‘g ≠ lfd’ by (imp_res_tac ALOOKUP_MEM >> gvs[pown_def, MEM_MAP] >>
+                     strip_tac >> gvs[] >> metis_tac[SND]) >>
+       drule_all l1_close_qof >> simp[] >> NO_TAC) >>
+  gvs[l1do_def, AllCaseEqs()] >> TRY (qexists_tac ‘[]’ >> simp[] >> NO_TAC) >>
+  metis_tac[sys_qof]
+QED
+
+Theorem pacts_qof:
+  ∀acts w ps s rs evs w' ps'.
+    pacts lfd (w, ps) acts = SOME (rs, evs, (w', ps')) ∧ pv_rel lfd cm ps s ∧ pown lfd ps ⇒
+    ∃t. qof w' lfd = qof w lfd ++ t
+Proof
+  Induct >> simp[pacts_def] >> rpt gen_tac >> strip_tac >>
+  gvs[AllCaseEqs()] >> PairCases_on ‘ws1’ >>
+  drule_all pdo_qof >> strip_tac >>
+  drule_all pdo_hdo >> strip_tac >>
+  first_x_assum drule_all >> strip_tac >> simp[]
+QED
+
+Theorem l1_polls_qof:
+  ∀chs w rv w' evs. l1_polls chs w = SOME (rv, w', evs) ⇒ ∃t. qof w' l = qof w l ++ t
+Proof
+  Induct >> simp[l1_polls_def] >> rpt gen_tac >> strip_tac >> gvs[AllCaseEqs()] >>
+  drule (el 5 (CONJUNCTS sys_qof)) >> disch_then (qspec_then ‘l’ strip_assume_tac) >>
+  first_x_assum drule >> strip_tac >> simp[]
+QED
+
+Theorem l1_flush_qof:
+  ∀fs w st w' st' evs. l1_flush fs (w, st) = SOME ((w', st'), evs) ⇒
+                       ∃t. qof w' l = qof w l ++ t
+Proof
+  Induct >> simp[l1_flush_def] >> rpt gen_tac >> strip_tac >>
+  qpat_x_assum ‘(if _ then _ else _) = _’ mp_tac >> IF_CASES_TAC >> strip_tac
+  >- (first_x_assum drule >> simp[]) >>
+  gvs[AllCaseEqs()] >>
+  drule (el 1 (CONJUNCTS sys_qof)) >> disch_then (qspec_then ‘l’ strip_assume_tac) >>
+  first_x_assum drule >> strip_tac >> simp[]
+QED
+
+Theorem l1_reap_qof:
+  ∀fs w st w' st' evs. l1_reap fs (w, st) = SOME ((w', st'), evs) ∧ ¬MEM l fs ⇒
+                       ∃t. qof w' l = qof w l ++ t
+Proof
+  Induct >> simp[l1_reap_def] >> rpt gen_tac >> strip_tac >> gvs[] >>
+  qpat_x_assum ‘(if _ then _ else _) = _’ mp_tac >> IF_CASES_TAC >> strip_tac
+  >- (gvs[AllCaseEqs()] >> Cases_on ‘ws’ >>
+      ‘h ≠ l’ by (strip_tac >> gvs[]) >>
+      drule_all l1_close_qof >> strip_tac >>
+      first_x_assum drule_all >> strip_tac >> simp[])
+  >> first_x_assum drule_all >> simp[]
+QED

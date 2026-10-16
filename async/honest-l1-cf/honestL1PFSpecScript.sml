@@ -170,3 +170,132 @@ Proof
   >- (xapp_spec c_send_spec >> xsimpl >> metis_tac[]) >>
   drive_tac
 QED
+
+Theorem pacts_spec:
+  ∀acts ps w rs evs1 w' ps' psv actsv evs.
+    pacts lfd (w, ps) acts = SOME (rs, evs1, (w', ps')) ∧
+    WORD lfd lfdv ∧ L1P ps psv ∧ LIST_TYPE SACT acts actsv ⇒
+    app (p:'ffi ffi_proj) pacts_v [lfdv; psv; actsv] (L0_EV w0 w evs)
+      (POSTv v. &(∃psv' rsv. v = Conv NONE [psv'; rsv] ∧ L1P ps' psv' ∧
+                             LIST_TYPE SRESP rs rsv) *
+                L0_EV w0 w' (evs ++ evs1))
+Proof
+  Induct >> rpt strip_tac >>
+  xcf_with_def (fetch "honestL1PFProg" "pacts_v_def") >>
+  gvs[LIST_TYPE_def, pacts_def] >> xmatch
+  >- (xlet_auto >- (xcon >> xsimpl) >> xcon >> xsimpl >> simp[LIST_TYPE_def]) >>
+  gvs[AllCaseEqs()] >> PairCases_on ‘ws1’ >>
+  xlet ‘POSTv v. &(∃psv' rv. v = Conv NONE [psv'; rv] ∧ L1P ws11 psv' ∧ SRESP r rv) *
+                 L0_EV w0 ws10 (evs ++ evs1')’
+  >- (xapp_spec pdo_spec >> xsimpl >> metis_tac[]) >>
+  gvs[] >> xmatch >>
+  xlet ‘POSTv v. &(∃psv' rsv. v = Conv NONE [psv'; rsv] ∧ L1P ps' psv' ∧
+                              LIST_TYPE SRESP rs' rsv) *
+                 L0_EV w0 w' (evs ++ evs1' ++ evs')’
+  >- (first_x_assum drule >> disch_then drule >> strip_tac >> xapp >> xsimpl >>
+      metis_tac[]) >>
+  gvs[] >> xmatch >>
+  xlet_auto >- (xcon >> xsimpl) >> xcon >> xsimpl >> simp[LIST_TYPE_def]
+QED
+
+(* ------------------------------------------------------------------------
+   The round's tail: the polls, the flush, the fetch and the reap
+   ------------------------------------------------------------------------ *)
+
+Overload L1ST = “HONESTL1MODEL_L1ST_TYPE”
+Overload REV = “HONESTL0_REVENTS_TYPE”
+
+Theorem l1_polls_spec:
+  ∀chunks w rv w' evs1 cv evs.
+    l1_polls chunks w = SOME (rv, w', evs1) ∧
+    LIST_TYPE (LIST_TYPE (PAIR_TYPE WORD NUM)) chunks cv ⇒
+    app (p:'ffi ffi_proj) l1_polls_v [cv] (L0_EV w0 w evs)
+      (POSTv v. &LIST_TYPE (PAIR_TYPE WORD REV) rv v * L0_EV w0 w' (evs ++ evs1))
+Proof
+  Induct >> rpt strip_tac >>
+  xcf_with_def (fetch "honestL1PFProg" "l1_polls_v_def") >>
+  gvs[LIST_TYPE_def, l1_polls_def] >> xmatch
+  >- (xcon >> xsimpl >> simp[LIST_TYPE_def]) >>
+  gvs[AllCaseEqs()] >>
+  xlet ‘POSTv v. &LIST_TYPE WORD out v * L0_EV w0 w1 (evs ++ [ev])’
+  >- (xapp_spec c_poll_spec >> xsimpl >> metis_tac[]) >>
+  xlet ‘POSTv v. &LIST_TYPE (PAIR_TYPE WORD REV) rv' v *
+                 L0_EV w0 w' (evs ++ [ev] ++ evs')’
+  >- (first_x_assum drule >> strip_tac >> xapp >> fs[]) >>
+  rpt (xlet_auto >- xsimpl) >>
+  xapp_spec (INST_TYPE [alpha |-> “:word64 # revents”] (fetch "mlbasicsProg" "append_1_v_thm")) >> xsimpl >>
+  qexistsl [‘rv'’, ‘poll_revents h out’, ‘PAIR_TYPE WORD REV’] >> rw[] >>
+  rewrite_tac[GSYM APPEND_ASSOC, APPEND] >> xsimpl
+QED
+
+Theorem l1_flush_spec:
+  ∀fs w st w' st' evs1 fsv stv evs.
+    l1_flush fs (w, st) = SOME ((w', st'), evs1) ∧
+    LIST_TYPE WORD fs fsv ∧ L1ST st stv ⇒
+    app (p:'ffi ffi_proj) l1_flush_v [fsv; stv] (L0_EV w0 w evs)
+      (POSTv v. &L1ST st' v * L0_EV w0 w' (evs ++ evs1))
+Proof
+  Induct >> rpt strip_tac >>
+  xcf_with_def (fetch "honestL1PFProg" "l1_flush_v_def") >>
+  gvs[LIST_TYPE_def, l1_flush_def] >> xmatch
+  >- (xvar >> xsimpl) >>
+  xlet_auto >- xsimpl >> xif
+  >- (gvs[GSYM quiet_fd_def] >> first_x_assum drule >> strip_tac >> xapp >> xsimpl >>
+      metis_tac[]) >>
+  gvs[GSYM quiet_fd_def] >> gvs[AllCaseEqs()] >>
+  xlet_auto >- xsimpl >>
+  xlet ‘POSTv v. &LIST_TYPE WORD out v * L0_EV w0 w'' (evs ++ [ev])’
+  >- (xapp_spec c_send_spec >> xsimpl >> metis_tac[]) >>
+  rpt (xlet_auto >- xsimpl) >>
+  first_x_assum drule >> strip_tac >> xapp >> qexistsl [‘emp’, ‘evs ++ [ev]’] >> xsimpl >> rewrite_tac[GSYM APPEND_ASSOC, APPEND] >> xsimpl
+QED
+
+Theorem pf_fetch_spec:
+  ∀fs w ps w' ps' log evs1 fsv psv evs.
+    pf_fetch lfd hw fs (w, ps) = SOME ((w', ps'), log, evs1) ∧
+    WORD lfd lfdv ∧ NUM hw hwv ∧ LIST_TYPE WORD fs fsv ∧ L1P ps psv ⇒
+    app (p:'ffi ffi_proj) pf_fetch_v [lfdv; hwv; fsv; psv] (L0_EV w0 w evs)
+      (POSTv v. &L1P ps' v * L0_EV w0 w' (evs ++ evs1))
+Proof
+  Induct >> rpt strip_tac >>
+  xcf_with_def (fetch "honestL1PFProg" "pf_fetch_v_def") >>
+  gvs[LIST_TYPE_def, pf_fetch_def] >> xmatch
+  >- (xvar >> xsimpl) >>
+  rpt (xlet_auto >- xsimpl) >> xif
+  >- (gvs[] >> first_x_assum drule >> strip_tac >> xapp >> fs[]) >>
+  gvs[] >> xlet_auto >- xsimpl >> xif
+  >- (gvs[AllCaseEqs()] >> pairarg_tac >> gvs[AllCaseEqs()] >>
+      (xlet ‘POSTv v. &LIST_TYPE WORD out v * L0_EV w0 w1 (evs ++ [ev])’
+       >- (xapp_spec c_accept_spec >> xsimpl >> metis_tac[])) >>
+      (xlet_auto >- xsimpl) >> gvs[fetch_acc_upd_def] >>
+      first_x_assum drule >> strip_tac >> xapp >> qexistsl [‘emp’, ‘evs ++ [ev]’] >> xsimpl >> rewrite_tac[GSYM APPEND_ASSOC, APPEND] >> xsimpl) >>
+  gvs[AllCaseEqs()] >> pairarg_tac >> gvs[AllCaseEqs()] >>
+  rpt (xlet_auto >- xsimpl) >>
+  (xlet ‘POSTv v. &LIST_TYPE WORD out v * L0_EV w0 w1 (evs ++ [ev])’
+   >- (xapp_spec c_recv_spec >> xsimpl >> qexistsl [‘h’, ‘pf_chunk’] >>
+       simp[fetch "honestL1PFProg" "pf_chunk_v_thm"])) >>
+  (xlet_auto >- xsimpl) >> gvs[fetch_recv_upd_def] >>
+  first_x_assum drule >> strip_tac >> xapp >> qexistsl [‘emp’, ‘evs ++ [ev]’] >> xsimpl >> rewrite_tac[GSYM APPEND_ASSOC, APPEND] >> xsimpl
+QED
+
+Theorem l1_reap_spec:
+  ∀fs w st w' st' evs1 fsv stv evs.
+    l1_reap fs (w, st) = SOME ((w', st'), evs1) ∧
+    LIST_TYPE WORD fs fsv ∧ L1ST st stv ⇒
+    app (p:'ffi ffi_proj) l1_reap_v [fsv; stv] (L0_EV w0 w evs)
+      (POSTv v. &L1ST st' v * L0_EV w0 w' (evs ++ evs1))
+Proof
+  Induct >> rpt strip_tac >>
+  xcf_with_def (fetch "honestL1PFProg" "l1_reap_v_def") >>
+  gvs[LIST_TYPE_def, l1_reap_def] >> xmatch
+  >- (xvar >> xsimpl) >>
+  xlet_auto >- xsimpl >> xif
+  >- (gvs[GSYM quiet_fd_def] >> gvs[AllCaseEqs(), l1_close_def] >>
+      rename1 ‘sys_close h w = SOME (x, w'', ev)’ >>
+      xlet ‘POSTv v. &LIST_TYPE WORD x v * L0_EV w0 w'' (evs ++ [ev])’
+      >- (xapp_spec c_close_spec >> xsimpl >> metis_tac[]) >>
+      (xlet_auto >- xsimpl) >>
+      first_x_assum drule >> strip_tac >> xapp >> simp[]) >>
+  gvs[GSYM quiet_fd_def] >>
+  first_x_assum drule >> strip_tac >> xapp >> fs[]
+QED

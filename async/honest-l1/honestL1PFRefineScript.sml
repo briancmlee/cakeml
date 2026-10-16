@@ -20,8 +20,8 @@ Theory honestL1PFRefine
 Ancestors
   honestL1PFModel honestL1Model honestL1Steps honestL1Inv honestL0Rely honestL0World honestL0
   asyncHLModel
-  socketV2FFI socketV2Events ffiSpikeSocketFFI asyncM3World asyncCore asyncLevel1
-  llist alist
+  socketV2FFI socketV2Events socketV2Fair ffiSpikeSocketFFI asyncM3World asyncCore
+  asyncLevel1 llist alist
 Libs
   preamble
 
@@ -675,6 +675,13 @@ Proof
   Cases >> rw[arrs_def] >> rpt (pairarg_tac >> gvs[])
 QED
 
+Theorem arrs_k_mono:
+  ∀l cm k as cm' k'. arrs lfd (cm, k) l = (as, (cm', k')) ⇒ k ≤ k'
+Proof
+  Induct >> simp[arrs_def] >> Cases >> rw[arrs_def] >> pairarg_tac >> gvs[] >>
+  first_x_assum drule >> simp[]
+QED
+
 Theorem arrs_suffix:
   ∀l cm k as cm' k'. arrs lfd (cm, k) l = (as, (cm', k')) ⇒ ∃new. cm' = new ++ cm
 Proof
@@ -704,6 +711,51 @@ Proof
     by (Cases_on ‘h’ >> rw[deliver2_def, update_client_def]) >> simp[]
 QED
 
+(* The fetched arrivals are effective (socketV2Fair's step_ok2) *)
+Theorem step_ok2_APPEND:
+  ∀as1 s. step_ok2 s (as1 ++ as2) ⇔ step_ok2 s as1 ∧ step_ok2 (FOLDL deliver2 s as1) as2
+Proof
+  Induct >> simp[step_ok2_def] >> metis_tac[]
+QED
+
+Theorem fetch_accept_ok:
+  pv_rel lfd cm ps s ∧
+  (case l0_res_of out of
+   | Ok k => (ps with acq := ps.acq ++ [n2w k], [FConn (n2w k)])
+   | Fail e _ => (ps with b := ps.b with exhausted := (e = E_MFILE ∨ e = E_NFILE), []))
+    = (ps1, fl) ∧
+  arrs lfd (cm, LENGTH s.clients) fl = (as, (cm1, k1)) ∧
+  LENGTH (FOLDL deliver2 s as).clients + 1 < dimword (:64) ⇒
+  step_ok2 s as
+Proof
+  Cases_on ‘l0_res_of out’ >> rw[] >> gvs[arrs_def, step_ok2_def, arrival_ok2_def] >>
+  gvs[pv_rel_def, deliver2_def, AFUPDKEY_def]
+QED
+
+Theorem fetch_recv_ok:
+  pv_rel lfd cm ps s ∧ pown lfd ps ∧
+  wants_input lfd hw ps f ∧ f ≠ lfd ∧ MEM f (MAP SND ps.b.tbl) ∧
+  (case l0_res_of out of
+   | Ok k =>
+       if 0 < k then (set_inb f (TAKE k (DROP 13 out)) ps,
+                      [FData f (TAKE k (DROP 13 out))])
+       else (ps with eof := f :: ps.eof, [FEof f])
+   | Fail e _ =>
+       if l1_transient e then (ps, [])
+       else (ps with eof := f :: ps.eof, [FReset f])) = (ps1, fl) ∧
+  arrs lfd (cm, LENGTH s.clients) fl = (as, (cm1, k1)) ⇒
+  step_ok2 s as
+Proof
+  strip_tac >>
+  ‘∃h. ALOOKUP ps.b.tbl h = SOME f’
+    by (irule tbl_alookup_exists >> gvs[pown_def]) >>
+  drule_all pv_rel_tbl >> strip_tac >>
+  ‘¬MEM f ps.eof’ by gvs[wants_input_def] >>
+  Cases_on ‘l0_res_of out’ >> gvs[]
+  >- (Cases_on ‘0 < n’ >> gvs[arrs_def, step_ok2_def, arrival_ok2_def]) >>
+  Cases_on ‘l1_transient e’ >> gvs[arrs_def, step_ok2_def, arrival_ok2_def]
+QED
+
 val fetch_tail_tac =
   rename1 ‘pf_fetch _ _ fs (w1, ps1) = SOME ((w2, ps2), log2, evs2)’ >>
   Cases_on ‘arrs lfd (cm, LENGTH s.clients) fl’ >> rename1 ‘_ = (as1, ck1)’ >>
@@ -725,12 +777,14 @@ Theorem fetch_rel:
     pv_rel lfd cm ps s ∧ pown lfd ps ∧ l0own lfd w ps ∧ l0_rely w ∧ fds_lt w ∧
     (∀f. MEM f fs ⇒ f = lfd ∨ MEM f (MAP SND ps.b.tbl)) ∧
     (∀f j. MEM (f, j) cm' ∧ LENGTH s.clients ≤ j ⇒
-           ∀used. ¬MEM f used ⇒ s.alloc j used = f) ⇒
+           ∀used. ¬MEM f used ⇒ s.alloc j used = f) ∧
+    k' + 1 < dimword (:64) ⇒
+    step_ok2 s as ∧
     pv_rel lfd cm' ps' (FOLDL deliver2 s as) ∧ pown lfd ps' ∧ l0own lfd w' ps' ∧
     l0_rely w' ∧ fds_lt w' ∧ k' = LENGTH (FOLDL deliver2 s as).clients ∧
     ps'.b.tbl = ps.b.tbl ∧ ps'.b.nxt = ps.b.nxt ∧ ps'.b.closing = ps.b.closing
 Proof
-  Induct >- simp[pf_fetch_def, arrs_def] >>
+  Induct >- simp[pf_fetch_def, arrs_def, step_ok2_def] >>
   rpt gen_tac >> rename1 ‘pf_fetch _ _ (f :: fs)’ >> strip_tac >>
   qpat_x_assum ‘pf_fetch _ _ _ _ = _’ mp_tac >>
   simp[Once pf_fetch_def] >>
@@ -747,7 +801,10 @@ Proof
         by (qpat_assum ‘sys_accept _ _ = _’ (assume_tac o REWRITE_RULE [sys_accept_def]) >>
             drule_all l0_do_rely >> simp[]) >>
       ‘fds_lt w1’ by (drule_all sys_accept_fds_lt >> simp[]) >>
+      qpat_assum ‘arrs _ (ck10, ck11) _ = _’ (assume_tac o MATCH_MP arrs_k_mono) >>
       drule_all fetch_accept_rel >> strip_tac >>
+      ‘step_ok2 s as1’
+        by (irule fetch_accept_ok >> gvs[] >> metis_tac[]) >>
   first_x_assum (qspecl_then [‘w1’, ‘ps1’, ‘ck10’, ‘FOLDL deliver2 s as1’,
                                    ‘w2’, ‘ps2’, ‘log2’, ‘evs2’, ‘as2’, ‘new ++ ck10’, ‘ck21’] mp_tac) >>
       impl_tac
@@ -756,7 +813,7 @@ Proof
                   irule LESS_EQ_TRANS >>
                   qexists_tac ‘LENGTH (FOLDL deliver2 s as1).clients’ >> simp[],
                   rw[] >> gvs[] >> metis_tac[]]) >>
-      strip_tac >> gvs[FOLDL_APP]) >>
+      strip_tac >> gvs[FOLDL_APP, step_ok2_APPEND]) >>
   Cases_on ‘sys_recv f pf_chunk w’ >> simp[] >> rename1 ‘_ = SOME x’ >>
   PairCases_on ‘x’ >> rename1 ‘sys_recv _ _ _ = SOME (out, w1, ev)’ >> simp[] >>
   pairarg_tac >> simp[] >> rename1 ‘_ = (ps1, fl)’ >>
@@ -773,6 +830,7 @@ Proof
   ‘MEM f (MAP SND ps.b.tbl)’
     by (qpat_x_assum ‘∀f'. f' = f ∨ _ ⇒ _’ (qspec_then ‘f’ mp_tac) >> simp[]) >>
   drule_all fetch_recv_rel >> strip_tac >>
+  ‘step_ok2 s as1’ by (irule fetch_recv_ok >> gvs[] >> metis_tac[]) >>
   first_x_assum (qspecl_then [‘w1’, ‘ps1’, ‘ck10’, ‘FOLDL deliver2 s as1’,
                                ‘w2’, ‘ps2’, ‘log2’, ‘evs2’, ‘as2’, ‘new ++ ck10’, ‘ck21’] mp_tac) >>
   impl_tac
@@ -781,7 +839,7 @@ Proof
                   irule LESS_EQ_TRANS >>
                   qexists_tac ‘LENGTH (FOLDL deliver2 s as1).clients’ >> simp[],
                   rw[] >> gvs[] >> metis_tac[]]) >>
-  strip_tac >> gvs[FOLDL_APP]
+  strip_tac >> gvs[FOLDL_APP, step_ok2_APPEND]
 QED
 
 (* ------------------------------------------------------------------------
@@ -1031,7 +1089,8 @@ Theorem tail_rel:
   arrs lfd (cm, LENGTH s.clients) log = (as, (cm', k')) ∧
   (∀f j. MEM (f, j) cm' ∧ LENGTH s.clients ≤ j ⇒
          ∀used. ¬MEM f used ⇒ s.alloc j used = f) ∧
-  LHD s.future = SOME as ⇒
+  LHD s.future = SOME as ∧ k' + 1 < dimword (:64) ⇒
+  step_ok2 s as ∧
   ∃s'. hpoll lfd (hs_of ps) hs s = (rdy, s') ∧
        pv_rel lfd cm' ps' s' ∧ pown lfd ps' ∧ l0own lfd w' ps' ∧ l0_rely w' ∧
        fds_lt w' ∧ hs_of ps' = hs_of ps ∧ k' = LENGTH s'.clients ∧
@@ -1056,6 +1115,7 @@ Proof
     by (simp[Abbr ‘fs’, Abbr ‘ps2’, MEM_FILTER] >> rw[] >>
         gvs[Abbr ‘fes’] >> drule in_fds_poll_set >> simp[]) >>
   ‘l0_rely w2’ by simp[] >>
+  ‘k' + 1 < dimword (:64)’ by simp[] >>
   drule_all fetch_rel >> strip_tac >>
   drule_all l1_reap_l0 >> strip_tac >>
   ‘pown lfd (ps3 with b := b4)’ by (irule pown_closing_filter >> simp[] >> metis_tac[]) >>
@@ -1100,14 +1160,14 @@ Theorem round_rel:
   arrs lfd (cm, LENGTH s.clients) log = (as, (cm', k')) ∧
   (∀f j. MEM (f, j) cm' ∧ LENGTH s.clients ≤ j ⇒
          ∀used. ¬MEM f used ⇒ s.alloc j used = f) ∧
-  LHD s.future = SOME as ⇒
+  LHD s.future = SOME as ∧ k' + 1 < dimword (:64) ⇒
   ∃rs hevs s1 s2.
     hacts lfd (s, hs_of ps) acts = SOME (rs, hevs, (s1, hs_of ps')) ∧
     snap = ssnap (FST (hpoll lfd (hs_of ps') hs s1)) rs ∧
     SND (hpoll lfd (hs_of ps') hs s1) = s2 ∧
     pv_rel lfd cm' ps' s2 ∧ pown lfd ps' ∧ l0own lfd w' ps' ∧ l0_rely w' ∧
     fds_lt w' ∧ k' = LENGTH s2.clients ∧ s2.alloc = s.alloc ∧
-    s2.future = THE (LTL s.future)
+    s2.future = THE (LTL s.future) ∧ step_ok2 s1 as
 Proof
   simp[pround_def] >> strip_tac >> gvs[AllCaseEqs()] >>
   rename1 ‘pacts _ _ _ = SOME (rs, aevs, ws1)’ >> PairCases_on ‘ws1’ >>
@@ -1120,6 +1180,7 @@ Proof
   ‘∀f j. MEM (f, j) cm' ∧ LENGTH s'.clients ≤ j ⇒
          ∀used. ¬MEM f used ⇒ s'.alloc j used = f’ by gvs[] >>
   ‘arrs lfd (cm, LENGTH s'.clients) log = (as, (cm', k'))’ by gvs[] >>
+  ‘k' + 1 < dimword (:64)’ by simp[] >>
   drule_all tail_rel >> strip_tac >>
   qexistsl_tac [‘rs’, ‘hevs’, ‘s'’] >> gvs[]
 QED
@@ -1278,6 +1339,15 @@ Proof
   rw[run_alloc_def] >> metis_tac[]
 QED
 
+Theorem run_alloc_ok:
+  alloc_ok (run_alloc lfd hw ifds m w0)
+Proof
+  rw[alloc_ok_def] >>
+  ‘¬MEM (lowest_free used) used’
+    by (mp_tac (Q.INST [‘l’ |-> ‘used’] lowest_n_bound) >> simp[lowest_free_def]) >>
+  rw[run_alloc_def]
+QED
+
 (* ------------------------------------------------------------------------
    R1-safe: the run
    ------------------------------------------------------------------------ *)
@@ -1302,7 +1372,8 @@ QED
    relation pv_rel (L1's buffers are the world's state) and the invariants
    hold throughout *)
 Theorem l1pf_refines_hl:
-  l0_rely w0 ∧ fds_lt w0 ∧ MEM lfd (l0_used w0) ⇒
+  l0_rely w0 ∧ fds_lt w0 ∧ MEM lfd (l0_used w0) ∧
+  (∀n. SND (pcm lfd hw ifds m w0 n) + 1 < dimword (:64)) ⇒
   ∀n h ws evs logs.
     prounds lfd hw ifds m (w0, pinit) n = SOME (h, ws, evs, logs) ⇒
     hhist lfd ifds m (psk lfd hw ifds m w0) n = h ∧
@@ -1350,10 +1421,82 @@ Proof
          ∀used. ¬MEM f used ⇒ s.alloc j used = f’
     by (rw[] >> irule run_alloc_eq >> simp[] >> qexists_tac ‘SUC n’ >> simp[]) >>
   ‘LHD s.future = SOME as’ by simp[] >>
+  ‘ck1 + 1 < dimword (:64)’
+    by (qpat_assum ‘∀n'. SND (pcm _ _ _ _ _ n') + 1 < _’ (mp_tac o Q.SPEC ‘SUC n’) >>
+        qpat_assum ‘pcm _ _ _ _ _ (SUC n) = _’ (fn th => REWRITE_TAC [th]) >>
+        simp[]) >>
   drule_all round_rel >> strip_tac >>
   ‘hacts_tot lfd (hst lfd ifds m (psk lfd hw ifds m w0) n)
      (hacts_of lfd ifds m (psk lfd hw ifds m w0) n) = (rs, hevs, (s1, hs_of ps'))’
     by simp[hacts_tot_def] >>
   drule hround_step >> strip_tac >> simp[] >>
   gvs[] >> AP_THM_TAC >> AP_TERM_TAC >> simp[FUN_EQ_THM, ADD_CLAUSES]
+QED
+
+(* ------------------------------------------------------------------------
+   The world is well formed: alloc_ok and sched_wf2
+
+   sched_wf2 is about the world LEFT ALONE (ticks2).  It agrees with the
+   handle layer's world on all that step_ok2 reads (the listeners, the
+   counts, which clients have closed, the future), because the program's
+   actions change none of these.
+   ------------------------------------------------------------------------ *)
+
+Definition wagree_def:
+  wagree (s : sockets2) (t : sockets2) ⇔
+    MAP FST s.listening = MAP FST t.listening ∧
+    LENGTH s.reserved = LENGTH t.reserved ∧
+    MAP (λc. c.peer_closed) s.clients = MAP (λc. c.peer_closed) t.clients ∧
+    s.future = t.future
+End
+
+Theorem wagree_refl[simp]:
+  wagree s s
+Proof
+  simp[wagree_def]
+QED
+
+Theorem wagree_sym:
+  wagree s t ⇔ wagree t s
+Proof
+  simp[wagree_def] >> metis_tac[]
+QED
+
+Theorem wagree_trans:
+  wagree s t ∧ wagree t u ⇒ wagree s u
+Proof
+  simp[wagree_def]
+QED
+
+Theorem wagree_len:
+  wagree s t ⇒ LENGTH s.clients = LENGTH t.clients ∧
+               LENGTH s.listening = LENGTH t.listening ∧
+               (∀l. ALOOKUP s.listening l = NONE ⇔ ALOOKUP t.listening l = NONE) ∧
+               (∀j. j < LENGTH s.clients ⇒
+                    (EL j s.clients).peer_closed = (EL j t.clients).peer_closed)
+Proof
+  simp[wagree_def] >> strip_tac >>
+  ‘LENGTH (MAP (λc. c.peer_closed) s.clients) = LENGTH (MAP (λc. c.peer_closed) t.clients)’
+    by ASM_REWRITE_TAC[] >>
+  ‘LENGTH (MAP FST s.listening) = LENGTH (MAP FST t.listening)’ by ASM_REWRITE_TAC[] >>
+  gvs[ALOOKUP_NONE] >> rw[] >>
+  ‘EL j (MAP (λc. c.peer_closed) s.clients) = EL j (MAP (λc. c.peer_closed) t.clients)’
+    by ASM_REWRITE_TAC[] >>
+  gvs[EL_MAP]
+QED
+
+Theorem MAP_peer_LUPDATE:
+  (g (EL j l)).peer_closed = (EL j l).peer_closed ⇒
+  MAP (λc. c.peer_closed) (LUPDATE (g (EL j l)) j l) = MAP (λc. c.peer_closed) l
+Proof
+  rw[LIST_EQ_REWRITE, EL_MAP, EL_LUPDATE] >> rw[]
+QED
+
+Theorem deliver2_agree:
+  wagree s t ⇒ wagree (deliver2 s a) (deliver2 t a)
+Proof
+  strip_tac >> drule wagree_len >> strip_tac >>
+  Cases_on ‘a’ >> simp[deliver2_def] >> rw[] >> gvs[] >>
+  gvs[wagree_def, update_client_def, AFUPDKEY_MAP_FST] >>
+  rw[LIST_EQ_REWRITE, EL_MAP, EL_LUPDATE] >> rw[] >> gvs[]
 QED

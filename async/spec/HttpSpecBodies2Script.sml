@@ -25,6 +25,10 @@
   Not in scope (as in HttpSpecBodies): closing a connection on the
   server's own initiative ("Connection: close", HTTP/1.0, timeouts).
 
+  APPROVED by the user (2026-10-16, PR #105), as drafted: the server
+  closes only after the client's EOF (server-initiated close is a later
+  design item), and liveness is per client = per episode.
+
   Nothing here is proved; http_spec_b2 is a definition.
   HttpSpecBodies2BiteScript.sml shows that it rules out plausible bugs,
   including answering a previous connection's request on a reused fd, and

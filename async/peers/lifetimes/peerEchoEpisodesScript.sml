@@ -952,7 +952,7 @@ Proof
   impl_tac >- (simp[] >> metis_tac[IS_PREFIX_TRANS]) >> simp[]
 QED
 
-Theorem echo_episodes_spec_of_endpoint:
+Theorem echo_episodes_spec_of_peer:
   rg_spec (λw. ep_server_world v2_calls lfd a w ∧ no_backpressure w ∧ open_loop w)
     ep_echo2_guar prog ⇒
   echo_episodes_spec lfd prog

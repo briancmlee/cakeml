@@ -2673,3 +2673,259 @@ Proof
        (EL (L − 1) s'.clients)’ by fs[] >>
   fs[wch_def]
 QED
+
+(* ========================================================================
+   G4. L1 holds every open fd: in its handle table, its accepted queue, or
+   its closing list
+   ======================================================================== *)
+
+Definition own_def:
+  own (ps : l1p) (w : l0world) ⇔
+    ∀f c. ALOOKUP w.open_fds f = SOME c ⇒
+          MEM f (MAP SND ps.b.tbl) ∨ MEM f ps.acq ∨ MEM f ps.b.closing
+End
+
+(* In simple worlds a close of an open fd closes it *)
+Theorem sys_close_gone:
+  kinv p lfd sched w1 a cm D E w ∧ ALOOKUP w.open_fds f = SOME c ∧
+  sys_close f w = SOME (out, w', ev) ⇒ ALOOKUP w'.open_fds f = NONE
+Proof
+  rw[sys_close_def] >> drule l0_do_cases >> strip_tac >>
+  drule_then (qspec_then ‘«sys_close»’ mp_tac) kinv_tick_clock >> simp[] >> strip_tac >>
+  ‘∀h. w.ch.close_intr h = NONE’ by fs[kinv_def, simple_v2_def, simple0_def] >>
+  drule_all sinv_open_chan >> strip_tac >>
+  ‘MEM f (l0_used w)’ by metis_tac[used_open_fds] >>
+  gvs[l0_call_def] >> pairarg_tac >> gvs[] >>
+  gvs[l0_close_def, close_fd_def, l0_chan_of_def, l0_used_def, AllCaseEqs(), ALOOKUP_ADELKEY,
+      upd_lchan_def]
+QED
+
+Theorem MEM_SND_ADELKEY_other:
+  ∀l. ALL_DISTINCT (MAP FST l) ∧ ALOOKUP l h = SOME f ∧ MEM g (MAP SND l) ∧ g ≠ f ⇒
+      MEM g (MAP SND (ADELKEY h l))
+Proof
+  Induct >> simp[FORALL_PROD, ADELKEY_def] >> rpt gen_tac >> strip_tac >>
+  gvs[AllCaseEqs(), MEM_MAP, MEM_FILTER, EXISTS_PROD] >> rw[] >> gvs[] >>
+  TRY (metis_tac[]) >>
+  imp_res_tac ALOOKUP_MEM >> gvs[MEM_MAP, EXISTS_PROD] >> metis_tac[]
+QED
+
+Theorem pdo_own:
+  pdo lfd (w, ps) act = SOME (r, (w', ps'), evs) ∧
+  kinv p lfd sched w1 a cm D E w ∧ pown lfd ps ∧ own ps w ⇒ own ps' w'
+Proof
+  Cases_on ‘act’ >> simp[pdo_def] >> strip_tac
+  >- ((* Accept *)
+      gvs[AllCaseEqs()] >> fs[own_def] >> metis_tac[MEM])
+  >- ((* Read *)
+      qpat_x_assum ‘option_CASE _ _ _ = _’ mp_tac >>
+      Cases_on ‘ALOOKUP ps.b.tbl c’ >> simp[] >- (strip_tac >> gvs[]) >>
+      rename1 ‘ALOOKUP ps.b.tbl c = SOME f’ >>
+      IF_CASES_TAC >- (strip_tac >> gvs[own_def]) >>
+      reverse IF_CASES_TAC >- (strip_tac >> gvs[]) >>
+      ‘ALL_DISTINCT (MAP FST ps.b.tbl)’ by fs[pown_def] >>
+      IF_CASES_TAC
+      >- (simp[l1_close_def] >> Cases_on ‘sys_close f w’ >> simp[] >>
+          rename1 ‘sys_close f w = SOME z’ >> PairCases_on ‘z’ >> simp[] >>
+          strip_tac >> rveq >>
+          simp[own_def] >> rpt strip_tac >>
+          drule_all sys_close_open_back >> strip_tac >>
+          ‘f' ≠ f’ by (strip_tac >> gvs[] >> drule_all sys_close_gone >> simp[]) >>
+          ‘MEM f' (MAP SND ps.b.tbl) ∨ MEM f' ps.acq ∨ MEM f' ps.b.closing’ by metis_tac[own_def] >>
+          gvs[forget_def, set_outbox_def, MEM_FILTER] >> metis_tac[MEM_SND_ADELKEY_other])
+      >> strip_tac >> gvs[own_def, MEM_FILTER] >> rpt strip_tac >> res_tac >> gvs[] >>
+      Cases_on ‘f' = f’ >> gvs[] >> metis_tac[MEM_SND_ADELKEY_other])
+  >> (* Write *)
+  PairCases_on ‘z’ >> gvs[] >>
+  qpat_x_assum ‘l1do _ _ _ = _’ mp_tac >>
+  simp[l1do_def] >> Cases_on ‘ALOOKUP ps.b.tbl c’ >> simp[] >- (strip_tac >> gvs[]) >>
+  rename1 ‘ALOOKUP ps.b.tbl c = SOME f’ >>
+  IF_CASES_TAC >- (strip_tac >> gvs[]) >>
+  IF_CASES_TAC >- (strip_tac >> gvs[own_def, set_outbox_def]) >>
+  Cases_on ‘sys_send f l w’ >> simp[] >>
+  rename1 ‘sys_send f l w = SOME z’ >> PairCases_on ‘z’ >> simp[] >>
+  strip_tac >> rveq >>
+  drule (CONJUNCT2 sys_quiet_open) >> strip_tac >>
+  gvs[own_def, after_send_def, set_outbox_def] >> every_case_tac >> gvs[]
+QED
+
+Theorem pacts_own:
+  ∀acts w ps s rs evs w' ps'.
+    pacts lfd (w, ps) acts = SOME (rs, evs, (w', ps')) ∧ pv_rel lfd cm0 ps s ∧ pown lfd ps ∧
+    kinv p lfd sched w1 a cm D E w ∧ winv w ∧ sched_wf2 (sk_of p lfd sched w1) ∧
+    chown ps w ∧ eown E ps w ∧ own ps w ⇒
+    own ps' w'
+Proof
+  Induct >> simp[pacts_def] >> rpt gen_tac >> strip_tac >> gvs[AllCaseEqs()] >>
+  rename1 ‘pdo _ _ _ = SOME (r1, ws1, evs1)’ >> PairCases_on ‘ws1’ >>
+  drule_all pdo_hdo >> strip_tac >>
+  drule_all pdo_kinv >> strip_tac >>
+  drule_all pdo_own >> strip_tac >>
+  first_x_assum drule_all >> simp[]
+QED
+
+Theorem own_same:
+  own ps w ∧ ps'.b = ps.b ∧ ps'.acq = ps.acq ∧ w'.open_fds = w.open_fds ⇒ own ps' w'
+Proof
+  rw[own_def]
+QED
+
+Theorem pf_fetch_own:
+  ∀fs w ps w' ps' log evs a cm D E.
+    pf_fetch lfd hw fs (w, ps) = SOME ((w', ps'), log, evs) ∧
+    kinv p lfd sched w1 a cm D E w ∧ winv w ∧
+    (∀g. MEM g fs ∧ g ≠ lfd ⇒ ∃c. ALOOKUP w.open_fds g = SOME c) ∧ own ps w ⇒
+    own ps' w'
+Proof
+  Induct >- simp[pf_fetch_def] >>
+  rpt gen_tac >> rename1 ‘g :: fs’ >> simp[Once pf_fetch_def] >>
+  reverse (Cases_on ‘wants_input lfd hw ps g’) >> simp[]
+  >- (strip_tac >> first_x_assum drule >>
+      disch_then (qspecl_then [‘a’, ‘cm’, ‘D’, ‘E’] mp_tac) >>
+      impl_tac >- (simp[] >> metis_tac[]) >> simp[]) >>
+  IF_CASES_TAC
+  >- ((* an accept *)
+      pop_assum SUBST_ALL_TAC >> strip_tac >>
+      qpat_x_assum ‘option_CASE (sys_accept _ _) _ _ = _’ mp_tac >>
+      Cases_on ‘sys_accept lfd w’ >> simp[] >>
+      rename1 ‘sys_accept lfd w = SOME z’ >> PairCases_on ‘z’ >> simp[] >>
+      rename1 ‘sys_accept lfd w = SOME (out, wa, ev)’ >>
+      pairarg_tac >> simp[] >>
+      Cases_on ‘pf_fetch lfd hw fs (wa, ps1)’ >> simp[] >>
+      rename1 ‘pf_fetch lfd hw fs (wa, ps1) = SOME y’ >> PairCases_on ‘y’ >> simp[] >>
+      strip_tac >> rveq >>
+      drule_all (el 4 (CONJUNCTS sys_winv)) >> strip_tac >>
+      drule_all kinv_sys_accept >> strip_tac
+      >- (‘ps1.b = ps.b ∧ ps1.acq = ps.acq’
+            by (Cases_on ‘l0_res_of out’ >> fs[] >> rw[] >> fs[]) >>
+          ‘own ps1 wa’
+            by (irule own_same >> qexistsl_tac [‘ps’, ‘w’] >> rpt conj_tac >>
+                first_assum ACCEPT_TAC) >>
+          ‘∀g. MEM g fs ∧ g ≠ lfd ⇒ ∃c. ALOOKUP wa.open_fds g = SOME c’
+            by (qpat_x_assum ‘wa.open_fds = _’ (fn th => rewrite_tac[th]) >> metis_tac[]) >>
+          last_x_assum drule >> disch_then drule >> impl_tac >- fs[] >>
+          simp[])
+      >> ‘ps1.b = ps.b ∧ ps1.acq = ps.acq ++ [n2w k]’ by (fs[] >> rw[]) >>
+      ‘own ps1 wa’ by (fs[own_def] >> rw[] >> res_tac >> simp[]) >>
+      ‘∀g. MEM g fs ∧ g ≠ lfd ⇒ ∃c. ALOOKUP wa.open_fds g = SOME c’
+        by (rpt strip_tac >> res_tac >> simp[] >> rw[]) >>
+      last_x_assum drule >> disch_then drule >> impl_tac >- fs[] >>
+      simp[])
+  >> (* a recv *)
+  strip_tac >>
+  qpat_x_assum ‘option_CASE (sys_recv _ _ _) _ _ = _’ mp_tac >>
+  Cases_on ‘sys_recv g pf_chunk w’ >> simp[] >>
+  rename1 ‘sys_recv g pf_chunk w = SOME z’ >> PairCases_on ‘z’ >> simp[] >>
+  rename1 ‘sys_recv g pf_chunk w = SOME (out, wa, ev)’ >>
+  pairarg_tac >> simp[] >>
+  Cases_on ‘pf_fetch lfd hw fs (wa, ps1)’ >> simp[] >>
+  rename1 ‘pf_fetch lfd hw fs (wa, ps1) = SOME y’ >> PairCases_on ‘y’ >> simp[] >>
+  strip_tac >> rveq >>
+  drule_all (el 3 (CONJUNCTS sys_winv)) >> strip_tac >>
+  ‘∃c. ALOOKUP w.open_fds g = SOME c’ by metis_tac[] >>
+  drule_all kinv_sys_recv >> strip_tac >>
+  ‘ps1.b = ps.b ∧ ps1.acq = ps.acq’ by gvs[] >>
+  ‘own ps1 wa’
+    by (irule own_same >> qexistsl_tac [‘ps’, ‘w’] >> rpt conj_tac >> first_assum ACCEPT_TAC) >>
+  ‘∀g. MEM g fs ∧ g ≠ lfd ⇒ ∃c. ALOOKUP wa.open_fds g = SOME c’
+    by (qpat_x_assum ‘wa.open_fds = _’ (fn th => rewrite_tac[th]) >> metis_tac[]) >>
+  last_x_assum drule >> disch_then drule >> impl_tac >- fs[] >>
+  simp[]
+QED
+
+Definition ownb_def:
+  ownb acq (st : l1st) (w : l0world) ⇔
+    ∀f c. ALOOKUP w.open_fds f = SOME c ⇒
+          MEM f (MAP SND st.tbl) ∨ MEM f acq ∨ MEM f st.closing
+End
+
+Theorem own_ownb:
+  own ps w ⇔ ownb ps.acq ps.b w
+Proof
+  simp[own_def, ownb_def]
+QED
+
+Theorem l1_reap_own:
+  ∀fs w st w' st' evs.
+    l1_reap fs (w, st) = SOME ((w', st'), evs) ∧ kinv p lfd sched w1 a cm D E w ∧ winv w ∧
+    sched_wf2 (sk_of p lfd sched w1) ∧ ¬MEM lfd fs ∧
+    (∀f c. MEM f fs ∧ ALOOKUP w.open_fds f = SOME c ⇒ E c) ∧ ownb acq st w ⇒
+    ownb acq st' w'
+Proof
+  Induct >> simp[l1_reap_def] >> rpt gen_tac >>
+  IF_CASES_TAC >> strip_tac
+  >- (gvs[AllCaseEqs(), l1_close_def] >>
+      rename1 ‘sys_close h w = SOME (out, wa, ev)’ >>
+      ‘kinv p lfd sched w1 a cm D E wa’ by (irule kinv_sys_close >> fs[] >> metis_tac[]) >>
+      ‘winv wa’ by metis_tac[sys_winv] >>
+      first_x_assum drule >> disch_then irule >> simp[] >> rpt conj_tac
+      >- (rpt strip_tac >> drule_all sys_close_open_back >> strip_tac >>
+          first_x_assum irule >> simp[] >> metis_tac[])
+      >> simp[ownb_def] >> rpt strip_tac >> drule_all sys_close_open_back >> strip_tac >>
+      ‘f ≠ h’ by (strip_tac >> gvs[] >> drule_all sys_close_gone >> simp[]) >>
+      fs[ownb_def] >> res_tac >> gvs[forget_def, set_outbox_def, MEM_FILTER])
+  >> first_x_assum drule >> disch_then irule >> simp[] >> metis_tac[]
+QED
+
+Theorem own_same2:
+  own ps w ∧ ps'.b.tbl = ps.b.tbl ∧ ps'.b.closing = ps.b.closing ∧ ps'.acq = ps.acq ∧
+  w'.open_fds = w.open_fds ⇒ own ps' w'
+Proof
+  rw[own_def]
+QED
+
+Theorem pround_own:
+  pround lfd hw hs (w, ps) acts = SOME (snap, (w', ps'), log, evs) ∧
+  kinv p lfd sched w1 a cm D E w ∧ winv w ∧ sched_wf2 (sk_of p lfd sched w1) ∧
+  pv_rel lfd cm0 ps s ∧ pown lfd ps ∧ l0own lfd w ps ∧ chown ps w ∧ eown E ps w ∧
+  own ps w ⇒
+  own ps' w'
+Proof
+  simp[pround_def, AllCaseEqs()] >> strip_tac >> PairCases_on ‘ws1’ >>
+  gvs[pf_tail_def, AllCaseEqs()] >>
+  rename1 ‘pacts _ _ _ = SOME (rs, aevs, wa, pa)’ >>
+  mp_tac (Q.SPECL [‘acts’, ‘w’, ‘ps’, ‘s’, ‘rs’, ‘aevs’, ‘wa’, ‘pa’] pacts_kinv) >>
+  impl_tac >- simp[] >> strip_tac >>
+  mp_tac (Q.SPECL [‘acts’, ‘w’, ‘ps’, ‘s’, ‘rs’, ‘aevs’, ‘wa’, ‘pa’] pacts_own) >>
+  impl_tac >- simp[] >> strip_tac >>
+  drule_all pacts_hacts >> strip_tac >>
+  ‘l0_rely w ∧ fds_lt w’ by gvs[winv_def] >>
+  drule_all pacts_l0 >> strip_tac >>
+  rename1 ‘l1_polls _ wa = SOME (rv, wb, pevs)’ >>
+  drule_all l1_polls_kinv >> strip_tac >>
+  drule_all l1_polls_l0 >> strip_tac >>
+  rename1 ‘l1_flush _ (wb, pa.b) = SOME ((wc, bc), fevs)’ >>
+  drule_all l1_flush_kinv >> strip_tac >>
+  ‘l0_rely wb’ by gvs[winv_def] >>
+  drule_all l1_flush_l0 >> strip_tac >>
+  drule l1_flush_b >> strip_tac >>
+  ‘own (pa with b := bc) wc’ by (irule own_same2 >> qexistsl_tac [‘pa’, ‘wa’] >> simp[]) >>
+  rename1 ‘pf_fetch _ _ _ _ = SOME ((wd, pd), log, gevs)’ >>
+  qmatch_asmsub_abbrev_tac ‘pf_fetch _ _ fs _’ >>
+  ‘∀g. MEM g fs ∧ g ≠ lfd ⇒ ∃c. ALOOKUP wc.open_fds g = SOME c’
+    by (rw[Abbr ‘fs’, MEM_FILTER] >> drule in_fds_poll_set >> strip_tac >> gvs[] >>
+        fs[chown_def] >> metis_tac[]) >>
+  drule_all pf_fetch_own >> strip_tac >>
+  ‘eown E (pa with b := bc) wc’ by (fs[eown_def] >> metis_tac[]) >>
+  ‘eused (pa with b := bc) wc’
+    by (simp[eused_def] >> rpt strip_tac
+        >- (‘MEM f (MAP SND pa.b.tbl)’ by (fs[pown_def] >> metis_tac[]) >>
+            ‘∃c. ALOOKUP wa.open_fds f = SOME c’ by fs[chown_def] >>
+            gvs[] >> metis_tac[used_open_fds])
+        >> gvs[l0own_def]) >>
+  drule_all kinv_fetch >> strip_tac >>
+  drule pf_fetch_b >> strip_tac >>
+  rename1 ‘l1_reap _ (wd, _) = SOME ((we, be), cevs)’ >>
+  ‘¬MEM lfd pd.b.closing’ by gvs[pown_def, ALL_DISTINCT_APPEND] >>
+  ‘∀f c. MEM f (hup_step (hup_fds rv) (outbox_of pa.b) log pd).b.closing ∧
+         ALOOKUP wd.open_fds f = SOME c ⇒ (λj. E j ∨ MEM (Eof2 j) as) c’
+    by (simp_tac std_ss [hup_step_fields] >> fs[eown_def] >> metis_tac[]) >>
+  mp_tac (Q.SPECL [‘pd.b.closing’, ‘wd’,
+                   ‘(hup_step (hup_fds rv) (outbox_of pa.b) log pd).b’, ‘we’, ‘be’, ‘cevs’]
+          (Q.INST [‘E’ |-> ‘λj. E j ∨ MEM (Eof2 j) as’, ‘a’ |-> ‘a'’, ‘cm’ |-> ‘cm'’,
+                   ‘D’ |-> ‘λj. D j ++ data_of j as’, ‘acq’ |-> ‘pd.acq’] l1_reap_own)) >>
+  impl_tac
+  >- (simp[] >> gvs[] >> conj_tac >- metis_tac[] >>
+      qpat_x_assum ‘own pd wd’ mp_tac >> simp[own_def, ownb_def]) >>
+  simp[own_def, ownb_def]
+QED

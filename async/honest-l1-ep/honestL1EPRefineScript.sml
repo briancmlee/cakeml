@@ -1752,3 +1752,46 @@ Proof
   qpat_x_assum ‘ALL_DISTINCT (MAP FST es5.p.b.tbl ++ _)’ (assume_tac o MATCH_MP promote_lookup) >>
   gvs[]
 QED
+
+Theorem ALOOKUP_FOLDR_early:
+  ∀l c0. ALOOKUP (FOLDR (λ(f, c) l. (f, c) :: ADELKEY f l) c0 l) k =
+         case ALOOKUP l k of SOME c => SOME c | NONE => ALOOKUP c0 k
+Proof
+  Induct >> simp[FORALL_PROD] >> rw[ALOOKUP_ADELKEY]
+QED
+
+(* The connects known at once: their outcome taken *)
+Theorem cstat_of_apply_early:
+  cstat_of (apply_early es) f =
+    case ALOOKUP es.early f of SOME c => c | NONE => cstat_of es f
+Proof
+  simp[apply_early_def, cstat_of_def, ALOOKUP_FOLDR_early] >> CASE_TAC >> simp[]
+QED
+
+Theorem apply_early_fields[simp]:
+  (apply_early es).p = es.p ∧ (apply_early es).ctbl = es.ctbl ∧
+  (apply_early es).settling = es.settling ∧ (apply_early es).early = []
+Proof
+  simp[apply_early_def]
+QED
+
+(* Settling the ready pending connects: only their status changes (up,
+   refused, or still pending); L0's fds unchanged *)
+Theorem settle_fds_props:
+  ∀fs w es w' es' evs.
+    settle_fds fs (w, es) = SOME ((w', es'), evs) ∧ l0_rely w ⇒
+    l0_rely w' ∧ l0_used w' = l0_used w ∧ w'.fd_limit = w.fd_limit ∧
+    es'.p = es.p ∧ es'.ctbl = es.ctbl ∧ es'.settling = es.settling ∧ es'.early = es.early ∧
+    ∀f. cstat_of es' f = cstat_of es f ∨ (MEM f fs ∧ (cstat_of es' f = CUp ∨ cstat_of es' f = CRefused))
+Proof
+  Induct >> simp[settle_fds_def] >> rpt gen_tac >>
+  simp[AllCaseEqs()] >> strip_tac >> gvs[] >>
+  rename1 ‘sys_connerr h w = SOME (out, w1, ev)’ >>
+  drule_all sys_connerr_l0 >> strip_tac >>
+  qmatch_asmsub_abbrev_tac ‘settle_fds fs (w1, es1)’ >>
+  first_x_assum drule_all >> strip_tac >> gvs[] >>
+  ‘es1.p = es.p ∧ es1.ctbl = es.ctbl ∧ es1.settling = es.settling ∧ es1.early = es.early ∧
+   ∀f. cstat_of es1 f = cstat_of es f ∨ (f = h ∧ (cstat_of es1 f = CUp ∨ cstat_of es1 f = CRefused))’
+    by (simp[Abbr ‘es1’] >> every_case_tac >> rw[cstat_of_def, ALOOKUP_ADELKEY]) >>
+  simp[] >> metis_tac[]
+QED

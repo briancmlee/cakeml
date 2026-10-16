@@ -230,3 +230,91 @@ Proof
               strip_assume_tac) >> simp[] >>
   gvs[l0_chan_of_def, upd_lchan_def, EL_LUPDATE, AllCaseEqs()]
 QED
+
+(* ------------------------------------------------------------------------
+   L1's calls
+   ------------------------------------------------------------------------ *)
+
+Theorem fl_simple[simp]:
+  fl (w with hist := h) f R = fl w f R
+Proof
+  simp[fl_def]
+QED
+
+Theorem fl_tick:
+  fl w f R ⇒ fl (l0_tick nm w) f R
+Proof
+  rw[fl_def] >> metis_tac[front_tick, flushed_tick]
+QED
+
+Theorem fl_ticks:
+  fl w f R ⇒ fl (l0_ticks nm k w) f R
+Proof
+  rw[fl_def] >> metis_tac[front_ticks]
+QED
+
+Theorem fl_call:
+  fl w f R ∧ l0wf w ∧ (∀x. MEM x (l0_used w) ⇒ w2n x < w.fd_limit) ∧
+  w.fd_limit ≤ 2 ** 31 ∧ n ≠ «sys_connect» ∧
+  ¬((n = «sys_recv» ∨ n = «sys_close») ∧ bytes_fd conf = f) ∧
+  l0_call n conf bytes w = SOME (FFIreturn bytes' w') ⇒ fl w' f R
+Proof
+  rw[l0_call_def] >> gvs[AllCaseEqs()] >>
+  rpt (pairarg_tac >> gvs[]) >>
+  imp_res_tac fl_simple_ops >>
+  TRY (drule_then irule fl_ticks) >>
+  TRY (irule fl_recv_other >> metis_tac[]) >>
+  TRY (irule fl_close_other >> metis_tac[]) >>
+  TRY (qpat_x_assum ‘l0_accept _ _ = _’ mp_tac >> rpt strip_tac >>
+       drule_at (Pos last) fl_accept >> simp[] >> NO_TAC) >>
+  gvs[]
+QED
+
+Theorem fl_do:
+  winv w ∧ fl w f R ∧ n ≠ «sys_connect» ∧
+  ¬((n = «sys_recv» ∨ n = «sys_close») ∧ bytes_fd conf = f) ∧
+  l0_do n conf alen w = SOME (out, w', ev) ⇒ fl w' f R
+Proof
+  strip_tac >> drule l0_do_cases >> strip_tac >> gvs[] >>
+  irule fl_call >> qexistsl_tac [‘REPLICATE alen 0w’, ‘out’, ‘conf’, ‘n’] >>
+  simp[] >> qexists_tac ‘l0_tick n w’ >>
+  gvs[winv_def, l0wf_tick, fl_tick] >>
+  ‘fds_lt (l0_tick n w)’ by simp[] >> gvs[fds_lt_def, l0_rely_def]
+QED
+
+Theorem recv_res_ok:
+  l0_rely w ∧ l0_recv f n w = (r, d, w') ∧ n < 256 ** 8 ⇒ l0_res_ok r
+Proof
+  rw[l0_recv_def, AllCaseEqs()] >> gvs[not_chan_def] >> rw[] >>
+  gvs[fail_ok, l0_res_ok_def]
+QED
+
+(* L1's recv on f: its data (as L1 decodes it) comes from the front *)
+Theorem sys_recv_fl:
+  winv w ∧ fl w f R ∧ 0 < k ∧ k < 256 ** 8 ∧ sys_recv f k w = SOME (out, w', ev) ⇒
+  (fl w' f R ∧ ∀m. l0_res_of out = Ok m ⇒ m = 0) ∨
+  (∃m. l0_res_of out = Ok m ∧ 0 < m ∧
+       (R ≼ TAKE m (DROP 13 out) ∨ ∃R'. R = TAKE m (DROP 13 out) ++ R' ∧ fl w' f R'))
+Proof
+  rw[sys_recv_def] >> drule l0_do_cases >> strip_tac >> gvs[] >>
+  qabbrev_tac ‘wt = l0_tick «sys_recv» w’ >>
+  ‘fl wt f R ∧ noconn wt ∧ l0_rely wt’
+    by (gvs[Abbr ‘wt’, winv_def, fl_tick, noconn_tick] >>
+        irule l0_rely_ch >> qexists_tac ‘w’ >> simp[]) >>
+  qpat_x_assum ‘l0_call _ _ _ _ = _’ mp_tac >> simp[l0_call_def, l0_hdr_def] >>
+  pairarg_tac >> simp[] >> strip_tac >> gvs[] >>
+  ‘l0_res_ok r’
+    by (qspecl_then [‘wt’, ‘f’, ‘k’, ‘r’, ‘d’, ‘w'’] mp_tac
+          (Q.GENL [‘w’, ‘f’, ‘n’, ‘r’, ‘d’, ‘w'’] recv_res_ok) >> simp[]) >>
+  ‘l0_res_of (enc_res r ++ d ++ REPLICATE (k − LENGTH d) 0w) = r’
+    by (REWRITE_TAC [GSYM APPEND_ASSOC] >> irule l0_res_of_enc_app >> simp[]) >>
+  ‘DROP 13 (enc_res r ++ d ++ REPLICATE (k − LENGTH d) 0w) =
+   d ++ REPLICATE (k − LENGTH d) 0w’
+    by (‘LENGTH (enc_res r) = 13’ by (irule LENGTH_enc_res >> simp[]) >>
+        REWRITE_TAC [GSYM APPEND_ASSOC] >>
+        qpat_x_assum ‘LENGTH _ = 13’ (SUBST1_TAC o SYM) >> simp[DROP_APPEND, DROP_LENGTH_NIL] >>
+        ‘LENGTH (enc_res r) − (LENGTH d + LENGTH (enc_res r)) = 0’ by decide_tac >>
+        simp[]) >>
+  drule_at (Pos last) recv_fl >> simp[] >> disch_then (qspec_then ‘R’ mp_tac) >>
+  simp[] >> strip_tac >> simp[TAKE_LENGTH_APPEND]
+QED

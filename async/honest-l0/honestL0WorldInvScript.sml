@@ -358,3 +358,88 @@ Proof
   gvs[pend_def, l0_chan_of_def, upd_lchan_def, EL_LUPDATE, EL_APPEND1, AllCaseEqs()] >>
   rw[] >> gvs[EL_APPEND1]
 QED
+
+(* ------------------------------------------------------------------------
+   No channel is connecting (true of every run without sys_connect)
+   ------------------------------------------------------------------------ *)
+
+Definition noconn_def:
+  noconn w ⇔ ∀j. j < LENGTH w.chans ⇒ ¬(EL j w.chans).connecting
+End
+
+Theorem noconn_deliver:
+  noconn w ⇒ noconn (l0_deliver w a)
+Proof
+  Cases_on ‘a’ >> rw[l0_deliver_def] >> every_case_tac >>
+  gvs[noconn_def, upd_lchan_def, EL_LUPDATE] >> rw[] >>
+  gvs[EL_APPEND_EQN, fresh_lchan_def] >> rw[] >> gvs[break_lchan_def] >> rw[] >>
+  TRY (Cases_on ‘j < LENGTH w.chans’ >> gvs[EL_APPEND1, EL_APPEND2, fresh_lchan_def] >>
+       ‘j = LENGTH w.chans’ by simp[] >> gvs[EL_APPEND2, fresh_lchan_def] >> NO_TAC) >>
+  rw[break_lchan_def]
+QED
+
+Theorem noconn_tick:
+  noconn w ⇒ noconn (l0_tick n w)
+Proof
+  simp[l0_tick_def] >>
+  ‘∀as w. noconn w ⇒ noconn (FOLDL l0_deliver w as)’
+    by (Induct >> simp[] >> metis_tac[noconn_deliver]) >>
+  rw[] >> first_x_assum irule >> gvs[noconn_def]
+QED
+
+Theorem noconn_ticks:
+  ∀k w. noconn w ⇒ noconn (l0_ticks n k w)
+Proof
+  Induct >> simp[l0_ticks_def] >> metis_tac[noconn_tick]
+QED
+
+Theorem noconn_FOLDL_break:
+  ∀q w. noconn w ⇒ noconn (FOLDL (λw j. upd_lchan j (break_lchan e F) w) w q)
+Proof
+  Induct >> simp[] >> rpt strip_tac >> first_x_assum irule >>
+  gvs[noconn_def, upd_lchan_def, EL_LUPDATE] >> rw[] >> rw[break_lchan_def]
+QED
+
+Theorem noconn_close_fd:
+  noconn w ⇒ noconn (close_fd f w)
+Proof
+  rw[close_fd_def] >> every_case_tac >> gvs[] >>
+  TRY (irule noconn_FOLDL_break >> gvs[noconn_def] >> NO_TAC) >>
+  gvs[noconn_def, upd_lchan_def, EL_LUPDATE] >> rw[] >> gvs[]
+QED
+
+Theorem noconn_ops:
+  (noconn w ∧ l0_listen p w = (x, w') ⇒ noconn w') ∧
+  (noconn w ∧ l0_accept l w = (r, w') ⇒ noconn w') ∧
+  (noconn w ∧ l0_recv f n w = (r, d, w') ⇒ noconn w') ∧
+  (noconn w ∧ l0_send f bs w = (r, w') ⇒ noconn w') ∧
+  (noconn w ∧ l0_shutdown f w = (r, w') ⇒ noconn w') ∧
+  (noconn w ∧ l0_close f w = (r, w') ⇒ noconn w') ∧
+  (noconn w ∧ l0_connerr f w = (y, w') ⇒ noconn w')
+Proof
+  rpt conj_tac >>
+  rw[l0_listen_def, l0_accept_def, l0_recv_def, l0_send_def, l0_shutdown_def,
+     l0_close_def, l0_connerr_def, AllCaseEqs()] >> gvs[] >>
+  TRY (simp[close_fd_def] >> every_case_tac >> simp[] >>
+       TRY (irule noconn_FOLDL_break) >> gvs[noconn_def] >> NO_TAC) >>
+  TRY (irule noconn_close_fd >> simp[] >> NO_TAC) >>
+  gvs[noconn_def, upd_lchan_def, EL_LUPDATE] >> rw[] >> rw[break_lchan_def]
+QED
+
+Theorem noconn_call:
+  noconn w ∧ n ≠ «sys_connect» ∧ l0_call n conf bytes w = SOME (FFIreturn bytes' w') ⇒
+  noconn w'
+Proof
+  rw[l0_call_def] >> gvs[AllCaseEqs()] >>
+  rpt (pairarg_tac >> gvs[]) >> imp_res_tac noconn_ops >>
+  TRY (drule_then irule noconn_ticks) >> gvs[]
+QED
+
+(* A pending fd polled for input reports IN *)
+Theorem pend_revents_in:
+  noconn w ∧ pend w f ∧ ODD ev ⇒ (byte_revents (fd_revents w (f, ev))).rin
+Proof
+  rw[pend_def, fd_revents_def] >> simp[byte_revents_revents_byte] >>
+  gvs[noconn_def, chan_revents_def] >>
+  ‘j < LENGTH w.chans’ by gvs[l0_chan_of_def, AllCaseEqs()] >> gvs[]
+QED

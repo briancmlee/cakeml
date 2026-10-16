@@ -1294,6 +1294,83 @@ connect completed (P13, even with backlog 0), so `pending_err` and "no
 revents while pending" rest on the standard alone until a platform shows
 them, for example Linux or a peer that withholds the handshake.
 
+**R2/R3/R4 for the prefetching L1 (restated; statements first, nothing
+proved yet).** The R2/R3/R4 above were written for the lazy L1, with one
+syscall per server action and a raw trace that renames the abstract one.
+For the prefetching L1 they are **false as written**:
+- a recv takes up to 64 KiB, so one fetch can merge several schedule
+  steps' data;
+- there is at most one accept per round, so two connects in one tick land
+  one round apart;
+- reads make no syscall.
+
+They are restated through `psk` (R1-safe) and transfer lemmas:
+- **R2′ `l1pf_simple`:**
+  - In `simple0 ∧ open_loop` worlds with at most one connect per tick and
+    at most `pf_chunk` bytes per client per tick, `psk = sk_of w0`.
+  - Otherwise `psk` is a **delay** of `sk_of w0`, under an explicit
+    `delays` relation: the same per-client streams, each arrival at a
+    tick no earlier than in `sk_of w0`.
+- **R3′:** the PF wrappers.
+  - Read is `TAKE n` of the inbox, with no syscall.
+  - A fetch is one recv of at most `pf_chunk` bytes, or one accept.
+  - A write is one send when the outbox is empty.
+- **R4′, per server.** The template, for echo2:
+
+      l0_echo2_spec : ∀w0. l0_world_hyps w0 ⇒
+        (listen fails ∧ the program terminates) ∨
+        ∃io0. semantics_prog (… l0_ffi w0) … echo2_prog_l1 (Diverge io0) ∧
+              raw_safe io0 ∧
+              (∀c. F1 ∧ F2 ∧ D c ∧ ¬hard_err c ⇒ raw_live c io0) ∧ …
+
+  It goes through `psk` (R1-safe) and per-predicate **transfer lemmas**
+  between raw and abstract prefixes. The instant map they need comes from
+  the per-round `prounds`/`hrounds` correspondence.
+
+**The formal [F1] (D11's form, as built).** Calls are keyed by the fds they
+involve: the single fd for recv, accept, send and connerr; *every listed fd*
+for poll (`call_fds`). If calls of a kind involving fd f are made
+infinitely often, then infinitely many of them do not fail transiently.
+An earlier draft keyed on the whole configuration, which gave poll nothing
+because a poll's fd set changes; this form replaced it before any proof
+used it.
+
+**Open item (client side; proposed, not added): connect fairness.** Each
+connect attempt makes a new fd, so no per-fd [F1] covers connect.
+Moreover, repeated connects can fail with EADDRNOTAVAIL when ephemeral
+ports are exhausted, for example by TIME_WAIT on the side that closes
+first. A client-side liveness claim needs either a **connect fairness
+assumption per address** (connects to a are attempted infinitely often ⇒
+infinitely many of them are not failed by resource exhaustion) or a
+**connection-rate bound** as a hypothesis. To be decided with the client
+and moonshot specs.
+
+**Whole-program obligations** (between the model-level theorems and a
+statement about the real binary):
+1. **The `semantics_prog` link.** R1-safe and R1-live are model level.
+2. **The L1 CakeML loop**, in the same translation chain as the servers.
+   "No server proof changes" holds at the model level only. The L1 code
+   needs its own CF spec, and the servers are relinked against it.
+3. **The listener fd.** `main2` hard-codes `lfd = 3`, but under D2 the
+   program calls `sys_listen`, which returns the lowest *free* fd. If fd
+   3 is inherited (a reserved fd), the listener is elsewhere, and polling
+   fd 3 is misuse in the model. Either the server uses the returned fd,
+   or the startup contract checks that fds ≥ 3 are closed (D2 checks only
+   0–2).
+4. **Fewer than 2^64 − 1 connections.** R1-safe states this on L1's run.
+   A corollary about all L0 worlds needs it as a world hypothesis (as
+   `v1_instance_disc`'s `sched_connects_le`).
+5. **The per-server obligations:** S1–S4, `pl2_ok`/`hl_ok` (interest,
+   ≤ 4096 fds per poll chunk, handle numbers < 2^64), and D16's
+   qualification of live-data.
+6. **Listen failure.** Headline statements of the form `Diverge io` need
+   the disjunct "listen failed and the program terminated" (`l1_rel`
+   already allows it).
+7. **Memory.** L1's input buffers take up to 64 KiB × the connections in
+   the interest (256 MiB at 4096), plus outboxes (for HTTP, up to the
+   file size). The machine-code theorem's heap must cover that, or the
+   statement becomes "diverges or runs out of memory".
+
 **(R3) Per-wrapper lemmas** (model level, on L1's functional core; the
 cheap part). For example:
 

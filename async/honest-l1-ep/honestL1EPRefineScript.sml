@@ -1129,3 +1129,58 @@ Proof
   gvs[res_val_enc, fds_lt_def, l0_used_cons] >> rw[] >> gvs[] >>
   fs[upd_lchan_def, l0_used_cons]
 QED
+
+(* The prefetching part's actions close only its own fds *)
+Theorem pdo_keep:
+  pdo lfd (w, ps) a = SOME (r, (w', ps'), evs) ∧ l0_rely w ⇒
+  ∀g. MEM g (l0_used w) ∧ ¬MEM g (MAP SND ps.b.tbl) ⇒ MEM g (l0_used w')
+Proof
+  Cases_on ‘a’ >> simp[pdo_def] >> strip_tac
+  >- gvs[AllCaseEqs()]
+  >- (gvs[AllCaseEqs()] >> rw[] >>
+      TRY (PairCases_on ‘z’ >> gvs[] >> drule_all l1_close_l0 >> strip_tac >>
+           first_x_assum irule >> simp[] >> strip_tac >> gvs[] >>
+           metis_tac[ALOOKUP_SOME_MEM_SND]))
+  >> pairarg_tac >> gvs[] >> rename1 ‘l1do _ _ _ = SOME (r, (w', b'), evs)’ >>
+  drule_all l1do_write_l0 >> simp[]
+QED
+
+Theorem pdo_l0owne:
+  pdo lfd (wl, es.p) a = SOME (r, (wl', ps'), evs) ∧
+  l0_rely wl ∧ fds_lt wl ∧ l0owne lfd wl es ∧ eown lfd es ⇒
+  l0_rely wl' ∧ fds_lt wl' ∧ l0owne lfd wl' (es with p := ps')
+Proof
+  strip_tac >> ‘pown lfd es.p ∧ l0own lfd wl es.p’ by gvs[eown_def, l0owne_def] >>
+  drule_all pdo_l0 >> strip_tac >> imp_res_tac pdo_keep >>
+  simp[l0owne_def] >> rw[] >>
+  qpat_x_assum ‘∀g. ¬MEM g (MAP SND es.p.b.tbl) ⇒ _’ irule >>
+  gvs[l0owne_def, eown_def, ALL_DISTINCT_APPEND] >> metis_tac[]
+QED
+
+(* Any action: L0's rely, the fd bound, and L1's fds open in L0 *)
+Theorem edo_l0:
+  edo lfd hw (wl, es) a = SOME (r, (wl', es'), evs) ∧
+  l0_rely wl ∧ fds_lt wl ∧ l0owne lfd wl es ∧ eown lfd es ⇒
+  l0_rely wl' ∧ fds_lt wl' ∧ l0owne lfd wl' es'
+Proof
+  strip_tac >> Cases_on ‘a’ >| [
+    (* EAccept *)
+    gvs[edo_def] >> PairCases_on ‘z’ >> gvs[] >> drule_all pdo_l0owne >> simp[],
+    (* ERead *)
+    gvs[edo_def, AllCaseEqs()]
+      >- (PairCases_on ‘z’ >> gvs[] >> drule_all pdo_l0owne >> simp[])
+      >> PairCases_on ‘z’ >> gvs[] >> rename1 ‘l1_close f _ = SOME ((wl', b'), evs)’ >>
+      drule_all l1_close_l0 >> strip_tac >>
+      ‘MEM f (MAP SND es.ctbl) ∧ ALL_DISTINCT (MAP SND es.ctbl) ∧ ALL_DISTINCT (MAP FST es.ctbl) ∧
+       ¬MEM f (MAP SND es.p.b.tbl) ∧ ¬MEM f es.p.b.closing ∧ ¬MEM f es.p.acq ∧ f ≠ lfd’
+        by (imp_res_tac ALOOKUP_SOME_MEM_SND >> gvs[eown_def, ALL_DISTINCT_APPEND] >>
+            metis_tac[]) >>
+      gvs[fds_lt_def, l0owne_def, l0own_def, ec_del_def, MEM_FILTER] >> rw[] >>
+      TRY (first_x_assum irule >> metis_tac[] >> NO_TAC) >>
+      first_x_assum irule >> metis_tac[MEM_SND_ADELKEY, MEM_SND_ADELKEY_sub],
+    (* EWrite *)
+    gvs[edo_def, AllCaseEqs()] >> PairCases_on ‘z’ >> gvs[] >> drule_all pdo_l0owne >> simp[],
+    (* EConnect *)
+    gvs[edo_def, AllCaseEqs()] >> drule_all sys_connect_l0 >> strip_tac >> simp[] >>
+    gvs[l0owne_def, l0own_def, l1hdl_hdl] >> metis_tac[]]
+QED

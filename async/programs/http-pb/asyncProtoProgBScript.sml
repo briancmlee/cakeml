@@ -53,6 +53,24 @@ Proof
   simp[num_to_str_def, mlintTheory.toString_thm]
 QED
 
+(* The response to a GET of path p (HttpSpec's handle, printed, written
+   without HttpSpec's response datatype for the translator) *)
+Definition respond_def:
+  respond files p =
+    case ALOOKUP files p of
+      SOME body =>
+        "HTTP/1.0 200 OK\r\nContent-Length: " ++
+        explode (num_to_str (LENGTH body)) ++ "\r\n\r\n" ++ body
+    | NONE => "HTTP/1.0 404 Not Found\r\nContent-Length: 0\r\n\r\n"
+End
+
+Theorem respond_thm:
+  respond files p = print_response (handle files (Get p))
+Proof
+  simp[respond_def, handle_def, num_to_str_def] >> CASE_TAC >>
+  simp[print_response_def, mlintTheory.toString_thm]
+QED
+
 (* The response to a request with method m, path p and body b *)
 Definition brespond_def:
   brespond files m p b =
@@ -202,6 +220,8 @@ Proof
 QED
 
 val r = translate split_path2_def;
+val r = translate get_sp_def;
+val r = translate after_path_def;
 val r = translate respond_def;
 val r = translate split_at2_def;
 val r = translate crlf_def;

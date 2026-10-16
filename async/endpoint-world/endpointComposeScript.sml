@@ -91,7 +91,7 @@ Definition wired_def:
     ∀ms j. LPREFIX (fromList ms) m ∧ j < LENGTH (opened_fds (side 2 ms)) ⇒
       ep_accepted (side 2 ms) j ∧ ep_connected_to (side 1 ms) j a ∧
       ∃c1 c2. ep_chan w1 (side 1 ms) j = SOME c1 ∧ ep_chan w2 (side 2 ms) j = SOME c2 ∧
-              w1.accepts a c1 ∧
+              ch_reaches w1 (proj 1 m) c1 Up ∧
               flows 1 j 2 w2 c2 m ∧ flows 2 j 1 w1 c1 m ∧
               drains_are_reads 1 w1 c1 2 j m ∧ drains_are_reads 2 w2 c2 1 j m
 End

@@ -42,6 +42,7 @@ End
 Inductive al_rel:
   (al_rel lfd a [] []) ∧
   (∀j es xs. al_rel lfd a es xs ⇒ al_rel lfd a (Drain j :: es) xs) ∧
+  (∀j b es xs. al_rel lfd a es xs ⇒ al_rel lfd a (Settle j b :: es) xs) ∧
   (∀e x es xs. ar_rel lfd a e x ∧ al_rel lfd a es xs ⇒ al_rel lfd a (e :: es) (x :: xs))
 End
 
@@ -129,13 +130,25 @@ Proof
   >- simp[ep_inv_upd_chan |> SIMP_RULE std_ss [upd_chan_def]]
 QED
 
+(* A server world has no pending connect: a Settle changes nothing *)
+Theorem core_settle:
+  core lfd a sk w ⇒ ep_deliver w (Settle j b) = w
+Proof
+  strip_tac >>
+  ‘EVERY (λc. c.status = Up) w.chans’
+    by (fs[core_def, EVERY_EL, LIST_REL_EL_EQN] >> rw[] >> res_tac >> fs[chan_rel_def]) >>
+  rw[ep_deliver_def] >> fs[EVERY_EL] >> res_tac >> fs[]
+QED
+
 Theorem core_deliver_all:
   ∀es xs. al_rel lfd a es xs ⇒
           ∀sk w. core lfd a sk w ⇒
                  core lfd a (FOLDL deliver2 sk xs) (FOLDL ep_deliver w es)
 Proof
-  Induct_on ‘al_rel’ >> rw[] >>
-  metis_tac[core_drain, core_deliver]
+  Induct_on ‘al_rel’ >> rw[]
+  >- metis_tac[core_drain]
+  >- (‘ep_deliver w (Settle j b) = w’ by metis_tac[core_settle] >> simp[])
+  >> metis_tac[core_deliver]
 QED
 
 (* ------------------------------------------------------------------------
@@ -165,13 +178,6 @@ Proof
   rw[core_def, EVERY_EL, LIST_REL_EL_EQN] >> res_tac >> fs[chan_rel_def]
 QED
 
-Theorem settle_id:
-  EVERY (λc. c.status = Up) w.chans ⇒ settle w = w
-Proof
-  rw[settle_def, endpointWorldTheory.eworld_component_equality, LIST_EQ_REWRITE, EL_MAPi] >>
-  fs[EVERY_EL] >> res_tac >> simp[]
-QED
-
 Theorem core_with[simp]:
   (core lfd a sk (w with clock := c) ⇔ core lfd a sk w) ∧
   (core lfd a sk (w with hist := h) ⇔ core lfd a sk w) ∧
@@ -191,7 +197,7 @@ QED
 Theorem v2rel_tick:
   v2rel lfd a sk w ⇒ v2rel lfd a (tick2 sk) (ep_tick w)
 Proof
-  rw[v2rel_def] >> imp_res_tac core_all_up >> imp_res_tac settle_id >>
+  rw[v2rel_def] >> imp_res_tac core_all_up >>
   simp[ep_tick_def, ep_deliver_fields] >>
   first_assum (qspecl_then [‘0’, ‘w.hist’] assume_tac) >>
   qspec_then ‘sk.future’ strip_assume_tac llist_CASES >>
@@ -438,12 +444,14 @@ Theorem al_rel_step_ok2:
 Proof
   Induct_on ‘al_rel’ >> rw[step_ok2_def, ep_step_ok_def]
   >- metis_tac[core_drain]
+  >- (‘ep_deliver w (Settle j b) = w’ by metis_tac[core_settle] >> metis_tac[])
   >- metis_tac[core_arrival_ok]
   >- metis_tac[core_deliver]
 QED
 
+(* No drain or settle: the arrivals of a version-2 schedule *)
 Definition no_drain_def:
-  no_drain es ⇔ ∀j. ¬MEM (Drain j) es
+  no_drain es ⇔ (∀j. ¬MEM (Drain j) es) ∧ ∀j b. ¬MEM (Settle j b) es
 End
 
 Theorem al_rel_ep_step_ok:
@@ -526,7 +534,7 @@ Theorem ep_ffi_fn_env:
   ep_ffi_fn n conf bytes w = SOME (b, w') ⇒ w'.env = w.env
 Proof
   rw[ep_ffi_fn_def, ep_call_def, AllCaseEqs()] >>
-  gvs[ep_tick_def, ep_deliver_fields, settle_def, ep_accept_def, ep_connect_def,
+  gvs[ep_tick_def, ep_deliver_fields, ep_accept_def, ep_connect_def,
       ep_alloc_def, ep_read_def, ep_send_def, ep_shutdown_def, ep_close_def,
       ep_conn_err_def,
       upd_chan_def, AllCaseEqs()] >>
@@ -576,7 +584,8 @@ Definition untr_def:
     (if a' = a then Connect2 lfd else Connect2 (lfd + 1w)) :: untr lfd a es ∧
   untr lfd a (PData j bs :: es) = Data2 j bs :: untr lfd a es ∧
   untr lfd a (PEof j :: es) = Eof2 j :: untr lfd a es ∧
-  untr lfd a (Drain j :: es) = untr lfd a es
+  untr lfd a (Drain j :: es) = untr lfd a es ∧
+  untr lfd a (Settle j b :: es) = untr lfd a es
 End
 
 Theorem al_rel_untr:
@@ -600,7 +609,8 @@ Proof
   rw[server_world2_def] >>
   qabbrev_tac ‘w0 = <| listening := [(lfd, 0, [])]; chans := []; open_fds := [];
                        reserved := sk.reserved; alloc := sk.alloc;
-                       accepts := (λa j. T); takes := (λj b n. n); calls := v2_calls;
+                       takes := (λj b n. n); calls := v2_calls;
+                       nosock := (λi. F); nconnects := 0;
                        env := (λn h. MAP (tr lfd 0) (fut_step sk.future n));
                        clock := 0; hist := [] |>’ >>
   ‘v2rel lfd 0 sk w0’
@@ -627,7 +637,7 @@ Proof
   gvs[v2rel_def] >>
   qpat_x_assum ‘∀n. al_rel _ _ _ (fut_step sk'.future n)’ (qspec_then ‘0’ assume_tac) >>
   fs[] >> drule al_rel_ep_step_ok >> disch_then irule >>
-  imp_res_tac core_all_up >> imp_res_tac settle_id >>
+  imp_res_tac core_all_up >>
   simp[al_rel_tr] >> qexists_tac ‘sk'’ >> fs[next_step2_fut]
 QED
 
@@ -668,14 +678,14 @@ Proof
   simp[server_world2_def] >> conj_tac >- fs[ep_rely_def] >>
   simp[sched_wf2_def] >> gen_tac >>
   drule_then (qspec_then ‘n’ strip_assume_tac) v2_after_polls >>
-  ‘ep_step_ok (settle wk with clock := wk.clock + 1) (wk.env wk.clock wk.hist)’
+  ‘ep_step_ok (wk with clock := wk.clock + 1) (wk.env wk.clock wk.hist)’
     by (qpat_x_assum ‘ep_rely w’ mp_tac >> simp[ep_rely_def, ep_sched_ok_def] >>
         strip_tac >> first_x_assum drule >> simp[]) >>
   gvs[v2rel_def] >>
   first_x_assum (qspecl_then [‘0’, ‘wk.hist’] assume_tac) >> fs[] >>
   drule al_rel_step_ok2 >>
-  disch_then (qspecl_then [‘ticks2 n sk0’, ‘settle wk with clock := wk.clock + 1’] mp_tac) >>
-  imp_res_tac core_all_up >> imp_res_tac settle_id >>
+  disch_then (qspecl_then [‘ticks2 n sk0’, ‘wk with clock := wk.clock + 1’] mp_tac) >>
+  imp_res_tac core_all_up >>
   simp[next_step2_fut]
 QED
 

@@ -37,16 +37,19 @@ Overload rp = “Req "POST" "/echo" "1.1" [("Content-Length", "19")] looks_like_
 
 (* HttpSpecHeaders' header lines are valid here *)
 Theorem valid_header_bheader:
-  valid_header h ∧ EVERY tchar (FST h) ⇒ valid_bheader h
+  valid_header h ∧ EVERY tchar (FST h) ∧ EVERY field_char (SND h) ⇒
+  valid_bheader h
 Proof
   PairCases_on ‘h’ >> simp[valid_header_def, valid_bheader_def]
 QED
 
 (* MAIN (compatibility): a request of HttpSpecHeaders whose header names
-   are tokens, without Content-Length or Transfer-Encoding headers, is a
-   bodiless GET request here, with the same bytes and the same response *)
+   are tokens, whose path and header values are made of RFC characters,
+   without Content-Length or Transfer-Encoding headers, is a bodiless GET
+   request here, with the same bytes and the same response *)
 Theorem bodiless_requests:
   valid_hrequest (GetH p ver hs) ∧ EVERY (λh. EVERY tchar (FST h)) hs ∧
+  EVERY uri_char p ∧ EVERY (λh. EVERY field_char (SND h)) hs ∧
   ¬EXISTS is_cl hs ∧ ¬EXISTS is_te hs ⇒
   valid_brequest (Req "GET" p ver hs "") ∧
   print_brequest (Req "GET" p ver hs "") = print_hrequest (GetH p ver hs) ∧
@@ -328,6 +331,16 @@ Theorem whitespace_names_invalid:
   ¬valid_bheader ("Content-Length\011", v)
 Proof
   simp[valid_bheader_def] >> EVAL_TAC
+QED
+
+(* MAIN (bite, RFC character sets): a path with a tab, and a header
+   value with a NUL, are not valid (RFC 9112 frames no message for them,
+   and RFC 9110 §5.5 requires a recipient to reject NUL in a value) *)
+Theorem rfc_chars_bites:
+  ¬valid_brequest (Req "GET" "/a\tb" "1.1" [] "") ∧
+  ¬valid_bheader ("X", "\000")
+Proof
+  simp[valid_brequest_def, valid_bheader_def] >> EVAL_TAC
 QED
 
 (* rp, with a tab before the colon of its Content-Length header: under a

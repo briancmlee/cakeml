@@ -1,6 +1,6 @@
 (*
-  asyncServerVLiveA: the library liveness theorem for STATEFUL servers
-  (design/34, KV; additive over asyncServerVLive).
+  skeletonVLiveAns: the library liveness theorem for STATEFUL servers
+  (design/34, KV; additive over skeletonVLive).
 
   handler_live_va generalises handler_live_v: the output owed for data D
   may also depend on the answers the handler received to its queries (for
@@ -15,19 +15,19 @@
   N rounds), and the output owed given them is written by round N.  It
   needs view_wrap_ans (view_wrap plus: c's part of the skeleton's
   transcript is its handler's transcript, by sv_handler_view).
-  asyncServerVLive's definitions are unchanged.
+  skeletonVLive's definitions are unchanged.
 *)
-Theory asyncServerVLiveA
+Theory skeletonVLiveAns
 Ancestors
   pair list rich_list arithmetic option pred_set llist alist words string
-  asyncCore asyncLevel1 asyncTranscript asyncServer asyncServerSafety
-  asyncProgress ffiSpikeSocketFFI ffiSpikeSocketFair EchoSpec HttpSpec
-  asyncM3World asyncM4GRounds asyncM4Relabel asyncM4RelabelDist
-  asyncM4SockModel asyncM4SockInv asyncM4GTrans asyncM4Loop asyncM4EchoRunOk
-  asyncM4Sched asyncM4Account asyncM4LiveProg asyncM4LiveWorld asyncM4ReadSoon
-  asyncM4Queue asyncM4AcceptSoon asyncM4Drain asyncRunOkGen asyncServerWith
-  asyncM4ServerUses asyncServerWithUses asyncSWProgress asyncSWSock
-  asyncServerWithLive asyncServerV asyncServerVProgress asyncServerVLive
+  asyncCore asyncLevel1 asyncTranscript echoServer echoServerSafety
+  echoProgress socketWorld socketFair EchoSpec HttpGetSpec
+  loopPollWorld loopRounds relabel relabelDist
+  echoSockModel loopSockInv loopRoundsTrans loopPollDyn echoRunOk
+  echoLiveSched echoLiveAccount echoLiveProg echoLiveWorld echoLiveReadSoon
+  echoLiveQueue echoLiveAcceptSoon echoLiveDrain skeletonRunOk skeleton
+  echoServerUses skeletonUses skeletonProgress skeletonSock
+  skeletonLive skeletonV skeletonVProgress skeletonVLive
 Libs
   preamble
 
@@ -77,7 +77,7 @@ Definition conn_answers_def:
                (MAP sfs (ghist ifds (srelabel (Wr (server_v V hf lfdn))) s0 N)))))
 End
 
-(* view_wrap (asyncServerVLive), plus: c's part of the skeleton's
+(* view_wrap (skeletonVLive), plus: c's part of the skeleton's
    transcript, before the socket projection, is its handler's transcript;
    so the handler's answers are the run's (conn_answers) *)
 Theorem view_wrap_ans:

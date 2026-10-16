@@ -32,16 +32,16 @@
      connection: everything owed for what a client sent is eventually
      written.
 *)
-Theory asyncServerWithLive
+Theory skeletonLive
 Ancestors
   pair list rich_list arithmetic option pred_set llist alist words string
-  asyncCore asyncLevel1 asyncTranscript asyncServer asyncServerSafety
-  asyncProgress ffiSpikeSocketFFI ffiSpikeSocketFair EchoSpec HttpSpec
-  asyncM3World asyncM4GRounds asyncM4Relabel asyncM4RelabelDist
-  asyncM4SockModel asyncM4SockInv asyncM4GTrans asyncM4Loop asyncM4EchoRunOk
-  asyncM4Sched asyncM4Account asyncM4LiveProg asyncM4LiveWorld asyncM4ReadSoon
-  asyncM4Queue asyncM4AcceptSoon asyncM4Drain asyncRunOkGen asyncServerWith
-  asyncServerWithUses asyncSWProgress asyncSWSock
+  asyncCore asyncLevel1 asyncTranscript echoServer echoServerSafety
+  echoProgress socketWorld socketFair EchoSpec HttpGetSpec
+  loopPollWorld loopRounds relabel relabelDist
+  echoSockModel loopSockInv loopRoundsTrans loopPollDyn echoRunOk
+  echoLiveSched echoLiveAccount echoLiveProg echoLiveWorld echoLiveReadSoon
+  echoLiveQueue echoLiveAcceptSoon echoLiveDrain skeletonRunOk skeleton
+  skeletonUses skeletonProgress skeletonSock
 Libs
   preamble
 
@@ -141,8 +141,8 @@ Overload SWG = “λhf ifds lfdn s0 k. gstate ifds (srelabel (server_with hf lfd
 Overload SWA = “λhf ifds lfdn s0 k. gacts ifds (srelabel (server_with hf lfdn)) s0 k”
 Overload SWEV = “λhf ifds lfdn s0. grounds_events ifds (srelabel (server_with hf lfdn)) s0”
 
-(* gen_rounds_bytes for server_with hf (its bytes is asyncM4EchoSafe's
-   overload, MAP (n2w o ORD); here it is HttpSpec's bytes) *)
+(* gen_rounds_bytes for server_with hf (its bytes is echoSafe's
+   overload, MAP (n2w o ORD); here it is HttpGetSpec's bytes) *)
 Theorem sw_rounds_bytes:
   hok hf ∧ s0.listeners = [(n2w lfdn, [])] ∧ s0.conns = [] ⇒
   ∀c n.
@@ -205,7 +205,7 @@ Proof
   ‘bytes_read_from c (FLAT (GENLIST (SWEV hf ifds lfdn s0) (a + j))) =
    pread_all c (SWP hf ifds lfdn s0 (a + j))’
     by (irule bytes_read_from_rounds >> first_assum ACCEPT_TAC) >>
-  (* gen_rounds_bytes's bytes is asyncM4EchoSafe's overload, MAP (n2w o ORD) *)
+  (* gen_rounds_bytes's bytes is echoSafe's overload, MAP (n2w o ORD) *)
   drule_all sw_rounds_bytes >> strip_tac >>
   metis_tac[]
 QED

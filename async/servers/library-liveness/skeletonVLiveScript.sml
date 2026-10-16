@@ -4,8 +4,8 @@
 
   The loop runs a socket machine M.  For server_with, M = server_with hf;
   for the KV server, M = with_store δ s0 (server_v sockV kvh), whose store
-  answers the handlers' queries.  The proofs are asyncServerWithLive's and
-  asyncSWSock's, split in three:
+  answers the handlers' queries.  The proofs are skeletonLive's and
+  skeletonSock's, split in three:
 
    1. Any socket machine M (no vocabulary): the world's facts.
        - m_conn_accepted: if M keeps accepting (accepts_progress), every
@@ -24,20 +24,20 @@
       the view (from sv_handler_view).
 
   MAIN: server_v_live; server_with_live_from_v re-derives server_with_live
-  (asyncServerWithLive) with its statement unchanged, for idV and the
+  (skeletonLive) with its statement unchanged, for idV and the
   identity wrapper.
 *)
-Theory asyncServerVLive
+Theory skeletonVLive
 Ancestors
   pair list rich_list arithmetic option pred_set llist alist words string
-  asyncCore asyncLevel1 asyncTranscript asyncServer asyncServerSafety
-  asyncProgress ffiSpikeSocketFFI ffiSpikeSocketFair EchoSpec HttpSpec
-  asyncM3World asyncM4GRounds asyncM4Relabel asyncM4RelabelDist
-  asyncM4SockModel asyncM4SockInv asyncM4GTrans asyncM4Loop asyncM4EchoRunOk
-  asyncM4Sched asyncM4Account asyncM4LiveProg asyncM4LiveWorld asyncM4ReadSoon
-  asyncM4Queue asyncM4AcceptSoon asyncM4Drain asyncRunOkGen asyncServerWith
-  asyncM4ServerUses asyncServerWithUses asyncSWProgress asyncSWSock
-  asyncServerWithLive asyncServerV asyncServerVProgress
+  asyncCore asyncLevel1 asyncTranscript echoServer echoServerSafety
+  echoProgress socketWorld socketFair EchoSpec HttpGetSpec
+  loopPollWorld loopRounds relabel relabelDist
+  echoSockModel loopSockInv loopRoundsTrans loopPollDyn echoRunOk
+  echoLiveSched echoLiveAccount echoLiveProg echoLiveWorld echoLiveReadSoon
+  echoLiveQueue echoLiveAcceptSoon echoLiveDrain skeletonRunOk skeleton
+  echoServerUses skeletonUses skeletonProgress skeletonSock
+  skeletonLive skeletonV skeletonVProgress
 Libs
   preamble
 
@@ -46,8 +46,8 @@ Libs
    ------------------------------------------------------------------------ *)
 
 (* A socket machine, with results of type 'mx option *)
-Type smach = “: (event, asyncServer$response) snapshot list ->
-                (asyncServer$action, 'mx option) asyncCore$outcome”
+Type smach = “: (event, echoServer$response) snapshot list ->
+                (echoServer$action, 'mx option) asyncCore$outcome”
 
 (* M keeps accepting: if the listener is readable in two snapshots in a
    row, and the world answers promptly, M accepts during those rounds *)
@@ -90,7 +90,7 @@ Proof
        by (qspecl_then [‘log_of M’, ‘TAKE (i + d) h’, ‘EL (i + d) h’] mp_tac
              (Q.GENL [‘acts’, ‘h’, ‘s’] new_actions_prefix)
            >> simp[log_of_def, wf_SNOC_actions])
-  >> gvs[naccepts_def, asyncProgressTheory.count_def, FILTER_APPEND_DISTRIB] >> CCONTR_TAC
+  >> gvs[naccepts_def, echoProgressTheory.count_def, FILTER_APPEND_DISTRIB] >> CCONTR_TAC
   >> ‘FILTER (λa. a = Accept lfd)
         (new_actions (log_of M) (TAKE (i + d) h ++ [EL (i + d) h])) = []’
        by simp[FILTER_EQ_NIL, EVERY_MEM]
@@ -104,7 +104,7 @@ Theorem m_accept_soon_s:
   accepts_progress lfdn M ∧ uses_ok lfdn M ∧
   s0.listeners = [(n2w lfdn, [])] ∧ s0.conns = [] ∧ lfdn < dimword (:64) ∧
   (∀j. n < j ∧ j ≤ n + 2 ⇒ is_ready (gstate (EI lfdn) (srelabel M) s0 j) (n2w lfdn)) ⇒
-  ∃i. 1 ≤ i ∧ i ≤ 2 ∧ MEM (asyncM3World$Accept (n2w lfdn)) (SAg M (EI lfdn) s0 (n + i))
+  ∃i. 1 ≤ i ∧ i ≤ 2 ∧ MEM (loopPollWorld$Accept (n2w lfdn)) (SAg M (EI lfdn) s0 (n + i))
 Proof
   rpt strip_tac
   >> ‘grun_ok (EI lfdn) (srelabel M) s0’ by (irule gen_grun_ok >> metis_tac[])
@@ -202,7 +202,7 @@ Definition hread_t_def:
   hread_t fd t g j = CONCAT (read fd (t (TAKE j g)))
 End
 
-(* henv (asyncServerWithLive), for a transcript function t in place of a
+(* henv (skeletonLive), for a transcript function t in place of a
    handler's transcript *)
 Definition henv_t_def:
   henv_t fd t g j0 D ⇔
@@ -223,7 +223,7 @@ Proof
   simp[henv_def, henv_t_def, hread_def, hread_t_def]
 QED
 
-(* gen_rounds_bytes, with HttpSpec's bytes *)
+(* gen_rounds_bytes, with HttpGetSpec's bytes *)
 Theorem m_rounds_bytes:
   uses_ok lfdn M ∧ s0.listeners = [(n2w lfdn, [])] ∧ s0.conns = [] ⇒
   ∀c n.
@@ -503,7 +503,7 @@ QED
 Theorem naccepts_APPEND[local]:
   naccepts lfd (l1 ++ l2) = naccepts lfd l1 + naccepts lfd l2
 Proof
-  simp[naccepts_def, asyncProgressTheory.count_def, FILTER_APPEND_DISTRIB]
+  simp[naccepts_def, echoProgressTheory.count_def, FILTER_APPEND_DISTRIB]
 QED
 
 (* The accepts among the socket actions are the accepts through V *)
@@ -790,7 +790,7 @@ Proof
   qpat_x_assum ‘out D ≼ _’ mp_tac >> rw[IS_PREFIX_APPEND] >> simp[]
 QED
 
-(* server_with_live's statement (asyncServerWithLive), as the instance of
+(* server_with_live's statement (skeletonLive), as the instance of
    server_v_live for idV and the identity wrapper *)
 Theorem server_with_live_from_v:
   hok hf ∧ handler_live hf out B ∧ FLAT (out "") = "" ∧
@@ -800,10 +800,10 @@ Theorem server_with_live_from_v:
       bytes_written_to c (FLAT (GENLIST (SWEV hf (EI lfdn) lfdn s0) N))
 Proof
   mp_tac (Q.GENL [‘V’, ‘Wr’, ‘inner’] server_v_live
-          |> Q.ISPECL [‘idV : (asyncServer$action, 'k, 'q, asyncServer$response) vocab’,
-                       ‘λm : (asyncServer$action, asyncServer$response, unit) vmach. m’,
-                       ‘λ(m : (asyncServer$action, asyncServer$response, unit) vmach)
-                         (h : (event, asyncServer$response) snapshot list). h’]
+          |> Q.ISPECL [‘idV : (echoServer$action, 'k, 'q, echoServer$response) vocab’,
+                       ‘λm : (echoServer$action, echoServer$response, unit) vmach. m’,
+                       ‘λ(m : (echoServer$action, echoServer$response, unit) vmach)
+                         (h : (event, echoServer$response) snapshot list). h’]
           |> INST_TYPE [“:'z” |-> alpha, “:'y” |-> “:unit”]) >>
   simp[wrap_ok_id, vocab_ok_idV, hokv_idV, handler_live_v_idV, GSYM server_with_eq_v]
 QED

@@ -1,7 +1,7 @@
 (*
   The echo server's liveness, re-derived from the library (design/34
   §2.6): echo proves only its per-handler obligation, and
-  server_with_live_flat (asyncServerWithLiveFlat) does the rest.
+  server_with_live_flat (skeletonLiveFlat) does the rest.
 
    - echo_reads: in every environment henv, the echo handler eventually
      reads all of D.  By a measure on what of D is unread: in each window
@@ -12,16 +12,16 @@
    - handler_live_flat_echo: echo writes back what it reads
      (handler_echoes), so it owes D for D.
    - echo_live_via_lib: EchoSpec's liveness for the loop's trace, the same
-     statement as asyncM4EchoLive's echo_live_rounds, now from the library.
+     statement as echoLive's echo_live_rounds, now from the library.
 *)
-Theory asyncEchoLiveLib
+Theory echoLiveLib
 Ancestors
   pair list rich_list arithmetic option pred_set llist alist words string
-  asyncCore asyncLevel1 asyncTranscript asyncServer asyncServerSafety
-  asyncProgress ffiSpikeSocketFFI ffiSpikeSocketFair EchoSpec HttpSpec
-  asyncM4GRounds asyncM4GTrans asyncM4LiveProg asyncM4ReadSoon asyncM4Drain
-  asyncRunOkGen asyncServerWith asyncSWProgress asyncSWSock
-  asyncServerWithLive asyncServerWithLiveFlat
+  asyncCore asyncLevel1 asyncTranscript echoServer echoServerSafety
+  echoProgress socketWorld socketFair EchoSpec HttpGetSpec
+  loopRounds loopRoundsTrans echoLiveProg echoLiveReadSoon echoLiveDrain
+  skeletonRunOk skeleton skeletonProgress skeletonSock
+  skeletonLive skeletonLiveFlat
 Libs
   preamble
 
@@ -107,7 +107,7 @@ Proof
 QED
 
 (* MAIN: EchoSpec's liveness for the event loop's trace, from the library
-   theorem: the same statement as echo_live_rounds (asyncM4EchoLive) *)
+   theorem: the same statement as echo_live_rounds (echoLive) *)
 Theorem echo_live_via_lib:
   s0.listeners = [(n2w lfdn, [])] ∧ s0.conns = [] ∧ lfdn < dimword (:64) ∧
   sched_wf s0 ⇒

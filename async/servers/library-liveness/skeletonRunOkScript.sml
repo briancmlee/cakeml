@@ -1,7 +1,7 @@
 (*
   M4's no-misuse argument and trace bridge, for any server computation
   that uses the socket API correctly in the model (generic form of
-  asyncM4EchoRunOk and of the round bridge in asyncM4EchoSafe).
+  echoRunOk and of the round bridge in echoSafe).
 
   For a model computation m with  uses_ok lfdn m  (every Accept is on the
   listener lfdn; every Read/Write of a connection comes after its
@@ -15,16 +15,16 @@
                        those of the model transcript TSg m ifds s0 n on fd
                        w2n c.
 
-  The proofs are asyncM4EchoRunOk's and asyncM4EchoSafe's, with uses_ok m
+  The proofs are echoRunOk's and echoSafe's, with uses_ok m
   in place of server_uses_accepted.  The echo server is an instance
   (uses_ok_server).
 *)
-Theory asyncRunOkGen
+Theory skeletonRunOk
 Ancestors
-  words asyncCore asyncLevel1 asyncLevel2 asyncTranscript asyncServer
-  asyncServerSafety asyncM4ServerUses asyncM4Relabel asyncM4RelabelDist
-  ffiSpikeSocketFFI asyncM3World asyncM4GRounds asyncM4SockInv
-  asyncM4SockModel asyncM4GTrans asyncM4EchoRunOk asyncM4EchoSafe EchoSpec
+  words asyncCore asyncLevel1 asyncLevel2 asyncTranscript echoServer
+  echoServerSafety echoServerUses relabel relabelDist
+  socketWorld loopPollWorld loopRounds loopSockInv
+  echoSockModel loopRoundsTrans echoRunOk echoSafe EchoSpec
 Libs
   preamble
 

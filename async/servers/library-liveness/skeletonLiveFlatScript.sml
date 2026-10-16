@@ -12,15 +12,15 @@
    - nreads_step_wf: if a computation's reads of fd grew, it emitted a read
      of fd in one of those rounds.
 *)
-Theory asyncServerWithLiveFlat
+Theory skeletonLiveFlat
 Ancestors
   pair list rich_list arithmetic option pred_set llist alist words string
-  asyncCore asyncLevel1 asyncTranscript asyncServer asyncServerSafety
-  asyncProgress ffiSpikeSocketFFI ffiSpikeSocketFair EchoSpec HttpSpec
-  asyncM4GRounds asyncM4GTrans asyncM4LiveProg asyncM4ReadSoon asyncM4Drain
-  asyncM4Sched asyncM4Account asyncM4AcceptSoon
-  asyncRunOkGen asyncServerWith asyncSWProgress asyncSWSock asyncClosedLoop
-  asyncServerWithLive
+  asyncCore asyncLevel1 asyncTranscript echoServer echoServerSafety
+  echoProgress socketWorld socketFair EchoSpec HttpGetSpec
+  loopRounds loopRoundsTrans echoLiveProg echoLiveReadSoon echoLiveDrain
+  echoLiveSched echoLiveAccount echoLiveAcceptSoon
+  skeletonRunOk skeleton skeletonProgress skeletonSock echoClosedLoop
+  skeletonLive
 Libs
   preamble
 

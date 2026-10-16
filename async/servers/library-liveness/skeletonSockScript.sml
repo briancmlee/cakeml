@@ -7,19 +7,19 @@
    - accepts: while connections are pending the server accepts within two
      rounds, so every connection of the world is eventually handed out
      (sw_conn_accepted).
-  These are spike/m4-liveness's echo proofs (asyncM4AcceptSoon,
-  asyncM4ReadSoon), with server lfd replaced by server_with hf lfd,
+  These are spike/m4-liveness's echo proofs (echoLiveAcceptSoon,
+  echoLiveReadSoon), with server lfd replaced by server_with hf lfd,
   echo_grun_ok by gen_grun_ok and server_accept_progress by
   sw_accept_progress.
 *)
-Theory asyncSWSock
+Theory skeletonSock
 Ancestors
   pair list rich_list arithmetic option pred_set llist alist words
-  asyncCore asyncLevel1 asyncTranscript asyncServer asyncServerSafety
-  asyncProgress ffiSpikeSocketFFI asyncM3World asyncM4GRounds asyncM4Relabel
-  asyncM4RelabelDist asyncM4SockModel asyncM4SockInv asyncM4GTrans asyncM4Loop
-  asyncM4EchoRunOk asyncM4Sched asyncM4LiveProg asyncM4LiveWorld asyncM4ReadSoon
-  asyncM4Queue asyncM4AcceptSoon asyncRunOkGen asyncServerWith asyncSWProgress
+  asyncCore asyncLevel1 asyncTranscript echoServer echoServerSafety
+  echoProgress socketWorld loopPollWorld loopRounds relabel
+  relabelDist echoSockModel loopSockInv loopRoundsTrans loopPollDyn
+  echoRunOk echoLiveSched echoLiveProg echoLiveWorld echoLiveReadSoon
+  echoLiveQueue echoLiveAcceptSoon skeletonRunOk skeleton skeletonProgress
 Libs
   preamble
 
@@ -112,7 +112,7 @@ Proof
        by (qspecl_then [‘log_of (server_with hf lfd)’, ‘TAKE (i + d) h’, ‘EL (i + d) h’] mp_tac
              (Q.GENL [‘acts’, ‘h’, ‘s’] new_actions_prefix)
            >> simp[log_of_def, wf_SNOC_actions, hok_wf_server_with])
-  >> gvs[naccepts_def, asyncProgressTheory.count_def, FILTER_APPEND_DISTRIB] >> CCONTR_TAC
+  >> gvs[naccepts_def, echoProgressTheory.count_def, FILTER_APPEND_DISTRIB] >> CCONTR_TAC
   >> ‘FILTER (λa. a = Accept lfd)
         (new_actions (log_of (server_with hf lfd)) (TAKE (i + d) h ++ [EL (i + d) h])) = []’
        by simp[FILTER_EQ_NIL, EVERY_MEM]
@@ -128,7 +128,7 @@ Theorem sw_accept_soon_s:
   (∀j. n < j ∧ j ≤ n + 2 ⇒
        is_ready (gstate (EI lfdn) (srelabel (server_with hf lfdn)) s0 j) (n2w lfdn)) ⇒
   ∃i. 1 ≤ i ∧ i ≤ 2 ∧
-      MEM (asyncM3World$Accept (n2w lfdn)) (SAg (server_with hf lfdn) (EI lfdn) s0 (n + i))
+      MEM (loopPollWorld$Accept (n2w lfdn)) (SAg (server_with hf lfdn) (EI lfdn) s0 (n + i))
 Proof
   rpt strip_tac
   >> ‘grun_ok (EI lfdn) (srelabel (server_with hf lfdn)) s0’ by (irule gen_grun_ok >> metis_tac[])

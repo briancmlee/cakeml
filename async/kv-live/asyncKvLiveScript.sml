@@ -18,6 +18,7 @@ Ancestors
   asyncServerV asyncServerVProgress asyncServerVLive asyncServerVLiveA
   asyncServerVLiveP asyncServerVKv asyncProto asyncProtoV asyncProtoB
   asyncKvLiveStore asyncProtoMachineV asyncKvModel HttpKvSpec llist
+  asyncProtoLiveV
 Libs
   preamble
 
@@ -259,4 +260,28 @@ Theorem kv_live_rounds_qfull:
 Proof
   rw[kv_server_def, kv_inner_def] >> irule kv_live_from_goal >>
   simp[hokv_kv] >> qexists_tac ‘B’ >> simp[kv_handler_live]
+QED
+
+(* The query handler's full liveness, at every fd (from
+   proto_handler_live_va_full) *)
+Theorem qfull_kv:
+  qfull sockV P_b (λreq. SOME (fd, req)) kfin fd
+        (λD. (LENGTH D + 2) * (2 * LENGTH (proto_all P_b D) + 3))
+Proof
+  rw[qfull_def] >>
+  metis_tac[proto_handler_live_va_full, proto_ok_b, vocab_ok_sockV, vocab_qok_sockV]
+QED
+
+(* MAIN: the KV server is live (HttpKvSpec's kv_live) on the event loop's
+   trace, in every fair socket world with one listener *)
+Theorem kv_live_rounds:
+  s0.listeners = [(n2w lfdn, [])] ∧ s0.conns = [] ∧ lfdn < dimword (:64) ∧
+  sched_wf s0 ⇒
+  kv_live s0
+    (LFLATTEN (LGENLIST (λi. fromList (grounds_events (EI lfdn)
+       (srelabel (kv_server lfdn)) s0 i)) NONE))
+Proof
+  strip_tac >> irule kv_live_rounds_qfull >> simp[] >>
+  qexists_tac ‘λD. (LENGTH D + 2) * (2 * LENGTH (proto_all P_b D) + 3)’ >>
+  simp[qfull_kv]
 QED

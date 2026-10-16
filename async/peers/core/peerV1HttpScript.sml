@@ -22,7 +22,7 @@ Theorem http_spec_of_peer_disc:
   ∃io. semantics_prog (init_state (socket_ffi sk)) init_env prog (Diverge io) ∧
        http_safe files io ∧ http_live files sk io
 Proof
-  strip_tac >> drule_all v1_endpoint_run >> strip_tac >>
+  strip_tac >> drule_all v1_peer_run >> strip_tac >>
   qexists_tac ‘io’ >> fs[ep_http_guar_def] >> conj_tac
   >- (rw[http_safe_def] >> drule_all v1_bytes >> strip_tac >>
       reverse (Cases_on ‘MEM c (opened_fds evs)’) >- simp[] >>

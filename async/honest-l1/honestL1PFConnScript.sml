@@ -486,3 +486,146 @@ Proof
   drule (el 3 (CONJUNCTS sys_qof)) >> disch_then (qspec_then ‘lfd’ strip_assume_tac) >>
   irule queue_app >> metis_tac[]
 QED
+
+(* ------------------------------------------------------------------------
+   The round and the listener's queue
+   ------------------------------------------------------------------------ *)
+
+(* As wmono, except for the fds X (closed) *)
+Definition wkeep_def:
+  wkeep X w w' ⇔
+    (∀g j. ¬MEM g X ∧ ALOOKUP w.open_fds g = SOME j ⇒ ALOOKUP w'.open_fds g = SOME j) ∧
+    LENGTH w.chans ≤ LENGTH w'.chans ∧
+    (∀j. j < LENGTH w.chans ∧ (EL j w.chans).broken ⇒ (EL j w'.chans).broken)
+End
+
+Theorem wmono_wkeep:
+  wmono w w' ⇒ wkeep X w w'
+Proof
+  simp[wmono_def, wkeep_def]
+QED
+
+Theorem wkeep_trans:
+  wkeep X w1 w2 ∧ wkeep Y w2 w3 ⇒ wkeep (X ++ Y) w1 w3
+Proof
+  rw[wkeep_def] >> metis_tac[LESS_LESS_EQ_TRANS]
+QED
+
+Theorem wkeep_hist[simp]:
+  wkeep X w (w' with hist := h) ⇔ wkeep X w w'
+Proof
+  simp[wkeep_def]
+QED
+
+Theorem FOLDL_break_chans:
+  ∀e q w. let w' = FOLDL (λw j. w with chans := LUPDATE (break_lchan e F (EL j w.chans)) j w.chans)
+                   w q in
+        LENGTH w'.chans = LENGTH w.chans ∧ w'.open_fds = w.open_fds ∧
+        ∀j. j < LENGTH w.chans ∧ (EL j w.chans).broken ⇒ (EL j w'.chans).broken
+Proof
+  gen_tac >> Induct >> simp[] >> rpt gen_tac >>
+  first_x_assum (qspec_then ‘w with chans := LUPDATE (break_lchan e F (EL h w.chans)) h w.chans’
+                   mp_tac) >>
+  simp[] >> rw[] >> first_x_assum irule >>
+  simp[EL_LUPDATE] >> rw[break_lchan_def]
+QED
+
+Theorem wkeep_close:
+  l0_close g w = (r, w') ⇒ wkeep [g] w w'
+Proof
+  rw[l0_close_def, AllCaseEqs()] >> simp[wkeep_def] >>
+  TRY (rw[close_fd_def] >> NO_TAC) >>
+  simp[close_fd_def] >> every_case_tac >> gvs[] >>
+  TRY (PURE_REWRITE_TAC [upd_lchan_def] >>
+       qmatch_goalsub_abbrev_tac ‘FOLDL _ w1 qq’ >>
+       qspecl_then [‘E_CONNRESET’, ‘qq’, ‘w1’] mp_tac FOLDL_break_chans >>
+       simp[Abbr ‘w1’] >> NO_TAC) >>
+  simp[upd_lchan_def, EL_LUPDATE, ALOOKUP_ADELKEY] >> rw[] >> gvs[]
+QED
+
+Theorem sys_close_wkeep:
+  sys_close g w = SOME (out, w', ev) ⇒ wkeep [g] w w'
+Proof
+  rw[sys_close_def] >> drule l0_do_cases >> strip_tac >> gvs[l0_call_def] >>
+  pairarg_tac >> gvs[] >>
+  ‘[g] = [] ++ [g]’ by simp[] >> pop_assum SUBST1_TAC >>
+  irule wkeep_trans >> qexists_tac ‘l0_tick «sys_close» w’ >>
+  simp[wmono_wkeep, wmono_tick] >>
+  gvs[] >> metis_tac[wkeep_close]
+QED
+
+Theorem l1_reap_wkeep:
+  ∀fs w st w' st' evs. l1_reap fs (w, st) = SOME ((w', st'), evs) ⇒ wkeep fs w w'
+Proof
+  Induct >> simp[l1_reap_def] >- simp[wkeep_def] >>
+  rpt gen_tac >> IF_CASES_TAC >> strip_tac
+  >- (gvs[AllCaseEqs(), l1_close_def] >>
+      first_x_assum drule >> strip_tac >> drule sys_close_wkeep >> strip_tac >>
+      ‘h :: fs = [h] ++ fs’ by simp[] >> pop_assum SUBST1_TAC >>
+      metis_tac[wkeep_trans]) >>
+  first_x_assum drule >> rw[wkeep_def] >> metis_tac[]
+QED
+
+Theorem resolved_keep:
+  resolved w log j ∧ wkeep X w w' ∧ (∀g. MEM (FConn g) log ⇒ ¬MEM g X) ⇒
+  resolved w' log j
+Proof
+  rw[resolved_def, wkeep_def] >> metis_tac[LESS_LESS_EQ_TRANS]
+QED
+
+Theorem pf_fetch_closing:
+  ∀fs w ps w' ps' log evs.
+    pf_fetch lfd hw fs (w, ps) = SOME ((w', ps'), log, evs) ⇒ ps'.b.closing = ps.b.closing
+Proof
+  Induct >> simp[pf_fetch_def] >> rpt gen_tac >> rw[] >>
+  TRY (first_x_assum drule >> simp[] >> NO_TAC) >>
+  gvs[AllCaseEqs()] >> pairarg_tac >> gvs[AllCaseEqs()] >>
+  first_x_assum drule >> rw[] >> gvs[AllCaseEqs()] >> rw[] >> gvs[set_inb_def]
+QED
+
+(* A round: the listener's queue loses a prefix of (the old queue plus
+   arrivals), each popped channel accepted under an fd the round's fetch
+   log names (FConn), or broken *)
+Theorem pround_queue:
+  pround lfd hw hs (w, ps) acts = SOME (snap, (w', ps'), log, evs) ∧
+  winv w ∧ pv_rel lfd cm ps s ∧ pown lfd ps ∧ l0own lfd w ps ⇒
+  ∃t k. k ≤ LENGTH t + LENGTH (qof w lfd) ∧ qof w' lfd = DROP k (qof w lfd ++ t) ∧
+        ∀j. MEM j (TAKE k (qof w lfd ++ t)) ⇒ resolved w' log j
+Proof
+  simp[pround_def, AllCaseEqs()] >> strip_tac >> PairCases_on ‘ws1’ >>
+  gvs[pf_tail_def, AllCaseEqs()] >>
+  rename1 ‘pacts _ _ _ = SOME (rs, aevs, wa, pa)’ >>
+  drule_all pacts_qof >> disch_then (qx_choose_then ‘t1’ assume_tac) >>
+  drule_all pacts_hacts >> strip_tac >>
+  ‘l0_rely w ∧ fds_lt w’ by gvs[winv_def] >>
+  drule_all pacts_l0 >> strip_tac >>
+  drule_all pacts_winv >> strip_tac >>
+  rename1 ‘l1_polls _ wa = SOME (rv, w1, pevs)’ >>
+  drule l1_polls_qof >> disch_then (qspec_then ‘lfd’ (qx_choose_then ‘t2’ assume_tac)) >>
+  drule_all l1_polls_winv >> strip_tac >>
+  drule_all l1_polls_l0 >> strip_tac >>
+  rename1 ‘l1_flush _ (w1, pa.b) = SOME ((w2, b2), fevs)’ >>
+  drule l1_flush_qof >> disch_then (qspec_then ‘lfd’ (qx_choose_then ‘t3’ assume_tac)) >>
+  drule_all l1_flush_winv >> strip_tac >>
+  ‘l0_rely w1’ by gvs[winv_def] >>
+  drule_all l1_flush_l0 >> strip_tac >>
+  rename1 ‘pf_fetch _ _ _ _ = SOME ((w3, ps3), log, gevs)’ >>
+  drule_all pf_fetch_queue >> strip_tac >>
+  drule pf_fetch_closing >> strip_tac >>
+  drule_all pf_fetch_winv >> strip_tac >>
+  ‘∀g. MEM (FConn g) log ⇒ ¬MEM g ps3.b.closing’
+    by (rpt strip_tac >>
+        ‘MEM g (l0_used w2)’ by gvs[l0own_def] >>
+        drule_all pf_fetch_conns >>
+        simp[log_conns_def, MEM_FLAT, MEM_MAP, PULL_EXISTS] >>
+        qexists_tac ‘FConn g’ >> simp[]) >>
+  rename1 ‘l1_reap _ (w3, ps3.b) = SOME ((w4, b4), cevs)’ >>
+  ‘¬MEM lfd ps3.b.closing’ by gvs[pown_def, ALL_DISTINCT_APPEND] >>
+  drule_all l1_reap_qof >> disch_then (qx_choose_then ‘t5’ assume_tac) >>
+  drule l1_reap_wkeep >> strip_tac >>
+  qexistsl_tac [‘t1 ++ t2 ++ t3 ++ t ++ t5’, ‘k’] >> gvs[] >>
+  ‘k ≤ LENGTH (qof w lfd ++ t1 ++ t2 ++ t3 ++ t)’ by simp[] >>
+  simp[DROP_APPEND1, TAKE_APPEND1] >>
+  rpt strip_tac >> irule resolved_keep >> simp[] >>
+  qexistsl_tac [‘ps3.b.closing’, ‘w3’] >> simp[]
+QED

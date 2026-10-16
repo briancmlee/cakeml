@@ -194,8 +194,8 @@ Proof
   drule_all pf_fetch_winv >> strip_tac >>
   drule_all pf_fetch_feof >> strip_tac >> simp[] >>
   drule pf_fetch_b >> strip_tac >>
-  ‘¬MEM f ps3.b.closing’ by (gvs[] >> qpat_x_assum ‘fkeep _ _ _ (pa with b := b2)’ mp_tac >>
-                             simp[fkeep_def]) >>
+  gvs[] >>
+  ‘¬MEM f pa.b.closing’ by (qpat_x_assum ‘fkeep _ _ _ pa’ mp_tac >> simp[fkeep_def]) >>
   disj2_tac >> gvs[flushed_all] >> gen_tac >>
   first_x_assum (qspec_then ‘R'’ assume_tac) >>
   drule_all l1_reap_fl >> simp[]

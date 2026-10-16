@@ -440,6 +440,16 @@ Proof
   simp[pv_rel_def, pown_def, l0own_def, inb_of_def]
 QED
 
+Theorem rel_hup[simp]:
+  (pv_rel lfd cm (hup_step hfs ob log ps) s ⇔ pv_rel lfd cm ps s) ∧
+  (pown lfd (hup_step hfs ob log ps) ⇔ pown lfd ps) ∧
+  (l0own lfd w (hup_step hfs ob log ps) ⇔ l0own lfd w ps) ∧
+  hs_of (hup_step hfs ob log ps) = hs_of ps ∧
+  inb_of (hup_step hfs ob log ps) f = inb_of ps f
+Proof
+  simp[pv_rel_def, pown_def, l0own_def, hs_of_def, inb_of_def]
+QED
+
 Theorem lowest_fd_fresh:
   fds_lt w ∧ w.fd_limit ≤ 2 ** 31 ⇒ ¬MEM (lowest_fd w) (l0_used w)
 Proof
@@ -1126,7 +1136,10 @@ Proof
   PairCases_on ‘y’ >> rename1 ‘l1_flush _ _ = SOME ((w2, b2), fevs)’ >> gvs[] >>
   qmatch_asmsub_abbrev_tac ‘pf_fetch _ _ fs (w2, ps2)’ >>
   Cases_on ‘pf_fetch lfd hw fs (w2, ps2)’ >> gvs[] >> rename1 ‘_ = SOME z’ >>
-  PairCases_on ‘z’ >> rename1 ‘pf_fetch _ _ _ _ = SOME ((w3, ps3), log3, gevs)’ >> gvs[] >>
+  PairCases_on ‘z’ >> rename1 ‘pf_fetch _ _ _ _ = SOME ((w3, ps3f), log3, gevs)’ >> gvs[] >>
+  qabbrev_tac ‘ps3 = hup_step (hup_fds rv) (outbox_of ps.b) log3 ps3f’ >>
+  ‘ps3f.b.closing = ps3.b.closing ∧ ps3f.pause = ps3.pause’ by simp[Abbr ‘ps3’] >>
+  pop_assum (fn th => RULE_ASSUM_TAC (REWRITE_RULE [th]) >> REWRITE_TAC [th]) >>
   Cases_on ‘l1_reap ps3.b.closing (w3, ps3.b)’ >> gvs[] >> rename1 ‘_ = SOME u’ >>
   PairCases_on ‘u’ >> rename1 ‘l1_reap _ _ = SOME ((w4, b4), cevs)’ >> gvs[] >>
   drule_all l1_polls_l0 >> strip_tac >>
@@ -1139,13 +1152,16 @@ Proof
   ‘l0_rely w2’ by simp[] >>
   ‘k' + 1 < dimword (:64)’ by simp[] >>
   drule_all fetch_rel >> strip_tac >>
+  ‘pv_rel lfd cm' ps3 (FOLDL deliver2 s as) ∧ pown lfd ps3 ∧ l0own lfd w3 ps3 ∧
+   ps3.b.tbl = ps3f.b.tbl ∧ ps3.b.nxt = ps3f.b.nxt ∧ ps3.b.closing = ps3f.b.closing ∧
+   ps3.pause = ps3f.pause’ by simp[Abbr ‘ps3’] >>
   drule_all l1_reap_l0 >> strip_tac >>
   ‘pown lfd (ps3 with b := b4)’ by (irule pown_closing_filter >> simp[] >> metis_tac[]) >>
   ‘pv_rel lfd cm' (ps3 with b := b4) (FOLDL deliver2 s as)’ by simp[pv_rel_b] >>
   simp[hpoll_def, sock_poll2_def, tick2_def, FOLDL_deliver2_future] >>
   ‘hs_of (ps3 with b := b4) = hs_of ps’ by gvs[hs_of_def, Abbr ‘ps2’] >>
-  ‘ps3 with <| b := b4; pause := ps3.pause − 1 |> =
-   (ps3 with b := b4) with pause := ps3.pause − 1’ by simp[] >>
+  ‘ps3 with <| b := b4; pause := ps3f.pause − 1 |> =
+   (ps3 with b := b4) with pause := ps3f.pause − 1’ by simp[] >>
   pop_assum SUBST1_TAC >>
   simp[] >> rpt conj_tac
   >- (qpat_x_assum ‘hs_of _ = hs_of ps’ (SUBST1_TAC o SYM) >>

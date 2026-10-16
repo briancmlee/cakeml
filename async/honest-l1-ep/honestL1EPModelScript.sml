@@ -182,7 +182,8 @@ Definition etail_def:
             case pf_fetch lfd hw (FILTER (λf. MEM f (in_fds fes)) (readable_fds rv))
                    (w2, es.p with b := b2) of
             | NONE => NONE
-            | SOME ((w3, ps3), log, gevs) =>
+            | SOME ((w3, ps3'), log, gevs) =>
+                let ps3 = hup_step (hup_fds rv) (outbox_of es.p.b) log ps3' in
                 case l1_reap ps3.b.closing (w3, ps3.b) of
                 | NONE => NONE
                 | SOME ((w4, b4), cevs) =>

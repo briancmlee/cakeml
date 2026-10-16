@@ -34,6 +34,19 @@ Definition poll_flag_def:
     then 1w else 0w
 End
 
+(* The same from a revents field (D20) *)
+Definition abi_flag_def:
+  abi_flag (bs : word8 list) : word8 =
+    if (abi_revents bs).rin ∨ (abi_revents bs).rhup ∨ (abi_revents bs).rerr
+    then 1w else 0w
+End
+
+Theorem abi_flag_abi_rev[simp]:
+  abi_flag (abi_rev b) = poll_flag b
+Proof
+  simp[abi_flag_def, poll_flag_def]
+QED
+
 (* An L0 event as the version-2 event it stands for *)
 Definition l0_v2_event_def:
   l0_v2_event (IO_event (ExtCall n) conf bs) =
@@ -47,10 +60,10 @@ Definition l0_v2_event_def:
          (Accepted (case l0_res_of out of Ok f => SOME (n2w f) | Fail _ _ => NONE))
      else if n = «sys_close» then close_event (bytes_fd conf)
      else if n = «sys_poll» then
-       (let fes = poll_entries (DROP 1 conf) in
-          IO_event (ExtCall «sock_poll») (fds_bytes (MAP FST fes))
-            (ZIP (REPLICATE (LENGTH fes) 0w,
-                  MAP poll_flag (TAKE (LENGTH fes) (DROP 13 out)))))
+       (let ents = pollfd_entries (DROP 16 (MAP FST bs)) in
+          IO_event (ExtCall «sock_poll») (fds_bytes (MAP pe_fd ents))
+            (ZIP (REPLICATE (LENGTH ents) 0w,
+                  MAP (λe. abi_flag (DROP 6 e)) (pollfd_entries (DROP 16 out)))))
      else IO_event (ExtCall n) conf bs) ∧
   l0_v2_event ev = ev
 End
@@ -244,6 +257,14 @@ Theorem l0_do_env:
   w'.fd_limit = w.fd_limit
 Proof
   rw[l0_do_def, l0_ffi_fn_def, AllCaseEqs()] >>
+  imp_res_tac l0_call_ch >> imp_res_tac l0_call_env >> gvs[]
+QED
+
+Theorem l0_do_buf_env:
+  l0_do_buf n conf bs w = SOME (out, w', ev) ⇒ w'.env = w.env ∧ w'.ch = w.ch ∧
+  w'.fd_limit = w.fd_limit
+Proof
+  rw[l0_do_buf_def, l0_ffi_fn_def, AllCaseEqs()] >>
   imp_res_tac l0_call_ch >> imp_res_tac l0_call_env >> gvs[]
 QED
 

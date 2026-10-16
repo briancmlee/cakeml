@@ -515,6 +515,17 @@ Proof
   imp_res_tac ops_used >> gvs[]
 QED
 
+Theorem l0_do_buf_used:
+  l0_do_buf n conf bs w = SOME (out, w', ev) ⇒
+  ((n = «sys_recv» ∨ n = «sys_send» ∨ n = «sys_poll») ⇒ l0_used w' = l0_used w) ∧
+  (n = «sys_accept» ⇒ ∀g. MEM g (l0_used w) ⇒ MEM g (l0_used w')) ∧
+  (n = «sys_close» ⇒ ∀g. g ≠ bytes_fd conf ∧ MEM g (l0_used w) ⇒ MEM g (l0_used w'))
+Proof
+  rw[l0_do_buf_def, l0_ffi_fn_def, AllCaseEqs()] >>
+  gvs[l0_call_def, AllCaseEqs()] >> rpt (pairarg_tac >> gvs[]) >>
+  imp_res_tac ops_used >> gvs[]
+QED
+
 Theorem sys_accept_fresh:
   l0_rely w ∧ fds_lt w ∧
   sys_accept l w = SOME (out, w', ev) ∧ l0_res_of out = Ok k ⇒
@@ -728,6 +739,12 @@ Proof
   rw[] >> imp_res_tac l0_do_env >> irule l0_rely_ch >> qexists_tac ‘w’ >> simp[]
 QED
 
+Theorem l0_do_buf_rely:
+  l0_rely w ∧ l0_do_buf n conf bs w = SOME (out, w', ev) ⇒ l0_rely w'
+Proof
+  rw[] >> imp_res_tac l0_do_buf_env >> irule l0_rely_ch >> qexists_tac ‘w’ >> simp[]
+QED
+
 Theorem FOLDL_APP:
   ∀l1 e. FOLDL f e (l1 ++ l2) = FOLDL f (FOLDL f e l1) l2
 Proof
@@ -886,7 +903,7 @@ Theorem l1_polls_l0:
 Proof
   Induct >> simp[l1_polls_def] >> rpt gen_tac >> strip_tac >>
   gvs[AllCaseEqs()] >> gvs[sys_poll_def] >>
-  imp_res_tac l0_do_env >> imp_res_tac l0_do_used >> imp_res_tac l0_do_rely >>
+  imp_res_tac l0_do_buf_env >> imp_res_tac l0_do_buf_used >> imp_res_tac l0_do_buf_rely >>
   first_x_assum drule_all >> simp[]
 QED
 
@@ -1131,7 +1148,7 @@ Theorem tail_rel:
 Proof
   simp[pf_tail_def] >> strip_tac >>
   qabbrev_tac ‘fes = pf_poll_set lfd hw ps hs’ >>
-  Cases_on ‘l1_polls (poll_chunks fes) w’ >> gvs[] >> rename1 ‘_ = SOME x’ >>
+  Cases_on ‘l1_polls [fes] w’ >> gvs[] >> rename1 ‘_ = SOME x’ >>
   PairCases_on ‘x’ >> rename1 ‘l1_polls _ _ = SOME (rv, w1, pevs)’ >> gvs[] >>
   Cases_on ‘l1_flush (writable_fds rv) (w1, ps.b)’ >> gvs[] >> rename1 ‘_ = SOME y’ >>
   PairCases_on ‘y’ >> rename1 ‘l1_flush _ _ = SOME ((w2, b2), fevs)’ >> gvs[] >>

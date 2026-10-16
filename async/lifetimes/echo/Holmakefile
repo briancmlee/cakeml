@@ -1,0 +1,24 @@
+# Generated from the final-series layout (INCLUDES = the dirs of all ancestors).
+INCLUDES = ../../cakeml/approx \
+           ../../cakeml/library \
+           ../loop \
+           ../spec \
+           ../world \
+           ../world-cf \
+           ../../loop/polling \
+           ../../model/core \
+           ../../model/level2 \
+           ../../programs/echo \
+           ../../programs/echo-live \
+           ../../servers/closed-loop \
+           ../../servers/echo \
+           ../../servers/relabel \
+           ../../spec \
+           ../../world/clock \
+           ../../world/composed \
+           ../../world/sockets \
+           ../../world/sockets-cf \
+           $(CAKEMLDIR)/semantics
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

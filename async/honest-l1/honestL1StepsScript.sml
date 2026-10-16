@@ -336,3 +336,82 @@ Proof
   simp[hdo_def, sock_accept2_def, l0_v2_event_def, lowest_free_fd] >>
   simp[l0_res_of_enc, LENGTH_enc_res, MAP_SND_ZIP_REPLICATE]
 QED
+
+Theorem hdl_not_lfd:
+  hdln (w2n lfd) j < dimword (:64) ⇒ hdl lfd j ≠ lfd
+Proof
+  Cases_on ‘lfd’ >> simp[hdl_def, hdln_def] >> rw[] >> gvs[dimword_def, n2w_11]
+QED
+
+Theorem hdl_fresh:
+  i < k ∧ hdln (w2n lfd) k < dimword (:64) ⇒ hdl lfd i ≠ hdl lfd k
+Proof
+  rw[hdl_def, hdln_def] >> gvs[dimword_def, n2w_11]
+QED
+
+Theorem open_used:
+  ALOOKUP w.open_fds f ≠ NONE ⇒ MEM f (l0_used w)
+Proof
+  rw[l0_used_def] >> Cases_on ‘ALOOKUP w.open_fds f’ >> gvs[] >>
+  imp_res_tac ALOOKUP_MEM >> simp[MEM_MAP, EXISTS_PROD] >> metis_tac[]
+QED
+
+Theorem accept_step:
+  simple_v2 p lfd sched w ∧ l0_rely w ∧ l1v2_rel p lfd sched (w, st) (s, hs) ∧
+  rdy_ok lfd polp w st ∧ MEM lfd st.rdy ∧ small lfd ∧ LENGTH (l0_used w) < 2147483647 ∧
+  hdln (w2n lfd) st.nxt < dimword (:64) ⇒
+  ∃r w' st' s' hs' evs evs'.
+    l1do lfd (w, st) (Accept lfd) = SOME (r, (w', st'), evs) ∧
+    hdo lfd (s, hs) (Accept lfd) = SOME (r, (s', hs'), evs') ∧
+    MAP l0_v2_event evs = evs' ∧
+    l1v2_rel p lfd sched (w', st') (s', hs') ∧ rdy_ok lfd polp w' st' ∧
+    LENGTH (l0_used w') ≤ LENGTH (l0_used w) + 1 ∧
+    w'.env = w.env ∧ w'.ch = w.ch ∧ w'.fd_limit = w.fd_limit
+Proof
+  strip_tac >>
+  ‘l0_tick «sys_accept» w = w with clock := w.clock + 1’
+    by (drule tick_simple_v2 >> disch_then irule >> EVAL_TAC) >>
+  qpat_x_assum ‘rdy_ok _ _ _ _’ mp_tac >>
+  gvs[l1v2_rel_def, core_rel_def, small_def] >> strip_tac >>
+  ‘w2n lfd < 2147483648’ by simp[] >>
+  simp[l1do_def, sys_accept_def, l0_do_def, l0_ffi_fn_def, l0_call_def, l0_hdr_def,
+       fd_ok_def, l0_accept_def] >>
+  ‘w.ch.transient (w.hist) = NONE’ by gvs[simple_v2_def, simple0_def] >>
+  ‘l0_rely (w with clock := w.clock + 1)’ by (irule l0_rely_ch >> qexists_tac ‘w’ >> simp[]) >>
+  ‘used_fds s = l0_used w’ by gvs[used_fds_def, l0_used_def] >>
+  drule_then strip_assume_tac fail_ok >>
+  Cases_on ‘q’ >> gvs[]
+  >- (‘∀e. l0_res_ok (fail (w with clock := w.clock + 1) e)’ by metis_tac[fail_ok] >>
+      simp[l0_res_of_enc, LENGTH_enc_res, MAP_SND_ZIP_REPLICATE] >>
+      simp[hdo_def, sock_accept2_def, l0_v2_event_def, fail_def] >>
+      gvs[fail_def] >>
+      ‘l0_res_ok (Fail E_AGAIN (w.ch.errno_of w.hist))’ by metis_tac[] >>
+      imp_res_tac LENGTH_enc_res >> simp[MAP_SND_ZIP_REPLICATE, l0_res_of_enc] >>
+      simp[npolls_snoc, l0_used_def] >> rpt conj_tac >- metis_tac[]
+      >- metis_tac[]
+      >> fs[rdy_ok_def, MEM_FILTER] >> rw[] >> metis_tac[])
+  >> ‘h < LENGTH (w:l0world).chans ∧ ¬(EL h w.chans).broken’
+    by (gvs[LIST_REL_EL_EQN, chan_rel_def] >> metis_tac[]) >>
+  ‘LENGTH (l0_used w) < dimword (:64)’ by gvs[dimword_def] >>
+  drule lowest_fd_free >> strip_tac >>
+  ‘w2n (lowest_fd w) < 2147483648’ by decide_tac >>
+  ‘(w with clock := w.clock + 1).fd_limit = 2147483648’ by gvs[simple_v2_def, simple0_def] >>
+  simp[l0_alloc_def] >>
+  ‘lowest_fd (w with clock := w.clock + 1) = lowest_fd w’ by simp[lowest_fd_def, l0_used_def] >>
+  simp[] >>
+  ‘l0_res_ok (Ok (w2n (lowest_fd w)))’ by simp[l0_res_ok_def] >>
+  simp[l0_res_of_enc, LENGTH_enc_res, MAP_SND_ZIP_REPLICATE] >>
+  simp[hdo_def, sock_accept2_def, l0_v2_event_def, lowest_free_fd] >>
+  simp[l0_res_of_enc, LENGTH_enc_res, MAP_SND_ZIP_REPLICATE] >>
+  ‘MEM lfd (l0_used w)’ by simp[l0_used_def] >>
+  ‘∀f. ALOOKUP s.open_fds f ≠ NONE ⇒ MEM f (l0_used w)’ by metis_tac[open_used] >>
+  ‘hdl lfd hs.nxt ≠ lfd’ by (irule hdl_not_lfd >> simp[]) >>
+  ‘∀i. i < hs.nxt ⇒ hdl lfd i ≠ hdl lfd hs.nxt’ by (rw[] >> irule hdl_fresh >> simp[]) >>
+  simp[AFUPDKEY_def, npolls_snoc, l0_used_def] >>
+  rpt conj_tac >>
+  TRY (rw[] >> gvs[] >> metis_tac[DECIDE “(i:num) < n ⇒ i < n + 1”] >> NO_TAC) >>
+  gvs[rdy_ok_def] >> rw[] >> gvs[] >>
+  TRY (metis_tac[] >> NO_TAC) >>
+  TRY (qexists_tac ‘hs.nxt’ >> simp[] >> NO_TAC) >>
+  res_tac >> gvs[] >> qexists_tac ‘i’ >> simp[]
+QED

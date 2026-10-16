@@ -133,7 +133,7 @@ QED
 
 (* MAIN: the GC chat program meets ChatSpecTimely, as the chat program does *)
 Theorem gc_prog_timely:
-  chat_spec_timely 4 3 3w chat_prog_gc
+  chat_spec_timely 4 3 4 3w chat_prog_gc
 Proof
   rw[chat_spec_timely_def] >> qexists_tac ‘chat_trace sk’ >>
   drule chat_live_trace >> strip_tac >>

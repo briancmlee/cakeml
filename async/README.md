@@ -228,7 +228,8 @@ by construction, and a finished handler drops out of it by itself
   The model has none of these behaviours, so the theorems don't see them.
   A redesign is in progress: a minimal, honest FFI (about one syscall per
   call), verified CakeML wrappers that absorb the raw semantics, and
-  refinement proofs so the existing theorems carry over (design/36, in PR
+  refinement proofs so the theorems about the lifetimes world (close and
+  fd reuse) carry over (design/36, in PR
   #94; the L0 C and world in #96 and #98; the verified L1 wrapper core in
   #107 and #110; the refinement is in progress).
 - **Only the version-2 echo closes connections.** The echo server of

@@ -97,7 +97,7 @@ Proof
     by (irule gen_grun_ok >> metis_tac[]) >>
   (* nothing owed *)
   Cases_on ‘D = ""’
-  >- (qexistsl [‘0’, ‘[]’, ‘[]’] >> gvs[bytes_def]) >>
+  >- (qexistsl [‘0’, ‘[]’, ‘[]’] >> gvs[bytes_def, bytes_written_to_def]) >>
   (* otherwise something was sent on c, so c is a connection by round n *)
   ‘sent_upto c n s0 ≠ []’ by (strip_tac >> Cases_on ‘D’ >> fs[bytes_def]) >>
   ‘is_conn (gstate (EI lfdn) (srelabel (Wr (server_v V hf lfdn))) s0 n) c’

@@ -1,9 +1,8 @@
 (*
   KV liveness through the library (design/34, principled version).
 
-   1. with_store answers every query with a store answer (KvR):
-      wrap_kans_with_store.
-   2. The KV handler is the query handler proto_handler_v (asyncProtoV) for
+   (with_store answers every query with a store answer: asyncKvLiveStore.)
+   The KV handler is the query handler proto_handler_v (asyncProtoV) for
       the bodies parser P_b, the Sock/Kv vocabulary sockV, the query
       Kv (fd, req) and the printed answer, on every history in which its
       queries are answered by the store (kv_proto_agree).  The two differ
@@ -18,40 +17,9 @@ Ancestors
   HttpSpec HttpSpecBodies asyncHttpParseB
   asyncServerV asyncServerVProgress asyncServerVLive asyncServerVLiveA
   asyncServerVLiveP asyncServerVKv asyncProto asyncProtoV asyncProtoB
+  asyncKvLiveStore
 Libs
   preamble
-
-(* ------------------------------------------------------------------------
-   1. The store answers queries
-   ------------------------------------------------------------------------ *)
-
-Theorem zipr_NIL_NONE[local]:
-  ∀acts. ¬MEM (a, SOME x) (zipr acts [])
-Proof
-  Induct >> simp[zipr_def]
-QED
-
-(* In a round of the inner history, a query's response is the store's *)
-Theorem zipr_merge_kv:
-  ∀acts rs ans q x.
-    MEM (Kv q, SOME x) (zipr acts (merge acts rs ans)) ⇒ ∃b. x = KvR b
-Proof
-  Induct >> simp[zipr_def, merge_def] >> Cases >> rpt gen_tac >> simp[merge_def]
-  >- (Cases_on ‘rs’ >> simp[zipr_def, zipr_NIL_NONE] >> metis_tac[])
-  >> Cases_on ‘ans’ >> simp[zipr_def, zipr_NIL_NONE] >> rw[] >> metis_tac[]
-QED
-
-(* MAIN: with_store answers every query of the inner computation with a
-   store answer *)
-Theorem wrap_kans_with_store:
-  wrap_kans sockV (with_store δ s0) (inner_hist δ s0)
-Proof
-  rw[wrap_kans_def, kans_ok_def, trans_def, MEM_FLAT, MEM_GENLIST] >>
-  Cases_on ‘a’ >> fs[sockV_def] >>
-  gvs[round_trans_def, responses_at_def] >>
-  Cases_on ‘n < LENGTH h’ >> fs[zipr_NIL_NONE] >>
-  gvs[EL_inner_hist] >> drule zipr_merge_kv >> strip_tac >> simp[]
-QED
 
 (* ------------------------------------------------------------------------
    2. The KV handler, as the query handler

@@ -1,0 +1,17 @@
+Theorem on_fdk_sock_owner[local]:
+  on_fdk fd p ⇔ sock_owner (FST p) = SOME fd
+Proof
+  PairCases_on ‘p’ >> Cases_on ‘p0’ >> simp[on_fdk_def, on_fd_def]
+  >- (rename1 ‘Sock a’ >> Cases_on ‘a’ >> simp[sock_owner_def] >> metis_tac[])
+  >> rename1 ‘Kv q’ >> PairCases_on ‘q’ >> simp[sock_owner_def] >> metis_tac[]
+QED
+
+(* The KV handler is well behaved: it only touches its own fd *)
+Theorem hokv_kv:
+  hokv sockV (λfd. kv_handler (fd, ""))
+Proof
+  rw[hokv_def, wf_kv_handler, settled_kv_handler, on_fd_v_sockV] >>
+  qspecl_then [‘g’, ‘""’] mp_tac (Q.GEN ‘fd’ kv_handler_serves |> Q.SPEC ‘fd’) >>
+  simp[EVERY_MEM, on_fdk_sock_owner]
+QED
+

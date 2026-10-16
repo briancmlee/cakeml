@@ -605,3 +605,118 @@ Proof
         metis_tac[]) >>
   irule ev_rel_upd >> qexists_tac ‘es’ >> simp[]
 QED
+
+Theorem cl_cons:
+  cl ((f, n) :: cm) g = if g = f then n else cl cm g
+Proof
+  rw[cl_def]
+QED
+
+Theorem ev_rel_cl_lt:
+  ev_rel lfd a cm es w ∧ MEM g (MAP FST cm) ⇒ cl cm g < LENGTH w.chans
+Proof
+  rw[ev_rel_def, EVERY_MEM, cl_def] >>
+  Cases_on ‘ALOOKUP cm g’ >> gvs[ALOOKUP_NONE] >> metis_tac[ALOOKUP_SOME_MEM_SND]
+QED
+
+(* The world's fds in use: the listener and one per handle *)
+Theorem ev_used_len:
+  ev_rel lfd a cm es w ∧ eown lfd es ⇒
+  ep_used w = lfd :: MAP FST w.open_fds ∧
+  LENGTH w.open_fds = LENGTH es.p.b.tbl + LENGTH es.ctbl
+Proof
+  strip_tac >> conj_tac >- gvs[ep_used_def, ev_rel_def] >>
+  ‘set (MAP FST w.open_fds) = set (MAP SND es.p.b.tbl ++ MAP SND es.ctbl)’
+    by (gvs[ev_rel_def, EXTENSION] >> metis_tac[]) >>
+  ‘ALL_DISTINCT (MAP SND es.p.b.tbl ++ MAP SND es.ctbl)’
+    by gvs[eown_def, ALL_DISTINCT_APPEND] >>
+  ‘ALL_DISTINCT (MAP FST w.open_fds)’ by gvs[ev_rel_def] >>
+  metis_tac[ALL_DISTINCT_CARD_LIST_TO_SET, LENGTH_MAP, LENGTH_APPEND]
+QED
+
+(* EConnect with a socket: the new fd f, if fresh and the world's
+   allocation, is a new connecting channel (numbered next) *)
+Theorem ev_connect:
+  ev_rel lfd a cm es w ∧ eown lfd es ∧ ehs_rel hs es ∧
+  edo lfd hw (wl, es) (EConnect p) = SOME (r, (wl', es'), evs) ∧ r ≠ EConnected NONE ⇒
+  ∃f. es'.ctbl = (hdl lfd es.p.b.nxt, f) :: es.ctbl ∧
+      (¬MEM f (lfd :: MAP SND es.p.b.tbl ++ es.p.b.closing ++ es.p.acq ++ MAP SND es.ctbl) ∧
+       w.alloc (LENGTH w.chans) (ep_used w) = f ⇒
+       ∃w' hs'. ehdo lfd (w, hs) (EConnect p) = SOME (r, (w', hs')) ∧
+                ev_rel lfd a ((f, LENGTH w.chans) :: cm) es' w' ∧ eown lfd es' ∧
+                ehs_rel hs' es' ∧
+                w'.listening = w.listening ∧ w'.alloc = w.alloc ∧ w'.env = w.env ∧
+                w'.clock = w.clock ∧ w'.hist = w.hist ∧
+                LENGTH w'.chans = LENGTH w.chans + 1 ∧
+                es'.p.b.nxt = es.p.b.nxt + 1 ∧ es'.p.acq = es.p.acq)
+Proof
+  strip_tac >> qpat_x_assum ‘edo _ _ _ _ = _’ mp_tac >>
+  simp[edo_def, AllCaseEqs()] >> strip_tac >> gvs[] >>
+  qmatch_goalsub_abbrev_tac ‘(hn, f) :: es.ctbl’ >> simp[] >> strip_tac >>
+  qmatch_goalsub_abbrev_tac ‘<| p := _; ctbl := _; cst := _; settling := _; early := ely |>’ >>
+  ‘EVERY (λ(f, c). c ≠ CPending) ely ∧ ALL_DISTINCT (MAP FST ely) ∧
+   ∀g. MEM g (MAP FST ely) ⇔ MEM g (MAP FST es.early) ∨ (g = f ∧ ely ≠ es.early)’
+    by (‘¬MEM f (MAP FST es.early)’ by (gvs[eown_def] >> metis_tac[]) >>
+        simp[Abbr ‘ely’] >> rw[] >> gvs[eown_def] >> TRY (metis_tac[]) >>
+        every_case_tac >> gvs[]) >>
+  ‘∀X. ep_used (w with chans := X) = ep_used w’ by simp[ep_used_def] >>
+  drule_all ev_used_len >> strip_tac >>
+  ‘LENGTH es.p.b.tbl + LENGTH es.ctbl ≤ es.p.b.nxt’ by metis_tac[eown_count] >>
+  ‘es.p.b.nxt + 1 < dimword (:64)’
+    by (irule hdln_suc_lt >> qexists_tac ‘lfd’ >> simp[dimword_64]) >>
+  ‘hs.nxt = es.p.b.nxt’ by gvs[ehs_rel_def] >>
+  simp[ehdo_def, ep_connect_def, ep_alloc_def, eh_new_def] >>
+  ‘∀i. i < es.p.b.nxt ⇒ hdl lfd i ≠ hn’
+    by (rw[Abbr ‘hn’] >> irule hdl_fresh >> simp[]) >>
+  ‘ALOOKUP es.p.b.tbl hn = NONE ∧ ALOOKUP es.ctbl hn = NONE ∧ ¬MEM hn es.settling’
+    by (gvs[eown_def, pown_def, l1hdl_hdl] >> rpt conj_tac
+        >- (Cases_on ‘ALOOKUP es.p.b.tbl hn’ >> simp[] >> res_tac >> metis_tac[])
+        >- (Cases_on ‘ALOOKUP es.ctbl hn’ >> simp[] >> res_tac >> metis_tac[])
+        >> strip_tac >> res_tac >> metis_tac[]) >>
+  ‘¬MEM hn (MAP FST es.p.b.tbl) ∧ ¬MEM hn (MAP FST es.ctbl)’ by gvs[ALOOKUP_NONE] >>
+  ‘¬MEM f (MAP FST w.open_fds)’ by (gvs[ev_rel_def] >> metis_tac[]) >>
+  ‘SUC (LENGTH es.ctbl + LENGTH es.p.b.tbl) < 18446744073709551616’ by fs[] >>
+  ‘w.alloc (LENGTH w.chans) (lfd :: MAP FST w.open_fds) = f’ by gvs[] >>
+  simp[] >> rpt conj_tac
+  >- (‘∀g. MEM g (MAP FST cm) ⇒ cl cm g < LENGTH w.chans’ by metis_tac[ev_rel_cl_lt] >>
+      qpat_x_assum ‘ev_rel _ _ _ _ _’ mp_tac >>
+      simp[ev_rel_def, cl_cons, cstat_of_def, inb_of_def] >> strip_tac >>
+      rpt conj_tac
+      >- (irule MAP_CONG >> rw[cl_cons] >> gvs[])
+      >- metis_tac[]
+      >- (gvs[EVERY_MEM] >> strip_tac >> res_tac >> gvs[])
+      >- (gvs[EVERY_MEM] >> rw[] >> res_tac >> simp[])
+      >- (rpt gen_tac >> strip_tac >>
+          ‘f' ≠ f’ by metis_tac[ALOOKUP_SOME_MEM_SND] >>
+          qpat_x_assum ‘∀h f'. ALOOKUP es.p.b.tbl h = _ ⇒ _’ drule >> strip_tac >>
+          ‘cl cm f' < LENGTH w.chans’ by (qpat_assum ‘∀g. MEM g (MAP FST cm) ⇒ _’ irule >> simp[]) >>
+          simp[EL_APPEND1])
+      >- (rpt gen_tac >> Cases_on ‘hn = h’ >> simp[]
+          >- (strip_tac >> gvs[] >> simp[EL_LENGTH_APPEND, new_chan_def]) >>
+          strip_tac >> ‘f' ≠ f’ by metis_tac[ALOOKUP_SOME_MEM_SND] >>
+          qpat_x_assum ‘∀h f'. ALOOKUP es.ctbl h = _ ⇒ _’ drule >> strip_tac >>
+          ‘cl cm f' < LENGTH w.chans’ by (qpat_assum ‘∀g. MEM g (MAP FST cm) ⇒ _’ irule >> simp[]) >>
+          simp[EL_APPEND1, ALOOKUP_ADELKEY])
+      >> rpt gen_tac >> strip_tac >> ‘f' ≠ f’ by (strip_tac >> gvs[]) >>
+      qpat_x_assum ‘∀f. MEM f es.p.acq ⇒ _’ drule >> strip_tac >>
+      ‘cl cm f' < LENGTH w.chans’ by (qpat_assum ‘∀g. MEM g (MAP FST cm) ⇒ _’ irule >> simp[]) >>
+      simp[EL_APPEND1])
+  >- (qpat_x_assum ‘eown _ _’ mp_tac >>
+      simp[eown_def, pown_def, cstat_of_def, l1hdl_hdl, ALOOKUP_ADELKEY, inb_of_def] >>
+      strip_tac >>
+      gvs[ALL_DISTINCT_APPEND, inb_of_def] >> rpt conj_tac >> rpt strip_tac >> gvs[] >>
+      TRY (res_tac >> qexists_tac ‘i’ >> simp[] >> NO_TAC) >>
+      TRY (metis_tac[] >> NO_TAC) >>
+      TRY (qexists_tac ‘es.p.b.nxt’ >> gvs[markerTheory.Abbrev_def] >> NO_TAC) >>
+      qpat_x_assum ‘(if _ then _ else _) = SOME _’ mp_tac >> rw[] >> gvs[] >>
+      TRY (qexists_tac ‘es.p.b.nxt’ >> gvs[markerTheory.Abbrev_def] >> NO_TAC) >>
+      TRY (strip_tac >> gvs[] >> NO_TAC) >>
+      TRY (qpat_x_assum ‘∀h f'. ALOOKUP es.ctbl h = SOME f' ⇒ _’ drule >> strip_tac >>
+           qexists_tac ‘i’ >> simp[] >> NO_TAC) >>
+      strip_tac >> qpat_x_assum ‘∀h f'. ALOOKUP es.ctbl h = SOME f' ⇒ _’ drule >>
+      strip_tac >> imp_res_tac ALOOKUP_SOME_MEM_SND >>
+      Cases_on ‘w.alloc (LENGTH w.chans) (lfd::MAP FST w.open_fds) = f'’ >> gvs[])
+  >> qpat_x_assum ‘ehs_rel _ _’ mp_tac >> simp[ehs_rel_def] >> strip_tac >> conj_tac
+  >- (gen_tac >> Cases_on ‘h = hn’ >> simp[])
+  >> gen_tac >> Cases_on ‘h = hn’ >> simp[]
+QED

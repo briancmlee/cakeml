@@ -654,3 +654,65 @@ Proof
   gvs[rdy_ok_def, MEM_FILTER] >> rw[] >> gvs[] >>
   TRY (Cases_on ‘f' = f’ >> gvs[]) >> metis_tac[]
 QED
+
+Theorem l0_used_clock_hist[simp]:
+  l0_used (w with clock := c) = l0_used w ∧ l0_used (w with hist := hh) = l0_used w
+Proof
+  simp[l0_used_def]
+QED
+
+(* A readable fd at EOF: one recv (0) and one close, as version 2's read
+   at EOF and the handle layer's auto-close *)
+Theorem read_eof_step:
+  simple_v2 p lfd sched w ∧ l0_rely w ∧ l1v2_rel p lfd sched (w, st) (s, hs) ∧
+  rdy_ok lfd polp w st ∧ fds_small w ∧ 0 < n ∧ n < 256 ** 8 ∧
+  ALOOKUP st.tbl h = SOME f ∧ MEM f st.rdy ∧ ALOOKUP w.open_fds f = SOME j ∧
+  (EL j w.chans).inbox = [] ∧ (EL j w.chans).peer_eof ⇒
+  ∃w' st' s' hs' evs.
+    l1do lfd (w, st) (Read h n) = SOME (Got (SOME []), (w', st'), evs) ∧
+    hdo lfd (s, hs) (Read h n) = SOME (Got (SOME []), (s', hs'), MAP l0_v2_event evs) ∧
+    l1v2_rel p lfd sched (w', st') (s', hs') ∧ rdy_ok lfd polp w' st' ∧
+    (∀x. MEM x (l0_used w') ⇒ MEM x (l0_used w)) ∧
+    w'.env = w.env ∧ w'.ch = w.ch ∧ w'.fd_limit = w.fd_limit
+Proof
+  strip_tac >> drule_all tbl_open_chan >> strip_tac >> gvs[] >>
+  ‘st.gone = [] ∧ st.tbl = hs.tbl ∧ st.outbox = []’ by gvs[l1v2_rel_def] >>
+  ‘w2n f < 2147483648’ by metis_tac[fds_small_tbl] >>
+  ‘l0_tick «sys_recv» w = w with clock := w.clock + 1’
+    by (drule tick_simple_v2 >> disch_then irule >> EVAL_TAC) >>
+  ‘∀w1. w1.env = w.env ⇒ l0_tick «sys_close» w1 = w1 with clock := w1.clock + 1’
+    by (rw[l0_tick_def] >> gvs[simple_v2_def] >> EVAL_TAC) >>
+  ‘w.ch.transient w.hist = NONE ∧ ∀h. w.ch.close_intr h = NONE’
+    by gvs[simple_v2_def, simple0_def] >>
+  gvs[chan_rel_def] >>
+  ‘l0_res_ok (Ok 0)’ by simp[l0_res_ok_def] >>
+  ‘∀rest. l0_res_of (enc_res (Ok 0) ++ rest) = Ok 0’ by simp[l0_res_of_enc_app] >>
+  ‘LENGTH (enc_res (Ok 0)) = 13’ by simp[LENGTH_enc_res] >>
+  ‘MEM f (l0_used w)’ by (irule open_used >> simp[]) >>
+  simp[l1do_def, sys_recv_def, l0_do_def, l0_ffi_fn_def, l0_call_def, l0_hdr_def,
+       fd_ok_def, l0_recv_def, l0_chan_of_def, outbox_of_def] >>
+  simp[l1_close_def, sys_close_def, l0_do_def, l0_ffi_fn_def, l0_call_def,
+       l0_hdr_def, fd_ok_def, l0_close_def, close_fd_def, l0_chan_of_def] >>
+  simp[hdo_def, sock_read2_def, sock_close2_def] >>
+  ‘«sys_recv» ≠ «sys_poll» ∧ «sys_close» ≠ «sys_poll» ∧ «sys_close» ≠ «sys_recv» ∧
+   «sys_close» ≠ «sys_send» ∧ «sys_close» ≠ «sys_accept»’ by EVAL_TAC >>
+  simp[l0_v2_event_def, MAP_SND_ZIP_REPLICATE, recv_view_def] >>
+  ‘∀h'. ALOOKUP hs.tbl h' = SOME f ⇒ h' = h’ by (gvs[l1v2_rel_def] >> metis_tac[]) >>
+  ‘f ≠ lfd’ by (gvs[l1v2_rel_def] >> metis_tac[]) >>
+  rpt conj_tac
+  >- (qpat_x_assum ‘l1v2_rel _ _ _ _ _’ mp_tac >>
+      simp[l1v2_rel_def, forget_def, set_outbox_def, npolls_snoc, ALOOKUP_ADELKEY] >>
+      strip_tac >> rpt conj_tac >>
+      TRY (simp[ADELKEY_def] >> NO_TAC) >>
+      TRY (rw[] >> gvs[upd_lchan_def, ALOOKUP_ADELKEY] >> metis_tac[] >> NO_TAC) >>
+      qpat_x_assum ‘core_rel _ _ _ _’ mp_tac >>
+      simp[core_rel_def, upd_lchan_def, EL_LUPDATE, LIST_REL_EL_EQN, ALOOKUP_ADELKEY] >>
+      strip_tac >> rpt conj_tac >> rw[] >> gvs[EVERY_MEM, chan_rel_def] >>
+      rw[] >> gvs[EL_LUPDATE] >> metis_tac[])
+  >- (irule rdy_ok_shrink >> qexists_tac ‘st’ >> qexists_tac ‘w’ >>
+      simp[forget_def, set_outbox_def, upd_lchan_def, EL_LUPDATE, ALOOKUP_ADELKEY,
+           MEM_FILTER] >>
+      rw[] >> gvs[] >> metis_tac[])
+  >> simp[l0_used_def, upd_lchan_def, MEM_MAP, EXISTS_PROD, ADELKEY_def, MEM_FILTER] >>
+  metis_tac[]
+QED

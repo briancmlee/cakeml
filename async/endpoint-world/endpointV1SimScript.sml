@@ -432,3 +432,63 @@ Proof
   Cases_on ‘j' = j’ >> gvs[] >>
   ‘EL j' cs ≠ EL j cs’ by metis_tac[ALL_DISTINCT_EL_IMP, LESS_LESS_EQ_TRANS] >> simp[]
 QED
+
+(* ------------------------------------------------------------------------
+   One FFI call
+   ------------------------------------------------------------------------ *)
+
+(* The fds a call names (endpointInstances' event_fds, for calls) *)
+Definition call_fds_def:
+  call_fds n conf =
+    if n = «sock_poll» then bytes_fds conf
+    else if n = «sock_write» then [bytes_fd (TAKE 8 conf)]
+    else [bytes_fd conf]
+End
+
+Theorem tick2_open_fds[local]:
+  (tick2 s).open_fds = s.open_fds
+Proof
+  ‘∀as s. (FOLDL deliver2 s as).open_fds = s.open_fds’
+    by (Induct >> simp[] >> Cases >> rw[deliver2_def, update_client_def]) >>
+  rw[tick2_def] >> CASE_TAC >> simp[]
+QED
+
+(* MAIN: a version-1 call on disciplined fds is answered alike by both
+   worlds, which stay related *)
+Theorem v12_call:
+  v12rel lfd ll0 s1 s2 ∧ socket_fn n ≠ NONE ∧
+  EVERY (v12ok lfd s2) (call_fds n conf) ∧
+  (n = «sock_poll» ⇒ step_ok s1 (next_step s1)) ⇒
+  (socket_oracle (ExtCall n) s1 conf bytes = Oracle_final FFI_failed ∧
+   socket2_oracle (ExtCall n) s2 conf bytes = Oracle_final FFI_failed) ∨
+  ∃out s1' s2'. socket_oracle (ExtCall n) s1 conf bytes = Oracle_return s1' out ∧
+                socket2_oracle (ExtCall n) s2 conf bytes = Oracle_return s2' out ∧
+                v12rel lfd ll0 s1' s2'
+Proof
+  strip_tac >>
+  ‘n = «sock_poll» ∨ n = «sock_accept» ∨ n = «sock_read» ∨ n = «sock_write»’
+    by (fs[socket_fn_def] >> rw[] >> fs[]) >>
+  gvs[socket_oracle_def, socket2_oracle_def, socket_fn_def, socket2_fn_def, call_fds_def]
+  >- ((* poll *)
+      simp[ffi_sock_poll_def, ffi_sock_poll2_def] >> IF_CASES_TAC >> simp[] >>
+      ‘v12rel lfd ll0 (tick s1) (tick2 s2)’ by metis_tac[v12rel_tick] >>
+      ‘∃cs k. v12core lfd cs k (tick s1) (tick2 s2)’ by metis_tac[v12rel_def] >>
+      ‘∀fd. v12ok lfd s2 fd ⇒ v12ok lfd (tick2 s2) fd’ by simp[v12ok_def, tick2_open_fds] >>
+      simp[MAP_EQ_f] >> rw[] >> fs[EVERY_MEM] >> metis_tac[v12core_ready])
+  >- ((* accept *)
+      simp[ffi_sock_accept_def, ffi_sock_accept2_def] >> IF_CASES_TAC >> simp[] >>
+      drule v12rel_accept >> disch_then (qspec_then ‘bytes_fd conf’ strip_assume_tac) >>
+      Cases_on ‘sock_accept (bytes_fd conf) s1’ >> gvs[] >>
+      rename1 ‘SOME p’ >> PairCases_on ‘p’ >> fs[] >>
+      Cases_on ‘p0’ >> simp[])
+  >- ((* read *)
+      simp[ffi_sock_read_def, ffi_sock_read2_def] >> IF_CASES_TAC >> simp[] >>
+      drule_all v12rel_read >> disch_then (qspec_then ‘LENGTH bytes − 9’ strip_assume_tac) >>
+      Cases_on ‘sock_read (bytes_fd conf) (LENGTH bytes − 9) s1’ >> gvs[] >>
+      rename1 ‘SOME p’ >> PairCases_on ‘p’ >> fs[] >>
+      Cases_on ‘p0’ >> simp[] >> rw[])
+  >> (* write *)
+  simp[ffi_sock_write_def, ffi_sock_write2_def] >> IF_CASES_TAC >> simp[] >>
+  drule_all v12rel_write >> disch_then (qspec_then ‘DROP 8 conf’ strip_assume_tac) >>
+  Cases_on ‘sock_write (bytes_fd (TAKE 8 conf)) (DROP 8 conf) s1’ >> gvs[]
+QED

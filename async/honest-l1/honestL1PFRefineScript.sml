@@ -860,6 +860,7 @@ Theorem l1_reap_l0:
     (∀g. MEM g (l0_used w) ∧ ¬MEM g fs ⇒ MEM g (l0_used w')) ∧
     (∀g. MEM g b'.closing ⇒ MEM g b.closing ∧ (MEM g (l0_used w) ⇒ MEM g (l0_used w'))) ∧
     (∃P. b'.closing = FILTER P b.closing) ∧
+    (∀g. MEM g (l0_used w') ⇒ MEM g (l0_used w)) ∧
     w'.fd_limit = w.fd_limit ∧ l0_rely w' ∧ b'.tbl = b.tbl ∧ b'.nxt = b.nxt
 Proof
   Induct >> simp[l1_reap_def]
@@ -1009,4 +1010,63 @@ Proof
   drule_all is_ready2_tbl >> simp[] >> strip_tac >>
   simp[hpoll_fds_def, MEM_FLAT, MEM_MAP, PULL_EXISTS] >>
   eq_tac >> rw[] >> gvs[] >> qexists_tac ‘x’ >> simp[]
+QED
+
+(* ------------------------------------------------------------------------
+   The round's tail: L1's poll, flush, fetch and reap are the handle
+   layer's poll, whose step of the schedule is what L1 fetched
+   ------------------------------------------------------------------------ *)
+
+Theorem pown_closing_filter:
+  pown lfd ps ∧ b'.tbl = ps.b.tbl ∧ b'.nxt = ps.b.nxt ∧
+  b'.closing = FILTER P ps.b.closing ⇒ pown lfd (ps with b := b')
+Proof
+  rw[pown_def, inb_of_def] >>
+  gvs[ALL_DISTINCT_APPEND, MEM_FILTER, FILTER_ALL_DISTINCT] >> metis_tac[]
+QED
+
+Theorem tail_rel:
+  pf_tail lfd hw hs (w, ps) = SOME (rdy, (w', ps'), log, evs) ∧
+  pv_rel lfd cm ps s ∧ pown lfd ps ∧ l0own lfd w ps ∧ l0_rely w ∧ fds_lt w ∧
+  arrs lfd (cm, LENGTH s.clients) log = (as, (cm', k')) ∧
+  (∀f j. MEM (f, j) cm' ∧ LENGTH s.clients ≤ j ⇒
+         ∀used. ¬MEM f used ⇒ s.alloc j used = f) ∧
+  LHD s.future = SOME as ⇒
+  ∃s'. hpoll lfd (hs_of ps) hs s = (rdy, s') ∧
+       pv_rel lfd cm' ps' s' ∧ pown lfd ps' ∧ l0own lfd w' ps' ∧ l0_rely w' ∧
+       fds_lt w' ∧ hs_of ps' = hs_of ps ∧ k' = LENGTH s'.clients ∧
+       s'.alloc = s.alloc ∧ s'.future = THE (LTL s.future)
+Proof
+  simp[pf_tail_def] >> strip_tac >>
+  qabbrev_tac ‘fes = pf_poll_set lfd hw ps hs’ >>
+  Cases_on ‘l1_polls (poll_chunks fes) w’ >> gvs[] >> rename1 ‘_ = SOME x’ >>
+  PairCases_on ‘x’ >> rename1 ‘l1_polls _ _ = SOME (rv, w1, pevs)’ >> gvs[] >>
+  Cases_on ‘l1_flush (writable_fds rv) (w1, ps.b)’ >> gvs[] >> rename1 ‘_ = SOME y’ >>
+  PairCases_on ‘y’ >> rename1 ‘l1_flush _ _ = SOME ((w2, b2), fevs)’ >> gvs[] >>
+  qmatch_asmsub_abbrev_tac ‘pf_fetch _ _ fs (w2, ps2)’ >>
+  Cases_on ‘pf_fetch lfd hw fs (w2, ps2)’ >> gvs[] >> rename1 ‘_ = SOME z’ >>
+  PairCases_on ‘z’ >> rename1 ‘pf_fetch _ _ _ _ = SOME ((w3, ps3), log3, gevs)’ >> gvs[] >>
+  Cases_on ‘l1_reap ps3.b.closing (w3, ps3.b)’ >> gvs[] >> rename1 ‘_ = SOME u’ >>
+  PairCases_on ‘u’ >> rename1 ‘l1_reap _ _ = SOME ((w4, b4), cevs)’ >> gvs[] >>
+  drule_all l1_polls_l0 >> strip_tac >>
+  drule_all l1_flush_l0 >> strip_tac >>
+  ‘pv_rel lfd cm ps2 s ∧ pown lfd ps2 ∧ l0own lfd w2 ps2 ∧ fds_lt w2’
+    by (simp[Abbr ‘ps2’, pv_rel_b, pown_b] >> gvs[l0own_def, fds_lt_def] >> metis_tac[]) >>
+  ‘∀f. MEM f fs ⇒ f = lfd ∨ MEM f (MAP SND ps2.b.tbl)’
+    by (simp[Abbr ‘fs’, Abbr ‘ps2’, MEM_FILTER] >> rw[] >>
+        gvs[Abbr ‘fes’] >> drule in_fds_poll_set >> simp[]) >>
+  ‘l0_rely w2’ by simp[] >>
+  drule_all fetch_rel >> strip_tac >>
+  drule_all l1_reap_l0 >> strip_tac >>
+  ‘pown lfd (ps3 with b := b4)’ by (irule pown_closing_filter >> simp[] >> metis_tac[]) >>
+  ‘pv_rel lfd cm' (ps3 with b := b4) (FOLDL deliver2 s as)’ by simp[pv_rel_b] >>
+  simp[hpoll_def, sock_poll2_def, tick2_def, FOLDL_deliver2_future] >>
+  ‘hs_of (ps3 with b := b4) = hs_of ps’ by gvs[hs_of_def, Abbr ‘ps2’] >>
+  simp[] >> rpt conj_tac
+  >- (qpat_x_assum ‘hs_of _ = hs_of ps’ (SUBST1_TAC o SYM) >>
+      irule ready_eq >> simp[] >> qexists_tac ‘cm'’ >> simp[])
+  >- (‘∀g. g = lfd ∨ MEM g (MAP SND ps3.b.tbl) ∨ MEM g ps3.acq ⇒
+           ¬MEM g ps3.b.closing’ by (gvs[pown_def, ALL_DISTINCT_APPEND] >> metis_tac[]) >>
+      gvs[l0own_def] >> metis_tac[])
+  >> gvs[fds_lt_def] >> metis_tac[]
 QED

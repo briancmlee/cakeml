@@ -117,7 +117,9 @@ Theorem step_pos:
   ¬resolved (rworld lfd hw ifds m w0 (SUC k)) (rlog lfd hw ifds m w0 k) j0 ⇒
   ∃p'. p' ≤ p ∧ p' < LENGTH (qof (rworld lfd hw ifds m w0 (SUC k)) lfd) ∧
        EL p' (qof (rworld lfd hw ifds m w0 (SUC k)) lfd) = j0 ∧
-       (log_conns (rlog lfd hw ifds m w0 k) ≠ [] ⇒ p' < p)
+       (log_conns (rlog lfd hw ifds m w0 k) ≠ [] ∨
+        (∃j. MEM j (qof (rworld lfd hw ifds m w0 k) lfd) ∧
+             ¬MEM j (qof (rworld lfd hw ifds m w0 (SUC k)) lfd)) ⇒ p' < p)
 Proof
   strip_tac >> drule_all round_facts >> disch_then (qspec_then ‘k’ strip_assume_tac) >>
   drule prun_round' >> disch_then (qspecl_then [‘ARB’, ‘k’] strip_assume_tac) >>
@@ -128,7 +130,8 @@ Proof
         qpat_x_assum ‘∀j. MEM j (TAKE kk _) ⇒ _’ (qspec_then ‘j0’ mp_tac) >>
         simp[MEM_EL] >> qexists_tac ‘p’ >> simp[EL_TAKE, EL_APPEND1]) >>
   qexists_tac ‘p − kk’ >> simp[EL_DROP, EL_APPEND1] >>
-  rpt strip_tac >> Cases_on ‘log_conns (rlog lfd hw ifds m w0 k)’ >> gvs[]
+  rpt strip_tac >> Cases_on ‘kk = 0’ >> gvs[] >>
+  Cases_on ‘log_conns (rlog lfd hw ifds m w0 k)’ >> gvs[]
 QED
 
 Theorem pos_run:
@@ -155,10 +158,14 @@ Theorem stuck_rounds:
   ∀p n. (∀k. n ≤ k ⇒ ¬resolved (rworld lfd hw ifds m w0 (SUC k)) (rlog lfd hw ifds m w0 k) j0) ∧
         p < LENGTH (qof (rworld lfd hw ifds m w0 n) lfd) ∧
         EL p (qof (rworld lfd hw ifds m w0 n) lfd) = j0 ⇒
-        ∃N. n ≤ N ∧ ∀k. N ≤ k ⇒ log_conns (rlog lfd hw ifds m w0 k) = []
+        ∃N. n ≤ N ∧ ∀k. N ≤ k ⇒ log_conns (rlog lfd hw ifds m w0 k) = [] ∧
+                               ∀j. MEM j (qof (rworld lfd hw ifds m w0 k) lfd) ⇒
+                                   MEM j (qof (rworld lfd hw ifds m w0 (SUC k)) lfd)
 Proof
   strip_tac >> completeInduct_on ‘p’ >> rpt strip_tac >>
-  Cases_on ‘∀k. n ≤ k ⇒ log_conns (rlog lfd hw ifds m w0 k) = []’
+  Cases_on ‘∀k. n ≤ k ⇒ log_conns (rlog lfd hw ifds m w0 k) = [] ∧
+                        ∀j. MEM j (qof (rworld lfd hw ifds m w0 k) lfd) ⇒
+                            MEM j (qof (rworld lfd hw ifds m w0 (SUC k)) lfd)’
   >- (qexists_tac ‘n’ >> simp[]) >>
   qpat_x_assum ‘¬∀k. _’ (strip_assume_tac o SIMP_RULE bool_ss [NOT_FORALL_THM, NOT_IMP]) >>
   rename1 ‘n ≤ k1’ >>
@@ -169,6 +176,7 @@ Proof
   qspecl_then [‘lfd’, ‘hw’, ‘ifds’, ‘m’, ‘w0’, ‘p1’, ‘k1’, ‘j0’] mp_tac
     (Q.GENL [‘lfd’, ‘hw’, ‘ifds’, ‘m’, ‘w0’, ‘p’, ‘k’, ‘j0’] step_pos) >>
   impl_tac >- fs[] >> disch_then (qx_choose_then ‘p2’ strip_assume_tac) >>
+  ‘p2 < p1’ by (first_x_assum irule >> metis_tac[]) >>
   ‘p2 < p’ by metis_tac[LESS_LESS_EQ_TRANS] >>
   qpat_x_assum ‘∀m'. m' < p ⇒ _’ (qspec_then ‘p2’ mp_tac) >> impl_tac >- fs[] >>
   disch_then (qspec_then ‘SUC k1’ mp_tac) >> impl_tac
@@ -513,7 +521,7 @@ Proof
         ‘n0 + (n − n0) = n’ by decide_tac >> gvs[]) >>
   (* from N on, no round accepts *)
   ‘∃N. n0 ≤ N ∧ ∀k. N ≤ k ⇒ log_conns (rlog lfd hw ifds m w0 k) = []’
-    by (drule_all stuck_rounds >> disch_then irule >> metis_tac[]) >>
+    by (drule_all stuck_rounds >> strip_tac >> qexists_tac ‘N’ >> fs[]) >>
   (* from N1 on, L1 holds no accepted fd *)
   drule_all acq_empty >> strip_tac >>
   drule_all run_lfd >> strip_tac >>
@@ -635,4 +643,93 @@ Proof
         by gvs[parr_def, pcm_def, plog_rlog] >>
       simp[] >> qexists_tac ‘c’ >> simp[])
   >> disj2_tac >> disj1_tac >> qexists_tac ‘k’ >> simp[]
+QED
+
+(* ------------------------------------------------------------------------
+   The corollary (D18, with H1 and H3′ as explicit hypotheses on the
+   run's observed events; design/36 §6)
+   ------------------------------------------------------------------------ *)
+
+(* The error of a failed call *)
+Definition fail_err_def:
+  fail_err (IO_event n conf bs) =
+    case l0_res_of (MAP SND bs) of Fail e _ => SOME e | Ok _ => NONE
+End
+
+Theorem failed_fail_err:
+  failed ev ⇔ ∃e. fail_err ev = SOME e
+Proof
+  Cases_on ‘ev’ >> simp[failed_def, fail_err_def] >> CASE_TAC >> simp[]
+QED
+
+(* The accept errors after which the connection may still be queued *)
+Definition kept_err_def:
+  kept_err e ⇔ l1_transient e ∨ e = E_MFILE ∨ e = E_NFILE
+End
+
+(* H1: an accept on the listener that fails with another error (e.g.
+   ECONNABORTED) really removed a queued connection *)
+Definition H1_def:
+  H1 lfd hw ifds m w0 ⇔
+    ∀k ev e. MEM ev (rrev lfd hw ifds m w0 k) ∧ ev_on «sys_accept» lfd ev ∧
+             fail_err ev = SOME e ∧ ¬kept_err e ∧
+             qof (rworld lfd hw ifds m w0 k) lfd ≠ [] ⇒
+             ∃j. MEM j (qof (rworld lfd hw ifds m w0 k) lfd) ∧
+                 ¬MEM j (qof (rworld lfd hw ifds m w0 (SUC k)) lfd)
+End
+
+(* H3′ (weak, joint): accepts on the listener made infinitely often do not
+   all, from some point on, fail with a transient error, EMFILE or
+   ENFILE *)
+Definition H3_def:
+  H3 lfd hw ifds m w0 ⇔
+    (∀i. ∃i'. i ≤ i' ∧ call_at lfd hw ifds m w0 i' «sys_accept» lfd) ⇒
+    ∀i. ∃i' n. i ≤ i' ∧ i' < LENGTH (revs lfd hw ifds m w0 n) ∧
+               ev_on «sys_accept» lfd (EL i' (revs lfd hw ifds m w0 n)) ∧
+               ∀e. fail_err (EL i' (revs lfd hw ifds m w0 n)) = SOME e ⇒ ¬kept_err e
+End
+
+Theorem live_conn_cor:
+  run_ok lfd hw ifds m w0 ∧ winv w0 ∧ linv lfd w0 ∧ MEM lfd (l0_used w0) ∧
+  (∀n. SND (pcm lfd hw ifds m w0 n) + 1 < dimword (:64)) ∧
+  F1 lfd hw ifds m w0 ∧ S1 lfd hw ifds m w0 ∧ S2 lfd hw ifds m w0 ∧
+  H1 lfd hw ifds m w0 ∧ H3 lfd hw ifds m w0 ∧
+  MEM j0 (qof (rworld lfd hw ifds m w0 n0) lfd) ⇒
+  ∃k. n0 ≤ k ∧ resolved (rworld lfd hw ifds m w0 (SUC k)) (rlog lfd hw ifds m w0 k) j0
+Proof
+  strip_tac >> CCONTR_TAC >>
+  ‘∀k. n0 ≤ k ⇒ ¬resolved (rworld lfd hw ifds m w0 (SUC k)) (rlog lfd hw ifds m w0 k) j0’
+    by metis_tac[] >>
+  ‘accepts_fail lfd hw ifds m w0’ by metis_tac[live_conn] >>
+  ‘∃p. p < LENGTH (qof (rworld lfd hw ifds m w0 n0) lfd) ∧
+       EL p (qof (rworld lfd hw ifds m w0 n0) lfd) = j0’ by metis_tac[MEM_EL] >>
+  ‘∀n. n0 ≤ n ⇒ qof (rworld lfd hw ifds m w0 n) lfd ≠ []’
+    by (rpt strip_tac >> drule_all pos_run >>
+        disch_then (qspec_then ‘n − n0’ strip_assume_tac) >>
+        ‘n0 + (n − n0) = n’ by decide_tac >> gvs[]) >>
+  drule_all stuck_rounds >> strip_tac >>
+  drule_all run_lfd >> strip_tac >>
+  (* accepts on the listener, infinitely often *)
+  ‘∀i. ∃i'. i ≤ i' ∧ call_at lfd hw ifds m w0 i' «sys_accept» lfd’
+    by (gen_tac >> qpat_x_assum ‘accepts_fail _ _ _ _ _’ (mp_tac o REWRITE_RULE [accepts_fail_def]) >>
+        disch_then (qspec_then ‘i’ strip_assume_tac) >>
+        qexists_tac ‘i'’ >> simp[call_at_def] >> metis_tac[]) >>
+  qpat_x_assum ‘H3 _ _ _ _ _’ (mp_tac o REWRITE_RULE [H3_def]) >>
+  disch_then drule >> disch_then (qspec_then ‘LENGTH (revs lfd hw ifds m w0 N)’ strip_assume_tac) >>
+  drule event_round >> disch_then drule >> strip_tac >>
+  ‘N ≤ k’
+    by (CCONTR_TAC >> ‘SUC k ≤ N’ by decide_tac >>
+        ‘LENGTH (revs lfd hw ifds m w0 (SUC k)) ≤ LENGTH (revs lfd hw ifds m w0 N)’
+          by (irule revs_len_mono >> simp[]) >> decide_tac) >>
+  ‘n0 ≤ k’ by decide_tac >>
+  qabbrev_tac ‘ev = EL i' (revs lfd hw ifds m w0 n)’ >>
+  ‘log_conns (rlog lfd hw ifds m w0 k) = [] ∧
+   ∀j. MEM j (qof (rworld lfd hw ifds m w0 k) lfd) ⇒
+       MEM j (qof (rworld lfd hw ifds m w0 (SUC k)) lfd)’ by fs[] >>
+  Cases_on ‘failed ev’
+  >- (gvs[failed_fail_err] >>
+      qpat_x_assum ‘H1 _ _ _ _ _’ (mp_tac o REWRITE_RULE [H1_def]) >>
+      disch_then (qspecl_then [‘k’, ‘ev’, ‘e’] mp_tac) >> simp[] >> metis_tac[])
+  >> qpat_assum ‘∀k. (∃d. _) ∧ _’ (qspec_then ‘k’ strip_assume_tac) >>
+  metis_tac[]
 QED

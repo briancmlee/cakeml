@@ -2008,3 +2008,79 @@ Proof
   drule_all tail_tk >> strip_tac >>
   qexists_tac ‘live''’ >> fs[]
 QED
+
+Theorem prounds_SUC_step:
+  prounds lfd hw ifds m ws0 n = SOME (h, ws, evs, logs) ∧
+  prounds lfd hw ifds m ws0 (SUC n) = SOME (h', ws', evs', logs') ⇒
+  ∃snap log revs.
+    pround lfd hw (ifds h) ws (new_actions (log_of m) h) = SOME (snap, ws', log, revs) ∧
+    evs' = evs ++ revs
+Proof
+  rw[] >> qpat_x_assum ‘prounds _ _ _ _ _ (SUC _) = _’ mp_tac >>
+  simp[Once prounds_def, AllCaseEqs()] >> rw[] >> gvs[]
+QED
+
+(* MAIN (step 2, the raw trace round by round): an fd L1 holds or has
+   pre-accepted at the start of round n, with channel c, is either still
+   live after the round (tk T: held or pre-accepted, same channel, whose
+   sent is the start's plus what round n's sys_send events took on f, and
+   with its account), or was closed in the round (tk F: the start's sent
+   plus what the round took on f is a prefix of what the server wrote to
+   its client, cl (pcm n) f, in psk) *)
+Theorem l1pf_round_sent_upto:
+  winv w0 ∧ qfresh w0 ∧ MEM lfd (l0_used w0) ∧
+  (∀n'. n' ≤ N ⇒ SND (pcm lfd hw ifds m w0 n') + 1 < dimword (:64)) ⇒
+  ∀n h ws evs logs h' ws' evs' logs'.
+    SUC n ≤ N ∧
+    prounds lfd hw ifds m (w0, pinit) n = SOME (h, ws, evs, logs) ∧
+    prounds lfd hw ifds m (w0, pinit) (SUC n) = SOME (h', ws', evs', logs') ∧
+    EVERY small_send evs' ∧
+    (MEM f (MAP SND (SND ws).b.tbl) ∨ MEM f (SND ws).b.closing ∨ MEM f (SND ws).acq) ∧
+    l0_chan_of (FST ws) f = SOME c ⇒
+    ∃live. tk live (FST ws') (SND ws') f c
+             (csent (FST ws) c ++ evs_sent f (DROP (LENGTH evs) evs'))
+             (EL (cl (FST (pcm lfd hw ifds m w0 n)) f)
+                 (FST (hst lfd ifds m (psk lfd hw ifds m w0) (SUC n))).clients).outgoing
+Proof
+  strip_tac >> rpt gen_tac >>
+  disch_then (fn th => MAP_EVERY assume_tac (CONJUNCTS th)) >>
+  ‘l0_rely w0 ∧ fds_lt w0’ by fs[winv_def] >>
+  drule_all prounds_SUC_step >> strip_tac >>
+  qpat_x_assum ‘evs' = _’ SUBST_ALL_TAC >>
+  qpat_x_assum ‘EVERY _ (_ ++ _)’ (strip_assume_tac o REWRITE_RULE [EVERY_APPEND]) >>
+  REWRITE_TAC [DROP_LENGTH_APPEND] >>
+  ‘n ≤ N’ by simp[] >>
+  mp_tac (Q.INST [‘N’ |-> ‘N’] l1pf_refines_hl_out_upto) >>
+  impl_tac >- (rpt conj_tac >> first_assum ACCEPT_TAC) >>
+  disch_then drule_all >> strip_tac >>
+  mp_tac (Q.INST [‘N’ |-> ‘N’] l1pf_refines_hl_upto) >>
+  impl_tac >- (rpt conj_tac >> first_assum ACCEPT_TAC) >>
+  disch_then drule_all >> strip_tac >>
+  PairCases_on ‘ws’ >> PairCases_on ‘ws'’ >>
+  RULE_ASSUM_TAC (REWRITE_RULE [FST, SND]) >> REWRITE_TAC [FST, SND] >>
+  Cases_on ‘hst lfd ifds m (psk lfd hw ifds m w0) n’ >> rename1 ‘_ = (s, hs)’ >> gvs[] >>
+  ‘hacts_of lfd ifds m (psk lfd hw ifds m w0) n =
+   new_actions (log_of m) (hhist lfd ifds m (psk lfd hw ifds m w0) n)’
+    by simp[hacts_of_def] >>
+  Q.SUBGOAL_THEN ‘MEM f (MAP SND ws1.b.tbl) ∨ MEM f ws1.b.closing ∨ MEM f ws1.acq’
+    ASSUME_TAC >> TRY (fs[] >> NO_TAC) >>
+  qpat_x_assum ‘pround _ _ _ _ _ = _’ assume_tac >>
+  drule round_tk >>
+  disch_then (qspecl_then [‘s’, ‘f’, ‘FST (pcm lfd hw ifds m w0 n)’, ‘c’] mp_tac) >>
+  (impl_tac >- (rpt conj_tac >> first_assum ACCEPT_TAC)) >> strip_tac >>
+  ‘hacts_tot lfd (hst lfd ifds m (psk lfd hw ifds m w0) n)
+     (hacts_of lfd ifds m (psk lfd hw ifds m w0) n) = (rs, hevs, (s1, hs1))’
+    by fs[hacts_tot_def] >>
+  drule hround_step >> strip_tac >> simp[] >>
+  ‘cl (FST (pcm lfd hw ifds m w0 n)) f < LENGTH s1.clients’
+    by (drule hacts_world >> strip_tac >>
+        qpat_x_assum ‘pv_rel _ _ _ _’ mp_tac >> simp[pv_rel_def] >> strip_tac >>
+        drule cl_mem >> gvs[EVERY_MEM]) >>
+  ‘∀hf. (EL (cl (FST (pcm lfd hw ifds m w0 n)) f)
+           (SND (hpoll lfd hs1 hf s1)).clients).outgoing =
+        (EL (cl (FST (pcm lfd hw ifds m w0 n)) f) s1.clients).outgoing’
+    by (gen_tac >> qspecl_then [‘s1’, ‘lfd’, ‘hs1’, ‘hf’] mp_tac
+          (Q.GENL [‘s’, ‘lfd’, ‘hs’, ‘hfds’] cext_hpoll) >>
+        simp[cext_def]) >>
+  simp[] >> qexists_tac ‘live’ >> simp[]
+QED

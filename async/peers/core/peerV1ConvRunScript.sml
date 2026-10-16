@@ -1,0 +1,335 @@
+(*
+  The converse direction of the disciplined peer_equiv claims, shared by
+  echo, HTTP and the key-value server (their instances: peerV1EchoConv,
+  peerV1HttpConv, peerV1KvConv).
+
+  A peer server world w with version 1's calls, no backpressure and a
+  fixed schedule, that does not fill the fd space (nonsat1), answers as its
+  version-2 world sk0 = v2of lfd a w.  The version-1 world v1of2 lfd sk0
+  (peerV1Conv) is a bounded version-1 server world.  If, in every such
+  world, a disciplined program has a run that eventually accepts each client
+  that sends something, with P of what it sent and what its episode wrote
+  (acc_live), then (peer_of_v1_live):
+   - the run is the program's run in sk0 (v12_diverge) and in w
+     (v1_ep_diverge);
+   - peerEchoEpisodesConv gives P-liveness and ticks_forever in w, for the
+     class of programs making only version 1's calls (rclass_v1);
+   - per-fd safety of the run carries over to the renamed trace
+     (v1_sym_safe_gen).
+  The ticks argument adds a client to a world connecting M: hence one more
+  free fd than nonsat asks for (nonsat1).
+*)
+Theory peerV1ConvRun
+Ancestors
+  llist ffi semantics socketWorld socketFair EchoSpec lifetimeWorld
+  lifetimeFair EchoEpisodesSpec peerWorld peerFair peerSpecForms
+  peerSemantics peerInstances peerServers peerV2Sim peerEchoEpisodes
+  peerV2Prefix peerEchoEpisodesConv peerV1Sim peerV1Run peerV1Inst
+  peerV1Proj peerV1Conv peerV2Hide peerV2Accept
+Libs
+  preamble
+
+(* ------------------------------------------------------------------------
+   The hypothesis
+   ------------------------------------------------------------------------ *)
+
+(* HYPOTHESIS (user decision 2026-10-16, design/35): nonsat, with room for
+   one more client.  With plain nonsat the converse is false at reserved =
+   [], M = 2^64 - 4: a program that stops polling once it has accepted
+   2^64 - 4 clients and seen all their EOFs meets echo_spec_le but not
+   ticks_forever *)
+Definition nonsat1_def:
+  nonsat1 lfd a (w:eworld) ⇔
+    ∃M. LENGTH w.reserved + M + 4 < dimword (:64) ∧ ∀n. nconn (v2of lfd a w) n ≤ M
+End
+
+(* ------------------------------------------------------------------------
+   The rely, with version 1's calls
+   ------------------------------------------------------------------------ *)
+
+Theorem ep_after_v1_rev:
+  ∀cs w w'. w.calls = v2_calls ∧ EVERY (λ(n, conf, bys). MEM n v1_calls) cs ∧
+            ep_after w cs = SOME w' ⇒
+            ep_after (w with calls := v1_calls) cs = SOME (w' with calls := v1_calls)
+Proof
+  Induct >> simp[ep_after_def, FORALL_PROD] >> rpt gen_tac >> strip_tac >>
+  rename1 ‘ep_ffi_fn n conf bys w’ >>
+  ‘MEM n w.calls’ by simp[MEM_v1_v2] >>
+  drule_all ep_ffi_fn_calls >> disch_then (qspecl_then [‘conf’, ‘bys’] SUBST1_TAC) >>
+  Cases_on ‘ep_ffi_fn n conf bys w’ >> gvs[] >>
+  rename1 ‘ep_ffi_fn n conf bys w = SOME q’ >> PairCases_on ‘q’ >>
+  gvs[] >> first_x_assum irule >> simp[] >> metis_tac[ep_ffi_fn_calls_same]
+QED
+
+(* With version 2's calls, the world is in the class of programs making
+   only version 1's calls *)
+Theorem rclass_v1:
+  ep_server_world v1_calls lfd a w ∧ no_backpressure w ∧ open_loop w ∧ ep_rely w ⇒
+  rclass (λn. MEM n v1_calls) lfd a (w with calls := v2_calls)
+Proof
+  strip_tac >>
+  ‘w with calls := v1_calls = w’ by fs[ep_server_world_def, eworld_component_equality] >>
+  simp[rclass_def] >> rpt conj_tac
+  >- fs[ep_server_world_def]
+  >- fs[no_backpressure_def]
+  >- fs[open_loop_def]
+  >- (simp[rely_on_def] >> conj_tac >- fs[ep_rely_def] >> rpt strip_tac >>
+      ‘ep_after (w with calls := v1_calls) cs = SOME (w' with calls := v1_calls)’
+        by (mp_tac (Q.SPECL [‘cs’, ‘w with calls := v2_calls’, ‘w'’] ep_after_v1_rev) >>
+            simp[]) >>
+      gvs[] >>
+      fs[ep_rely_def, ep_sched_ok_def] >> first_x_assum drule >>
+      ‘(w' with calls := v1_calls) with clock := w'.clock + 1 =
+       (w' with clock := w'.clock + 1) with calls := v1_calls’
+        by simp[eworld_component_equality] >>
+      simp[ep_step_ok_calls]) >>
+  simp[v1_calls_def]
+QED
+
+(* ------------------------------------------------------------------------
+   The run in the version-1 world of a version-2 world
+   ------------------------------------------------------------------------ *)
+
+Theorem v1of2_run:
+  v1_disciplined lfd prog ∧ lifetime_world lfd sk2 ∧ (∀n. nconn sk2 n ≤ M) ∧
+  LENGTH sk2.reserved + M + 3 < dimword (:64) ∧
+  semantics_prog (init_state (socket_ffi (v1of2 lfd sk2))) init_env prog (Diverge io) ⇒
+  fd_disciplined lfd io ∧
+  semantics_prog (init_state (lifetime_ffi sk2)) init_env prog (Diverge io)
+Proof
+  strip_tac >> drule_all v1of2_props >> strip_tac >>
+  ‘fd_disciplined lfd io’
+    by (fs[v1_disciplined_def] >> first_x_assum drule >> strip_tac >>
+        metis_tac[diverge_unique]) >>
+  simp[] >> irule v12_diverge >> fs[server_world_def, lifetime_world_def] >>
+  metis_tac[]
+QED
+
+(* Client j's bytes in the version-2 world are fd F2 j's *)
+Theorem v1of2_sent:
+  lifetime_world lfd sk2 ∧ (∀n. nconn sk2 n ≤ M) ∧
+  LENGTH sk2.reserved + M + 3 < dimword (:64) ∧ j < nconn sk2 n ⇒
+  sent2_upto j n sk2 = sent_upto (F2 lfd sk2 j) n (v1of2 lfd sk2)
+Proof
+  strip_tac >> drule_all v1of2_props >> strip_tac >>
+  drule_all v1of2_sched >> strip_tac >>
+  ‘(∀i i'. i < M + 1 ∧ i' < M + 1 ∧ F2 lfd sk2 i = F2 lfd sk2 i' ⇒ i = i')’
+    by (mp_tac F2_fresh >> impl_tac >- fs[lifetime_world_def] >> simp[]) >>
+  ‘findi (F2 lfd sk2 j) (GENLIST (F2 lfd sk2) (nconn sk2 n)) = j’
+    by (irule findi_GENLIST >> simp[] >> qexists_tac ‘M + 1’ >> simp[] >>
+        qpat_x_assum ‘∀n. nconn sk2 n ≤ M’ (qspec_then ‘n’ mp_tac) >> decide_tac) >>
+  mp_tac (Q.INST [‘sk’ |-> ‘v1of2 lfd sk2’, ‘c’ |-> ‘F2 (lfd:word64) (sk2:sockets2) (j:num)’] sent_v2of1) >>
+  impl_tac >- first_assum ACCEPT_TAC >> disch_then SUBST1_TAC >>
+  simp[v1of2_conns, MEM_GENLIST] >>
+  reverse IF_CASES_TAC >- metis_tac[] >>
+  simp[sent2_upto_def, v2of1_def]
+QED
+
+(* Episode j's written bytes are fd F2 j's *)
+Theorem v1of2_written:
+  v1_disciplined lfd prog ∧ lifetime_world lfd sk2 ∧ (∀n. nconn sk2 n ≤ M) ∧
+  LENGTH sk2.reserved + M + 3 < dimword (:64) ∧
+  semantics_prog (init_state (socket_ffi (v1of2 lfd sk2))) init_env prog (Diverge io) ∧
+  LPREFIX (fromList evs) io ∧ j < nconn sk2 n ⇒
+  ep_written j evs = bytes_written_to (F2 lfd sk2 j) evs
+Proof
+  strip_tac >> drule_all v1of2_run >> strip_tac >>
+  drule_all v1of2_props >> strip_tac >>
+  qabbrev_tac ‘s1 = v1of2 lfd sk2’ >>
+  ‘sched_wf s1 ∧ sk2.open_fds = []’ by fs[server_world_def, lifetime_world_def] >>
+  drule_all (Q.INST [‘ll0’ |-> ‘s1.sched’, ‘s2’ |-> ‘sk2’] v1_trace) >> strip_tac >>
+  ‘accepted_fds evs = opened_fds evs ∧ ep_events j 0 [] evs = ch_events j 0 [] evs’
+    by metis_tac[ep_events_v1] >>
+  ‘∀i. i < nconn sk2 n ⇒ conn_fd s1.sched i = F2 lfd sk2 i’
+    by (rpt strip_tac >>
+        ‘i < LENGTH (sched_conns n s1.sched)’ by simp[Abbr ‘s1’, v1of2_conns] >>
+        drule conn_fd_sched >> simp[Abbr ‘s1’, v1of2_conns]) >>
+  ‘ALL_DISTINCT (opened_fds evs) ∧ LENGTH (opened_fds evs) ≤ dimword (:64)’
+    by gvs[ALL_DISTINCT_TAKE, LENGTH_TAKE] >>
+  ‘LENGTH (opened_fds evs) = k’ by gvs[LENGTH_TAKE] >>
+  ‘∀i. i < LENGTH (opened_fds evs) ⇒ EL i (opened_fds evs) = conn_fd s1.sched i’
+    by (rpt strip_tac >> gvs[EL_TAKE]) >>
+  reverse (Cases_on ‘j < LENGTH (opened_fds evs)’)
+  >- (‘ep_written j evs = []’
+        by (REWRITE_TAC[ep_written_def] >>
+            qpat_x_assum ‘accepted_fds evs = _’ SUBST1_TAC >>
+            qpat_x_assum ‘¬(j < _)’ (fn th => REWRITE_TAC[th])) >>
+      ‘¬MEM (F2 lfd sk2 j) (opened_fds evs)’
+        by (strip_tac >> fs[MEM_EL] >> rename1 ‘i < LENGTH (opened_fds evs)’ >>
+            ‘i < nconn sk2 n’ by decide_tac >>
+            ‘F2 lfd sk2 i = F2 lfd sk2 j’ by metis_tac[] >>
+            ‘∀i i'. i < M + 1 ∧ i' < M + 1 ∧ F2 lfd sk2 i = F2 lfd sk2 i' ⇒ i = i'’
+              by (mp_tac F2_fresh >> impl_tac >- fs[lifetime_world_def] >> simp[]) >>
+            qpat_x_assum ‘∀n. nconn sk2 n ≤ M’ (qspec_then ‘n’ assume_tac) >>
+            ‘i < M + 1 ∧ j < M + 1’ by decide_tac >>
+            ‘i = j’ by metis_tac[] >> fs[]) >>
+      ‘FLAT (MAP (event_written (F2 lfd sk2 j)) evs) = []’
+        by (irule proj_unopened >> metis_tac[]) >>
+      simp[bytes_written_to_def]) >>
+  ‘EL j (opened_fds evs) = F2 lfd sk2 j’ by metis_tac[] >>
+  qabbrev_tac ‘c = F2 lfd sk2 j’ >>
+  mp_tac (Q.INST [‘pr’ |-> ‘event_written’] proj_v1) >>
+  impl_tac >- (simp[proj_ok_written] >> metis_tac[]) >> strip_tac >>
+  qpat_x_assum ‘accepted_fds evs = _’ (fn th => REWRITE_TAC[ep_written_def, th]) >>
+  qpat_x_assum ‘ep_events _ _ _ _ = _’ (fn th => REWRITE_TAC[th]) >>
+  asm_simp_tac std_ss [bytes_written_to_def]
+QED
+
+Theorem ren_evs_cons[local]:
+  LENGTH (ren_evs k opn [ev]) ≤ 1 ∧
+  ∃k' opn'. ∀evs. ren_evs k opn (ev :: evs) = ren_evs k opn [ev] ++ ren_evs k' opn' evs
+Proof
+  simp[ren_evs_def] >> every_case_tac >> simp[ren_evs_def] >> metis_tac[]
+QED
+
+(* A prefix of the renamed trace is the renamed trace of a prefix *)
+Theorem ren_evs_prefix_inv:
+  ∀evs k opn r. r ≼ ren_evs k opn evs ⇒ ∃evs1. evs1 ≼ evs ∧ r = ren_evs k opn evs1
+Proof
+  Induct >- (simp[ren_evs_def] >> rpt strip_tac >> qexists_tac ‘[]’ >> simp[ren_evs_def]) >>
+  rpt gen_tac >>
+  qspecl_then [‘opn’, ‘k’, ‘h’] strip_assume_tac (GEN_ALL ren_evs_cons) >>
+  qabbrev_tac ‘x = ren_evs k opn [h]’ >> qpat_x_assum ‘Abbrev _’ kall_tac >>
+  simp[] >> strip_tac >>
+  Cases_on ‘r’ >- (qexists_tac ‘[]’ >> simp[ren_evs_def]) >>
+  rename1 ‘e :: t ≼ _’ >>
+  ‘x = [] ∨ ∃y. x = [y]’ by (Cases_on ‘x’ >> fs[] >> Cases_on ‘t'’ >> fs[]) >> gvs[]
+  >- (last_x_assum (qspecl_then [‘k'’, ‘opn'’, ‘e :: t’] mp_tac) >> simp[] >>
+      strip_tac >> qexists_tac ‘h :: evs1’ >> simp[])
+  >> last_x_assum (qspecl_then [‘k'’, ‘opn'’, ‘t’] mp_tac) >> simp[] >>
+  strip_tac >> qexists_tac ‘h :: evs1’ >> simp[]
+QED
+
+(* MAIN: safety per fd, for any relation R between what was read and what
+   was written that holds of nothing read and nothing written, carries over
+   to the renamed trace *)
+Theorem v1_sym_safe_gen:
+  semantics_prog (init_state (socket_ffi s1)) init_env prog (Diverge io) ∧
+  fd_disciplined lfd io ∧ v12rel lfd ll0 s1 s2 ∧ sched_wf s1 ∧ s2.open_fds = [] ∧
+  (∀evs c. LPREFIX (fromList evs) io ⇒ R (bytes_read_from c evs) (bytes_written_to c evs)) ∧
+  R [] [] ⇒
+  ∀evs. LPREFIX (fromList evs) io ⇒
+        ∀evs' c. evs' ≼ ren_evs 0 [] evs ⇒ R (bytes_read_from c evs') (bytes_written_to c evs')
+Proof
+  rpt strip_tac >> drule ren_evs_prefix_inv >> strip_tac >> gvs[] >>
+  ‘LPREFIX (fromList evs1) io’
+    by (irule LPREFIX_TRANS >> qexists_tac ‘fromList evs’ >> simp[LPREFIX_fromList, from_toList]) >>
+  drule_all v1_trace >> strip_tac >>
+  ‘ALL_DISTINCT (opened_fds evs1) ∧ LENGTH (opened_fds evs1) ≤ dimword (:64)’
+    by gvs[ALL_DISTINCT_TAKE, LENGTH_TAKE] >>
+  ‘c = n2w (w2n c) ∧ w2n c < dimword (:64)’ by simp[w2n_lt] >>
+  qabbrev_tac ‘j = w2n c’ >> pop_assum kall_tac >>
+  qpat_x_assum ‘c = _’ SUBST1_TAC >>
+  Cases_on ‘j < LENGTH (opened_fds evs1)’
+  >- (qabbrev_tac ‘fd1 = EL j (opened_fds evs1)’ >>
+      mp_tac (Q.INST [‘pr’ |-> ‘event_written’, ‘c’ |-> ‘fd1’, ‘evs’ |-> ‘evs1’] proj_v1) >>
+      impl_tac >- (simp[proj_ok_written] >> metis_tac[]) >> strip_tac >>
+      mp_tac (Q.INST [‘pr’ |-> ‘event_read’, ‘c’ |-> ‘fd1’, ‘evs’ |-> ‘evs1’] proj_v1) >>
+      impl_tac >- (simp[proj_ok_read] >> metis_tac[]) >> strip_tac >>
+      fs[bytes_written_to_def, bytes_read_from_def]) >>
+  ‘FLAT (MAP (event_written (n2w j)) (ren_evs 0 [] evs1)) = [] ∧
+   FLAT (MAP (event_read (n2w j)) (ren_evs 0 [] evs1)) = []’
+    by (conj_tac >> irule proj_ren_beyond >> rpt conj_tac >> TRY (first_assum ACCEPT_TAC) >>
+        simp[proj_ok_written, proj_ok_read] >> gvs[LENGTH_TAKE]) >>
+  simp[bytes_written_to_def, bytes_read_from_def]
+QED
+
+(* What the instances provide, in a version-2 world: each client that sends
+   something is eventually accepted, with P of what it sent and what its
+   episode wrote *)
+Definition acc_live_def:
+  acc_live P sk io ⇔
+    ∀j n. sent2_upto j n sk ≠ [] ⇒
+          ∃evs. LPREFIX (fromList evs) io ∧ P (sent2_upto j n sk) (ep_written j evs) ∧
+                j < LENGTH (accepted_fds evs)
+End
+
+(* ------------------------------------------------------------------------
+   The converse
+   ------------------------------------------------------------------------ *)
+
+Theorem ext1_nconn_eq:
+  ∀n. nconn (ext1 lfd sk k m) n = if n ≤ k then nconn sk n else nconn sk k + 1
+Proof
+  Induct >- simp[nconn_def, arrivals2_upto_def] >>
+  ‘∀s n. nconn s (SUC n) = nconn s n + LENGTH (FILTER is_conn2 (fut_step s.future n))’
+    by simp[nconn_def, arrivals2_upto_SUC, FILTER_APPEND] >>
+  simp[ext1_fut] >> rw[] >> fs[is_conn2_def] >>
+  ‘n = k’ by decide_tac >> fs[]
+QED
+
+(* MAIN: if, in every bounded version-2 server world, a disciplined program
+   has a run in the version-1 world that is acc_live P there and satisfies
+   Sf, then in every peer server world with version 1's calls, no
+   backpressure and a fixed schedule leaving room for one more client, it
+   has a run that is P-live and keeps polling, which satisfies Sf and is its
+   disciplined run in a related version-1 world *)
+Theorem peer_of_v1_live:
+  v1_disciplined lfd prog ∧
+  (∀sk N. lifetime_world lfd sk ∧ (∀n. nconn sk n ≤ N) ∧
+          LENGTH sk.reserved + N + 3 < dimword (:64) ⇒
+          ∃io. semantics_prog (init_state (socket_ffi (v1of2 lfd sk))) init_env prog
+                 (Diverge io) ∧ Sf io ∧ acc_live P sk io) ∧
+  ep_server_world v1_calls lfd a w ∧ no_backpressure w ∧ open_loop w ∧ nonsat1 lfd a w ∧
+  ep_rely w ⇒
+  ∃io s1 s2 ll0.
+    semantics_prog (init_state (ep_ffi w)) init_env prog (Diverge io) ∧
+    sym_live P w io ∧ ticks_forever w io ∧ Sf io ∧
+    semantics_prog (init_state (socket_ffi s1)) init_env prog (Diverge io) ∧
+    fd_disciplined lfd io ∧ v12rel lfd ll0 s1 s2 ∧ sched_wf s1 ∧ s2.open_fds = []
+Proof
+  strip_tac >>
+  qabbrev_tac ‘w2 = w with calls := v2_calls’ >>
+  ‘rclass (λn. MEM n v1_calls) lfd a w2’ by metis_tac[rclass_v1] >>
+  ‘w2 with calls := v1_calls = w’
+    by fs[Abbr ‘w2’, ep_server_world_def, eworld_component_equality] >>
+  ‘v2of lfd a w2 = v2of lfd a w’ by simp[Abbr ‘w2’, v2of_def] >>
+  fs[nonsat1_def] >>
+  ‘nonsat lfd a w2’
+    by (simp[nonsat_def] >> qexists_tac ‘M’ >> asm_rewrite_tac[] >> fs[Abbr ‘w2’]) >>
+  qabbrev_tac ‘sk0 = v2of lfd a w’ >>
+  ‘lifetime_world lfd sk0 ∧ same_answers (lifetime_ffi sk0) (ep_ffi w2)’
+    by (imp_res_tac rclass_polls >> fs[rclass_def] >>
+        drule_all v2of_props_polls >> simp[]) >>
+  ‘sk0.reserved = w.reserved’ by simp[Abbr ‘sk0’, v2of_def] >>
+  ‘LENGTH sk0.reserved + M + 3 < dimword (:64)’ by fs[] >>
+  first_assum (qspecl_then [‘sk0’, ‘M’] mp_tac) >> impl_tac >- fs[] >> strip_tac >>
+  drule_all v1of2_run >> strip_tac >>
+  drule_all v1of2_props >> strip_tac >>
+  qabbrev_tac ‘s1 = v1of2 lfd sk0’ >>
+  ‘sched_wf s1 ∧ sk0.open_fds = []’ by fs[server_world_def, lifetime_world_def] >>
+  qexistsl_tac [‘io’, ‘s1’, ‘sk0’, ‘s1.sched’] >> simp[] >>
+  ‘∀evs. LPREFIX (fromList evs) io ⇒ EVERY v1_event evs’
+    by (rpt strip_tac >> drule_all (Q.INST [‘ll0’ |-> ‘s1.sched’] v1_trace) >> simp[]) >>
+  (* the run in the peer world with version 1's calls *)
+  ‘w2.calls = v2_calls’ by simp[Abbr ‘w2’] >>
+  ‘semantics_prog (init_state (ep_ffi w)) init_env prog (Diverge io)’
+    by (qpat_x_assum ‘w2 with calls := v1_calls = w’ (SUBST1_TAC o SYM) >>
+        irule v1_ep_diverge >> metis_tac[]) >>
+  simp[] >>
+  ‘∀evs. LPREFIX (fromList evs) io ⇒ EVERY (ev_in (λn. MEM n v1_calls)) evs’
+    by (rpt strip_tac >> res_tac >> fs[EVERY_MEM, v1_event_def, ev_in_def] >> metis_tac[]) >>
+  (* liveness and ticks, with version 2's calls *)
+  ‘sym_live P w2 io’
+    by (irule sym_live_of_acc >> qexistsl_tac [‘λn. MEM n v1_calls’, ‘a’, ‘lfd’, ‘prog’] >>
+        asm_rewrite_tac[] >> fs[acc_live_def]) >>
+  ‘ticks_forever w2 io’
+    by (irule acc_ticks >> qexistsl_tac [‘λn. MEM n v1_calls’, ‘a’, ‘lfd’, ‘prog’] >>
+        asm_rewrite_tac[] >> rpt strip_tac >>
+        qabbrev_tac ‘sk1 = ext1 lfd sk0 k (nconn sk0 k)’ >>
+        first_x_assum (qspecl_then [‘sk1’, ‘M + 1’] mp_tac) >>
+        impl_tac
+        >- (simp[Abbr ‘sk1’, ext1_nconn_eq] >> conj_tac
+            >- (rw[] >> irule LESS_EQ_TRANS >> qexists_tac ‘M’ >> simp[]) >>
+            fs[ext1_def]) >>
+        strip_tac >> qexists_tac ‘io'’ >>
+        ‘(∀n. nconn sk1 n ≤ M + 1) ∧ LENGTH sk1.reserved + (M + 1) + 3 < dimword (:64)’
+          by (simp[Abbr ‘sk1’, ext1_nconn_eq] >> conj_tac
+              >- (rw[] >> irule LESS_EQ_TRANS >> qexists_tac ‘M’ >> simp[]) >>
+              fs[ext1_def]) >>
+        drule_all v1of2_run >> strip_tac >> simp[] >>
+        fs[acc_live_def] >>
+        first_x_assum (qspecl_then [‘nconn sk0 k’, ‘SUC k’] mp_tac) >>
+        simp[Abbr ‘sk1’, ext1_sent] >> metis_tac[]) >>
+  metis_tac[ep_guar_v1]
+QED

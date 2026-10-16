@@ -716,3 +716,141 @@ Proof
   >> simp[l0_used_def, upd_lchan_def, MEM_MAP, EXISTS_PROD, ADELKEY_def, MEM_FILTER] >>
   metis_tac[]
 QED
+
+(* ------------------------------------------------------------------------
+   Every fd in use stays below the limit
+   ------------------------------------------------------------------------ *)
+
+Definition fds_lt_def:
+  fds_lt (w : l0world) ⇔ ∀x. MEM x (l0_used w) ⇒ w2n x < w.fd_limit
+End
+
+Theorem fds_lt_small:
+  fds_lt w ∧ l0_rely w ⇒ fds_small w
+Proof
+  rw[fds_lt_def, fds_small_def, l0_rely_def] >> res_tac >> decide_tac
+QED
+
+Theorem used_deliver[simp]:
+  l0_used (l0_deliver w a) = l0_used w ∧ (l0_deliver w a).fd_limit = w.fd_limit
+Proof
+  Cases_on ‘a’ >> rw[l0_deliver_def, l0_used_def, upd_lchan_def] >>
+  every_case_tac >> gvs[] >>
+  simp[AFUPDKEY_def] >> rpt (pop_assum mp_tac) >>
+  qid_spec_tac ‘w.listeners’ >> Induct >> simp[AFUPDKEY_def, FORALL_PROD] >> rw[]
+QED
+
+Theorem used_FOLDL_deliver[simp]:
+  ∀as w. l0_used (FOLDL l0_deliver w as) = l0_used w
+Proof
+  Induct >> simp[]
+QED
+
+Theorem fds_lt_tick[simp]:
+  fds_lt (l0_tick nm w) ⇔ fds_lt w
+Proof
+  simp[fds_lt_def, l0_tick_def]
+QED
+
+Theorem AFUPDKEY_MAP_FST:
+  ∀l. MAP FST (AFUPDKEY k g l) = MAP FST l
+Proof
+  Induct >> simp[AFUPDKEY_def, FORALL_PROD] >> rw[]
+QED
+
+Theorem l0_accept_fds_lt:
+  fds_lt w ∧ l0_accept l w = (r, w') ⇒ fds_lt w'
+Proof
+  rw[l0_accept_def, l0_alloc_def, AllCaseEqs()] >> gvs[] >>
+  gvs[fds_lt_def, l0_used_def, upd_lchan_def, AFUPDKEY_MAP_FST] >> rw[] >> gvs[]
+QED
+
+Theorem sys_accept_fds_lt:
+  fds_lt w ∧ sys_accept l w = SOME (out, w', ev) ⇒ fds_lt w'
+Proof
+  rw[sys_accept_def, l0_do_def, l0_ffi_fn_def, AllCaseEqs()] >>
+  gvs[l0_call_def, AllCaseEqs()] >> pairarg_tac >> gvs[] >>
+  ‘fds_lt (l0_tick «sys_accept» w)’ by simp[] >>
+  drule_all l0_accept_fds_lt >> simp[fds_lt_def]
+QED
+
+(* ------------------------------------------------------------------------
+   Any action
+   ------------------------------------------------------------------------ *)
+
+Theorem l1do_nxt:
+  l1do lfd (w, st) a = SOME (r, (w', st'), evs) ⇒ st'.nxt ≤ st.nxt + 1
+Proof
+  Cases_on ‘a’ >>
+  rw[l1do_def, l1_close_def, forget_def, set_outbox_def, after_send_def, AllCaseEqs()] >>
+  gvs[] >> rpt (pairarg_tac >> gvs[]) >> gvs[AllCaseEqs(), forget_def, set_outbox_def] >>
+  Cases_on ‘l0_res_of out’ >> gvs[after_send_def, set_outbox_def] >> rw[]
+QED
+
+(* The server's side of the round discipline: it accepts only on the
+   listener, polled at the last poll; it reads only handles polled at the
+   last poll (with the fd they had then); and its reads and writes are of
+   sizes the FFI encodes *)
+Definition act_disc_def:
+  act_disc lfd polp (st : l1st) (Accept l) = (l = lfd ∧ MEM (lfd, lfd) polp) ∧
+  act_disc lfd polp st (Read h n) =
+    (0 < n ∧ n < 256 ** 8 ∧ ∀f. ALOOKUP st.tbl h = SOME f ⇒ MEM (h, f) polp) ∧
+  act_disc lfd polp st (Write h bs) = (LENGTH bs < 256 ** 8)
+End
+
+Theorem act_step:
+  simple_v2 p lfd sched w ∧ l0_rely w ∧ l1v2_rel p lfd sched (w, st) (s, hs) ∧
+  rdy_ok lfd polp w st ∧ fds_lt w ∧ act_disc lfd polp st a ∧
+  LENGTH (l0_used w) < 2147483647 ∧ hdln (w2n lfd) st.nxt < dimword (:64) ∧
+  w2n lfd < 2147483648 ⇒
+  ∃r w' st' s' hs' evs evs'.
+    l1do lfd (w, st) a = SOME (r, (w', st'), evs) ∧
+    hdo lfd (s, hs) a = SOME (r, (s', hs'), evs') ∧
+    drops (MAP l0_v2_event evs) evs' ∧
+    l1v2_rel p lfd sched (w', st') (s', hs') ∧ rdy_ok lfd polp w' st' ∧ fds_lt w' ∧
+    st'.nxt ≤ st.nxt + 1 ∧
+    w'.env = w.env ∧ w'.ch = w.ch ∧ w'.fd_limit = w.fd_limit
+Proof
+  strip_tac >> drule_all fds_lt_small >> strip_tac >>
+  ‘∀w' st' r evs. l1do lfd (w, st) a = SOME (r, (w', st'), evs) ⇒ st'.nxt ≤ st.nxt + 1’
+    by metis_tac[l1do_nxt] >>
+  Cases_on ‘a’
+  (* Accept *)
+  >- (rename1 ‘Accept l’ >> ‘l = lfd’ by fs[act_disc_def] >>
+      pop_assum SUBST_ALL_TAC >> fs[act_disc_def] >>
+      Cases_on ‘MEM lfd st.rdy’
+      >- (‘small lfd’ by gvs[small_def] >>
+          ‘hdln (w2n lfd) st.nxt < dimword (:64)’ by simp[] >>
+          drule_all accept_step >> strip_tac >> gvs[] >>
+          qpat_x_assum ‘l1do _ _ _ = _’ mp_tac >> simp[l1do_def] >>
+          ‘¬st.exhausted’ by gvs[l1v2_rel_def] >> simp[] >>
+          Cases_on ‘sys_accept lfd w’ >> simp[] >> PairCases_on ‘x’ >> simp[] >>
+          strip_tac >> imp_res_tac sys_accept_fds_lt >>
+          gvs[AllCaseEqs()] >> metis_tac[drops_refl])
+      >> drule_all accept_skip >> strip_tac >> simp[])
+  (* Read *)
+  >- (rename1 ‘Read h n’ >> fs[act_disc_def] >>
+      Cases_on ‘ALOOKUP st.tbl h’
+      >- (‘st.tbl = hs.tbl’ by gvs[l1v2_rel_def] >>
+          simp[l1do_def, hdo_def] >> gvs[])
+      >> rename1 ‘ALOOKUP _ h = SOME f’ >>
+      ‘n < 256 ** 8’ by simp[] >>
+      drule_all tbl_open_chan >> strip_tac >>
+      Cases_on ‘MEM f st.rdy’
+      >- (Cases_on ‘(EL j w.chans).inbox = []’
+          >- (Cases_on ‘(EL j w.chans).peer_eof’
+              >- (drule_all read_eof_step >> strip_tac >> simp[] >>
+                  gvs[fds_lt_def] >> metis_tac[])
+              >> drule_all read_empty_step >> strip_tac >> simp[] >>
+              gvs[fds_lt_def] >> metis_tac[])
+          >> drule_all read_data_step >> strip_tac >> simp[] >>
+          gvs[fds_lt_def] >> metis_tac[])
+      >> ‘MEM (h, f) polp’ by metis_tac[] >>
+      drule_all read_skip >> strip_tac >> simp[])
+  (* Write *)
+  >> fs[act_disc_def] >> rename1 ‘Write h bs’ >>
+  ‘LENGTH bs < 256 ** 8’ by simp[] >>
+  drule_all write_step >> disch_then (qspec_then ‘h’ strip_assume_tac) >>
+  qexistsl_tac [‘Wrote’, ‘w'’, ‘st'’, ‘s'’, ‘hs'’, ‘evs’, ‘MAP l0_v2_event evs’] >>
+  gvs[fds_lt_def] >> metis_tac[]
+QED

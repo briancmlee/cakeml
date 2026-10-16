@@ -659,8 +659,24 @@ Definition v2of_def:
        future := LGENLIST (λn. untr lfd a (w.env (w.clock + n) [])) NONE |>
 End
 
-Theorem v2of_props:
-  ep_server_world v2_calls lfd a w ∧ no_backpressure w ∧ open_loop w ∧ ep_rely w ⇒
+(* The rely, for the program that only polls *)
+Definition polls_rely_def:
+  polls_rely (w:eworld) ⇔
+    alloc_ok w.alloc ∧
+    ∀k wk. ep_after w (REPLICATE k («sock_poll», [], [])) = SOME wk ⇒
+           ep_step_ok (wk with clock := wk.clock + 1) (wk.env wk.clock wk.hist)
+End
+
+Theorem ep_rely_polls:
+  ep_rely w ⇒ polls_rely w
+Proof
+  rw[ep_rely_def, ep_sched_ok_def, polls_rely_def] >> metis_tac[]
+QED
+
+(* The version-2 world of a fixed-schedule world needs only the rely of
+   the program that only polls *)
+Theorem v2of_props_polls:
+  ep_server_world v2_calls lfd a w ∧ no_backpressure w ∧ open_loop w ∧ polls_rely w ⇒
   server_world2 lfd (v2of lfd a w) ∧ v2rel lfd a (v2of lfd a w) w ∧
   same_answers (socket2_ffi (v2of lfd a w)) (ep_ffi w)
 Proof
@@ -674,11 +690,11 @@ Proof
   TRY (simp[same_answers_def] >> metis_tac[v2rel_run_calls]) >>
   ‘sk0.listening = [(lfd,[])] ∧ sk0.clients = [] ∧ sk0.open_fds = [] ∧
    sk0.alloc = w.alloc’ by simp[Abbr ‘sk0’, v2of_def] >>
-  simp[server_world2_def] >> conj_tac >- fs[ep_rely_def] >>
+  simp[server_world2_def] >> conj_tac >- fs[polls_rely_def] >>
   simp[sched_wf2_def] >> gen_tac >>
   drule_then (qspec_then ‘n’ strip_assume_tac) v2_after_polls >>
   ‘ep_step_ok (wk with clock := wk.clock + 1) (wk.env wk.clock wk.hist)’
-    by (qpat_x_assum ‘ep_rely w’ mp_tac >> simp[ep_rely_def, ep_sched_ok_def] >>
+    by (qpat_x_assum ‘polls_rely w’ mp_tac >> simp[polls_rely_def] >>
         strip_tac >> first_x_assum drule >> simp[]) >>
   gvs[v2rel_def] >>
   first_x_assum (qspecl_then [‘0’, ‘wk.hist’] assume_tac) >> fs[] >>
@@ -686,6 +702,14 @@ Proof
   disch_then (qspecl_then [‘ticks2 n sk0’, ‘wk with clock := wk.clock + 1’] mp_tac) >>
   imp_res_tac core_all_up >>
   simp[next_step2_fut]
+QED
+
+Theorem v2of_props:
+  ep_server_world v2_calls lfd a w ∧ no_backpressure w ∧ open_loop w ∧ ep_rely w ⇒
+  server_world2 lfd (v2of lfd a w) ∧ v2rel lfd a (v2of lfd a w) w ∧
+  same_answers (socket2_ffi (v2of lfd a w)) (ep_ffi w)
+Proof
+  metis_tac[v2of_props_polls, ep_rely_polls]
 QED
 
 Theorem v2_converse:

@@ -67,24 +67,78 @@ Definition simple_class_def:
     ep_server_world v2_calls lfd a w ∧ no_backpressure w ∧ open_loop w ∧ ep_rely w
 End
 
+(* The rely for programs making only the calls Q *)
+Definition rely_on_def:
+  rely_on Q (w:eworld) ⇔
+    alloc_ok w.alloc ∧
+    ∀cs w'. EVERY (λ(n, conf, bys). Q n) cs ∧ ep_after w cs = SOME w' ⇒
+            ep_step_ok (w' with clock := w'.clock + 1) (w'.env w'.clock w'.hist)
+End
+
+Definition ev_in_def:
+  ev_in Q ev ⇔ ∃n conf bs. ev = IO_event (ExtCall n) conf bs ∧ Q n
+End
+
+(* The class, for programs making only the calls Q (polls among them) *)
+Definition rclass_def:
+  rclass Q lfd a w ⇔
+    ep_server_world v2_calls lfd a w ∧ no_backpressure w ∧ open_loop w ∧ rely_on Q w ∧
+    Q «sock_poll»
+End
+
+Theorem simple_rclass:
+  simple_class lfd a w ⇒ rclass (K T) lfd a w
+Proof
+  rw[simple_class_def, rclass_def, rely_on_def, ep_rely_def, ep_sched_ok_def] >>
+  metis_tac[]
+QED
+
+Theorem replay_ok_ev_in:
+  ∀w evs. replay_ok w evs ⇒ EVERY (ev_in (K T)) evs
+Proof
+  ho_match_mp_tac replay_ok_ind >> rw[replay_ok_def, ev_in_def] >>
+  every_case_tac >> fs[] >> metis_tac[]
+QED
+
+Theorem replay_ok_after_in:
+  ∀w evs. replay_ok w evs ∧ EVERY (ev_in Q) evs ⇒
+          ∃cs. EVERY (λ(n, conf, bys). Q n) cs ∧ ep_after w cs = SOME (ep_replay w evs)
+Proof
+  ho_match_mp_tac replay_ok_ind >> rw[replay_ok_def, ep_replay_def]
+  >- (qexists_tac ‘[]’ >> simp[ep_after_def]) >>
+  every_case_tac >> gvs[ev_in_def] >>
+  qexists_tac ‘(n, conf, MAP FST bs) :: cs’ >> simp[ep_after_def]
+QED
+
+Theorem rclass_polls:
+  rclass Q lfd a w ⇒ polls_rely w
+Proof
+  simp[rclass_def, rely_on_def, polls_rely_def] >> rpt strip_tac >>
+  first_x_assum irule >> qexists_tac ‘REPLICATE k («sock_poll», [], [])’ >>
+  fs[EVERY_REPLICATE]
+QED
+
 Theorem class_reach:
-  simple_class lfd a w0 ∧ replay_ok w0 evs ⇒
+  rclass Q lfd a w0 ∧ replay_ok w0 evs ⇒
   ∃sk. v2rel lfd a sk (ep_replay w0 evs) ∧ (ep_replay w0 evs).env = w0.env
 Proof
-  rw[simple_class_def] >> drule_all v2of_props >> strip_tac >>
+  strip_tac >> imp_res_tac rclass_polls >> fs[rclass_def] >>
+  drule_all v2of_props_polls >> strip_tac >>
   drule replay_ok_after >> strip_tac >> metis_tac[v2rel_after]
 QED
 
 Theorem class_inv:
-  simple_class lfd a w0 ⇒
-  ∀evs. replay_ok w0 evs ⇒ ginv lfd a w0 evs (ep_replay w0 evs)
+  rclass Q lfd a w0 ⇒
+  ∀evs. replay_ok w0 evs ∧ EVERY (ev_in Q) evs ⇒ ginv lfd a w0 evs (ep_replay w0 evs)
 Proof
   strip_tac >> ho_match_mp_tac SNOC_INDUCT >> conj_tac
-  >- (fs[simple_class_def, ep_server_world_def] >>
+  >- (fs[rclass_def, ep_server_world_def] >>
       simp[ginv_def, ep_replay_def, recv_of_def, queue_ok_def, opened_fds_def,
            sent2_upto_def, arrivals2_upto_def, nconn_def]) >>
   rpt gen_tac >> strip_tac >> REWRITE_TAC[SNOC_APPEND] >> rpt strip_tac >>
   ‘replay_ok w0 evs’ by fs[replay_ok_APPEND] >> fs[] >>
+  ‘∃cs. EVERY (λ(n, conf, bys). Q n) cs ∧ ep_after w0 cs = SOME (ep_replay w0 evs)’
+    by (irule replay_ok_after_in >> fs[]) >>
   drule_all class_reach >> strip_tac >>
   drule replay_SNOC >> strip_tac >> gvs[] >>
   qabbrev_tac ‘v0 = ep_replay w0 evs’ >>
@@ -101,14 +155,12 @@ Proof
         by simp[event_opened_def, event_accepted_def] >>
       gvs[] >>
       ‘ep_step_ok (v0 with clock := v0.clock + 1) (v0.env v0.clock v0.hist)’
-        by (fs[simple_class_def, ep_rely_def, ep_sched_ok_def] >>
-            ‘∃cs. ep_after w0 cs = SOME v0’ by (drule replay_ok_after >> simp[Abbr ‘v0’]) >>
-            first_x_assum drule >> fs[]) >>
+        by (fs[rclass_def, rely_on_def] >> first_x_assum drule_all >> fs[Abbr ‘v0’]) >>
       ‘core lfd a sk v0’ by fs[v2rel_def] >>
       imp_res_tac core_all_up >>
       qabbrev_tac ‘c = v0.clock’ >>
       qabbrev_tac ‘es = w0.env c []’ >>
-      ‘v0.env c v0.hist = es’ by fs[simple_class_def, open_loop_def, Abbr ‘es’] >>
+      ‘v0.env c v0.hist = es’ by fs[rclass_def, open_loop_def, Abbr ‘es’] >>
       ‘fut_step (v2of lfd a w0).future (c − w0.clock) = untr lfd a es’
         by simp[v2of_def, fut_step_def, LNTH_LGENLIST, Abbr ‘es’] >>
       ‘ep_tick v0 = FOLDL ep_deliver (v0 with clock := c + 1) es’
@@ -152,7 +204,7 @@ QED
 
 (* Episode j is channel j *)
 Theorem class_chan:
-  simple_class lfd a w0 ∧ replay_ok w0 evs ∧ j < LENGTH (opened_fds evs) ⇒
+  rclass Q lfd a w0 ∧ replay_ok w0 evs ∧ EVERY (ev_in Q) evs ∧ j < LENGTH (opened_fds evs) ⇒
   ep_chan w0 evs j = SOME j
 Proof
   strip_tac >> simp[ep_chan_def] >>
@@ -169,6 +221,7 @@ Proof
     by (drule TAKE_EL_SNOC >> simp[SNOC_APPEND, ADD1]) >>
   ‘replay_ok w0 (TAKE i evs ++ [EL i evs])’ by metis_tac[replay_ok_TAKE] >>
   ‘replay_ok w0 (TAKE i evs)’ by fs[replay_ok_APPEND] >>
+  ‘EVERY (ev_in Q) (TAKE i evs)’ by fs[EVERY_TAKE] >>
   drule_all class_inv >> strip_tac >>
   drule_all class_reach >> strip_tac >>
   drule replay_SNOC >> strip_tac >> fs[] >>
@@ -340,16 +393,22 @@ QED
    The converse
    ------------------------------------------------------------------------ *)
 
-(* echo_spec2 makes a program keep polling in every world of the class
-   that does not saturate *)
-Theorem echo_spec2_ticks:
-  echo_spec2 lfd prog ∧ simple_class lfd a w ∧ nonsat lfd a w ∧
-  semantics_prog (init_state (socket2_ffi (v2of lfd a w))) init_env prog (Diverge io) ⇒
+(* The worlds one more client after step k *)
+Overload ext1s = “λlfd a w sk1. ∃k. sk1 = ext1 lfd (v2of lfd a w) k (nconn (v2of lfd a w) k)”
+
+(* A program live in those worlds keeps polling in every world of the
+   class that does not saturate *)
+Theorem live2_ticks:
+  rclass Q lfd a w ∧ nonsat lfd a w ∧
+  semantics_prog (init_state (socket2_ffi (v2of lfd a w))) init_env prog (Diverge io) ∧
+  (∀sk1. server_world2 lfd sk1 ∧ ext1s lfd a w sk1 ⇒
+         ∃io'. semantics_prog (init_state (socket2_ffi sk1)) init_env prog (Diverge io') ∧
+               echo_live2 sk1 io') ⇒
   ticks_forever w io
 Proof
   rw[ticks_forever_def, eventually_def] >> CCONTR_TAC >> fs[] >>
-  ‘simple_class lfd a w’ by simp[] >>
-  fs[simple_class_def] >> drule_all v2of_props >> strip_tac >>
+  imp_res_tac rclass_polls >>
+  fs[rclass_def] >> drule_all v2of_props_polls >> strip_tac >>
   qabbrev_tac ‘sk0 = v2of lfd a w’ >>
   ‘semantics_prog (init_state (ep_ffi w)) init_env prog (Diverge io)’
     by (‘(socket2_ffi sk0).io_events = (ep_ffi w).io_events’
@@ -379,8 +438,8 @@ Proof
   ‘semantics_prog (init_state (socket2_ffi sk1)) init_env prog (Diverge io)’
     by (irule diverge_same_prefix >> qexistsl_tac [‘kk’, ‘sk0’] >>
         simp[Abbr ‘sk1’, ext1_agree]) >>
-  qpat_assum ‘echo_spec2 _ _’ (mp_tac o SIMP_RULE std_ss [echo_spec2_def]) >>
-  disch_then (qspec_then ‘sk1’ mp_tac) >> impl_tac >- fs[] >> strip_tac >>
+  qpat_x_assum ‘∀sk1. server_world2 _ _ ∧ _ ⇒ _’ (qspec_then ‘sk1’ mp_tac) >>
+  impl_tac >- (fs[] >> qexists_tac ‘kk’ >> simp[Abbr ‘sk1’, Abbr ‘m’]) >> strip_tac >>
   ‘io' = io’ by metis_tac[diverge_unique] >> gvs[] >>
   fs[echo_live2_def] >>
   first_x_assum (qspecl_then [‘m’, ‘SUC kk’] strip_assume_tac) >>
@@ -411,6 +470,65 @@ Proof
   fs[]
 QED
 
+Theorem echo_spec2_ticks:
+  echo_spec2 lfd prog ∧ simple_class lfd a w ∧ nonsat lfd a w ∧
+  semantics_prog (init_state (socket2_ffi (v2of lfd a w))) init_env prog (Diverge io) ⇒
+  ticks_forever w io
+Proof
+  strip_tac >> irule live2_ticks >> simp[] >>
+  qexistsl_tac [‘K T’, ‘a’, ‘lfd’, ‘prog’] >> simp[simple_rclass] >>
+  fs[echo_spec2_def] >> metis_tac[]
+QED
+
+(* MAIN: a run in the class's version-2 world, live there and in the
+   worlds one more client after any step, is live in the endpoint world
+   and keeps polling *)
+Theorem endpoint_of_live2:
+  rclass Q lfd a w ∧ nonsat lfd a w ∧
+  semantics_prog (init_state (socket2_ffi (v2of lfd a w))) init_env prog (Diverge io) ∧
+  (∀evs. LPREFIX (fromList evs) io ⇒ EVERY (ev_in Q) evs) ∧
+  echo_live2 (v2of lfd a w) io ∧
+  (∀sk1. server_world2 lfd sk1 ∧ ext1s lfd a w sk1 ⇒
+         ∃io'. semantics_prog (init_state (socket2_ffi sk1)) init_env prog (Diverge io') ∧
+               echo_live2 sk1 io') ⇒
+  semantics_prog (init_state (ep_ffi w)) init_env prog (Diverge io) ∧
+  sym_live (λx y. x ≼ y) w io ∧ ticks_forever w io
+Proof
+  strip_tac >>
+  imp_res_tac rclass_polls >>
+  ‘ep_server_world v2_calls lfd a w ∧ no_backpressure w ∧ open_loop w’ by fs[rclass_def] >>
+  drule_all v2of_props_polls >> strip_tac >>
+  qabbrev_tac ‘sk0 = v2of lfd a w’ >>
+  ‘semantics_prog (init_state (ep_ffi w)) init_env prog (Diverge io)’
+    by (‘(socket2_ffi sk0).io_events = (ep_ffi w).io_events’
+          by simp[socket2_ffi_def, ep_ffi_def] >>
+        metis_tac[same_answers_semantics]) >>
+  simp[] >>
+  ‘∀evs. LPREFIX (fromList evs) io ⇒ replay_ok w evs’ by metis_tac[trace_replay_ok] >>
+  ‘∀evs. LPREFIX (fromList evs) io ⇒ EVERY (event_ok no_conn_send) evs’
+    by (rpt strip_tac >>
+        qpat_assum ‘semantics_prog (init_state (socket2_ffi _)) _ _ _’
+          (fn th => mp_tac (MATCH_MP (REWRITE_RULE [GSYM AND_IMP_INTRO]
+             (Q.INST [‘P’ |-> ‘no_conn_send’] run_events_ok)) th)) >>
+        simp[socket2_ffi_def, socket2_oracle_ok]) >>
+  conj_tac
+  >- (rw[sym_live_def, eventually_def] >>
+      ‘ginv lfd a w evs (ep_replay w evs)’ by metis_tac[class_inv] >>
+      fs[ginv_def, peer_at_of] >>
+      qabbrev_tac ‘N = (ep_replay w evs).clock − w.clock’ >>
+      fs[echo_live2_def] >>
+      first_x_assum (qspecl_then [‘c’, ‘N’] strip_assume_tac) >>
+      rename1 ‘sent2_upto c N sk0 ≼ ep_written c evs'’ >>
+      ‘ep_written c evs' ≠ []’ by (strip_tac >> fs[Abbr ‘sk0’]) >>
+      ‘c < LENGTH (opened_fds evs')’
+        by (fs[ep_written_def] >> pop_assum mp_tac >> rw[] >>
+            metis_tac[opened_accepted_fds]) >>
+      qexists_tac ‘evs'’ >> simp[] >> qexists_tac ‘c’ >>
+      conj_tac >- metis_tac[class_chan] >>
+      metis_tac[ch_sent_ep_written])
+  >> irule live2_ticks >> simp[] >> metis_tac[]
+QED
+
 (* MAIN (completeness check): a program meeting echo_spec2 meets the
    endpoint form of EchoSpec2 in the simple class, in every world that does
    not saturate the fd space *)
@@ -427,36 +545,24 @@ Proof
   qpat_assum ‘echo_spec2 _ _’ (mp_tac o SIMP_RULE std_ss [echo_spec2_def]) >>
   disch_then (qspec_then ‘sk0’ mp_tac) >> simp[] >> strip_tac >>
   qexists_tac ‘io’ >>
-  ‘semantics_prog (init_state (ep_ffi w)) init_env prog (Diverge io)’
-    by (‘(socket2_ffi sk0).io_events = (ep_ffi w).io_events’
-          by simp[socket2_ffi_def, ep_ffi_def] >>
-        metis_tac[same_answers_semantics]) >>
-  simp[] >>
-  ‘∀evs. LPREFIX (fromList evs) io ⇒ replay_ok w evs’ by metis_tac[trace_replay_ok] >>
+  mp_tac (Q.INST [‘Q’ |-> ‘K T’] endpoint_of_live2) >>
+  impl_tac
+  >- (simp[simple_rclass] >> conj_tac
+      >- (rpt strip_tac >> irule replay_ok_ev_in >> qexists_tac ‘w’ >>
+          irule trace_replay_ok >> qexistsl_tac [‘io’, ‘prog’] >> simp[] >>
+          ‘(socket2_ffi sk0).io_events = (ep_ffi w).io_events’
+            by simp[socket2_ffi_def, ep_ffi_def] >>
+          metis_tac[same_answers_semantics]) >>
+      qpat_x_assum ‘echo_spec2 _ _’ mp_tac >> simp[echo_spec2_def] >> metis_tac[]) >>
+  strip_tac >> simp[ep_echo2_guar_def] >>
   ‘∀evs. LPREFIX (fromList evs) io ⇒ EVERY (event_ok no_conn_send) evs’
     by (rpt strip_tac >>
         qpat_assum ‘semantics_prog (init_state (socket2_ffi _)) _ _ _’
           (fn th => mp_tac (MATCH_MP (REWRITE_RULE [GSYM AND_IMP_INTRO]
              (Q.INST [‘P’ |-> ‘no_conn_send’] run_events_ok)) th)) >>
         simp[socket2_ffi_def, socket2_oracle_ok]) >>
-  simp[ep_echo2_guar_def] >> rpt conj_tac
-  >- (rw[always_def] >> fs[echo_safe2_def] >> res_tac >>
-      metis_tac[ch_sent_ep_written, ch_read_ep_read])
-  >- (rw[sym_live_def, eventually_def] >>
-      ‘ginv lfd a w evs (ep_replay w evs)’ by metis_tac[class_inv] >>
-      fs[ginv_def, peer_at_of] >>
-      qabbrev_tac ‘N = (ep_replay w evs).clock − w.clock’ >>
-      fs[echo_live2_def] >>
-      first_x_assum (qspecl_then [‘c’, ‘N’] strip_assume_tac) >>
-      rename1 ‘sent2_upto c N sk0 ≼ ep_written c evs'’ >>
-      ‘ep_written c evs' ≠ []’ by (strip_tac >> fs[Abbr ‘sk0’]) >>
-      ‘c < LENGTH (opened_fds evs')’
-        by (fs[ep_written_def] >> pop_assum mp_tac >> rw[] >>
-            metis_tac[opened_accepted_fds]) >>
-      qexists_tac ‘evs'’ >> simp[] >> qexists_tac ‘c’ >>
-      conj_tac >- metis_tac[class_chan] >>
-      metis_tac[ch_sent_ep_written])
-  >- (irule echo_spec2_ticks >> simp[] >> metis_tac[])
+  rw[always_def] >> fs[echo_safe2_def] >> res_tac >>
+  metis_tac[ch_sent_ep_written, ch_read_ep_read]
 QED
 
 (* MAIN: EchoSpec2 and its endpoint form, in the simple class.  The

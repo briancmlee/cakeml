@@ -19,6 +19,16 @@ Done (on this branch):
   rn1_rn2_step (the renaming inverts), rn2_step_count, step_ok2_ix, rn2_step_conns,
   v1of2 (the v1 world of a v2 world), F2_inj.
 
+UPDATE (58262ecb8, Holmake green): v1of2_ticks (v1of2 follows sk2 along ticks, every
+step effective), v1of2_conns (sched_conns m = GENLIST F2 (nconn sk2 m)), v1of2_props
+(server_world, ∀m. LENGTH (sched_conns m ..) ≤ M, v12rel). Steps 2-4 below are DONE.
+sched_connects_le form: convert with V1Inst's sched_connects_le_conns (make it public).
+
+BOUNDARY ISSUE (reported to coordinator 2026-10-16, awaiting user decision): ⇒ with
+nonsat is false when w.reserved = [] and M = 2^64-4 (a program that stops polling after
+accepting 2^64-4 clients that have all sent EOF meets echo_spec_le but not ticks_forever).
+Proposed: nonsat1 (reserved + M + 4 < 2^64) for the v1 ⇒ directions. Working with nonsat1.
+
 Next steps, in order:
 1. Holmake the whole endpoint-world on this branch. Fix V1Inst/V1Disc/V1Echo/V1Http/V1Kv
    after the v12rel generalization (expected: only small call-site changes, e.g.

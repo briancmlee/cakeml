@@ -147,7 +147,7 @@ Proof
   simp[rn2_step_count]
 QED
 
-Theorem findi_GENLIST[local]:
+Theorem findi_GENLIST:
   (∀i i'. i < N ∧ i' < N ∧ fdf i = fdf i' ⇒ i = i') ∧ j < n ∧ n ≤ N ⇒
   findi (fdf j) (GENLIST fdf n) = j
 Proof

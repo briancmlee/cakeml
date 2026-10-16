@@ -2326,3 +2326,128 @@ Proof
     by (SELECT_ELIM_TAC >> metis_tac[ecm_unique]) >>
   rw[erun_alloc_def] >> metis_tac[]
 QED
+
+(* ------------------------------------------------------------------------
+   R1-safe: the run
+   ------------------------------------------------------------------------ *)
+
+(* One round of the layer's run, unfolded *)
+Theorem ehround_step:
+  ehacts_tot lfd (ehst lfd ifds m w0 n)
+    (new_actions (log_of m) (ehhist lfd ifds m w0 n)) = (rs, (w1, hs1)) ∧
+  ehpoll lfd hs1 (ifds (ehhist lfd ifds m w0 n)) w1 = (rdy, w2, hs2) ⇒
+  ehhist lfd ifds m w0 (SUC n) = ehhist lfd ifds m w0 n ++ [ssnap rdy rs] ∧
+  ehst lfd ifds m w0 (SUC n) = (w2, hs2)
+Proof
+  strip_tac >> simp[ehhist_def, ehst_def, ehrounds_def] >>
+  Cases_on ‘ehrounds lfd ifds m w0 n’ >> rename1 ‘_ = (h, st)’ >> PairCases_on ‘st’ >>
+  gvs[ehhist_def, ehst_def]
+QED
+
+Theorem no_socketless_APPEND:
+  no_socketless (h ++ h') ⇔ no_socketless h ∧ no_socketless h'
+Proof
+  simp[no_socketless_def] >> metis_tac[]
+QED
+
+(* MAIN (R1-safe), for a run looked at up to round N: in ANY L0 world, the
+   prefetching L1 with connects running the computation m has exactly the
+   history of the endpoint handle layer running m in the endpoint world pew
+   built from L1's own run, round by round, provided no connect got no
+   socket; the relation and the invariants hold throughout *)
+Theorem l1ep_refines_ehl_upto:
+  l0_rely w0 ∧ fds_lt w0 ∧ MEM lfd (l0_used w0) ∧
+  (∀n'. n' ≤ N ⇒ SND (ecm lfd hw ifds m w0 n') + 1 < dimword (:64)) ⇒
+  ∀n h ws evs logs.
+    n ≤ N ∧ erounds lfd hw ifds m (w0, einit) n = SOME (h, ws, evs, logs) ∧
+    no_socketless h ⇒
+    ehhist lfd ifds m (pew lfd a hw ifds m w0 calls) n = h ∧
+    ehs_rel (SND (ehst lfd ifds m (pew lfd a hw ifds m w0 calls) n)) (SND ws) ∧
+    ev_rel lfd a (FST (ecm lfd hw ifds m w0 n)) (SND ws)
+      (FST (ehst lfd ifds m (pew lfd a hw ifds m w0 calls) n)) ∧
+    LENGTH (FST (ehst lfd ifds m (pew lfd a hw ifds m w0 calls) n)).chans =
+      SND (ecm lfd hw ifds m w0 n) ∧
+    (FST (ehst lfd ifds m (pew lfd a hw ifds m w0 calls) n)).alloc =
+      erun_alloc lfd hw ifds m w0 ∧
+    (FST (ehst lfd ifds m (pew lfd a hw ifds m w0 calls) n)).env =
+      (λn hist. earr lfd a hw ifds m w0 n) ∧
+    (FST (ehst lfd ifds m (pew lfd a hw ifds m w0 calls) n)).clock = n ∧
+    (FST (ehst lfd ifds m (pew lfd a hw ifds m w0 calls) n)).hist = [] ∧
+    eown lfd (SND ws) ∧ l0owne lfd (FST ws) (SND ws) ∧
+    l0_rely (FST ws) ∧ fds_lt (FST ws)
+Proof
+  strip_tac >> Induct
+  >- (simp[erounds_def, ehhist_def, ehst_def, ehrounds_def, ecm_def, pew_def] >>
+      rw[] >> simp[einit_def, pinit_def, l1init_def, ehinit_def, ehs_rel_def, ev_rel_def,
+                   eown_def, pown_def, l0owne_def, l0own_def, inb_of_def]) >>
+  rpt gen_tac >> strip_tac >>
+  qpat_assum ‘erounds _ _ _ _ _ (SUC _) = _’
+    (strip_assume_tac o SIMP_RULE (srw_ss()) [AllCaseEqs()] o
+     ONCE_REWRITE_RULE [erounds_def]) >>
+  rpt BasicProvers.VAR_EQ_TAC >>
+  ‘n ≤ N ∧ no_socketless h'’ by gvs[no_socketless_APPEND] >>
+  qpat_x_assum ‘∀h ws evs logs. _’ (qspecl_then [‘h'’, ‘ws'’, ‘evs'’, ‘logs'’] mp_tac) >>
+  simp[] >> strip_tac >>
+  qpat_x_assum ‘eround _ _ _ _ _ = _’ mp_tac >> simp[eround_def, AllCaseEqs()] >> strip_tac >>
+  rpt BasicProvers.VAR_EQ_TAC >>
+  rename1 ‘eacts _ _ ws' _ = SOME (rs, aevs, ws1)’ >>
+  PairCases_on ‘ws'’ >> PairCases_on ‘ws1’ >> PairCases_on ‘ws’ >> fs[] >>
+  qabbrev_tac ‘W0 = pew lfd a hw ifds m w0 calls’ >>
+  Cases_on ‘ehst lfd ifds m W0 n’ >> rename1 ‘_ = (w, hs)’ >> fs[] >>
+  Cases_on ‘ecm lfd hw ifds m w0 n’ >> rename1 ‘ecm _ _ _ _ _ n = (cm, k)’ >> fs[] >>
+  ‘eacts_of lfd hw ifds m w0 n = SOME (rs, aevs, (ws10, ws11))’ by simp[eacts_of_def] >>
+  ‘econ lfd hw ifds m w0 n = rfds ws11 rs’ by simp[econ_def] >>
+  ‘elog lfd hw ifds m w0 n = log’
+    by (‘LENGTH logs' = n’
+          by (qpat_x_assum ‘erounds _ _ _ _ _ n = _’ assume_tac >>
+              drule erounds_logs >> simp[]) >>
+        qpat_x_assum ‘erounds _ _ _ _ _ (SUC n) = _’ assume_tac >>
+        drule elog_EL >> disch_then (qspec_then ‘n’ mp_tac) >> simp[EL_APPEND2]) >>
+  ‘ecm1 lfd hw ifds m w0 n = (cnew k (rfds ws11 rs) ++ cm, k + LENGTH (rfds ws11 rs))’
+    by simp[ecm1_def] >>
+  qabbrev_tac ‘fs = rfds ws11 rs’ >>
+  Cases_on ‘arrs lfd (cnew k fs ++ cm, k + LENGTH fs) log’ >> rename1 ‘_ = (as, ck)’ >>
+  PairCases_on ‘ck’ >> rename1 ‘arrs _ _ _ = (as, cm', k')’ >>
+  ‘ecm lfd hw ifds m w0 (SUC n) = (cm', k')’ by simp[ecm_SUC] >>
+  ‘∃new. cm' = new ++ (cnew k fs ++ cm)’ by (drule arrs_suffix >> simp[]) >>
+  ‘∀f j. MEM (f, j) cm' ⇒ ∀used. ¬MEM f used ⇒ erun_alloc lfd hw ifds m w0 j used = f’
+    by (rpt strip_tac >> irule erun_alloc_eq >> simp[] >> qexists_tac ‘SUC n’ >>
+        qpat_x_assum ‘ecm _ _ _ _ _ (SUC n) = _’ (fn th => REWRITE_TAC [th]) >>
+        REWRITE_TAC [pairTheory.FST] >> first_assum ACCEPT_TAC) >>
+  ‘¬MEM (EConnected NONE) rs’
+    by (qpat_x_assum ‘no_socketless (_ ++ [_])’ mp_tac >>
+        simp[no_socketless_APPEND, no_socketless_def, ssnap_def]) >>
+  ‘∀f j. MEM (f, j) (cnew (LENGTH w.chans) (rfds ws11 rs)) ⇒
+         ∀used. ¬MEM f used ⇒ w.alloc j used = f’
+    by (rpt strip_tac >>
+        qpat_x_assum ‘w.alloc = _’ (fn th => REWRITE_TAC [th]) >>
+        qpat_x_assum ‘∀f j. MEM (f, j) cm' ⇒ _’ irule >> simp[] >>
+        qpat_x_assum ‘cm' = _’ SUBST1_TAC >> simp[MEM_APPEND] >>
+        qpat_x_assum ‘MEM _ (cnew _ _)’ mp_tac >> fs[Abbr ‘fs’]) >>
+  qpat_x_assum ‘eacts _ _ _ _ = _’ assume_tac >>
+  drule_all ev_acts >> strip_tac >>
+  rename1 ‘ehacts lfd (w, hs) _ = SOME (rs, (w1, hs1))’ >>
+  ‘LENGTH w1.chans = k + LENGTH fs’ by simp[Abbr ‘fs’, rfds_length] >>
+  ‘cnew (LENGTH w.chans) (rfds ws11 rs) = cnew k fs’ by simp[Abbr ‘fs’] >>
+  pop_assum (fn th => RULE_ASSUM_TAC (REWRITE_RULE [th])) >>
+  ‘arrs lfd (cnew k fs ++ cm, LENGTH w1.chans) log = (as, (cm', k'))’ by simp[] >>
+  ‘∀f j. MEM (f, j) cm' ∧ LENGTH w1.chans ≤ j ⇒ ∀used. ¬MEM f used ⇒ w1.alloc j used = f’
+    by (rpt strip_tac >> qpat_x_assum ‘w1.alloc = _’ (fn th => REWRITE_TAC [th]) >>
+        qpat_x_assum ‘w.alloc = _’ (fn th => REWRITE_TAC [th]) >>
+        qpat_x_assum ‘∀f j. MEM (f, j) cm' ⇒ _’ irule >> simp[]) >>
+  ‘k' + 1 < dimword (:64)’
+    by (qpat_x_assum ‘∀n'. n' ≤ N ⇒ _’ (qspec_then ‘SUC n’ mp_tac) >> simp[]) >>
+  ‘esett lfd hw ifds m w0 n = rsettles (cnew k fs ++ cm) ws11 ws1’
+    by simp[esett_def] >>
+  ‘w1.env w1.clock w1.hist = MAP (conv a) as ++ rsettles (cnew k fs ++ cm) ws11 ws1’
+    by (simp[earr_def] >> fs[]) >>
+  qpat_x_assum ‘etail _ _ _ _ = _’ assume_tac >>
+  drule_all ev_tail >> strip_tac >>
+  rename1 ‘ehpoll lfd hs1 _ w1 = (rdy, w2, hs2)’ >>
+  ‘ehacts_tot lfd (ehst lfd ifds m W0 n) (new_actions (log_of m) (ehhist lfd ifds m W0 n)) =
+   (rs, (w1, hs1))’ by simp[ehacts_tot_def] >>
+  drule_all ehround_step >> strip_tac >> simp[] >> fs[] >>
+  qpat_x_assum ‘ev_rel _ _ cm' ws1 w2’ mp_tac >>
+  qpat_x_assum ‘cm' = _’ (fn th => rewrite_tac[th]) >>
+  rewrite_tac[APPEND_ASSOC]
+QED

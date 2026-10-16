@@ -474,6 +474,12 @@ this; settled here):
   - code 3 (EINPROGRESS): pending;
   - code 4 (ECONNREFUSED) or another code: failed at once.
   The value is always the fd, if one was allocated.
+- **A refused channel keeps its fd until the program closes it**, whether
+  it was refused at once (code 4) or after pending (settled at a tick).
+  This is POSIX: a failed connect leaves the socket open. So the fd is
+  never reused before `sys_close`, and fd discipline and `alloc` are
+  unchanged. Closing it is L1's job (the connect wrapper closes on
+  failure).
 - **In the endpoint world:** `status = Connecting | Up | Refused`. A
   refusal settled at a tick sets `err := SOME ECONNREFUSED` and
   `broken := T` (a pending error, as the kernel's `so_error`).

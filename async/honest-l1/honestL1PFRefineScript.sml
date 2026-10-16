@@ -1500,3 +1500,153 @@ Proof
   gvs[wagree_def, update_client_def, AFUPDKEY_MAP_FST] >>
   rw[LIST_EQ_REWRITE, EL_MAP, EL_LUPDATE] >> rw[] >> gvs[]
 QED
+
+Theorem step_ok2_agree:
+  ∀as s t. wagree s t ⇒ (step_ok2 s as ⇔ step_ok2 t as)
+Proof
+  Induct >> simp[step_ok2_def] >> rpt strip_tac >>
+  qpat_assum ‘wagree s t’ (strip_assume_tac o MATCH_MP wagree_len) >>
+  ‘LENGTH s.reserved = LENGTH t.reserved’ by gvs[wagree_def] >>
+  drule deliver2_agree >> disch_then (qspec_then ‘h’ assume_tac) >>
+  first_x_assum drule >> strip_tac >> simp[] >>
+  Cases_on ‘h’ >> simp[arrival_ok2_def] >> metis_tac[]
+QED
+
+Theorem hdo_agree:
+  hdo lfd (s, hs) a = SOME (r, (s', hs'), evs) ⇒ wagree s' s
+Proof
+  Cases_on ‘a’ >>
+  rw[hdo_def, sock_accept2_def, sock_read2_def, sock_write2_def, sock_close2_def,
+     update_client_def, AllCaseEqs()] >>
+  gvs[wagree_def, AFUPDKEY_MAP_FST] >>
+  rw[LIST_EQ_REWRITE, EL_MAP, EL_LUPDATE] >> rw[]
+QED
+
+Theorem hacts_agree:
+  ∀acts s hs rs evs s' hs'.
+    hacts lfd (s, hs) acts = SOME (rs, evs, (s', hs')) ⇒ wagree s' s
+Proof
+  Induct >> simp[hacts_def] >> rpt gen_tac >> strip_tac >> gvs[AllCaseEqs()] >>
+  rename1 ‘hdo _ _ _ = SOME (r1, st1, evs1)’ >> PairCases_on ‘st1’ >>
+  drule hdo_agree >> first_x_assum drule >> metis_tac[wagree_trans]
+QED
+
+Theorem hacts_tot_agree:
+  hacts_tot lfd (s, hs) acts = (rs, evs, (s', hs')) ⇒ wagree s' s
+Proof
+  simp[hacts_tot_def] >> Cases_on ‘hacts lfd (s, hs) acts’ >> simp[] >>
+  rename1 ‘hacts _ _ _ = SOME y’ >> PairCases_on ‘y’ >> rw[] >>
+  drule hacts_agree >> simp[]
+QED
+
+Theorem tick2_agree:
+  wagree s t ⇒ wagree (tick2 s) (tick2 t)
+Proof
+  strip_tac >> ‘s.future = t.future’ by gvs[wagree_def] >>
+  simp[tick2_def] >> CASE_TAC >> simp[] >>
+  ‘∀as s t. wagree s t ⇒ wagree (FOLDL deliver2 s as) (FOLDL deliver2 t as)’
+    by (Induct >> simp[] >> metis_tac[deliver2_agree]) >>
+  first_x_assum irule >> gvs[wagree_def]
+QED
+
+Theorem ticks2_SUC':
+  ∀n s. ticks2 (SUC n) s = tick2 (ticks2 n s)
+Proof
+  Induct >> simp[ticks2_def] >> metis_tac[ticks2_def]
+QED
+
+Theorem future_FOLDL_deliver2[simp]:
+  ∀as s. (FOLDL deliver2 s as).future = s.future
+Proof
+  Induct >> simp[] >> rpt gen_tac >>
+  ‘(deliver2 s h).future = s.future’ by (Cases_on ‘h’ >> rw[deliver2_def, update_client_def]) >>
+  simp[]
+QED
+
+Theorem ticks2_future:
+  ∀n. (ticks2 n (psk lfd hw ifds m w0)).future =
+      LGENLIST (λi. parr lfd hw ifds m w0 (n + i)) NONE
+Proof
+  Induct
+  >- (simp[ticks2_def, psk_def] >> AP_THM_TAC >> AP_TERM_TAC >> simp[FUN_EQ_THM]) >>
+  simp[ticks2_SUC', tick2_def] >>
+  AP_THM_TAC >> AP_TERM_TAC >> simp[FUN_EQ_THM, ADD_CLAUSES]
+QED
+
+(* The world left alone agrees with the handle layer's, every round *)
+Theorem agree_run:
+  ∀n. wagree (ticks2 n s0) (FST (hst lfd ifds m s0 n))
+Proof
+  Induct >- simp[ticks2_def, hst_def, hrounds_def] >>
+  Cases_on ‘hacts_tot lfd (hst lfd ifds m s0 n) (hacts_of lfd ifds m s0 n)’ >>
+  rename1 ‘_ = (rs, r2)’ >> PairCases_on ‘r2’ >>
+  drule hround_step >> strip_tac >>
+  simp[ticks2_SUC', hpoll_def, sock_poll2_def] >>
+  Cases_on ‘hst lfd ifds m s0 n’ >> gvs[] >>
+  drule hacts_tot_agree >> strip_tac >>
+  irule tick2_agree >> metis_tac[wagree_trans, wagree_sym]
+QED
+
+(* The world built from L1's run is well formed: every arrival of its
+   schedule is effective when it arrives *)
+Theorem psk_sched_wf2:
+  l0_rely w0 ∧ fds_lt w0 ∧ MEM lfd (l0_used w0) ∧
+  (∀n. SND (pcm lfd hw ifds m w0 n) + 1 < dimword (:64)) ⇒
+  sched_wf2 (psk lfd hw ifds m w0)
+Proof
+  strip_tac >> simp[sched_wf2_def, next_step2_def, ticks2_future] >> gen_tac >>
+  qspecl_then [‘parr lfd hw ifds m w0 n’, ‘ticks2 n (psk lfd hw ifds m w0)’,
+               ‘FST (hst lfd ifds m (psk lfd hw ifds m w0) n)’] mp_tac step_ok2_agree >>
+  simp[agree_run] >> disch_then kall_tac >>
+  Cases_on ‘prounds lfd hw ifds m (w0, pinit) (SUC n)’
+  >- (simp[parr_def, plog_def] >> Cases_on ‘pcm lfd hw ifds m w0 n’ >>
+      simp[arrs_def, step_ok2_def]) >>
+  rename1 ‘_ = SOME x’ >> PairCases_on ‘x’ >>
+  qpat_assum ‘prounds _ _ _ _ _ (SUC _) = _’
+    (strip_assume_tac o SIMP_RULE (srw_ss()) [AllCaseEqs()] o
+     ONCE_REWRITE_RULE [prounds_def]) >>
+  rpt BasicProvers.VAR_EQ_TAC >>
+  rename1 ‘prounds _ _ _ _ _ n = SOME (h0, ws0, evs0, logs0)’ >>
+  rename1 ‘pround _ _ _ _ _ = SOME (snap, ws1, log, revs)’ >>
+  drule_all l1pf_refines_hl >> strip_tac >>
+  ‘hacts_of lfd ifds m (psk lfd hw ifds m w0) n = new_actions (log_of m) h0’
+    by simp[hacts_of_def] >>
+  PairCases_on ‘ws0’ >> rename1 ‘prounds _ _ _ _ _ n = SOME (h0, (w, ps), evs0, logs0)’ >>
+  PairCases_on ‘ws1’ >> rename1 ‘pround _ _ _ _ _ = SOME (snap, (w', ps'), log, revs)’ >>
+  gvs[] >>
+  Cases_on ‘hst lfd ifds m (psk lfd hw ifds m w0) n’ >> rename1 ‘_ = (s, hs)’ >> gvs[] >>
+  ‘plog lfd hw ifds m w0 n = log’
+    by (drule prounds_logs >> strip_tac >>
+        qpat_x_assum ‘prounds _ _ _ _ _ (SUC n) = _’ assume_tac >>
+        drule plog_EL >> disch_then (qspec_then ‘n’ mp_tac) >>
+        simp[EL_APPEND2]) >>
+  Cases_on ‘pcm lfd hw ifds m w0 n’ >> rename1 ‘pcm _ _ _ _ _ n = (cm, k)’ >> gvs[] >>
+  Cases_on ‘arrs lfd (cm, LENGTH s.clients) (plog lfd hw ifds m w0 n)’ >>
+  rename1 ‘_ = (as, ck)’ >> PairCases_on ‘ck’ >>
+  ‘pcm lfd hw ifds m w0 (SUC n) = (ck0, ck1) ∧ parr lfd hw ifds m w0 n = as’
+    by simp[pcm_def, parr_def] >>
+  ‘∀f j. MEM (f, j) ck0 ∧ LENGTH s.clients ≤ j ⇒
+         ∀used. ¬MEM f used ⇒ s.alloc j used = f’
+    by (rw[] >> irule run_alloc_eq >> simp[] >> qexists_tac ‘SUC n’ >> simp[]) >>
+  ‘LHD s.future = SOME as’ by simp[] >>
+  ‘ck1 + 1 < dimword (:64)’
+    by (qpat_assum ‘∀n'. SND (pcm _ _ _ _ _ n') + 1 < _’ (mp_tac o Q.SPEC ‘SUC n’) >>
+        qpat_assum ‘pcm _ _ _ _ _ (SUC n) = _’ (fn th => REWRITE_TAC [th]) >>
+        simp[]) >>
+  drule_all round_rel >> strip_tac >>
+  drule hacts_agree >> strip_tac >>
+  qspecl_then [‘as’, ‘s1’, ‘s’] mp_tac step_ok2_agree >> simp[]
+QED
+
+(* The world built from L1's run satisfies the hypotheses of the
+   version-2 server theorems (EchoSpec2's server_world2) *)
+Theorem psk_server_world:
+  l0_rely w0 ∧ fds_lt w0 ∧ MEM lfd (l0_used w0) ∧
+  (∀n. SND (pcm lfd hw ifds m w0 n) + 1 < dimword (:64)) ⇒
+  (psk lfd hw ifds m w0).listening = [(lfd, [])] ∧
+  (psk lfd hw ifds m w0).clients = [] ∧ (psk lfd hw ifds m w0).open_fds = [] ∧
+  alloc_ok (psk lfd hw ifds m w0).alloc ∧ sched_wf2 (psk lfd hw ifds m w0)
+Proof
+  strip_tac >> simp[psk_def, run_alloc_ok] >>
+  drule_all psk_sched_wf2 >> simp[psk_def]
+QED

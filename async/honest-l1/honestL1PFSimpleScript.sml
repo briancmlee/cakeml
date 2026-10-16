@@ -321,7 +321,7 @@ Definition lk_def:
   lk lfd a cm D E (w : l0world) ⇔
     qof w lfd = GENLIST (λi. a + i) (LENGTH w.chans − a) ∧ a ≤ LENGTH w.chans ∧
     (∀f c. ALOOKUP w.open_fds f = SOME c ⇒
-           ALOOKUP cm f = SOME c ∧ c < a ∧ ¬(EL c w.chans).closed) ∧
+           ALOOKUP cm f = SOME c ∧ c < a ∧ ¬(EL c w.chans).closed ∧ f ≠ lfd) ∧
     (∀f g c. ALOOKUP w.open_fds f = SOME c ∧ ALOOKUP w.open_fds g = SOME c ⇒ f = g) ∧
     (∀c. c < LENGTH w.chans ⇒ dch (D c) (E c) (EL c w.chans)) ∧
     (∀c. a ≤ c ⇒ D c = [] ∧ ¬E c)
@@ -787,6 +787,9 @@ Proof
       simp_tac std_ss [sinv_def, wk_def, lk_def] >>
       ‘¬(EL a w.chans).closed’
         by (‘dch (D a) (E a) (EL a w.chans) ∧ ¬E a’ by fs[] >> fs[dch_def]) >>
+      ‘lowest_fd w ≠ lfd’
+        by (‘¬MEM (lowest_fd w) (l0_used w)’ by (irule lowest_fd_fresh >> simp[]) >>
+            strip_tac >> gvs[sinv_def, wk_def, l0_used_def]) >>
       simp[AFUPDKEY_def, qof_def] >> rpt conj_tac >> rpt strip_tac >>
       TRY (Cases_on ‘f = lowest_fd w’ >> gvs[] >> res_tac >> simp[] >> NO_TAC) >>
       TRY (Cases_on ‘f = lowest_fd w’ >> Cases_on ‘g = lowest_fd w’ >> gvs[] >>
@@ -1669,4 +1672,356 @@ Proof
   strip_tac >> Induct >- simp[rworld_def, prun_0] >>
   drule prun_round' >> disch_then (qspecl_then [‘ARB’, ‘k’] strip_assume_tac) >>
   drule pround_hgrow >> rw[hgrow_def] >> gvs[npolls_append]
+QED
+
+(* ========================================================================
+   G2. In simple worlds no call of the run is retried, and no accept fails
+   (the latter with room for one more fd at each round's start)
+   ======================================================================== *)
+
+(* An fd L1 may fetch on without EAGAIN: the listener with a connection
+   queued, or a connection with input or an EOF pending *)
+Definition rdy_def:
+  rdy lfd w f ⇔ if f = lfd then qof w lfd ≠ [] else pend w f
+End
+
+(* A call that is not retried, and, if it is an accept on the listener,
+   does not fail *)
+Definition ok_ev_def:
+  ok_ev lfd ev ⇔ ¬retried ev ∧ (ev_on «sys_accept» lfd ev ⇒ ¬failed ev)
+End
+
+Theorem sinv_hist[simp]:
+  sinv lfd p a cm D E s (w with hist := h) ⇔ sinv lfd p a cm D E s w
+Proof
+  simp[sinv_def, wk_def, lk_def, qof_def]
+QED
+
+Theorem sinv_clock[simp]:
+  sinv lfd p a cm D E s (w with clock := c) ⇔ sinv lfd p a cm D E s w
+Proof
+  simp[sinv_def, wk_def, lk_def, qof_def]
+QED
+
+Theorem rdy_hist[simp]:
+  rdy lfd (w with hist := h) f ⇔ rdy lfd w f
+Proof
+  simp[rdy_def, qof_def, pend_def, l0_chan_of_def]
+QED
+
+Theorem readable_zip_inv:
+  ∀fes. MEM f (readable_fds (ZIP (MAP FST fes, MAP g fes))) ⇒
+        ∃e. MEM (f, e) fes ∧ ((g (f, e)).rin ∨ (g (f, e)).rhup ∨ (g (f, e)).rerr)
+Proof
+  Induct >> simp[FORALL_PROD, readable_fds_def] >> rw[] >> gvs[readable_fds_def] >>
+  metis_tac[]
+QED
+
+(* In the invariant's worlds, a readable fd is ready *)
+Theorem sinv_readable_lfd:
+  sinv lfd p a cm D E s w ∧
+  ((byte_revents (fd_revents w (lfd, e))).rin ∨ (byte_revents (fd_revents w (lfd, e))).rhup ∨
+   (byte_revents (fd_revents w (lfd, e))).rerr) ⇒
+  rdy lfd w lfd
+Proof
+  simp_tac std_ss [sinv_def, wk_def, lk_def] >> strip_tac >>
+  (‘ALOOKUP w.open_fds lfd = NONE’
+     by (Cases_on ‘ALOOKUP w.open_fds lfd’ >> simp[] >> res_tac >> fs[]) >>
+   ‘l0_chan_of w lfd = NONE’ by simp[l0_chan_of_def] >>
+   gvs[fd_revents_def, rdy_def, qof_def, byte_revents_revents_byte, no_revents_def])
+QED
+
+Theorem sinv_readable_ch:
+  sinv lfd p a cm D E s w ∧ ALOOKUP w.open_fds f = SOME c ∧
+  ((byte_revents (fd_revents w (f, e))).rin ∨ (byte_revents (fd_revents w (f, e))).rhup ∨
+   (byte_revents (fd_revents w (f, e))).rerr) ⇒
+  rdy lfd w f
+Proof
+  simp_tac std_ss [sinv_def, wk_def, lk_def] >> strip_tac >>
+  (res_tac >> ‘c < LENGTH w.chans’ by simp[] >>
+   ‘l0_chan_of w f = SOME c’ by simp[l0_chan_of_def] >>
+   ‘wch (EL c w.chans) (EL c s.clients)’ by fs[] >>
+   gvs[fd_revents_def, chan_revents_def, wch_def, rdy_def, pend_def,
+       byte_revents_revents_byte, no_revents_def] >>
+   every_case_tac >> gvs[])
+QED
+
+Theorem poll_out_res:
+  LENGTH fes ≤ 4096 ⇒ ∃k. l0_res_of (poll_out w fes) = Ok k
+Proof
+  strip_tac >> simp[poll_out_def] >> irule_at Any l0_res_of_enc_app >>
+  simp[l0_res_ok_def] >>
+  qspecl_then [‘λfe. fd_revents w fe ≠ 0w’, ‘fes’] assume_tac LENGTH_FILTER_LEQ >>
+  simp[]
+QED
+
+(* A poll: not retried; what it reports readable (of the listener and the
+   open fds) is ready after it *)
+Theorem sys_poll_rdy:
+  kinv p lfd sched w1 a cm D E w ∧ winv w ∧ sched_wf2 (sk_of p lfd sched w1) ∧
+  EVERY (λ(f, e). e < 256) fes ∧ sys_poll fes w = SOME (out, w', ev) ⇒
+  kinv p lfd sched w1 a cm D E w' ∧ ok_ev lfd ev ∧ w'.open_fds = w.open_fds ∧
+  ∀f. MEM f (readable_fds (poll_revents fes out)) ∧
+      (f = lfd ∨ ∃c. ALOOKUP w.open_fds f = SOME c) ⇒ rdy lfd w' f
+Proof
+  strip_tac >>
+  ‘kinv p lfd sched w1 a cm D E w'’ by metis_tac[kinv_sys_quiet] >>
+  ‘w'.open_fds = w.open_fds’ by metis_tac[sys_quiet_open] >>
+  ‘l0_rely w’ by fs[winv_def] >>
+  qpat_x_assum ‘sys_poll _ _ = _’ mp_tac >> simp[sys_poll_def] >> strip_tac >>
+  drule_all ev_do >> strip_tac >>
+  drule l0_do_cases >> strip_tac >>
+  ‘poll_entries (DROP 1 (poll_conf fes)) = fes ∧ HD (poll_conf fes) = 0w ∧ poll_conf fes ≠ []’
+    by simp[poll_conf_def, poll_entries_conf] >>
+  drule_all call_poll_same >> strip_tac >> gvs[] >>
+  ‘∀h. (l0_tick «sys_poll» w).ch.transient h = NONE’
+    by fs[kinv_def, simple_v2_def, simple0_def] >>
+  qpat_x_assum ‘l0_call _ _ _ _ = _’ mp_tac >> simp[l0_call_def] >> rw[] >>
+  simp[ok_ev_def] >> rpt conj_tac
+  >- (strip_tac >> qspecl_then [‘l0_tick «sys_poll» w’, ‘fes’] mp_tac
+                     (Q.GENL [‘w’, ‘fes’] poll_out_res) >> simp[] >> strip_tac >> gvs[])
+  >- simp[ev_on_def]
+  >> rpt strip_tac >>
+  qpat_x_assum ‘MEM _ (readable_fds _)’ mp_tac >>
+  simp[poll_revents_def] >>
+  qspecl_then [‘l0_tick «sys_poll» w’, ‘fes’] mp_tac
+    (Q.GENL [‘w’, ‘fes’] poll_out_res) >> simp[] >> strip_tac >> simp[DROP_poll_out] >>
+  ‘TAKE (LENGTH fes) (MAP (fd_revents (l0_tick «sys_poll» w)) fes) =
+   MAP (fd_revents (l0_tick «sys_poll» w)) fes’ by metis_tac[LENGTH_MAP, TAKE_LENGTH_ID] >>
+  simp[MAP_MAP_o] >> strip_tac >>
+  drule readable_zip_inv >> simp[] >> strip_tac >>
+  qpat_x_assum ‘kinv _ _ _ _ _ _ _ _ _’ (strip_assume_tac o REWRITE_RULE [kinv_def]) >>
+  fs[] >> metis_tac[sinv_readable_lfd, sinv_readable_ch, ticks_open_fds]
+QED
+
+(* A call whose failures are not transient (and, for an accept, do not
+   happen) is ok *)
+Theorem do_ok_ev:
+  l0_rely w ∧ l0_do n conf alen w = SOME (out, w', ev) ∧ n ≠ «sys_poll» ∧
+  (∀e x. l0_res_of out = Fail e x ⇒ ¬l1_transient e ∧ n ≠ «sys_accept») ⇒ ok_ev lfd ev
+Proof
+  strip_tac >> drule_all ev_do >> drule_all ev_failed >> rw[ok_ev_def] >> metis_tac[]
+QED
+
+Theorem res_of_ok_app:
+  ∃k. l0_res_of (enc_res (Ok v) ++ rest) = Ok k
+Proof
+  simp[l0_res_of_def, dec_res_def, enc_res_def]
+QED
+
+Theorem res_of_fail0:
+  LENGTH (w.ch.errno_of w.hist) = 4 ⇒
+  l0_res_of (enc_res (fail w e)) = Fail e (w.ch.errno_of w.hist)
+Proof
+  metis_tac[res_of_fail, APPEND_NIL]
+QED
+
+(* The open fds' channels in the invariant's worlds *)
+Theorem sinv_open_chan:
+  sinv lfd p a cm D E s w ∧ ALOOKUP w.open_fds f = SOME j ⇒
+  j < LENGTH w.chans ∧ f ≠ lfd ∧ l0_chan_of w f = SOME j ∧ ¬(EL j w.chans).connecting ∧
+  ¬(EL j w.chans).broken ∧ (EL j w.chans).err = NONE ∧ ¬(EL j w.chans).shut ∧
+  ¬(EL j w.chans).closed
+Proof
+  simp_tac std_ss [sinv_def, wk_def, lk_def] >> strip_tac >> res_tac >>
+  ‘j < LENGTH w.chans’ by simp[] >>
+  ‘wch (EL j w.chans) (EL j s.clients)’ by fs[] >>
+  fs[wch_def, l0_chan_of_def] >> metis_tac[]
+QED
+
+Theorem sinv_listener:
+  sinv lfd p a cm D E s w ⇒ ∃q. w.listeners = [(lfd, p, q)]
+Proof
+  rw[sinv_def, wk_def]
+QED
+
+(* A send on an fd of L1's, never the listener nor a reserved fd: not
+   retried (simple worlds take every byte) *)
+Theorem l0_send_simple:
+  sinv lfd p a cm D E s w ∧ (∀h. w.ch.transient h = NONE) ∧ (∀j h b n. w.ch.takes j h b n = n) ∧
+  f ≠ lfd ∧ ¬MEM f w.reserved ∧ l0_send f bs w = (r, w') ⇒
+  (∃k. r = Ok k) ∨ ∃e. r = fail w e ∧ ¬l1_transient e
+Proof
+  strip_tac >> drule sinv_listener >> strip_tac >>
+  qpat_x_assum ‘l0_send _ _ _ = _’ mp_tac >> simp[l0_send_def] >>
+  Cases_on ‘l0_chan_of w f’ >> simp[]
+  >- (strip_tac >> gvs[not_chan_def, is_listener_fd_def] >> disj2_tac >>
+      qexists_tac ‘E_BADF’ >> simp[l1_transient_def]) >>
+  rename1 ‘l0_chan_of w f = SOME j’ >>
+  ‘ALOOKUP w.open_fds f = SOME j’ by fs[l0_chan_of_def, AllCaseEqs()] >>
+  drule_all sinv_open_chan >> strip_tac >> simp[] >>
+  rw[] >> simp[l1_transient_def] >> Cases_on ‘bs’ >> fs[]
+QED
+
+Theorem l0_close_simple:
+  (∀h. w.ch.close_intr h = NONE) ∧ l0_close f w = (r, w') ⇒
+  (∃k. r = Ok k) ∨ ∃e. r = fail w e ∧ ¬l1_transient e
+Proof
+  rw[l0_close_def] >> gvs[] >> disj2_tac >> qexists_tac ‘E_BADF’ >> simp[l1_transient_def]
+QED
+
+(* A recv on a ready open fd returns data or an EOF *)
+Theorem l0_recv_simple:
+  sinv lfd p a cm D E s w ∧ (∀h. w.ch.transient h = NONE) ∧ (∀j h x. w.ch.short j h x = x) ∧
+  pend w f ∧ 0 < n ∧ l0_recv f n w = (r, d, w') ⇒
+  ∃k. r = Ok k
+Proof
+  strip_tac >> fs[pend_def] >>
+  ‘ALOOKUP w.open_fds f = SOME j’ by fs[l0_chan_of_def, AllCaseEqs()] >>
+  drule_all sinv_open_chan >> strip_tac >>
+  qpat_x_assum ‘l0_recv _ _ _ = _’ mp_tac >> simp[l0_recv_def] >> rw[] >> gvs[]
+QED
+
+(* An accept with a connection queued and an fd free succeeds *)
+Theorem l0_accept_simple:
+  sinv lfd p a cm D E s w ∧ (∀h. w.ch.transient h = NONE) ∧ qof w lfd ≠ [] ∧
+  w2n (lowest_fd w) < w.fd_limit ∧ l0_accept lfd w = (r, w') ⇒
+  ∃k. r = Ok k
+Proof
+  strip_tac >> drule sinv_listener >> strip_tac >>
+  qpat_x_assum ‘l0_accept _ _ = _’ mp_tac >> gvs[l0_accept_def, qof_def] >>
+  Cases_on ‘q’ >> gvs[] >>
+  ‘h < LENGTH w.chans’
+    by (fs[sinv_def, lk_def, qof_def] >>
+        ‘MEM h (GENLIST (λi. a + i) (LENGTH w.chans − a))’ by metis_tac[MEM] >>
+        fs[MEM_GENLIST]) >>
+  ‘¬(EL h w.chans).broken’
+    by (fs[sinv_def, wk_def] >> ‘wch (EL h w.chans) (EL h s.clients)’ by fs[] >> fs[wch_def]) >>
+  strip_tac >> gvs[l0_alloc_def]
+QED
+
+Theorem FOLDL_upd_used[simp]:
+  ∀q w0. l0_used (FOLDL (λw j. upd_lchan j g w) w0 q) = l0_used w0
+Proof
+  Induct >> simp[]
+QED
+
+(* A close frees fds, never takes one *)
+Theorem l0_close_used:
+  l0_close f w = (r, w') ⇒ ∀g. MEM g (l0_used w') ⇒ MEM g (l0_used w)
+Proof
+  rw[l0_close_def, close_fd_def, AllCaseEqs()] >> gvs[] >>
+  gvs[l0_used_def, MEM_FST_ADELKEY, MEM_FILTER, MEM_MAP, EXISTS_PROD] >>
+  metis_tac[]
+QED
+
+(* With fewer fds in use than the limit, the lowest free fd is below it *)
+Theorem lowest_fd_room:
+  w.fd_limit ≤ 2 ** 31 ∧ CARD (set (l0_used w)) < w.fd_limit ⇒
+  w2n (lowest_fd w) < w.fd_limit
+Proof
+  strip_tac >> ‘(2147483648:num) < dimword (:64)’ by EVAL_TAC >>
+  ‘∃n. n < w.fd_limit ∧ ¬MEM (n2w n : word64) (l0_used w)’
+    by (CCONTR_TAC >> fs[] >>
+        ‘count w.fd_limit ⊆ IMAGE w2n (set (l0_used w))’
+          by (rw[SUBSET_DEF] >> res_tac >> qexists_tac ‘n2w x’ >> simp[] >>
+              ‘x < dimword (:64)’
+                by (‘(2147483648:num) < dimword (:64)’ by EVAL_TAC >> decide_tac) >>
+              simp[] >> metis_tac[]) >>
+        ‘CARD (count w.fd_limit) ≤ CARD (IMAGE w2n (set (l0_used w)))’
+          by (irule CARD_SUBSET >> simp[IMAGE_FINITE]) >>
+        ‘CARD (IMAGE w2n (set (l0_used w))) ≤ CARD (set (l0_used w))’
+          by simp[CARD_IMAGE] >>
+        fs[]) >>
+  simp[lowest_fd_def] >> numLib.LEAST_ELIM_TAC >> conj_tac >- metis_tac[] >>
+  rw[] >> ‘n' ≤ n’ by (CCONTR_TAC >> fs[NOT_LESS_EQUAL] >> res_tac) >>
+  ‘w.fd_limit ≤ 2147483648’ by fs[] >>
+  ‘n' < dimword (:64)’ by decide_tac >>
+  simp[]
+QED
+
+Theorem sys_send_ok:
+  kinv p lfd sched w1 a cm D E w ∧ winv w ∧ f ≠ lfd ∧ ¬MEM f w.reserved ∧
+  sys_send f bs w = SOME (out, w', ev) ⇒ ok_ev lfd ev ∧ l0_used w' = l0_used w
+Proof
+  rw[sys_send_def] >> ‘l0_rely w’ by fs[winv_def] >>
+  TRY (drule l0_do_used >> simp[] >> NO_TAC) >>
+  ‘«sys_send» ≠ «sys_poll»’ by simp[] >>
+  ‘∀e x. l0_res_of out = Fail e x ⇒ ¬l1_transient e ∧ «sys_send» ≠ «sys_accept»’
+    suffices_by (strip_tac >> drule_all do_ok_ev >> simp[]) >>
+  drule l0_do_cases >> strip_tac >>
+  drule_then (qspec_then ‘«sys_send»’ mp_tac) kinv_tick_clock >> simp[] >> strip_tac >>
+  ‘∀j h b n. w.ch.takes j h b n = n’ by fs[kinv_def, simple_v2_def, simple0_def] >>
+  ‘LENGTH (w.ch.errno_of w.hist) = 4’ by fs[l0_rely_def] >>
+  gvs[l0_call_def] >> pairarg_tac >> gvs[] >>
+  rename1 ‘l0_send _ _ _ = (r, _)’ >>
+  ‘(∃k. r = Ok k) ∨ ∃e. r = fail (w with clock := w.clock + 1) e ∧ ¬l1_transient e’
+    by (irule l0_send_simple >> simp[] >> metis_tac[]) >>
+  rpt strip_tac >> gvs[res_of_fail0] >>
+  qspecl_then [‘k’, ‘[]’] strip_assume_tac (Q.GENL [‘v’, ‘rest’] res_of_ok_app) >> gvs[]
+QED
+
+Theorem sys_close_ok:
+  kinv p lfd sched w1 a cm D E w ∧ winv w ∧ sys_close f w = SOME (out, w', ev) ⇒
+  ok_ev lfd ev ∧ ∀g. MEM g (l0_used w') ⇒ MEM g (l0_used w)
+Proof
+  simp[sys_close_def] >> strip_tac >> ‘l0_rely w’ by fs[winv_def] >>
+  drule l0_do_cases >> strip_tac >>
+  drule_then (qspec_then ‘«sys_close»’ mp_tac) kinv_tick_clock >> simp[] >> strip_tac >>
+  ‘∀h. w.ch.close_intr h = NONE’ by fs[kinv_def, simple_v2_def, simple0_def] >>
+  ‘LENGTH (w.ch.errno_of w.hist) = 4’ by fs[l0_rely_def] >>
+  qpat_x_assum ‘l0_call _ _ _ _ = _’ mp_tac >> simp[l0_call_def] >> pairarg_tac >> simp[] >>
+  strip_tac >> gvs[] >>
+  rename1 ‘l0_close _ _ = (r, _)’ >> reverse conj_tac
+  >- (drule l0_close_used >> gvs[l0_used_def]) >>
+  ‘«sys_close» ≠ «sys_poll»’ by simp[] >>
+  ‘∀e x. l0_res_of (enc_res r) = Fail e x ⇒ ¬l1_transient e ∧ «sys_close» ≠ «sys_accept»’
+    suffices_by (strip_tac >> qpat_x_assum ‘l0_do _ _ _ _ = _’ assume_tac >>
+                 drule_all do_ok_ev >> simp[]) >>
+  (   ‘(∃k. r = Ok k) ∨ ∃e. r = fail (w with clock := w.clock + 1) e ∧ ¬l1_transient e’
+        by (irule l0_close_simple >> simp[] >> metis_tac[]) >>
+      rpt strip_tac >> gvs[res_of_fail0] >>
+      qspecl_then [‘k’, ‘[]’] strip_assume_tac (Q.GENL [‘v’, ‘rest’] res_of_ok_app) >> gvs[])
+QED
+
+Theorem sys_recv_ok:
+  kinv p lfd sched w1 a cm D E w ∧ winv w ∧ pend w f ∧ sys_recv f pf_chunk w = SOME (out, w', ev) ⇒
+  ok_ev lfd ev ∧ l0_used w' = l0_used w
+Proof
+  rw[sys_recv_def] >> ‘l0_rely w’ by fs[winv_def] >>
+  TRY (drule l0_do_used >> simp[] >> NO_TAC) >>
+  ‘«sys_recv» ≠ «sys_poll»’ by simp[] >>
+  ‘∀e x. l0_res_of out = Fail e x ⇒ ¬l1_transient e ∧ «sys_recv» ≠ «sys_accept»’
+    suffices_by (strip_tac >> drule_all do_ok_ev >> simp[]) >>
+  drule l0_do_cases >> strip_tac >>
+  drule_then (qspec_then ‘«sys_recv»’ mp_tac) kinv_tick_clock >> simp[] >> strip_tac >>
+  gvs[l0_call_def, l0_hdr_def, fd_ok_def] >> pairarg_tac >> gvs[] >>
+  rename1 ‘l0_recv _ _ _ = (r, d, _)’ >>
+  ‘0 < pf_chunk’ by simp[pf_chunk_def] >>
+  ‘pend (w with clock := w.clock + 1) f’ by fs[pend_def, l0_chan_of_def] >>
+  ‘∃k. r = Ok k’
+    by (mp_tac (Q.INST [‘w’ |-> ‘w with clock := w.clock + 1’, ‘n’ |-> ‘pf_chunk’,
+                        ‘s’ |-> ‘kworld p lfd sched w1 (npolls w.hist − npolls w1.hist)’,
+                        ‘w'’ |-> ‘w''’] l0_recv_simple) >>
+        impl_tac >- fs[] >> simp[]) >>
+  rpt strip_tac >> gvs[] >>
+  qspecl_then [‘k’, ‘d ++ REPLICATE (pf_chunk − LENGTH d) 0w’] strip_assume_tac
+    (Q.GENL [‘v’, ‘rest’] res_of_ok_app) >> gvs[]
+QED
+
+Theorem sys_accept_ok:
+  kinv p lfd sched w1 a cm D E w ∧ winv w ∧ qof w lfd ≠ [] ∧
+  CARD (set (l0_used w)) < w.fd_limit ∧ sys_accept lfd w = SOME (out, w', ev) ⇒
+  ok_ev lfd ev ∧ ∃k. l0_res_of out = Ok k
+Proof
+  simp[sys_accept_def] >> strip_tac >> ‘l0_rely w’ by fs[winv_def] >>
+  ‘∃k. l0_res_of out = Ok k’
+    suffices_by (strip_tac >> simp[] >>
+                 ‘«sys_accept» ≠ «sys_poll»’ by simp[] >>
+                 ‘∀e x. l0_res_of out = Fail e x ⇒ ¬l1_transient e ∧ «sys_accept» ≠ «sys_accept»’
+                   by simp[] >>
+                 drule_all do_ok_ev >> simp[]) >>
+  drule l0_do_cases >> strip_tac >>
+  drule_then (qspec_then ‘«sys_accept»’ mp_tac) kinv_tick_clock >> simp[] >> strip_tac >>
+  ‘lowest_fd (w with clock := w.clock + 1) = lowest_fd w’ by simp[lowest_fd_def, l0_used_def] >>
+  ‘w2n (lowest_fd w) < w.fd_limit’ by (irule lowest_fd_room >> fs[l0_rely_def]) >>
+  drule qof_call_accept >> simp[] >> strip_tac >> gvs[] >>
+  ‘qof (w with clock := w.clock + 1) lfd ≠ []’ by fs[qof_def] >>
+  ‘∃k. r = Ok k’
+    by (mp_tac (Q.INST [‘w’ |-> ‘w with clock := w.clock + 1’,
+                        ‘s’ |-> ‘kworld p lfd sched w1 (npolls w.hist − npolls w1.hist)’,
+                        ‘w'’ |-> ‘w1'’] l0_accept_simple) >>
+        impl_tac >- fs[] >> simp[]) >>
+  gvs[] >>
+  qspecl_then [‘k’, ‘[]’] strip_assume_tac (Q.GENL [‘v’, ‘rest’] res_of_ok_app) >> gvs[]
 QED

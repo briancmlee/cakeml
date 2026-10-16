@@ -84,3 +84,74 @@ Proof
         rw[] >> simp[cl_def]) >>
   simp[] >> rw[] >> gvs[]
 QED
+
+Theorem log_simps[simp]:
+  log_fds [] = [] ∧ log_conns [] = [] ∧
+  log_fds (x :: l) = (case x of FData g bs => [g] | FEof g => [g]
+                              | FReset g => [g] | FConn g => []) ++ log_fds l ∧
+  log_conns (x :: l) = (case x of FConn g => [g] | _ => []) ++ log_conns l ∧
+  log_fds (l1 ++ l2) = log_fds l1 ++ log_fds l2 ∧
+  log_conns (l1 ++ l2) = log_conns l1 ++ log_conns l2
+Proof
+  simp[log_fds_def, log_conns_def]
+QED
+
+(* The fetch reports input only on the fds it was given, never the listener *)
+Theorem pf_fetch_fds:
+  ∀fs ws ws' log evs.
+    pf_fetch lfd hw fs ws = SOME (ws', log, evs) ⇒
+    ∀g. MEM g (log_fds log) ⇒ MEM g fs ∧ g ≠ lfd
+Proof
+  Induct >- simp[pf_fetch_def] >> rpt gen_tac >> PairCases_on ‘ws’ >>
+  simp[Once pf_fetch_def] >> rw[] >> gvs[AllCaseEqs()] >>
+  TRY (first_x_assum drule >> simp[] >> NO_TAC) >>
+  pairarg_tac >> gvs[AllCaseEqs()] >> first_x_assum drule >> simp[] >>
+  rw[] >> gvs[]
+QED
+
+(* The fetch never reports a new connection on an fd in use *)
+Theorem pf_fetch_conns:
+  ∀fs w ps w' ps' log evs.
+    pf_fetch lfd hw fs (w, ps) = SOME ((w', ps'), log, evs) ∧ winv w ∧ MEM f (l0_used w) ⇒
+    ¬MEM f (log_conns log)
+Proof
+  Induct >- simp[pf_fetch_def] >> rpt gen_tac >>
+  simp[Once pf_fetch_def] >> rw[] >> gvs[AllCaseEqs()] >>
+  TRY (first_x_assum drule_all >> simp[] >> NO_TAC) >>
+  pairarg_tac >> gvs[AllCaseEqs()] >>
+  rename1 ‘SOME (out, w1, ev)’ >>
+  ‘winv w1’ by metis_tac[sys_winv] >>
+  ‘MEM f (l0_used w1)’
+    by (gvs[sys_accept_def, sys_recv_def] >> drule l0_do_used >> simp[]) >>
+  first_x_assum drule_all >> simp[] >>
+  ‘l0_rely w ∧ fds_lt w’ by fs[winv_def] >>
+  ‘¬MEM (n2w k) (l0_used w)’ by (irule sys_accept_fresh >> metis_tac[]) >>
+  strip_tac >> strip_tac >> gvs[]
+QED
+
+(* A round's log reports input only on mapped fds, and never reconnects an
+   open f *)
+Theorem pround_client:
+  pround lfd hw hs (w, ps) acts = SOME (snap, (w', ps'), log, evs) ∧ winv w ∧
+  pv_rel lfd cm ps s ∧ pown lfd ps ∧ fl w f R ∧ fkeep lfd h f ps ⇒
+  (∀g. MEM g (log_fds log) ⇒ MEM g (MAP FST cm)) ∧ ¬MEM f (log_conns log)
+Proof
+  simp[pround_def, AllCaseEqs()] >> strip_tac >> PairCases_on ‘ws1’ >>
+  gvs[pf_tail_def, AllCaseEqs()] >>
+  rename1 ‘pacts _ _ _ = SOME (rs, aevs, wa, pa)’ >>
+  drule_all pacts_hacts >> strip_tac >>
+  drule_all pacts_fl >> strip_tac >>
+  drule_all pacts_winv >> strip_tac >>
+  drule_all l1_polls_fl >> strip_tac >>
+  drule_all l1_polls_winv >> strip_tac >>
+  drule_all l1_flush_fl >> strip_tac >>
+  drule_all l1_flush_winv >> strip_tac >>
+  drule_all l1_flush_f >> strip_tac >>
+  conj_tac
+  >- (rpt strip_tac >> drule pf_fetch_fds >> disch_then drule >> simp[MEM_FILTER] >>
+      strip_tac >> drule in_fds_poll_set >> simp[] >> strip_tac >>
+      ‘ALL_DISTINCT (MAP FST pa.b.tbl)’ by gvs[pown_def] >>
+      drule_all tbl_alookup_exists >> strip_tac >>
+      gvs[pv_rel_def] >> metis_tac[])
+  >> irule pf_fetch_conns >> rpt (goal_assum drule) >> metis_tac[fl_used]
+QED

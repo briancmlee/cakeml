@@ -11,7 +11,7 @@
 *)
 Theory honestL1PFSimple
 Ancestors
-  honestL1PFConnRun honestL1PFClient honestL1PFConn honestL1PFLive honestL1PFRound
+  honestL1PFConnRun honestL1PFClient honestL1PFStream honestL1PFConn honestL1PFLive honestL1PFRound
   honestL1PFInv honestL1PFRefine honestL1PFModel honestL1Refine honestL1Simple
   honestL1Steps honestL1Inv honestL1Model honestL0WorldInv honestL0WorldProps
   honestL0Rely honestL0World honestL0 socketV2FFI socketV2Fair ffiSpikeSocketFFI
@@ -728,8 +728,9 @@ Theorem sinv_accept:
   sinv lfd p a cm D E s w ∧ (∀h. w.ch.transient h = NONE) ∧
   (∀h. ¬w.ch.emfile_drops h) ∧ fds_lt w ∧ w.fd_limit ≤ 2 ** 31 ∧
   l0_accept lfd w = (r, w') ⇒
-  (sinv lfd p a cm D E s w' ∧ ∀k. r ≠ Ok k) ∨
-  (∃f. r = Ok (w2n f) ∧ ¬MEM f (l0_used w) ∧ sinv lfd p (a + 1) ((f, a) :: cm) D E s w')
+  (sinv lfd p a cm D E s w' ∧ (∀k. r ≠ Ok k) ∧ w'.open_fds = w.open_fds) ∨
+  (∃f. r = Ok (w2n f) ∧ ¬MEM f (l0_used w) ∧ w'.open_fds = (f, a) :: w.open_fds ∧
+       sinv lfd p (a + 1) ((f, a) :: cm) D E s w')
 Proof
   strip_tac >>
   qpat_assum ‘sinv _ _ _ _ _ _ _ _’
@@ -769,7 +770,8 @@ Theorem sinv_recv:
   ALOOKUP w.open_fds g = SOME c ∧ 0 < n ∧ l0_recv g n w = (r, d, w') ⇒
   (r = Ok 0 ∧ d = [] ∧ w' = w ∧ c < LENGTH w.chans ∧ c < a ∧ (EL c w.chans).peer_eof) ∨
   (∃e x. r = Fail e x ∧ l1_transient e ∧ d = [] ∧ w' = w) ∨
-  (∃k. r = Ok k ∧ 0 < k ∧ LENGTH d = k ∧ sinv lfd p a cm ((c =+ D c ++ d) D) E s w')
+  (∃k. r = Ok k ∧ 0 < k ∧ LENGTH d = k ∧ w'.open_fds = w.open_fds ∧
+       sinv lfd p a cm ((c =+ D c ++ d) D) E s w')
 Proof
   strip_tac >>
   qpat_assum ‘sinv _ _ _ _ _ _ _ _’
@@ -784,8 +786,117 @@ Proof
   IF_CASES_TAC >> simp[]
   >- (strip_tac >> gvs[] >> conj_tac
       >- (Cases_on ‘(EL c w.chans).inbox’ >> gvs[])
+      >> conj_tac >- simp[upd_lchan_def]
       >> irule sinv_upd_D >> simp[] >> conj_tac
       >- simp[wch_def]
       >> irule ch_recv >> fs[])
   >> IF_CASES_TAC >> simp[] >> strip_tac >> gvs[fail_def, l1_transient_def]
+QED
+
+(* The invariant's world facts at the world with the clock advanced *)
+Theorem kinv_tick_clock:
+  kinv p lfd sched w1 a cm D E w ∧ nm ≠ «sys_poll» ⇒
+  l0_tick nm w = w with clock := w.clock + 1 ∧
+  sinv lfd p a cm D E (kworld p lfd sched w1 (npolls w.hist − npolls w1.hist))
+       (w with clock := w.clock + 1) ∧
+  (∀h. w.ch.transient h = NONE) ∧ (∀j h x. w.ch.short j h x = x) ∧
+  (∀h. ¬w.ch.emfile_drops h)
+Proof
+  simp_tac std_ss [kinv_def] >> strip_tac >>
+  ‘l0_tick nm w = w with clock := w.clock + 1’ by metis_tac[tick_simple_v2] >>
+  simp[] >> fs[simple_v2_def, simple0_def]
+QED
+
+Theorem kinv_after:
+  kinv p lfd sched w1 a cm D E w ∧ w1'.ch = w.ch ∧ w1'.env = w.env ∧
+  w1'.fd_limit = w.fd_limit ∧ n ≠ «sys_poll» ∧
+  sinv lfd p a' cm' D' E' (kworld p lfd sched w1 (npolls w.hist − npolls w1.hist)) w1' ⇒
+  kinv p lfd sched w1 a' cm' D' E' (w1' with hist := w.hist ++ [(n, conf, b)])
+Proof
+  strip_tac >>
+  ‘simple_v2 p lfd sched (w1' with hist := w.hist ++ [(n, conf, b)]) ⇔
+   simple_v2 p lfd sched w’ by (irule simple_v2_same >> simp[]) >>
+  fs[kinv_def, npolls_snoc]
+QED
+
+(* A call that changed nothing but time and the history *)
+Theorem kinv_clock_hist:
+  kinv p lfd sched w1 a cm D E w ∧ n ≠ «sys_poll» ⇒
+  kinv p lfd sched w1 a cm D E (w with <| clock := k; hist := w.hist ++ [(n, conf, b)] |>)
+Proof
+  strip_tac >>
+  ‘simple_v2 p lfd sched (w with <| clock := k; hist := w.hist ++ [(n, conf, b)] |>) ⇔
+   simple_v2 p lfd sched w’ by (irule simple_v2_same >> simp[]) >>
+  fs[kinv_def, npolls_snoc]
+QED
+
+(* L1's accept on the listener *)
+Theorem kinv_sys_accept:
+  kinv p lfd sched w1 a cm D E w ∧ winv w ∧ sys_accept lfd w = SOME (out, w', ev) ⇒
+  (kinv p lfd sched w1 a cm D E w' ∧ (∀k. l0_res_of out ≠ Ok k) ∧
+   w'.open_fds = w.open_fds) ∨
+  (∃k. l0_res_of out = Ok k ∧ ¬MEM (n2w k : word64) (l0_used w) ∧
+       w'.open_fds = (n2w k, a) :: w.open_fds ∧
+       kinv p lfd sched w1 (a + 1) ((n2w k, a) :: cm) D E w')
+Proof
+  rw[sys_accept_def] >> drule l0_do_env >> strip_tac >>
+  drule l0_do_cases >> strip_tac >> gvs[] >>
+  drule_then (qspec_then ‘«sys_accept»’ mp_tac) kinv_tick_clock >> simp[] >> strip_tac >>
+  gvs[] >> drule qof_call_accept >> simp[] >> strip_tac >> gvs[] >>
+  ‘l0_rely (w with clock := w.clock + 1)’
+    by (fs[winv_def] >> irule l0_rely_ch >> qexists_tac ‘w’ >> simp[]) >>
+  drule_all l0_accept_res >> strip_tac >>
+  ‘l0_res_of (enc_res r) = r’ by (irule l0_res_of_enc >> simp[]) >>
+  ‘fds_lt (w with clock := w.clock + 1) ∧ (w with clock := w.clock + 1).fd_limit ≤ 2 ** 31’
+    by (fs[winv_def] >> fs[l0_rely_def] >> fs[fds_lt_def, l0_used_def] >>
+        first_assum ACCEPT_TAC) >>
+  mp_tac (Q.INST [‘w’ |-> ‘w with clock := w.clock + 1’, ‘w'’ |-> ‘w1'’,
+                  ‘s’ |-> ‘kworld p lfd sched w1 (npolls w.hist − npolls w1.hist)’]
+                 sinv_accept) >>
+  impl_tac >- simp[] >> strip_tac >> gvs[]
+  >- (TRY disj1_tac >> irule kinv_after >> simp[] >> metis_tac[])
+  >> TRY disj2_tac >> fs[l0_used_def] >> irule kinv_after >> simp[] >> metis_tac[]
+QED
+
+(* L1's recv on an open fd of channel c *)
+Theorem kinv_sys_recv:
+  kinv p lfd sched w1 a cm D E w ∧ winv w ∧ ALOOKUP w.open_fds g = SOME c ∧
+  sys_recv g pf_chunk w = SOME (out, w', ev) ⇒
+  w'.open_fds = w.open_fds ∧
+  ((l0_res_of out = Ok 0 ∧ c < a ∧ c < LENGTH w'.chans ∧ (EL c w'.chans).peer_eof ∧
+    kinv p lfd sched w1 a cm D E w') ∨
+   (∃e x. l0_res_of out = Fail e x ∧ l1_transient e ∧ kinv p lfd sched w1 a cm D E w') ∨
+   (∃k. l0_res_of out = Ok k ∧ 0 < k ∧
+        kinv p lfd sched w1 a cm ((c =+ D c ++ TAKE k (DROP 13 out)) D) E w'))
+Proof
+  rw[sys_recv_def] >> drule l0_do_env >> strip_tac >>
+  drule l0_do_cases >> strip_tac >> gvs[] >>
+  drule_then (qspec_then ‘«sys_recv»’ mp_tac) kinv_tick_clock >> simp[] >> strip_tac >>
+  gvs[] >>
+  qpat_x_assum ‘l0_call _ _ _ _ = _’ mp_tac >>
+  simp[l0_call_def, l0_hdr_def, fd_ok_def] >> pairarg_tac >> simp[] >> strip_tac >>
+  gvs[] >>
+  ‘l0_rely (w with clock := w.clock + 1)’
+    by (fs[winv_def] >> irule l0_rely_ch >> qexists_tac ‘w’ >> simp[]) >>
+  ‘pf_chunk < 256 ** 8’ by simp[pf_chunk_def] >>
+  ‘l0_res_ok r’ by metis_tac[recv_res_ok] >>
+  ‘∀rest. l0_res_of (enc_res r ++ rest) = r’
+    by (rpt strip_tac >> irule l0_res_of_enc_app >> simp[]) >>
+  ‘∀rest. TAKE (LENGTH d) (DROP 13 (enc_res r ++ (d ++ rest))) = d’
+    by (rpt strip_tac >> drule LENGTH_enc_res >> strip_tac >>
+        ‘DROP 13 (enc_res r ++ d ++ rest) = d ++ rest’
+          by (rewrite_tac[GSYM APPEND_ASSOC] >> metis_tac[DROP_LENGTH_APPEND]) >>
+        simp[TAKE_LENGTH_APPEND]) >>
+  ‘0 < pf_chunk’ by simp[pf_chunk_def] >>
+  mp_tac (Q.INST [‘w’ |-> ‘w with clock := w.clock + 1’, ‘n’ |-> ‘pf_chunk’,
+                  ‘s’ |-> ‘kworld p lfd sched w1 (npolls w.hist − npolls w1.hist)’]
+                 sinv_recv) >>
+  impl_tac >- simp[] >> strip_tac >> gvs[]
+  >- (TRY disj1_tac >> irule kinv_clock_hist >> simp[])
+  >- (TRY disj1_tac >> irule kinv_clock_hist >> simp[])
+  >> qpat_x_assum ‘∀rest. l0_res_of _ = _’
+       (qspec_then ‘d ++ REPLICATE (pf_chunk − LENGTH d) 0w’ assume_tac) >>
+  qpat_x_assum ‘∀rest. TAKE _ _ = _’
+       (qspec_then ‘REPLICATE (pf_chunk − LENGTH d) 0w’ assume_tac) >>
+  fs[APPEND_ASSOC] >> disj2_tac >> irule kinv_after >> simp[] >> metis_tac[]
 QED

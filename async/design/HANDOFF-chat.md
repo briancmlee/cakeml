@@ -35,3 +35,4 @@ Kept current at every push. Worker state: ~/.cache/moonshot/STATE.md; log ~/.cac
 ## Translator prototype (PR #114, spike/async-translate)
 - `async/translate/`: asyncTranslate (lemmas), asyncTranslateLib (generator + proof tactic + define_async), asyncTranslateEcho (demo). Design: design/44-async-translator.md.
 - Build: `cd async/translate && ~/.cache/orchestrator/holslot timeout 3000 arch -arm64 /bin/zsh -lc '~/HOL/bin/Holmake -j1 asyncTranslateEchoTheory.uo'` (~3 min).
+- Phase 2 (PR #130, spike/async-translate-proto, worktree ~/Programming/cakeml-worktrees/translate-proto on close-v2's chain): socket library wrappers, generated proto handler, http_prog_gpb_spec. Build: `cd async/translate && holslot … Holmake -j1 asyncTranslateHttpBTheory.uo`.

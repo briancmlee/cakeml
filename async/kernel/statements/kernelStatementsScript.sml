@@ -18,7 +18,7 @@
     loose (D16: unless a hard error was observed on the episode; D18:
     unless accepts on the listener fail infinitely often);
     l0_echo2_strong_claim is the corollary form under explicit hypotheses
-    (D16's and D18's H1–H3).
+    (D16's HD16, D18's H1 and H3; no [F3], design/36 §6, 2026-10-17).
   - quiet_on_kernel_claim: quiescence on the kernel, through a blocking
     variant of L1: with finitely many arrivals the program eventually
     sleeps in a blocking poll, unless [F1] fails or POLLHUP keeps waking
@@ -40,15 +40,16 @@
     (honestL0World), simple_v2 and sk_of (honestL1Refine), psk, pcm and
     parr (honestL1PFRefine), run_ok, F1, S1, S3, S4 (honestL1PFLive),
     ev_on, retried and winv (honestL1PFRound), l0_replay (honestL0Part).
-  - S2 below is a verbatim copy of honest-ffi's honestL1PFConnRun.S2 (not
-    yet pushed); the copy goes when that theory lands.
+    S2, kept_err and the corollary hypotheses' names H1, H3 (honestL1PFConnRun)
+    and HD16 (honestL1PFD16, in progress); their trace readings here are
+    H1_io, H3_io and HD16_io, as F1_io is F1's.
 *)
 Theory kernelStatements
 Ancestors
   llist ffi semantics ml_prog
   honestL0 honestL0World honestL0WorldProps honestL0Rely honestL0Part
   honestL1Model honestL1Refine honestL1PFModel honestL1PFRefine
-  honestL1PFRound honestL1PFLive socketV2FFI asyncCore
+  honestL1PFRound honestL1PFLive honestL1PFConnRun socketV2FFI asyncCore
   honestEchoL0Spec
 Libs
   preamble
@@ -56,13 +57,6 @@ Libs
 (* ========================================================================
    R2′: l1pf_simple
    ======================================================================== *)
-
-(* S2 (server, accepting): a verbatim copy of honestL1PFConnRun.S2 *)
-Definition S2_def:
-  S2 lfd hw ifds m w0 ⇔
-    ∀n. (rstate lfd hw ifds m w0 n).acq ≠ [] ⇒
-        ∃n'. n ≤ n' ∧ MEM (Accept lfd) (new_actions (log_of m) (rhist lfd hw ifds m w0 n'))
-End
 
 (* The arrivals of the first n steps of a schedule *)
 Definition upto_def:
@@ -247,7 +241,8 @@ Definition ep_hard_err_def:
              hard_err_on (EL j (l0_accepted evs)) ev
 End
 
-(* D16's corollary excuse, in the world: channel c really broke *)
+(* Channel c broke (a queued connection dropped: aborted, or reset under
+   EMFILE) *)
 Definition broke_def:
   broke w0 io c ⇔
     ∃evs w. LPREFIX (fromList evs) io ∧ world_at w0 evs = SOME w ∧
@@ -321,48 +316,51 @@ End
    The corollary forms, under explicit hypotheses (never trusted)
    ------------------------------------------------------------------------ *)
 
-(* D16's hypothesis: a hard error on a recv or send happens only on a
-   channel that really broke *)
-Definition hard_errs_real_def:
-  hard_errs_real w0 io ⇔
-    ∀evs ev f w.
-      LPREFIX (fromList (evs ++ [ev])) io ∧ hard_err_on f ev ∧
-      world_at w0 (evs ++ [ev]) = SOME w ⇒
-      ∃c. l0_chan_of w f = SOME c ∧ (EL c w.chans).broken
+(* D16's hypothesis HD16, read off the trace: a recv on f that fails with
+   a hard (not retried) error happens only on a channel that really broke
+   and lost its unread input (honestL1PFStream.flushed) *)
+Definition HD16_io_def:
+  HD16_io w0 io ⇔
+    ∀evs conf bs f w.
+      LPREFIX (fromList (evs ++ [IO_event (ExtCall «sys_recv») conf bs])) io ∧
+      hard_err_on f (IO_event (ExtCall «sys_recv») conf bs) ∧
+      world_at w0 (evs ++ [IO_event (ExtCall «sys_recv») conf bs]) = SOME w ⇒
+      flushed w f
 End
 
-(* D18's (H1): a failed accept whose error is neither retried nor EMFILE
-   nor ENFILE removed a connection from the listener's queue *)
-Definition accept_errs_real_def:
-  accept_errs_real w0 io ⇔
+(* D16's corollary excuse: channel c broke and its unread input was
+   discarded (a genuine reset) *)
+Definition flushed_ch_def:
+  flushed_ch w0 io c ⇔
+    ∃evs w. LPREFIX (fromList evs) io ∧ world_at w0 evs = SOME w ∧
+            c < LENGTH w.chans ∧ (EL c w.chans).broken ∧ (EL c w.chans).inbox = []
+End
+
+(* D18's H1, read off the trace: an accept that fails with an error L1
+   does not keep (kept_err: retried, EMFILE, ENFILE) really removed a
+   connection from the listener's queue *)
+Definition H1_io_def:
+  H1_io w0 io ⇔
     ∀evs conf bs e x w w' l p q p' q'.
       LPREFIX (fromList (evs ++ [IO_event (ExtCall «sys_accept») conf bs])) io ∧
-      l0_ev_res bs = SOME (Fail e x) ∧ ¬l1_transient e ∧ e ≠ E_MFILE ∧ e ≠ E_NFILE ∧
+      l0_ev_res bs = SOME (Fail e x) ∧ ¬kept_err e ∧
       world_at w0 evs = SOME w ∧
       world_at w0 (evs ++ [IO_event (ExtCall «sys_accept») conf bs]) = SOME w' ∧
       LENGTH conf = 8 ∧ l = bytes_fd conf ∧
-      MEM (l, p, q) (l0_tick «sys_accept» w).listeners ∧ MEM (l, p', q') w'.listeners ⇒
+      MEM (l, p, q) (l0_tick «sys_accept» w).listeners ∧ q ≠ [] ∧
+      MEM (l, p', q') w'.listeners ⇒
       ∃j. MEM j q ∧ ¬MEM j q'
 End
 
-(* D18's (H2), [F3]: infinitely often some fd below the limit is free *)
-Definition F3_io_def:
-  F3_io w0 io ⇔
-    ∀evs. LPREFIX (fromList evs) io ⇒
-          ∃evs' w x. LPREFIX (fromList evs') io ∧ LENGTH evs ≤ LENGTH evs' ∧
-                     world_at w0 evs' = SOME w ∧ x < w.fd_limit ∧
-                     ¬MEM (n2w x : word64) (l0_used w)
-End
-
-(* D18's (H3), the JOINT weak form: accepts on l made infinitely often
-   infinitely often fail neither with a retried error nor with ENFILE *)
-Definition accepts_joint_io_def:
-  accepts_joint_io (io : io_event llist) ⇔
+(* D18's H3 (H3′, the JOINT weak form), read off the trace: accepts on l
+   made infinitely often infinitely often fail with no kept error *)
+Definition H3_io_def:
+  H3_io (io : io_event llist) ⇔
     ∀l. (∀i. ∃i' ev. i ≤ i' ∧ LNTH i' io = SOME ev ∧ ev_on «sys_accept» l ev) ⇒
         (∀i. ∃i' conf bs. i ≤ i' ∧
              LNTH i' io = SOME (IO_event (ExtCall «sys_accept») conf bs) ∧
              ev_on «sys_accept» l (IO_event (ExtCall «sys_accept») conf bs) ∧
-             ∀e x. l0_ev_res bs = SOME (Fail e x) ⇒ ¬l1_transient e ∧ e ≠ E_NFILE)
+             ∀e x. l0_ev_res bs = SOME (Fail e x) ⇒ ¬kept_err e)
 End
 
 Definition l0_echo2_strong_claim_def:
@@ -371,10 +369,9 @@ Definition l0_echo2_strong_claim_def:
       ∃b. semantics_prog (init_state (l0_ffi w0)) init_env prog b ∧
           (listen_failed b ∨
            ∃io. b = Diverge io ∧
-                (F1_io io ∧ F2 w0 ∧ accepts_below io ∧ hard_errs_real w0 io ⇒
-                 echo_live_unless (λj c. broke w0 io c) w0 io) ∧
-                (F1_io io ∧ accepts_below io ∧ accept_errs_real w0 io ∧ F3_io w0 io ∧
-                 accepts_joint_io io ⇒
+                (F1_io io ∧ F2 w0 ∧ accepts_below io ∧ HD16_io w0 io ⇒
+                 echo_live_unless (λj c. flushed_ch w0 io c) w0 io) ∧
+                (F1_io io ∧ accepts_below io ∧ H1_io w0 io ∧ H3_io io ⇒
                  conn_live_unless F w0 io))
 End
 

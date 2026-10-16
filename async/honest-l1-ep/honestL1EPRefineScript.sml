@@ -1608,6 +1608,28 @@ Proof
   rw[MEM_MAP, MEM_FILTER] >> metis_tac[]
 QED
 
+Theorem promote_fields:
+  (promote es).p.acq = es.p.acq ∧ (promote es).p.inb = es.p.inb ∧
+  (promote es).p.eof = es.p.eof ∧
+  (promote es).p.b.tbl = FILTER (λ(h, f). cstat_of es f = CUp) es.ctbl ++ es.p.b.tbl ∧
+  (promote es).ctbl = FILTER (λ(h, f). cstat_of es f ≠ CUp) es.ctbl ∧
+  (promote es).p.b.nxt = es.p.b.nxt ∧ (promote es).settling = es.settling
+Proof
+  simp[promote_def]
+QED
+
+(* A connect handle's fd is no other of L1's, and has no input *)
+Theorem eown_ctbl_fresh:
+  eown lfd es ∧ MEM f (MAP SND es.ctbl) ⇒
+  inb_of es.p f = [] ∧ ¬MEM f es.p.eof ∧ ¬MEM f (MAP SND es.p.b.tbl) ∧
+  ¬MEM f es.p.acq ∧ ¬MEM f es.p.b.closing ∧ f ≠ lfd
+Proof
+  simp[eown_def, pown_def, ALL_DISTINCT_APPEND] >> strip_tac >>
+  ‘¬MEM f (MAP SND es.p.b.tbl) ∧ ¬MEM f es.p.acq ∧ ¬MEM f es.p.b.closing ∧ f ≠ lfd’
+    by metis_tac[] >>
+  simp[] >> metis_tac[]
+QED
+
 (* Settling and promotion keep the relation, L1's invariant and the
    handle state *)
 Theorem ev_settle:
@@ -1624,7 +1646,84 @@ Proof
   ‘ALL_DISTINCT (MAP FST es.p.b.tbl ++ MAP FST es.ctbl)’ by gvs[eown_def] >>
   ‘ALL_DISTINCT (MAP FST es5.p.b.tbl ++ MAP FST es5.ctbl)’ by gvs[] >>
   rpt conj_tac
-  >- cheat
+  >- (‘∀g. MEM g (MAP FST cm) ⇒ cl cm g < LENGTH w.chans’ by (rpt strip_tac >> drule_all ev_rel_cl_lt >> simp[]) >>
+      ‘∀f g. (MEM f (MAP SND es.p.b.tbl) ∨ MEM f (MAP SND es.ctbl) ∨ MEM f es.p.acq) ∧
+             (MEM g (MAP SND es.p.b.tbl) ∨ MEM g (MAP SND es.ctbl) ∨ MEM g es.p.acq) ∧ g ≠ f ⇒
+             cl cm g ≠ cl cm f’ by (rpt gen_tac >> strip_tac >> irule ev_rel_cl_ne >> simp[] >>
+                qexistsl_tac [‘a’, ‘es’, ‘lfd’, ‘w’] >> simp[]) >>
+      ‘∀f. MEM f (MAP SND es.ctbl) ⇒ inb_of es.p f = [] ∧ ¬MEM f es.p.eof ∧
+           ¬MEM f (MAP SND es.p.b.tbl) ∧ ¬MEM f es.p.acq’
+        by (rpt gen_tac >> strip_tac >> drule_all eown_ctbl_fresh >> simp[]) >>
+      qpat_x_assum ‘ev_rel _ _ _ _ _’ mp_tac >>
+      simp[ev_rel_def, promote_fields, inb_of_def] >> strip_tac >> rpt conj_tac
+      >- (‘∀f. MEM f (MAP SND es.ctbl) ⇔
+               MEM f (MAP SND (FILTER (λ(h,f). cstat_of es5 f = CUp) es.ctbl)) ∨
+               MEM f (MAP SND (FILTER (λ(h,f). cstat_of es5 f ≠ CUp) es.ctbl))’
+            by (rpt (pop_assum kall_tac) >> rw[MEM_MAP, MEM_FILTER, EXISTS_PROD] >>
+                metis_tac[]) >>
+          pop_assum mp_tac >> rpt (pop_assum kall_tac) >> metis_tac[])
+      >- (rpt gen_tac >> simp[ALOOKUP_APPEND] >>
+          Cases_on ‘ALOOKUP (FILTER (λ(h,f). cstat_of es5 f = CUp) es.ctbl) h’ >> simp[] >>
+          strip_tac
+          >- ((* a prefetching handle: its channel is no connect channel *)
+              qpat_x_assum ‘∀h f. ALOOKUP es.p.b.tbl h = SOME f ⇒ _’ drule >> strip_tac >>
+              ‘MEM f (MAP SND es.p.b.tbl)’ by (imp_res_tac ALOOKUP_SOME_MEM_SND >> simp[]) >>
+              ‘cl cm f < LENGTH w.chans’
+                by (qpat_x_assum ‘∀g. MEM g (MAP FST cm) ⇒ _’ irule >> simp[]) >>
+              ‘∀h' g. ALOOKUP es.ctbl h' = SOME g ⇒ cl cm f ≠ cl cm g’
+                by (rpt strip_tac >> imp_res_tac ALOOKUP_SOME_MEM_SND >>
+                    ‘g ≠ f’
+                      by (strip_tac >>
+                          qpat_x_assum ‘∀f. MEM f (MAP SND es.ctbl) ⇒ inb_of _ _ = [] ∧ _’
+                            (qspec_then ‘g’ mp_tac) >> simp[] >> fs[]) >>
+                    qpat_x_assum ‘∀f g. _ ∧ _ ∧ g ≠ f ⇒ cl cm g ≠ cl cm f’
+                      (qspecl_then [‘f’, ‘g’] mp_tac) >> simp[]) >>
+              qpat_x_assum ‘∀k. k < LENGTH w.chans ∧ _ ⇒ _’ (qspec_then ‘cl cm f’ mp_tac) >>
+              impl_tac >- (simp[] >> metis_tac[]) >> simp[]) >>
+          (* an up connect handle: its channel settled up *)
+          rename1 ‘ALOOKUP (FILTER _ _) h = SOME g’ >> strip_tac >> pop_assum SUBST_ALL_TAC >>
+          ‘ALOOKUP es.ctbl h = SOME f ∧ cstat_of es5 f = CUp’
+            by (qpat_x_assum ‘ALOOKUP (FILTER _ _) _ = _’ assume_tac >>
+                drule_at (Pos last) ALOOKUP_FILTER_IMP >> impl_tac
+                >- fs[ALL_DISTINCT_APPEND] >> simp[]) >>
+          ‘MEM f (MAP SND es.ctbl)’ by (imp_res_tac ALOOKUP_SOME_MEM_SND >> simp[]) >>
+          ‘cstat_of es f = CPending’
+            by (spose_not_then assume_tac >>
+                qpat_x_assum ‘∀f. MEM f (MAP SND es.ctbl) ∧ _ ⇒ cstat_of es5 f = _’
+                  (qspec_then ‘f’ mp_tac) >> simp[] >>
+                qpat_x_assum ‘eown _ _’ mp_tac >> simp[eown_def] >> strip_tac >>
+                first_x_assum drule >> simp[]) >>
+          qpat_x_assum ‘∀h f. ALOOKUP es.ctbl h = SOME f ⇒ MEM f _ ∧ _’ drule >> strip_tac >>
+          qpat_x_assum ‘∀h f. ALOOKUP es.ctbl h = SOME f ⇒ w'.chans❲_❳ = _’ drule >>
+          strip_tac >> qpat_x_assum ‘∀f. MEM f (MAP SND es.ctbl) ⇒ inb_of _ _ = [] ∧ _’
+            (qspec_then ‘f’ mp_tac) >> simp[inb_of_def])
+      >- (rpt gen_tac >> strip_tac >>
+          ‘ALOOKUP es.ctbl h = SOME f ∧ cstat_of es5 f ≠ CUp’
+            by (qpat_x_assum ‘ALOOKUP (FILTER _ _) _ = _’ assume_tac >>
+                drule_at (Pos last) ALOOKUP_FILTER_IMP >> impl_tac
+                >- fs[ALL_DISTINCT_APPEND] >> simp[]) >>
+          ‘MEM f (MAP SND es.ctbl)’ by (imp_res_tac ALOOKUP_SOME_MEM_SND >> simp[]) >>
+          ‘cstat_of (promote es5) f = cstat_of es5 f’ by (irule cstat_of_promote >> simp[]) >>
+          qpat_x_assum ‘∀h f. ALOOKUP es.ctbl h = SOME f ⇒ MEM f _ ∧ _’ drule >> strip_tac >>
+          qpat_x_assum ‘∀h f. ALOOKUP es.ctbl h = SOME f ⇒ w'.chans❲_❳ = _’ drule >>
+          strip_tac >>
+          qpat_x_assum ‘∀f. MEM f (MAP SND es.ctbl) ∧ _ ⇒ cstat_of es5 f = _’
+            (qspec_then ‘f’ mp_tac) >>
+          simp[] >> Cases_on ‘cstat_of es f’ >> Cases_on ‘cstat_of es5 f’ >> gvs[]) >>
+      rpt gen_tac >> strip_tac >>
+      qpat_x_assum ‘∀f. MEM f es.p.acq ⇒ _’ drule >> strip_tac >>
+      ‘cl cm f < LENGTH w.chans’
+        by (qpat_x_assum ‘∀g. MEM g (MAP FST cm) ⇒ _’ irule >> simp[]) >>
+      ‘∀h' g. ALOOKUP es.ctbl h' = SOME g ⇒ cl cm f ≠ cl cm g’
+        by (rpt strip_tac >> imp_res_tac ALOOKUP_SOME_MEM_SND >>
+            ‘g ≠ f’
+              by (strip_tac >>
+                  qpat_x_assum ‘∀f. MEM f (MAP SND es.ctbl) ⇒ inb_of _ _ = [] ∧ _’
+                    (qspec_then ‘g’ mp_tac) >> simp[] >> fs[]) >>
+            qpat_x_assum ‘∀f g. _ ∧ _ ∧ g ≠ f ⇒ cl cm g ≠ cl cm f’
+              (qspecl_then [‘f’, ‘g’] mp_tac) >> simp[]) >>
+      qpat_x_assum ‘∀k. k < LENGTH w.chans ∧ _ ⇒ _’ (qspec_then ‘cl cm f’ mp_tac) >>
+      impl_tac >- (simp[] >> metis_tac[]) >> simp[])
   >- (qpat_x_assum ‘eown _ _’ mp_tac >>
       simp[eown_def, pown_def, promote_def, inb_of_def] >> strip_tac >>
       gvs[ALL_DISTINCT_APPEND, MEM_FILTER] >> rpt conj_tac >>

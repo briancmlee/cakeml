@@ -521,3 +521,101 @@ Proof
   drule_all v12_call >> disch_then (qspec_then ‘bytes’ strip_assume_tac) >> simp[] >>
   metis_tac[socket_oracle_sched_wf]
 QED
+
+(* ------------------------------------------------------------------------
+   The start, and the version-2 world's fairness
+   ------------------------------------------------------------------------ *)
+
+Theorem sched_conns_prefix[local]:
+  ∀m n ll. m ≤ n ⇒ sched_conns m ll ≼ sched_conns n ll
+Proof
+  Induct >> simp[sched_conns_def] >> Cases_on ‘n’ >> simp[sched_conns_def] >>
+  rpt strip_tac >> CASE_TAC >> simp[]
+QED
+
+Theorem sched_conns_EL[local]:
+  j < LENGTH (sched_conns m ll) ∧ j < LENGTH (sched_conns n ll) ⇒
+  EL j (sched_conns m ll) = EL j (sched_conns n ll)
+Proof
+  ‘m ≤ n ∨ n ≤ m’ by decide_tac >>
+  imp_res_tac sched_conns_prefix >>
+  metis_tac[IS_PREFIX_LENGTH, is_prefix_el]
+QED
+
+(* MAIN: a version-1 server world and its version-2 world are related *)
+Theorem v12rel_init:
+  sk.listeners = [(lfd, [])] ∧ sk.conns = [] ∧
+  (∀m. LENGTH (sched_conns m sk.sched) + 3 < dimword (:64)) ⇒
+  v12rel lfd sk.sched sk (v2of1 lfd sk)
+Proof
+  rw[v12rel_def, v2of1_def] >> qexistsl_tac [‘[]’, ‘0’] >>
+  simp[v12core_def] >> rw[conn_fd_def]
+  >- (numLib.LEAST_ELIM_TAC >> conj_tac >- metis_tac[] >>
+      rw[] >> metis_tac[sched_conns_EL])
+  >> metis_tac[]
+QED
+
+Theorem v12core_arrival_ok2[local]:
+  v12core lfd cs k s1 s2 ∧ arrival_ok s1 a ∧
+  LENGTH (FST (rn1_arr cs a)) + 3 < dimword (:64) ⇒
+  arrival_ok2 s2 (SND (rn1_arr cs a))
+Proof
+  Cases_on ‘a’ >> simp[rn1_arr_def, arrival_ok_def, arrival_ok2_def] >> strip_tac
+  >- (gvs[v12core_def, is_listener_def] >> Cases_on ‘lfd = c’ >> gvs[])
+  >> rename1 ‘ALOOKUP s1.conns c = SOME cn’ >>
+  ‘MEM c cs’ by (fs[v12core_def] >> metis_tac[ALOOKUP_conns_MEM, NOT_NONE_SOME]) >>
+  ‘∃j. j < LENGTH cs ∧ c = EL j cs’ by metis_tac[MEM_EL] >>
+  ‘findi c cs = j’ by (fs[v12core_def] >> simp[findi_EL]) >>
+  fs[v12core_def] >> first_x_assum (qspec_then ‘j’ mp_tac) >> simp[] >>
+  strip_tac >> gvs[]
+QED
+
+Theorem rn1_arr_conns[local]:
+  FST (rn1_arr cs a) ++ step_conns as = cs ++ step_conns (a :: as)
+Proof
+  Cases_on ‘a’ >> simp[rn1_arr_def, step_conns_def]
+QED
+
+Theorem v12core_step_ok2[local]:
+  ∀st cs s1 s2.
+    v12core lfd cs k s1 s2 ∧ step_ok s1 st ∧
+    LENGTH (cs ++ step_conns st) + 3 < dimword (:64) ⇒
+    step_ok2 s2 (SND (rn1_step cs st))
+Proof
+  Induct >> simp[rn1_step_def, step_ok_def, step_ok2_def] >> rpt gen_tac >> strip_tac >>
+  ‘LENGTH (FST (rn1_arr cs h) ++ step_conns st) + 3 < dimword (:64)’
+    by (simp_tac std_ss [rn1_arr_conns] >> fs[]) >>
+  Cases_on ‘rn1_arr cs h’ >> rename1 ‘rn1_arr cs h = (cs1, b)’ >>
+  Cases_on ‘rn1_step cs1 st’ >> simp[step_ok2_def] >> fs[] >>
+  conj_tac
+  >- (‘b = SND (rn1_arr cs h)’ by simp[] >> pop_assum SUBST1_TAC >>
+      irule v12core_arrival_ok2 >> simp[] >> metis_tac[]) >>
+  drule_all v12core_deliver >> simp[] >> strip_tac >>
+  first_x_assum drule_all >> simp[]
+QED
+
+(* MAIN: the related version-2 world is fair *)
+Theorem v12rel_sched_wf2:
+  v12rel lfd ll0 s1 s2 ∧ sched_wf s1 ⇒ sched_wf2 s2
+Proof
+  ‘∀n s1 s2. v12rel lfd ll0 s1 s2 ∧ sched_wf s1 ⇒
+             v12rel lfd ll0 (ticks n s1) (ticks2 n s2) ∧ sched_wf (ticks n s1)’
+    by (Induct >> simp[ticks_def, ticks2_def] >> rpt gen_tac >> strip_tac >>
+        first_x_assum irule >> simp[sched_wf_tick] >>
+        irule v12rel_tick >> simp[] >>
+        fs[sched_wf_def] >> first_x_assum (qspec_then ‘0’ mp_tac) >> simp[ticks_def]) >>
+  rw[sched_wf2_def] >> first_x_assum drule_all >>
+  disch_then (qspec_then ‘n’ strip_assume_tac) >>
+  qabbrev_tac ‘t1 = ticks n s1’ >> qabbrev_tac ‘t2 = ticks2 n s2’ >>
+  ‘step_ok t1 (next_step t1)’
+    by (fs[sched_wf_def] >> first_x_assum (qspec_then ‘0’ mp_tac) >> simp[ticks_def]) >>
+  fs[v12rel_def] >>
+  simp[next_step2_def, rn1_sched_LHD] >>
+  Cases_on ‘LHD t1.sched’ >> simp[step_ok2_def] >>
+  irule v12core_step_ok2 >> fs[next_step_def] >>
+  ‘sched_conns 1 t1.sched = step_conns x’
+    by (REWRITE_TAC[ONE] >> asm_simp_tac (srw_ss()) [sched_conns_def]) >>
+  conj_tac >- (qpat_x_assum ‘∀m. LENGTH cs' + _ < _’ (qspec_then ‘1’ mp_tac) >>
+               asm_rewrite_tac[] >> simp[]) >>
+  metis_tac[]
+QED

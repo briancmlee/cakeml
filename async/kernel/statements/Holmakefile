@@ -1,0 +1,5 @@
+# Scratch typecheck only (scratch/l3-stmts): the L3 statements over the spike theories.
+INCLUDES = ../../honest-echo ../../honest-l0-cf ../../honest-l1 ../../honest-l0 ../../honest-ffi ../../ffi-spike ../../model ../../cf-actions ../../m3-assembly ../../socket-v2 ../../close-v2-loop ../../spec $(CAKEMLDIR)/characteristic
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

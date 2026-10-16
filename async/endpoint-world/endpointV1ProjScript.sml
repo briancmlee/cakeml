@@ -350,26 +350,12 @@ Proof
   simp[data_of1_def, data_of2_def]
 QED
 
-Theorem step_conns_cons[local,simp]:
-  step_conns (Connect l c :: as) = c :: step_conns as ∧
-  step_conns (Data c bs :: as) = step_conns as ∧
-  step_conns (Eof c :: as) = step_conns as
-Proof
-  simp[step_conns_def]
-QED
+Theorem step_conns_cons_simp[local,simp] = step_conns_cons;
 
 Theorem findi_inj[local]:
   MEM x l ∧ MEM y l ∧ findi x l = findi y l ⇒ x = y
 Proof
   metis_tac[EL_findi]
-QED
-
-Theorem rn1_step_cons[local]:
-  rn1_step cs (a :: as) =
-    (FST (rn1_step (FST (rn1_arr cs a)) as),
-     SND (rn1_arr cs a) :: SND (rn1_step (FST (rn1_arr cs a)) as))
-Proof
-  simp[rn1_step_def] >> rpt (pairarg_tac >> gvs[])
 QED
 
 (* Renaming the arrivals: connection c's data is client (findi c)'s *)

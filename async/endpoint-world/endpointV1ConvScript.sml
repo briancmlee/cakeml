@@ -68,11 +68,14 @@ Theorem cfds_fresh:
       ∀c. MEM c res ⇒ ¬MEM c (cfds al res lfd n)
 Proof
   Induct >> simp[cfds_def] >> strip_tac >> fs[] >>
-  qabbrev_tac ‘cs = cfds al res lfd n’ >>
-  ‘LENGTH (exp_used res lfd cs n) < dimword (:64)’
-    by simp[exp_used_def, Abbr ‘cs’, LENGTH_TAKE] >>
-  ‘¬MEM (al n (exp_used res lfd cs n)) (exp_used res lfd cs n)’ by fs[alloc_ok_def] >>
-  fs[exp_used_def, Abbr ‘cs’, TAKE_LENGTH_ID, ALL_DISTINCT_APPEND] >> metis_tac[]
+  ‘LENGTH (exp_used res lfd (cfds al res lfd n) n) < dimword (:64)’
+    by simp[exp_used_def, LENGTH_TAKE] >>
+  ‘¬MEM (al n (exp_used res lfd (cfds al res lfd n) n))
+        (exp_used res lfd (cfds al res lfd n) n)’ by fs[alloc_ok_def] >>
+  ‘TAKE n (cfds al res lfd n) = cfds al res lfd n’ by metis_tac[TAKE_LENGTH_ID, LENGTH_cfds] >>
+  pop_assum (fn th => RULE_ASSUM_TAC (REWRITE_RULE [th, exp_used_def]) >>
+                      REWRITE_TAC [th, exp_used_def]) >>
+  fs[ALL_DISTINCT_APPEND] >> metis_tac[]
 QED
 
 (* ------------------------------------------------------------------------
@@ -81,36 +84,44 @@ QED
 
 (* n: the clients so far *)
 Definition rn2_arr_def:
-  rn2_arr F n (Connect2 l) = (n + 1, Connect l (F n)) ∧
-  rn2_arr F n (Data2 j bs) = (n, Data (F j) bs) ∧
-  rn2_arr F n (Eof2 j) = (n, Eof (F j))
+  rn2_arr fdf n (Connect2 l) = (n + 1, Connect l (fdf n)) ∧
+  rn2_arr fdf n (Data2 j bs) = (n, Data (fdf j) bs) ∧
+  rn2_arr fdf n (Eof2 j) = (n, Eof (fdf j))
 End
 
 Definition rn2_step_def:
-  rn2_step F n [] = (n, []) ∧
-  rn2_step F n (a :: as) =
-    let (n1, b) = rn2_arr F n a;
-        (n2, bs) = rn2_step F n1 as
+  rn2_step fdf n [] = (n, []) ∧
+  rn2_step fdf n (a :: as) =
+    let (n1, b) = rn2_arr fdf n a;
+        (n2, bs) = rn2_step fdf n1 as
     in (n2, b :: bs)
 End
 
+Theorem rn2_step_cons:
+  rn2_step fdf n (a :: as) =
+    (FST (rn2_step fdf (FST (rn2_arr fdf n a)) as),
+     SND (rn2_arr fdf n a) :: SND (rn2_step fdf (FST (rn2_arr fdf n a)) as))
+Proof
+  simp[rn2_step_def] >> rpt (pairarg_tac >> gvs[])
+QED
+
 Definition rn2_sched_def:
-  rn2_sched F n ll =
+  rn2_sched fdf n ll =
     LUNFOLD (λ(n, ll). case LHD ll of
                        | NONE => NONE
-                       | SOME st => SOME ((FST (rn2_step F n st), THE (LTL ll)),
-                                          SND (rn2_step F n st))) (n, ll)
+                       | SOME st => SOME ((FST (rn2_step fdf n st), THE (LTL ll)),
+                                          SND (rn2_step fdf n st))) (n, ll)
 End
 
 Theorem rn2_sched_LHD:
-  LHD (rn2_sched F n ll) = OPTION_MAP (λst. SND (rn2_step F n st)) (LHD ll)
+  LHD (rn2_sched fdf n ll) = OPTION_MAP (λst. SND (rn2_step fdf n st)) (LHD ll)
 Proof
   simp[rn2_sched_def, Once LUNFOLD] >> CASE_TAC >> simp[]
 QED
 
 Theorem rn2_sched_LTL:
   LHD ll = SOME st ⇒
-  LTL (rn2_sched F n ll) = SOME (rn2_sched F (FST (rn2_step F n st)) (THE (LTL ll)))
+  LTL (rn2_sched fdf n ll) = SOME (rn2_sched fdf (FST (rn2_step fdf n st)) (THE (LTL ll)))
 Proof
   simp[rn2_sched_def, Once LUNFOLD]
 QED
@@ -123,56 +134,52 @@ Definition ix_ok_def:
   ix_ok n (Eof2 j :: as) = (j < n ∧ ix_ok n as)
 End
 
-Theorem rn2_step_mono[local]:
-  ∀st n. n ≤ FST (rn2_step F n st)
+Theorem rn2_step_count[local]:
+  ∀st n. FST (rn2_step fdf n st) = n + LENGTH (FILTER is_conn2 st)
 Proof
-  Induct >> simp[rn2_step_def] >> Cases >> simp[rn2_arr_def] >> rpt gen_tac >>
-  rpt (pairarg_tac >> gvs[]) >>
-  TRY (first_x_assum (qspec_then ‘n + 1’ mp_tac) >> simp[] >> NO_TAC) >>
-  first_x_assum (qspec_then ‘n’ mp_tac) >> simp[]
+  Induct >- simp[rn2_step_def] >> Cases >>
+  simp[rn2_step_cons, rn2_arr_def, is_conn2_def]
+QED
+
+Theorem rn2_step_mono[local]:
+  n ≤ FST (rn2_step fdf n st)
+Proof
+  simp[rn2_step_count]
 QED
 
 Theorem findi_GENLIST[local]:
-  (∀i i'. i < N ∧ i' < N ∧ F i = F i' ⇒ i = i') ∧ j < n ∧ n ≤ N ⇒
-  findi (F j) (GENLIST F n) = j
+  (∀i i'. i < N ∧ i' < N ∧ fdf i = fdf i' ⇒ i = i') ∧ j < n ∧ n ≤ N ⇒
+  findi (fdf j) (GENLIST fdf n) = j
 Proof
   strip_tac >>
-  ‘ALL_DISTINCT (GENLIST F n)’
+  ‘ALL_DISTINCT (GENLIST fdf n)’
     by (simp[ALL_DISTINCT_GENLIST] >> rpt strip_tac >> first_x_assum irule >> simp[]) >>
-  ‘F j = EL j (GENLIST F n)’ by simp[EL_GENLIST] >>
+  ‘fdf j = EL j (GENLIST fdf n)’ by simp[EL_GENLIST] >>
   pop_assum SUBST1_TAC >> irule findi_EL >> simp[]
 QED
 
 (* MAIN: naming the clients by their fds, then numbering the connections
    in connect order, gives the step back *)
 Theorem rn1_rn2_step:
-  ∀st n. (∀i i'. i < N ∧ i' < N ∧ F i = F i' ⇒ i = i') ∧ ix_ok n st ∧
-         FST (rn2_step F n st) ≤ N ⇒
-         rn1_step (GENLIST F n) (SND (rn2_step F n st)) =
-           (GENLIST F (FST (rn2_step F n st)), st)
+  ∀st n. (∀i i'. i < N ∧ i' < N ∧ fdf i = fdf i' ⇒ i = i') ∧ ix_ok n st ∧
+         FST (rn2_step fdf n st) ≤ N ⇒
+         rn1_step (GENLIST fdf n) (SND (rn2_step fdf n st)) =
+           (GENLIST fdf (FST (rn2_step fdf n st)), st)
 Proof
-  Induct >> simp[rn2_step_def, rn1_step_def] >> Cases >>
-  simp[ix_ok_def, rn2_arr_def, rn1_arr_def] >> rpt gen_tac >> strip_tac >>
-  rpt (pairarg_tac >> gvs[])
-  >- (‘GENLIST F n ++ [F n] = GENLIST F (n + 1)’ by simp[GSYM ADD1, GENLIST, SNOC_APPEND] >>
-      gvs[] >> first_x_assum (qspec_then ‘n + 1’ mp_tac) >> simp[])
-  >> (‘n ≤ FST (rn2_step F n st)’ by simp[rn2_step_mono] >>
-      first_x_assum (qspec_then ‘n’ mp_tac) >> simp[] >> strip_tac >>
-      simp[findi_GENLIST])
+  Induct >- simp[rn2_step_def, rn1_step_def] >> Cases >> rpt gen_tac >> strip_tac >>
+  fs[ix_ok_def, rn2_step_cons, rn1_step_cons, rn2_arr_def, rn1_arr_def]
+  >- (‘GENLIST fdf n ++ [fdf n] = GENLIST fdf (n + 1)’ by simp[GSYM ADD1, GENLIST, SNOC_APPEND] >>
+      first_x_assum (qspec_then ‘n + 1’ mp_tac) >> simp[])
+  >> (rename1 ‘ix_ok m st’ >> rename1 ‘j < m’ >>
+      ‘findi (fdf j) (GENLIST fdf m) = j’
+        by (irule findi_GENLIST >> simp[] >> qexists_tac ‘N’ >> simp[] >>
+            ‘m ≤ FST (rn2_step fdf m st)’ by simp[rn2_step_mono] >> decide_tac) >>
+      first_x_assum (qspec_then ‘m’ mp_tac) >> simp[])
 QED
 
 (* ------------------------------------------------------------------------
    Left alone
    ------------------------------------------------------------------------ *)
-
-Theorem rn2_step_count[local]:
-  ∀st n. FST (rn2_step F n st) = n + LENGTH (FILTER is_conn2 st)
-Proof
-  Induct >> simp[rn2_step_def] >> Cases >> simp[rn2_arr_def, is_conn2_def] >>
-  rpt gen_tac >> rpt (pairarg_tac >> gvs[]) >>
-  TRY (first_x_assum (qspec_then ‘n + 1’ mp_tac) >> simp[] >> NO_TAC) >>
-  first_x_assum (qspec_then ‘n’ mp_tac) >> simp[]
-QED
 
 Theorem step_ok2_ix[local]:
   ∀st s. step_ok2 s st ⇒ ix_ok (LENGTH s.clients) st
@@ -185,15 +192,14 @@ QED
 
 (* The fds of a renamed step's connections *)
 Theorem rn2_step_conns[local]:
-  ∀st n. step_conns (SND (rn2_step F n st)) =
-         GENLIST (λi. F (n + i)) (LENGTH (FILTER is_conn2 st))
+  ∀st n. step_conns (SND (rn2_step fdf n st)) =
+         GENLIST (λi. fdf (n + i)) (LENGTH (FILTER is_conn2 st))
 Proof
-  Induct >> simp[rn2_step_def, step_conns_def] >> Cases >>
-  simp[rn2_arr_def, is_conn2_def] >> rpt gen_tac >> rpt (pairarg_tac >> gvs[]) >>
-  fs[GSYM step_conns_def]
+  Induct >- simp[rn2_step_def, step_conns_def] >> Cases >> rpt gen_tac >>
+  simp[rn2_step_cons, rn2_arr_def, is_conn2_def, step_conns_cons]
   >- (first_x_assum (qspec_then ‘n + 1’ mp_tac) >> simp[] >> strip_tac >>
-      simp[GENLIST_CONS, combinTheory.o_DEF, ADD1])
-  >> first_x_assum (qspec_then ‘n’ mp_tac) >> simp[]
+      simp[GENLIST_CONS, combinTheory.o_DEF] >> AP_THM_TAC >> AP_TERM_TAC >>
+      rw[FUN_EQ_THM] >> AP_TERM_TAC >> decide_tac)
 QED
 
 (* The version-1 world of a version-2 world *)

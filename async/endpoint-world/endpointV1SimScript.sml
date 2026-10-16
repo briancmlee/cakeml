@@ -71,6 +71,22 @@ Proof
   fs[step_conns_def] >> metis_tac[FST, APPEND_ASSOC]
 QED
 
+Theorem step_conns_cons:
+  step_conns (Connect l c :: as) = c :: step_conns as ∧
+  step_conns (Data c bs :: as) = step_conns as ∧
+  step_conns (Eof c :: as) = step_conns as
+Proof
+  simp[step_conns_def]
+QED
+
+Theorem rn1_step_cons:
+  rn1_step cs (a :: as) =
+    (FST (rn1_step (FST (rn1_arr cs a)) as),
+     SND (rn1_arr cs a) :: SND (rn1_step (FST (rn1_arr cs a)) as))
+Proof
+  simp[rn1_step_def] >> rpt (pairarg_tac >> gvs[])
+QED
+
 (* The connections of the first n steps of a schedule *)
 Definition sched_conns_def:
   sched_conns 0 ll = [] ∧

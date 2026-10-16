@@ -17,9 +17,9 @@
   (ticks); a program's own operations between rounds only consume data or
   pending connections (see the end of the file).
 *)
-Theory ffiSpikeSocketFair
+Theory socketFair
 Ancestors
-  llist alist ffiSpikeSocketFFI
+  llist alist socketWorld
 Libs
   preamble
 

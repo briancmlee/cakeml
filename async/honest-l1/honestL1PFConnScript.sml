@@ -420,11 +420,13 @@ QED
 
 (* The queue after a step that only appended, then the rest of the fetch *)
 Theorem queue_app:
-  qof w1 l = qof w l ++ t1 ∧ wmono w1 w' ∧
+  qof w1 l = qof w l ++ t1 ∧ wmono w1 w' ∧ log_conns lg = [] ∧
   k ≤ LENGTH t2 + LENGTH (qof w1 l) ∧ qw = DROP k (qof w1 l ++ t2) ∧
-  (∀j. MEM j (TAKE k (qof w1 l ++ t2)) ⇒ resolved w' log j) ⇒
+  (∀j. MEM j (TAKE k (qof w1 l ++ t2)) ⇒ resolved w' log j) ∧
+  LENGTH (log_conns log) ≤ k ∧ LENGTH (log_conns lg) ≤ 1 ⇒
   ∃t k. k ≤ LENGTH t + LENGTH (qof w l) ∧ qw = DROP k (qof w l ++ t) ∧
-        ∀j. MEM j (TAKE k (qof w l ++ t)) ⇒ resolved w' (lg ++ log) j
+        (∀j. MEM j (TAKE k (qof w l ++ t)) ⇒ resolved w' (lg ++ log) j) ∧
+        LENGTH (log_conns lg) + LENGTH (log_conns log) ≤ k
 Proof
   rw[] >> qexistsl_tac [‘t1 ++ t2’, ‘k’] >> gvs[] >> rw[] >>
   irule resolved_mono >> qexistsl_tac [‘log’, ‘w'’] >> simp[]
@@ -434,9 +436,11 @@ QED
 Theorem queue_pop:
   qof w l ++ t1 = j :: qof w1 l ∧ resolved w1 lg j ∧ wmono w1 w' ∧
   k ≤ LENGTH t2 + LENGTH (qof w1 l) ∧ qw = DROP k (qof w1 l ++ t2) ∧
-  (∀j. MEM j (TAKE k (qof w1 l ++ t2)) ⇒ resolved w' log j) ⇒
+  (∀j. MEM j (TAKE k (qof w1 l ++ t2)) ⇒ resolved w' log j) ∧
+  LENGTH (log_conns log) ≤ k ∧ LENGTH (log_conns lg) ≤ 1 ⇒
   ∃t k. k ≤ LENGTH t + LENGTH (qof w l) ∧ qw = DROP k (qof w l ++ t) ∧
-        ∀j. MEM j (TAKE k (qof w l ++ t)) ⇒ resolved w' (lg ++ log) j
+        (∀j. MEM j (TAKE k (qof w l ++ t)) ⇒ resolved w' (lg ++ log) j) ∧
+        LENGTH (log_conns lg) + LENGTH (log_conns log) ≤ k
 Proof
   rw[] >> qexistsl_tac [‘t1 ++ t2’, ‘SUC k’] >>
   ‘qof w l ++ (t1 ++ t2) = j :: (qof w1 l ++ t2)’
@@ -455,7 +459,8 @@ Theorem pf_fetch_queue:
     pf_fetch lfd hw fs (w, ps) = SOME ((w', ps'), log, evs) ∧ winv w ⇒
     wmono w w' ∧
     ∃t k. k ≤ LENGTH t + LENGTH (qof w lfd) ∧ qof w' lfd = DROP k (qof w lfd ++ t) ∧
-          ∀j. MEM j (TAKE k (qof w lfd ++ t)) ⇒ resolved w' log j
+          (∀j. MEM j (TAKE k (qof w lfd ++ t)) ⇒ resolved w' log j) ∧
+          LENGTH (log_conns log) ≤ k
 Proof
   Induct >- (simp[pf_fetch_def] >> rpt strip_tac >> qexistsl_tac [‘[]’, ‘0’] >> simp[]) >>
   rpt gen_tac >> rename1 ‘g :: fs’ >> simp[Once pf_fetch_def] >>
@@ -467,13 +472,16 @@ Proof
         (strip_assume_tac o SIMP_RULE (srw_ss()) [AllCaseEqs()]) >> gvs[] >>
       ‘winv w1 ∧ wmono w w1’ by metis_tac[sys_winv, sys_wmono] >>
       first_x_assum drule_all >> strip_tac >>
-      ‘wmono w w'’ by metis_tac[wmono_trans] >> simp[] >>
+      ‘wmono w w'’ by metis_tac[wmono_trans] >>
+  qpat_x_assum ‘wmono w w'’ (fn th => REWRITE_TAC [th]) >>
       drule_all sys_accept_queue >> strip_tac
-      >- (irule queue_app >> metis_tac[])
+      >- (‘fl' = []’ by (Cases_on ‘l0_res_of out’ >> gvs[]) >>
+          irule queue_app >> simp[] >> metis_tac[])
       >- (irule queue_pop >> gvs[] >>
           qexistsl_tac [‘j’, ‘k’, ‘t'’, ‘t’, ‘w1’] >> gvs[] >>
           simp[resolved_def] >> disj1_tac >> qexists_tac ‘n2w k'’ >> gvs[])
-      >> irule queue_pop >> gvs[] >>
+      >> ‘fl' = []’ by (Cases_on ‘l0_res_of out’ >> gvs[]) >>
+      irule queue_pop >> gvs[] >>
       qexistsl_tac [‘j’, ‘k’, ‘t'’, ‘t’, ‘w1’] >> gvs[] >>
       simp[resolved_def])
   >> simp[AllCaseEqs(), PULL_EXISTS] >> rpt gen_tac >> strip_tac >>
@@ -482,9 +490,11 @@ Proof
     (strip_assume_tac o SIMP_RULE (srw_ss()) [AllCaseEqs()]) >> gvs[] >>
   ‘winv w1 ∧ wmono w w1’ by metis_tac[sys_winv, sys_wmono] >>
   first_x_assum drule_all >> strip_tac >>
-  ‘wmono w w'’ by metis_tac[wmono_trans] >> simp[] >>
+  ‘wmono w w'’ by metis_tac[wmono_trans] >>
+  qpat_x_assum ‘wmono w w'’ (fn th => REWRITE_TAC [th]) >>
   drule (el 3 (CONJUNCTS sys_qof)) >> disch_then (qspec_then ‘lfd’ strip_assume_tac) >>
-  irule queue_app >> metis_tac[]
+  ‘log_conns fl' = []’ by (Cases_on ‘l0_res_of out’ >> gvs[] >> every_case_tac >> gvs[]) >>
+  irule queue_app >> simp[] >> metis_tac[]
 QED
 
 (* ------------------------------------------------------------------------
@@ -590,7 +600,8 @@ Theorem pround_queue:
   pround lfd hw hs (w, ps) acts = SOME (snap, (w', ps'), log, evs) ∧
   winv w ∧ pv_rel lfd cm ps s ∧ pown lfd ps ∧ l0own lfd w ps ⇒
   ∃t k. k ≤ LENGTH t + LENGTH (qof w lfd) ∧ qof w' lfd = DROP k (qof w lfd ++ t) ∧
-        ∀j. MEM j (TAKE k (qof w lfd ++ t)) ⇒ resolved w' log j
+        (∀j. MEM j (TAKE k (qof w lfd ++ t)) ⇒ resolved w' log j) ∧
+        LENGTH (log_conns log) ≤ k
 Proof
   simp[pround_def, AllCaseEqs()] >> strip_tac >> PairCases_on ‘ws1’ >>
   gvs[pf_tail_def, AllCaseEqs()] >>
@@ -628,4 +639,60 @@ Proof
   simp[DROP_APPEND1, TAKE_APPEND1] >>
   rpt strip_tac >> irule resolved_keep >> simp[] >>
   qexistsl_tac [‘ps3.b.closing’, ‘w3’] >> simp[]
+QED
+
+(* ------------------------------------------------------------------------
+   The fetch and the listener: accepts, the pause, the accepted fds
+   ------------------------------------------------------------------------ *)
+
+(* Event ev's result is a failure *)
+Definition failed_def:
+  failed (IO_event n conf bs) ⇔ ∃e x. l0_res_of (MAP SND bs) = Fail e x
+End
+
+Theorem ev_failed:
+  l0_rely w ∧ l0_do n conf alen w = SOME (out, w', ev) ⇒
+  (failed ev ⇔ ∃e x. l0_res_of out = Fail e x)
+Proof
+  strip_tac >>
+  ‘LENGTH out = alen’
+    by (gvs[l0_do_def, AllCaseEqs()] >> drule_all honestL0WorldPropsTheory.l0_ffi_fn_length >> simp[]) >>
+  drule l0_do_cases >> strip_tac >> gvs[failed_def, MAP_SND_ZIP_REPLICATE]
+QED
+
+Theorem pf_fetch_lfd:
+  ∀fs w ps w' ps' log evs.
+    pf_fetch lfd hw fs (w, ps) = SOME ((w', ps'), log, evs) ∧ winv w ⇒
+    ps'.acq = ps.acq ++ log_conns log ∧
+    (0 < ps.pause ⇒ ps'.pause = ps.pause ∧ ¬EXISTS (ev_on «sys_accept» lfd) evs) ∧
+    (MEM lfd fs ∧ wants_input lfd hw ps lfd ⇒ EXISTS (ev_on «sys_accept» lfd) evs) ∧
+    (∀ev. MEM ev evs ∧ ev_on «sys_accept» lfd ev ∧ ¬failed ev ⇒ log_conns log ≠ [])
+Proof
+  Induct >- simp[pf_fetch_def, log_conns_def] >>
+  rpt gen_tac >> rename1 ‘g :: fs’ >> strip_tac >>
+  qpat_x_assum ‘pf_fetch _ _ _ _ = _’ mp_tac >> simp[Once pf_fetch_def] >>
+  IF_CASES_TAC
+  >- (strip_tac >> first_x_assum drule_all >> strip_tac >> simp[] >>
+      rpt strip_tac >> gvs[] >> gvs[wants_input_def] >> metis_tac[]) >>
+  IF_CASES_TAC
+  >- (gvs[] >> simp[AllCaseEqs(), PULL_EXISTS] >> rpt gen_tac >> strip_tac >>
+      pairarg_tac >> gvs[AllCaseEqs()] >>
+      ‘winv w1’ by metis_tac[sys_winv] >>
+      first_x_assum drule_all >> strip_tac >>
+      ‘l0_rely w’ by gvs[winv_def] >>
+      qpat_assum ‘sys_accept _ _ = _’ (strip_assume_tac o REWRITE_RULE [sys_accept_def]) >>
+      drule_all ev_do >> drule_all ev_failed >> rpt strip_tac >>
+      ‘ev_on «sys_accept» g ev’ by simp[call_fds_def] >>
+      ‘ps.pause = 0’ by gvs[wants_input_def] >>
+      Cases_on ‘l0_res_of out’ >> gvs[log_conns_def] >> rw[] >> gvs[EXISTS_MEM] >>
+      metis_tac[]) >>
+  simp[AllCaseEqs(), PULL_EXISTS] >> rpt gen_tac >> strip_tac >>
+  pairarg_tac >> gvs[AllCaseEqs()] >>
+  ‘winv w1’ by metis_tac[sys_winv] >>
+  ‘l0_rely w’ by gvs[winv_def] >>
+  qpat_assum ‘sys_recv _ _ _ = _’ (strip_assume_tac o REWRITE_RULE [sys_recv_def]) >>
+  drule_all ev_do >> strip_tac >>
+  ‘¬ev_on «sys_accept» lfd ev’ by simp[] >>
+  first_x_assum drule_all >> strip_tac >> gvs[log_conns_def, wants_input_def] >>
+  rpt strip_tac >> gvs[] >> metis_tac[]
 QED

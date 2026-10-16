@@ -673,6 +673,7 @@ Theorem read_eof_step:
     hdo lfd (s, hs) (Read h n) = SOME (Got (SOME []), (s', hs'), MAP l0_v2_event evs) ∧
     l1v2_rel p lfd sched (w', st') (s', hs') ∧ rdy_ok lfd polp w' st' ∧
     (∀x. MEM x (l0_used w') ⇒ MEM x (l0_used w)) ∧
+    LENGTH (l0_used w') ≤ LENGTH (l0_used w) ∧
     w'.env = w.env ∧ w'.ch = w.ch ∧ w'.fd_limit = w.fd_limit
 Proof
   strip_tac >> drule_all tbl_open_chan >> strip_tac >> gvs[] >>
@@ -714,7 +715,8 @@ Proof
            MEM_FILTER] >>
       rw[] >> gvs[] >> metis_tac[])
   >> simp[l0_used_def, upd_lchan_def, MEM_MAP, EXISTS_PROD, ADELKEY_def, MEM_FILTER] >>
-  metis_tac[]
+  TRY (metis_tac[] >> NO_TAC) >>
+  simp[LENGTH_FILTER_LEQ]
 QED
 
 (* ------------------------------------------------------------------------
@@ -808,7 +810,7 @@ Theorem act_step:
     hdo lfd (s, hs) a = SOME (r, (s', hs'), evs') ∧
     drops (MAP l0_v2_event evs) evs' ∧
     l1v2_rel p lfd sched (w', st') (s', hs') ∧ rdy_ok lfd polp w' st' ∧ fds_lt w' ∧
-    st'.nxt ≤ st.nxt + 1 ∧
+    st'.nxt ≤ st.nxt + 1 ∧ LENGTH (l0_used w') ≤ LENGTH (l0_used w) + 1 ∧
     w'.env = w.env ∧ w'.ch = w.ch ∧ w'.fd_limit = w.fd_limit
 Proof
   strip_tac >> drule_all fds_lt_small >> strip_tac >>

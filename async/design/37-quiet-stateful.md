@@ -89,7 +89,7 @@ instances of the relative form.
 tap updates only on answered `Sock` responses, and a deleted snapshot has
 none. So the proof carries over.
 
-## 4. The socket level and the loop (decision needed)
+## 4. The socket level and the loop (decided: R1)
 
 The socket-level program is `srelabel2 (…)`. Its interest is a set of
 `word64` fds (`sie` keeps only `Readable n`), and `step_q` selects on
@@ -114,6 +114,26 @@ Today's loop and its theorems for echo and HTTP stay untouched. A goal
 (not a prerequisite): prove that the variant restricted to computations
 that never declare `NONE` coincides with today's loop, so that one loop
 could eventually serve all servers.
+
+### 4.1 R1 as modelled (asyncOCBusy, asyncStoreQuiet)
+
+The model keeps the loop's snapshots as they are (the world reports fds
+only) and states R1 as a **busy test**: a round with no actions selects
+only if the program does not wait for `Always`; otherwise it polls at
+once, as a round with actions does (`lbgroundsB`). This is the same loop
+as "interest `word64 option set`, `NONE` = `Always`, select only if
+`NONE ∉ waiting_on`": the `NONE` entry is the busy flag. For a program
+that never waits for `Always`, `lbgroundsB` is today's `lbgrounds`.
+
+- Skipping a snapshot needs `quiet_nb` (quiet while not busy), not
+  `quiet`. `with_store2 Always` has it (`quiet_nb_with_store2`), because
+  not busy means no query is pending (`with_store2_busy`, with `rd2`: the
+  skeleton waits only for `Readable` events).
+- `qsel_sleepsB`: under `store_stable`'s three facts, the loop blocks
+  forever in select. `store_sleeps` is the instance for the store server
+  with query handlers.
+- In CakeML, `step_q'` tests for `Always` in the program's event list
+  before `q_wait_ready`; the select set stays the `Readable` fds.
 
 ## 5. Stability for `with_store2 ∘ server_v2` under `proto_ok`
 

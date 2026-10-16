@@ -148,14 +148,19 @@ Proof
   gvs[]
 QED
 
-(* MAIN: with_store2 is quiet for every snapshot that reports now, if the
-   inner computation is well-formed and quiet *)
-Theorem quiet_with_store2:
-  wf c.run ∧ quiet c ⇒ quiet_on (λs. now ∈ s.ready) (with_store2 now δ s0 c)
+(* with_store2 is quiet after every history after which no query is
+   pending, if the inner computation is well-formed and quiet *)
+Theorem quiet_with_store2_np:
+  wf c.run ∧ quiet c ∧ ¬kv_pending δ s0 c.run h ∧
+  ((with_store2 now δ s0 c).run h).result = NONE ∧
+  new_actions (log_of (with_store2 now δ s0 c).run) h = [] ∧
+  s.results = [] ∧ DISJOINT ((with_store2 now δ s0 c).interest h) s.ready ⇒
+  (with_store2 now δ s0 c).run (h ++ [s] ++ h') = (with_store2 now δ s0 c).run (h ++ h') ∧
+  (with_store2 now δ s0 c).interest (h ++ [s] ++ h') =
+    (with_store2 now δ s0 c).interest (h ++ h')
 Proof
-  rw[quiet_on_def, with_store2_def] >>
+  simp[with_store2_def] >> strip_tac >>
   gvs[with_store_def, new_actions_with_store] >>
-  ‘¬kv_pending δ s0 c.run h’ by (strip_tac >> gvs[IN_DISJOINT] >> metis_tac[]) >>
   qabbrev_tac ‘ih = inner_hist δ s0 c.run h’ >>
   ‘new_actions (log_of c.run) ih = []’
     by (irule acts_NIL >> gvs[kv_pending_def, Abbr ‘ih’]) >>
@@ -169,4 +174,14 @@ Proof
          new_actions (log_of c.run) (ih ++ k)’
     by (irule quiet_splice >> simp[]) >>
   simp[kv_pending_def]
+QED
+
+(* MAIN: with_store2 is quiet for every snapshot that reports now, if the
+   inner computation is well-formed and quiet *)
+Theorem quiet_with_store2:
+  wf c.run ∧ quiet c ⇒ quiet_on (λs. now ∈ s.ready) (with_store2 now δ s0 c)
+Proof
+  strip_tac >> REWRITE_TAC[quiet_on_def] >> BETA_TAC >> rpt gen_tac >> strip_tac >>
+  irule quiet_with_store2_np >> simp[] >>
+  strip_tac >> gvs[with_store2_def, IN_DISJOINT] >> metis_tac[]
 QED

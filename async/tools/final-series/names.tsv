@@ -318,3 +318,5 @@ const	endpoint_of_kv_spec_le	peer_of_kv_spec_le	exact
 const	endpoint_of_v1_live	peer_of_v1_live	exact
 const	endpoint_of_live2	peer_of_live2	exact
 const	endpoint_of_echo_spec2	peer_of_echo_spec2	exact
+# L2-04 fd discipline (provisional)
+theory	fdDiscipline2	fdDisciplineEpisodes		fd-discipline

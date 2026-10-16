@@ -117,6 +117,7 @@ Rules: theory renames apply everywhere, including `XTheory.`, `X$c` and translat
 | endpoint-world | `endpointV2Prefix` | `peerV2Prefix` |
 | endpoint-world | `endpointV2Sim` | `peerV2Sim` |
 | endpoint-world | `endpointWorld` | `peerWorld` |
+| fd-discipline | `fdDiscipline2` | `fdDisciplineEpisodes` |
 | headline | `asyncHLEchoSpec2` | `echoEpisodesHeadline` |
 | headline | `asyncM4EchoSpec` | `echoHeadline` |
 | headline | `asyncM4EchoSpecSafe` | `echoSafeHeadline` |

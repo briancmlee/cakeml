@@ -1123,3 +1123,157 @@ Proof
   drule_all tail_rel >> strip_tac >>
   qexistsl_tac [‘rs’, ‘hevs’, ‘s'’] >> gvs[]
 QED
+
+(* ------------------------------------------------------------------------
+   The version-2 world built from L1's run
+   ------------------------------------------------------------------------ *)
+
+(* What round n fetched *)
+Definition plog_def:
+  plog lfd hw ifds m w0 n =
+    case prounds lfd hw ifds m (w0, pinit) (SUC n) of
+    | SOME (_, _, _, logs) => EL n logs
+    | NONE => []
+End
+
+(* The client map and count before round n *)
+Definition pcm_def:
+  pcm lfd hw ifds m w0 0 = ([], 0) ∧
+  pcm lfd hw ifds m w0 (SUC n) =
+    SND (arrs lfd (pcm lfd hw ifds m w0 n) (plog lfd hw ifds m w0 n))
+End
+
+(* The arrivals of round n's step of the schedule *)
+Definition parr_def:
+  parr lfd hw ifds m w0 n =
+    FST (arrs lfd (pcm lfd hw ifds m w0 n) (plog lfd hw ifds m w0 n))
+End
+
+(* The kernel's fd for client j: free, it is the fd of the world's choice;
+   otherwise (never in the run) the lowest free fd *)
+Definition run_alloc_def:
+  run_alloc lfd hw ifds m w0 (j : num) (used : word64 list) =
+    if ∃n f. MEM (f, j) (FST (pcm lfd hw ifds m w0 n)) then
+      let f = @f. ∃n. MEM (f, j) (FST (pcm lfd hw ifds m w0 n)) in
+        if MEM f used then lowest_free used else f
+    else lowest_free used
+End
+
+(* The version-2 world *)
+Definition psk_def:
+  psk lfd hw ifds m w0 =
+    <| listening := [(lfd, [])]; clients := []; open_fds := []; reserved := [];
+       alloc := run_alloc lfd hw ifds m w0;
+       future := LGENLIST (parr lfd hw ifds m w0) NONE |>
+End
+
+Theorem prounds_logs:
+  ∀n h ws evs logs.
+    prounds lfd hw ifds m ws0 n = SOME (h, ws, evs, logs) ⇒
+    LENGTH logs = n ∧
+    ∀k. k ≤ n ⇒ ∃h' ws' evs'. prounds lfd hw ifds m ws0 k = SOME (h', ws', evs', TAKE k logs)
+Proof
+  Induct >> simp[prounds_def] >> rpt gen_tac >> strip_tac >> gvs[AllCaseEqs()] >>
+  rw[] >>
+  Cases_on ‘k = SUC (LENGTH logs')’
+  >- (gvs[prounds_def] >> simp[TAKE_LENGTH_ID_rwt]) >>
+  first_x_assum (qspec_then ‘k’ mp_tac) >> simp[] >> strip_tac >>
+  simp[TAKE_APPEND1]
+QED
+
+Theorem plog_EL:
+  prounds lfd hw ifds m (w0, pinit) n = SOME (h, ws, evs, logs) ∧ k < n ⇒
+  plog lfd hw ifds m w0 k = EL k logs
+Proof
+  rw[plog_def] >> drule prounds_logs >> strip_tac >>
+  first_x_assum (qspec_then ‘SUC k’ mp_tac) >> simp[] >> strip_tac >>
+  simp[EL_TAKE]
+QED
+
+Theorem arrs_inv:
+  ∀l cm k as cm' k'.
+    arrs lfd (cm, k) l = (as, (cm', k')) ∧
+    ALL_DISTINCT (MAP SND cm) ∧ EVERY (λj. j < k) (MAP SND cm) ⇒
+    ALL_DISTINCT (MAP SND cm') ∧ EVERY (λj. j < k') (MAP SND cm') ∧ k ≤ k' ∧
+    ∃new. cm' = new ++ cm ∧ EVERY (λj. k ≤ j) (MAP SND new)
+Proof
+  Induct >> simp[arrs_def] >> Cases >> simp[arrs_def] >> rpt gen_tac >>
+  pairarg_tac >> gvs[] >> strip_tac >> gvs[] >>
+  TRY (first_x_assum drule_all >> simp[] >> NO_TAC) >>
+  first_x_assum drule >>
+  impl_tac
+  >- (simp[] >> fs[EVERY_MEM] >> rw[]
+      >- (strip_tac >> res_tac >> fs[])
+      >> res_tac >> simp[]) >>
+  strip_tac >> gvs[] >>
+  conj_tac >- (REWRITE_TAC[GSYM APPEND_ASSOC, APPEND] >> first_assum ACCEPT_TAC) >>
+  fs[EVERY_MEM] >> rw[] >> res_tac >> simp[]
+QED
+
+Theorem pcm_inv:
+  ∀n. ALL_DISTINCT (MAP SND (FST (pcm lfd hw ifds m w0 n))) ∧
+      EVERY (λj. j < SND (pcm lfd hw ifds m w0 n)) (MAP SND (FST (pcm lfd hw ifds m w0 n)))
+Proof
+  Induct >> simp[pcm_def] >>
+  Cases_on ‘pcm lfd hw ifds m w0 n’ >> gvs[] >>
+  Cases_on ‘arrs lfd (q, r) (plog lfd hw ifds m w0 n)’ >> rename1 ‘_ = (as, ck)’ >>
+  PairCases_on ‘ck’ >> drule_all arrs_inv >> simp[]
+QED
+
+Theorem pcm_step:
+  ∀n. ∃new'. FST (pcm lfd hw ifds m w0 (SUC n)) = new' ++ FST (pcm lfd hw ifds m w0 n)
+Proof
+  gen_tac >> simp[pcm_def] >>
+  Cases_on ‘pcm lfd hw ifds m w0 n’ >> simp[] >>
+  Cases_on ‘arrs lfd (q, r) (plog lfd hw ifds m w0 n)’ >> rename1 ‘_ = (as, ck)’ >>
+  PairCases_on ‘ck’ >> simp[] >> drule arrs_suffix >> simp[]
+QED
+
+Theorem pcm_mono:
+  ∀d n. ∃new. FST (pcm lfd hw ifds m w0 (n + d)) = new ++ FST (pcm lfd hw ifds m w0 n)
+Proof
+  Induct >> simp[] >> gen_tac >>
+  first_x_assum (qspec_then ‘n’ strip_assume_tac) >>
+  qspecl_then [‘n + d’] strip_assume_tac pcm_step >>
+  qexists_tac ‘new' ++ new’ >>
+  ‘n + SUC d = SUC (n + d)’ by simp[] >> pop_assum SUBST1_TAC >>
+  REWRITE_TAC[GSYM APPEND_ASSOC] >> ASM_REWRITE_TAC[]
+QED
+
+Theorem snd_unique:
+  ∀l f g j. ALL_DISTINCT (MAP SND l) ∧ MEM (f, j) l ∧ MEM (g, j) l ⇒ f = g
+Proof
+  Induct >> simp[FORALL_PROD] >> rw[] >> gvs[MEM_MAP] >> metis_tac[SND]
+QED
+
+Theorem pcm_unique:
+  MEM (f, j) (FST (pcm lfd hw ifds m w0 n)) ∧
+  MEM (g, j) (FST (pcm lfd hw ifds m w0 n')) ⇒ f = g
+Proof
+  strip_tac >>
+  Cases_on ‘n ≤ n'’
+  >- (‘∃d. n' = n + d’ by (qexists_tac ‘n' - n’ >> simp[]) >>
+      qspecl_then [‘d’, ‘n’] strip_assume_tac pcm_mono >>
+      ‘ALL_DISTINCT (MAP SND (FST (pcm lfd hw ifds m w0 (n + d))))’ by simp[pcm_inv] >>
+      ‘MEM (f, j) (FST (pcm lfd hw ifds m w0 (n + d)))’ by gvs[] >>
+      ‘MEM (g, j) (FST (pcm lfd hw ifds m w0 (n + d)))’ by gvs[] >>
+      qspecl_then [‘FST (pcm lfd hw ifds m w0 (n + d))’, ‘f’, ‘g’, ‘j’] mp_tac snd_unique >>
+      simp[]) >>
+  ‘∃d. n = n' + d’ by (qexists_tac ‘n - n'’ >> simp[]) >>
+  qspecl_then [‘d’, ‘n'’] strip_assume_tac pcm_mono >>
+  ‘ALL_DISTINCT (MAP SND (FST (pcm lfd hw ifds m w0 (n' + d))))’ by simp[pcm_inv] >>
+  ‘MEM (f, j) (FST (pcm lfd hw ifds m w0 (n' + d)))’ by gvs[] >>
+  ‘MEM (g, j) (FST (pcm lfd hw ifds m w0 (n' + d)))’ by gvs[] >>
+  qspecl_then [‘FST (pcm lfd hw ifds m w0 (n' + d))’, ‘f’, ‘g’, ‘j’] mp_tac snd_unique >>
+  simp[]
+QED
+
+Theorem run_alloc_eq:
+  MEM (f, j) (FST (pcm lfd hw ifds m w0 n)) ∧ ¬MEM f used ⇒
+  run_alloc lfd hw ifds m w0 j used = f
+Proof
+  strip_tac >>
+  ‘(@g. ∃n. MEM (g, j) (FST (pcm lfd hw ifds m w0 n))) = f’
+    by (SELECT_ELIM_TAC >> metis_tac[pcm_unique]) >>
+  rw[run_alloc_def] >> metis_tac[]
+QED

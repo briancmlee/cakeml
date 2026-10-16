@@ -1,0 +1,6 @@
+# Generated from the final-series layout (INCLUDES = the dirs of all ancestors).
+INCLUDES = ../../world/sockets \
+           $(CAKEMLDIR)/semantics
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

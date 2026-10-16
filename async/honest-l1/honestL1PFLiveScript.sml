@@ -79,9 +79,9 @@ End
 (* S1: the interest covers every open handle and the listener *)
 Definition S1_def:
   S1 lfd hw ifds m w0 ⇔
-    ∀n h f. ALOOKUP (rstate lfd hw ifds m w0 n).b.tbl h = SOME f ⇒
-            MEM h (ifds (rhist lfd hw ifds m w0 n)) ∧
-            MEM lfd (ifds (rhist lfd hw ifds m w0 n))
+    (∀n h f. ALOOKUP (rstate lfd hw ifds m w0 n).b.tbl h = SOME f ⇒
+             MEM h (ifds (rhist lfd hw ifds m w0 n))) ∧
+    ∀n. MEM lfd (ifds (rhist lfd hw ifds m w0 n))
 End
 
 (* S3: what the server is shown, it eventually reads: an fd's inbox is
@@ -415,7 +415,7 @@ Proof
             qpat_assum ‘∀k. n ≤ k ⇒ _’ (qspec_then ‘k'’ mp_tac) >> fs[fetched_at_def]) >>
         strip_tac >> conj_tac >- simp[] >> gen_tac >> first_x_assum irule >> simp[]) >>
   ‘MEM h (ifds (rhist lfd hw ifds m w0 k))’
-    by (qpat_assum ‘S1 _ _ _ _ _’ (mp_tac o REWRITE_RULE [S1_def]) >>
+    by (qpat_assum ‘S1 _ _ _ _ _’ (mp_tac o CONJUNCT1 o REWRITE_RULE [S1_def]) >>
         disch_then drule >> simp[]) >>
   ‘¬fetched_at lfd hw ifds m w0 k f’
     by (qpat_assum ‘∀k. n ≤ k ⇒ _’ (qspec_then ‘k’ mp_tac) >> simp[]) >>

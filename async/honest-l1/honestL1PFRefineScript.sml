@@ -18,7 +18,8 @@
 *)
 Theory honestL1PFRefine
 Ancestors
-  honestL1PFModel honestL1Model honestL1Steps honestL0World honestL0 asyncHLModel
+  honestL1PFModel honestL1Model honestL1Steps honestL1Inv honestL0Rely honestL0World honestL0
+  asyncHLModel
   socketV2FFI socketV2Events ffiSpikeSocketFFI asyncM3World asyncCore asyncLevel1
   llist alist
 Libs
@@ -411,4 +412,95 @@ Proof
   rename1 ‘pdo _ _ _ = SOME (r1, ws1, evs1)’ >> PairCases_on ‘ws1’ >>
   drule_all pdo_hdo >> strip_tac >> simp[] >>
   first_x_assum drule_all >> strip_tac >> simp[]
+QED
+
+(* ------------------------------------------------------------------------
+   The L0 side: the fds L1 holds stay open, and an accepted fd is fresh
+   ------------------------------------------------------------------------ *)
+
+(* The fds L1 holds are open in the L0 world *)
+Definition l0own_def:
+  l0own lfd w ps ⇔
+    ∀f. f = lfd ∨ MEM f (MAP SND ps.b.tbl) ∨ MEM f ps.b.closing ∨ MEM f ps.acq ⇒
+        MEM f (l0_used w)
+End
+
+Theorem lowest_fd_fresh:
+  fds_lt w ∧ w.fd_limit ≤ 2 ** 31 ⇒ ¬MEM (lowest_fd w) (l0_used w)
+Proof
+  rw[lowest_fd_def, fds_lt_def] >>
+  numLib.LEAST_ELIM_TAC >> conj_tac
+  >- (qexists_tac ‘2 ** 31’ >> strip_tac >> first_x_assum drule >> simp[]) >>
+  rw[]
+QED
+
+Theorem used_upd_lchan[simp]:
+  l0_used (upd_lchan j g w) = l0_used w
+Proof
+  simp[upd_lchan_def, l0_used_def]
+QED
+
+Theorem used_FOLDL_upd_lchan[simp]:
+  ∀q w. l0_used (FOLDL (λw j. upd_lchan j g w) w q) = l0_used w
+Proof
+  Induct >> simp[]
+QED
+
+Theorem ops_used:
+  (l0_accept l w = (r, w') ⇒
+     (∀g. MEM g (l0_used w) ⇒ MEM g (l0_used w')) ∧
+     ∀k. r = Ok k ⇒ ∃f. k = w2n f ∧ f = lowest_fd w) ∧
+  (l0_recv f n w = (r, d, w') ⇒ l0_used w' = l0_used w) ∧
+  (l0_send f bs w = (r, w') ⇒ l0_used w' = l0_used w) ∧
+  (l0_close f w = (r, w') ⇒ ∀g. g ≠ f ∧ MEM g (l0_used w) ⇒ MEM g (l0_used w'))
+Proof
+  rpt conj_tac
+  >- (simp[l0_accept_def] >> rpt (CASE_TAC >> gvs[]) >>
+      rw[] >> gvs[l0_used_def, AFUPDKEY_MAP_FST, l0_alloc_def, fail_def, AllCaseEqs()])
+  >- (rw[l0_recv_def, AllCaseEqs()] >> gvs[])
+  >- (rw[l0_send_def, AllCaseEqs()] >> gvs[])
+  >> rw[l0_close_def, close_fd_def, AllCaseEqs()] >> gvs[] >>
+  gvs[l0_used_def, MEM_FST_ADELKEY, MEM_FILTER, MEM_MAP, EXISTS_PROD] >>
+  metis_tac[]
+QED
+
+Theorem used_tick[simp]:
+  l0_used (l0_tick n w) = l0_used w ∧ (l0_tick n w).fd_limit = w.fd_limit
+Proof
+  simp[l0_tick_def] >>
+  ‘∀as w. (FOLDL l0_deliver w as).fd_limit = w.fd_limit’
+    by (Induct >> simp[]) >> simp[]
+QED
+
+Theorem used_ticks[simp]:
+  ∀k w. l0_used (l0_ticks n k w) = l0_used w
+Proof
+  Induct >> simp[l0_ticks_def]
+QED
+
+Theorem l0_do_used:
+  l0_do n conf alen w = SOME (out, w', ev) ⇒
+  ((n = «sys_recv» ∨ n = «sys_send» ∨ n = «sys_poll») ⇒ l0_used w' = l0_used w) ∧
+  (n = «sys_accept» ⇒ ∀g. MEM g (l0_used w) ⇒ MEM g (l0_used w')) ∧
+  (n = «sys_close» ⇒ ∀g. g ≠ bytes_fd conf ∧ MEM g (l0_used w) ⇒ MEM g (l0_used w'))
+Proof
+  rw[l0_do_def, l0_ffi_fn_def, AllCaseEqs()] >>
+  gvs[l0_call_def, AllCaseEqs()] >> rpt (pairarg_tac >> gvs[]) >>
+  imp_res_tac ops_used >> gvs[]
+QED
+
+Theorem sys_accept_fresh:
+  l0_rely w ∧ fds_lt w ∧
+  sys_accept l w = SOME (out, w', ev) ∧ l0_res_of out = Ok k ⇒
+  ¬MEM (n2w k) (l0_used w)
+Proof
+  rw[sys_accept_def, l0_do_def, l0_ffi_fn_def, AllCaseEqs()] >>
+  gvs[l0_call_def, AllCaseEqs()] >> pairarg_tac >> gvs[] >>
+  ‘l0_rely (l0_tick «sys_accept» w)’ by (irule l0_rely_ch >> qexists_tac ‘w’ >> simp[]) >>
+  drule_all l0_accept_res >> strip_tac >>
+  gvs[l0_res_of_enc] >>
+  imp_res_tac ops_used >> gvs[] >>
+  ‘lowest_fd (l0_tick «sys_accept» w) = lowest_fd w’ by simp[lowest_fd_def] >>
+  ‘w.fd_limit ≤ 2 ** 31’ by gvs[l0_rely_def] >>
+  drule_all lowest_fd_fresh >> simp[]
 QED

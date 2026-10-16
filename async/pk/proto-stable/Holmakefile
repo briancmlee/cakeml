@@ -3,7 +3,7 @@
 # with progress after the last arrival, and stability (proto_stable).
 INCLUDES = ../../model/core ../../model/level2 ../../model/sched \
            ../../servers/echo ../../servers/closed-loop ../../servers/relabel \
-           ../../servers/http \
+           ../../servers/http ../../servers/http-quiet ../../option-c-loop \
            ../../spec ../../world/sockets ../../world/clock ../../world/composed \
            ../../cakeml/library ../../loop/polling \
            ../../programs/echo ../../programs/echo-live ../../programs/echo-blocking \

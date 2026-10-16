@@ -13,7 +13,7 @@ Theory honestL1PFSpec
 Ancestors
   ml_translator cfHeapsBase Word8ArrayProof mlstring
   honestL0 honestL0World honestL1Model honestL1PFModel honestL0Part
-  honestL0Prog honestL0Proof honestL1PFProg ffiSpikeSocketFFI
+  honestL0Prog honestL0Proof honestL1PFProg ffiSpikeSocketFFI asyncM3Loop asyncM3World
 Libs
   preamble ml_translatorLib ml_progLib cfLib basisFunctionsLib
 
@@ -23,6 +23,12 @@ Theorem bytes_str_bytes_to_str:
   bytes_str bs = bytes_to_str bs
 Proof
   simp[bytes_to_str_def, combinTheory.o_DEF]
+QED
+
+Theorem bytes_str_fun:
+  bytes_str = bytes_to_str
+Proof
+  simp[FUN_EQ_THM, bytes_to_str_def, combinTheory.o_DEF]
 QED
 
 (* ------------------------------------------------------------------------
@@ -112,4 +118,55 @@ Theorem pdo_Write_split:
       ps' = psend_upd f bs out ps ∧ evs1 = [ev]))
 Proof
   rw[pdo_def, l1do_def, pwrite_step_def, psend_upd_def, AllCaseEqs()] >> gvs[]
+QED
+
+(* ------------------------------------------------------------------------
+   One action
+   ------------------------------------------------------------------------ *)
+
+Overload L1P = “HONESTL1PFMODEL_L1P_TYPE”
+
+(* Match, bind, and build the answer: the pure parts of a branch *)
+val drive_tac =
+  rpt (xmatch ORELSE (xlet_auto >- (TRY xcon >> xsimpl))) >>
+  xcon >> xsimpl >>
+  gvs[SRESP_def, std_preludeTheory.OPTION_TYPE_def, PAIR_TYPE_def,
+      bytes_str_bytes_to_str, bytes_str_fun, bytes_to_str_def];
+
+Theorem pdo_spec:
+  pdo lfd (w, ps) a = SOME (r, (w', ps'), evs1) ∧
+  WORD lfd lfdv ∧ L1P ps psv ∧ SACT a av ⇒
+  app (p:'ffi ffi_proj) pdo_v [lfdv; psv; av] (L0_EV w0 w evs)
+    (POSTv v. &(∃psv' rv. v = Conv NONE [psv'; rv] ∧ L1P ps' psv' ∧ SRESP r rv) *
+              L0_EV w0 w' (evs ++ evs1))
+Proof
+  rpt strip_tac >> xcf_with_def (fetch "honestL1PFProg" "pdo_v_def") >>
+  Cases_on ‘a’ >> gvs[SACT_def] >> xmatch
+  >- ((* Accept *)
+      drule pdo_Accept_split >> strip_tac >> gvs[] >>
+      (xlet_auto >- xsimpl) >>
+      gvs[std_preludeTheory.OPTION_TYPE_def, PAIR_TYPE_def] >> drive_tac)
+  >- ((* Read *)
+      drule pdo_Read_split >> strip_tac >> gvs[] >>
+      (xlet_auto >- xsimpl) >> (xlet_auto >- xsimpl) >> gvs[wordsTheory.n2w_w2n]
+      >- (gvs[fetch "honestL1PFProg" "HONESTL1PFPROG_RSTEP_TYPE_def"] >> xmatch >>
+          xlet ‘POSTv v. &OPTION_TYPE STRING_TYPE (OPTION_MAP bytes_to_str ro) v *
+                         L0_EV w0 w evs’
+          >- (Cases_on ‘ro’ >> gvs[std_preludeTheory.OPTION_TYPE_def] >> xmatch >>
+              rpt (xlet_auto >- xsimpl) >> xcon >> xsimpl) >>
+          drive_tac) >>
+      gvs[fetch "honestL1PFProg" "HONESTL1PFPROG_RSTEP_TYPE_def"] >> xmatch >>
+      xlet ‘POSTv v. &LIST_TYPE WORD out v * L0_EV w0 w' (evs ++ [ev])’
+      >- (xapp_spec c_close_spec >> xsimpl >> metis_tac[]) >>
+      drive_tac) >>
+  (* Write *)
+  drule pdo_Write_split >> strip_tac >> gvs[] >>
+  (xlet_auto >- xsimpl) >>
+  gvs[bytes_str_bytes_to_str, str_to_bytes_bytes_to_str] >>
+  (xlet_auto >- xsimpl) >> (xlet_auto >- xsimpl) >> gvs[wordsTheory.n2w_w2n]
+  >- (gvs[fetch "honestL1PFProg" "HONESTL1PFPROG_WSTEP_TYPE_def"] >> xmatch >> drive_tac) >>
+  gvs[fetch "honestL1PFProg" "HONESTL1PFPROG_WSTEP_TYPE_def"] >> xmatch >>
+  xlet ‘POSTv v. &LIST_TYPE WORD out v * L0_EV w0 w' (evs ++ [ev])’
+  >- (xapp_spec c_send_spec >> xsimpl >> metis_tac[]) >>
+  drive_tac
 QED

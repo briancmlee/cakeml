@@ -41,3 +41,14 @@ Gotchas:
 - The child's pipes are fds 60/61; they are reserved fds (they count as used for fd numbering).
 
 Next: phase 4, the L1 functional core (extend honestL1 to the L0 world, v2 only per D5), coordinated with close-v2's handle layer.
+
+## Phase 4 (L1 core), branch spike/honest-l1 (on spike/honest-l0-world)
+
+- `async/honest-l1/`: honestL1Model (L1 over L0, v2 only; follows asyncHLModel's handle layer, imported later), honestL1Props (8 theorems), honestL1Simple (simple0 + R3: write/read/accept_simple; 13 theorems). Holmake green; no cheats.
+- close-v2: asyncHL* stays unchanged. The v2 targets are the generic proto server (asyncProtoServer.proto_server) on the handle loop, plus HTTP http_prog_pb2 → http_spec_b2 (design/43 on spike/http-v2-prog).
+- Gotchas:
+  - `GSYM APPEND_ASSOC` in simp loops;
+  - a left-associated append can print exactly like a right-associated one (metis_tac[APPEND_ASSOC] closed it);
+  - state hypotheses about fds as numerals (2147483648) for simp's if-conditions;
+  - simp ignores ∀-hypotheses: use asm_simp_tac or state the instance.
+- Next: fd-ownership invariant (lrun_ok), then R1/R2 vs asyncHLModel.

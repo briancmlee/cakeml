@@ -615,6 +615,47 @@ the server unchanged). It sits between the event loop's `perform` and L0.
   Wrote`;
 - readiness: the set of readable fds.
 
+### 5.0 As built (phase 4, `async/honest-l1/`, branch `spike/honest-l1`)
+
+- **`honestL1Model`**: L1 over the L0 world, for version 2 only (D5).
+  - It follows close-v2's handle layer (`asyncHLModel`; the interface
+    is unchanged and imported read-only later). The computation emits
+    today's actions on handles.
+  - Every action and every round becomes concrete L0 calls through
+    `l0_ffi_fn`, so its event trace **is** the raw trace.
+  - `l1do` covers:
+    - buffered writes (one send at once if the outbox is empty);
+    - the round discipline;
+    - auto-close on EOF, deferred while the outbox flushes;
+    - a broken connection ends its episode;
+    - accept errors, with `exhausted`.
+  - `l1_tail` is the round's poll (IN for the interest, unless paused or
+    an exhausted listener; OUT for non-empty outboxes), then flush, then
+    reap. `lrounds` is the run, as `hrounds`.
+  - `l1hdl`/`l1hdln` restate `hdl`/`hdln`, so this theory needs none of
+    `asyncHLModel`'s CF ancestors.
+- **`honestL1Props`** (8 theorems):
+  - `read_no_syscall`, `recv_found_empty`: the round discipline;
+  - `gone_is_eof`;
+  - `stall_local`: a slow reader stalls only itself;
+  - `write_buffered`;
+  - `exhausted_quiet`: no listener input polling while out of fds;
+  - `paused_quiet`.
+- **`honestL1Simple`** (13 theorems): the simple L0 world `simple0`, and
+  R3 in it. Each wrapper is one L0 call answering exactly as today's
+  call:
+  - `write_simple`: one `sys_send` of exactly bs, fully taken, and the
+    outbox stays empty;
+  - `read_simple`: one `sys_recv`, answering `TAKE n` of the input;
+  - `accept_simple`: one `sys_accept`, returning the lowest free fd under
+    a fresh handle.
+- **Next (phase 4b/6):**
+  - the fd-ownership invariant (every L0 call names the listener or an
+    fd L1 opened and has not closed, so no EBADF or misuse, hence
+    `lrun_ok`);
+  - then R1/R2 against `asyncHLModel`: the regrouping simulation, and
+    in `simple0` worlds the round-by-round renaming of `hrounds`.
+
 ### 5.1 The wrappers: spec, what each absorbs, and how
 
 The **L1 state** per fd:

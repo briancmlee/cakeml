@@ -301,3 +301,20 @@ const	kv_sym_equiv	kv_peer_equiv	exact
 const	echo_spec_of_endpoint_disc	echo_spec_of_peer_disc	exact
 const	http_spec_b_of_endpoint_disc	http_spec_of_peer_disc	exact
 const	kv_spec_of_endpoint_disc	kv_spec_of_peer_disc	exact
+# L2 core link, new theories and constants (close-v2 proposals, 2026-10-17; provisional)
+theory	endpointV2Hide	peerV2Hide		endpoint-world
+theory	endpointV2Accept	peerV2Accept		endpoint-world
+theory	endpointV1ConvRun	peerV1ConvRun		endpoint-world
+theory	endpointV1ReqConv	peerV1ReqConv		endpoint-world
+theory	endpointV1EchoConv	peerV1EchoConv		endpoint-world
+theory	endpointV1HttpConv	peerV1HttpConv		endpoint-world
+theory	endpointV1KvConv	peerV1KvConv		endpoint-world
+const	echo_sym_equiv_disc_thm	echo_peer_equiv_disc_thm	exact
+const	http_sym_equiv_disc_thm	http_peer_equiv_disc_thm	exact
+const	kv_sym_equiv_disc_thm	kv_peer_equiv_disc_thm	exact
+const	endpoint_of_echo_spec_le	peer_of_echo_spec_le	exact
+const	endpoint_of_http_spec_le	peer_of_http_spec_le	exact
+const	endpoint_of_kv_spec_le	peer_of_kv_spec_le	exact
+const	endpoint_of_v1_live	peer_of_v1_live	exact
+const	endpoint_of_live2	peer_of_live2	exact
+const	endpoint_of_echo_spec2	peer_of_echo_spec2	exact

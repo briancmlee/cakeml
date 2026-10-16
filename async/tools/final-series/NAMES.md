@@ -47,6 +47,15 @@ Rules: theory renames apply everywhere, including `XTheory.`, `X$c` and translat
 | `echo_spec_of_endpoint_disc` | `echo_spec_of_peer_disc` | exact |
 | `http_spec_b_of_endpoint_disc` | `http_spec_of_peer_disc` | exact |
 | `kv_spec_of_endpoint_disc` | `kv_spec_of_peer_disc` | exact |
+| `echo_sym_equiv_disc_thm` | `echo_peer_equiv_disc_thm` | exact |
+| `http_sym_equiv_disc_thm` | `http_peer_equiv_disc_thm` | exact |
+| `kv_sym_equiv_disc_thm` | `kv_peer_equiv_disc_thm` | exact |
+| `endpoint_of_echo_spec_le` | `peer_of_echo_spec_le` | exact |
+| `endpoint_of_http_spec_le` | `peer_of_http_spec_le` | exact |
+| `endpoint_of_kv_spec_le` | `peer_of_kv_spec_le` | exact |
+| `endpoint_of_v1_live` | `peer_of_v1_live` | exact |
+| `endpoint_of_live2` | `peer_of_live2` | exact |
+| `endpoint_of_echo_spec2` | `peer_of_echo_spec2` | exact |
 
 ## Libraries
 
@@ -90,14 +99,21 @@ Rules: theory renames apply everywhere, including `XTheory.`, `X$c` and translat
 | endpoint-world | `endpointSpecForms` | `peerSpecForms` |
 | endpoint-world | `endpointTrace` | `peerTrace` |
 | endpoint-world | `endpointV1Conv` | `peerV1Conv` |
+| endpoint-world | `endpointV1ConvRun` | `peerV1ConvRun` |
 | endpoint-world | `endpointV1Disc` | `peerV1Disc` |
 | endpoint-world | `endpointV1Echo` | `peerV1Echo` |
+| endpoint-world | `endpointV1EchoConv` | `peerV1EchoConv` |
 | endpoint-world | `endpointV1Http` | `peerV1Http` |
+| endpoint-world | `endpointV1HttpConv` | `peerV1HttpConv` |
 | endpoint-world | `endpointV1Inst` | `peerV1Inst` |
 | endpoint-world | `endpointV1Kv` | `peerV1Kv` |
+| endpoint-world | `endpointV1KvConv` | `peerV1KvConv` |
 | endpoint-world | `endpointV1Proj` | `peerV1Proj` |
+| endpoint-world | `endpointV1ReqConv` | `peerV1ReqConv` |
 | endpoint-world | `endpointV1Run` | `peerV1Run` |
 | endpoint-world | `endpointV1Sim` | `peerV1Sim` |
+| endpoint-world | `endpointV2Accept` | `peerV2Accept` |
+| endpoint-world | `endpointV2Hide` | `peerV2Hide` |
 | endpoint-world | `endpointV2Prefix` | `peerV2Prefix` |
 | endpoint-world | `endpointV2Sim` | `peerV2Sim` |
 | endpoint-world | `endpointWorld` | `peerWorld` |

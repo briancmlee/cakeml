@@ -34,7 +34,9 @@ stacked-pr-continuation (KV worker); close-v2; honest-ffi.
    tools/final-series/watch_build.sh LOG lifetimes/world lifetimes/spec lifetimes/link lifetimes/world-cf lifetimes/loop lifetimes/echo headline
    Then check: no "cheat" in scripts, no cheat tag in .dat, echoEpisodesHeadline has echo_episodes_prog_spec. Open draft PR
    "[final L1 03/03] the echo server with close and fd reuse" (base final/L1-02-link; body: commit a2eb6499c's message).
-2. Merge final/11-it-runs @ 3535dbb5f (KV proto port in 09; 10 updated) into L1-01, then L1-01→02→03 (merges only); rebuild (KV dirs new in L0).
-3. Pending decisions/others: cf-actions folds stateful quiescence into final/10 (names agreed, in names.tsv); after it lands, merge final/11 into L1 again.
+2. FIRST on Sisyphus, together with step 1's rebuild: final L0 is COMPLETE (KV + stateful quiescence merged; final/10 18a50b3af,
+   final/11 5a407ebb6). Merge final/11-it-runs @ 5a407ebb6 into final/L1-01, then L1-01→L1-02→L1-03 (merges only, no rewrites);
+   rebuild all of L1 on top (L0 objects from m4-server's built tree at 5a407ebb6, or build L0 once); update PR #142/#143 bodies' base commit; open L1-03's PR.
+3. (merged into 2) cf-actions' stateful quiescence is already in final/10 18a50b3af.
 4. Later: L2 (peers) waits for close-v2; L3 after honest-FFI R1–R4 — write first (HEADLINES §8): l1pf_simple, l0_echo2_spec, quiet_on_kernel + hup_spin_bite.
 5. Scratch, safe to delete: worktree final-rename-test (branch scratch/rename-test, local only, uncommitted test rename — not needed).

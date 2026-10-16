@@ -3463,3 +3463,136 @@ Proof
        (EL c (rworld lfd hw ifds m w1 k).chans)’ by fs[] >>
   fs[wch_def, dch_def]
 QED
+
+Theorem rinv_len:
+  simple_run p lfd sched hw ifds m w1 ⇒
+  ∀k. LENGTH (rworld lfd hw ifds m w1 k).chans =
+      conns_of (upto (kernel_steps p lfd sched w1)
+                     (npolls (rworld lfd hw ifds m w1 k).hist − npolls w1.hist)) ∧
+      SND (pcm lfd hw ifds m w1 k) ≤ LENGTH (rworld lfd hw ifds m w1 k).chans
+Proof
+  strip_tac >>
+  qpat_x_assum ‘simple_run _ _ _ _ _ _ _’ (strip_assume_tac o REWRITE_RULE [simple_run_def]) >>
+  gen_tac >>
+  drule_all rinv_run >> disch_then (qspec_then ‘k’ mp_tac) >>
+  simp_tac std_ss [rinv_def, kinv_def] >> strip_tac >>
+  qmatch_asmsub_abbrev_tac ‘kworld p lfd sched w1 P’ >>
+  ‘vinv lfd (kworld p lfd sched w1 P) (upto (kernel_steps p lfd sched w1) P)’
+    by metis_tac[kworld_vinv] >>
+  fs[sinv_def, wk_def, lk_def, vinv_def]
+QED
+
+(* Between rounds R ≤ k, what the kernel delivered to a client only grows *)
+Theorem ps_mono:
+  simple_run p lfd sched hw ifds m w1 ∧ R ≤ k ∧ c < LENGTH (rworld lfd hw ifds m w1 R).chans ⇒
+  c < LENGTH (rworld lfd hw ifds m w1 k).chans ∧
+  (EL c (rworld lfd hw ifds m w1 R).chans).peer_sent ≼
+    (EL c (rworld lfd hw ifds m w1 k).chans).peer_sent ∧
+  ((EL c (rworld lfd hw ifds m w1 R).chans).peer_eof ⇒
+   (EL c (rworld lfd hw ifds m w1 k).chans).peer_eof ∧
+   (EL c (rworld lfd hw ifds m w1 k).chans).peer_sent =
+     (EL c (rworld lfd hw ifds m w1 R).chans).peer_sent)
+Proof
+  strip_tac >>
+  ‘run_ok lfd hw ifds m w1’ by fs[simple_run_def] >>
+  ‘npolls (rworld lfd hw ifds m w1 R).hist ≤ npolls (rworld lfd hw ifds m w1 k).hist’
+    by metis_tac[npolls_mono] >>
+  qabbrev_tac ‘IR = npolls (rworld lfd hw ifds m w1 R).hist − npolls w1.hist’ >>
+  qabbrev_tac ‘Ik = npolls (rworld lfd hw ifds m w1 k).hist − npolls w1.hist’ >>
+  ‘IR ≤ Ik’ by simp[Abbr ‘IR’, Abbr ‘Ik’] >>
+  qabbrev_tac ‘kst = kernel_steps p lfd sched w1’ >>
+  ‘upto kst IR ≼ upto kst Ik’ by metis_tac[upto_prefix] >>
+  drule rinv_len >> strip_tac >>
+  ‘c < LENGTH (rworld lfd hw ifds m w1 k).chans’
+    by (first_assum (qspec_then ‘R’ mp_tac) >> first_x_assum (qspec_then ‘k’ mp_tac) >>
+        simp[] >> rpt strip_tac >> drule conns_of_prefix >> gvs[]) >>
+  simp[] >>
+  drule rinv_chan >> strip_tac >>
+  first_assum (qspecl_then [‘R’, ‘c’] mp_tac) >> first_x_assum (qspecl_then [‘k’, ‘c’] mp_tac) >>
+  simp[] >> rpt strip_tac >> gvs[]
+  >- metis_tac[data_of_prefix]
+  >- (fs[IS_PREFIX_APPEND] >> gvs[])
+  >> qpat_x_assum ‘simple_run _ _ _ _ _ _ _’ (strip_assume_tac o REWRITE_RULE [simple_run_def]) >>
+  mp_tac kernel_eof_stable >> impl_tac >- simp[] >>
+  disch_then (qspecl_then [‘Ik − IR’, ‘IR’] mp_tac) >> simp[Abbr ‘kst’]
+QED
+
+(* Once a client's EOF is fetched, all the kernel delivered to it is *)
+Theorem fin_eof:
+  simple_run p lfd sched hw ifds m w1 ∧ R ≤ k ∧ c < LENGTH (rworld lfd hw ifds m w1 R).chans ∧
+  MEM (Eof2 c) (upto (parr lfd hw ifds m w1) k) ⇒
+  (EL c (rworld lfd hw ifds m w1 R).chans).peer_sent ≼ data_of c (upto (parr lfd hw ifds m w1) k)
+Proof
+  strip_tac >> drule_all ps_mono >> strip_tac >>
+  drule rinv_chan >> disch_then (qspecl_then [‘k’, ‘c’] mp_tac) >> simp[] >> strip_tac >>
+  gvs[]
+QED
+
+(* An fd with a handle keeps it while its EOF is not fetched *)
+Theorem tbl_step:
+  simple_run p lfd sched hw ifds m w1 ⇒
+  ∀k f c. MEM f (MAP SND (rstate lfd hw ifds m w1 k).b.tbl) ∧
+          ALOOKUP (rworld lfd hw ifds m w1 k).open_fds f = SOME c ∧
+          ¬MEM (Eof2 c) (upto (parr lfd hw ifds m w1) (SUC k)) ⇒
+          MEM f (MAP SND (rstate lfd hw ifds m w1 (SUC k)).b.tbl) ∧
+          ALOOKUP (rworld lfd hw ifds m w1 (SUC k)).open_fds f = SOME c
+Proof
+  strip_tac >> rpt gen_tac >> strip_tac >>
+  ‘¬MEM (Eof2 c) (upto (parr lfd hw ifds m w1) k) ∧ ¬MEM (Eof2 c) (parr lfd hw ifds m w1 k)’
+    by fs[upto_SUC] >>
+  drule run_fresh >> disch_then (qspecl_then [‘k’, ‘f’, ‘c’] mp_tac) >> simp[] >> strip_tac >>
+  drule run_link >> disch_then drule_all >> strip_tac >> gvs[] >>
+  qpat_x_assum ‘simple_run _ _ _ _ _ _ _’ (strip_assume_tac o REWRITE_RULE [simple_run_def]) >>
+  ‘MEM lfd (l0_used w1) ∧ linv lfd w1’ by simp[l0_used_def, linv_def] >>
+  ‘∀k. own (rstate lfd hw ifds m w1 k) (rworld lfd hw ifds m w1 k)’
+    by (drule_all own_run >> simp[]) >>
+  ‘∀k. rinv p lfd sched w1 hw ifds m k’ by (drule_all rinv_run >> simp[]) >>
+  drule_all run_lfd >> disch_then (qspec_then ‘k’ strip_assume_tac) >>
+  drule_all round_facts >> disch_then (qspec_then ‘k’ strip_assume_tac) >>
+  qpat_x_assum ‘∀k. rinv _ _ _ _ _ _ _ k’ (qspec_then ‘SUC k’ mp_tac) >>
+  simp_tac std_ss [rinv_def, eown_def] >> strip_tac >>
+  ‘¬MEM f (rstate lfd hw ifds m w1 (SUC k)).b.closing’ by (strip_tac >> res_tac) >>
+  ‘¬MEM f (rstate lfd hw ifds m w1 (SUC k)).acq’
+    by (strip_tac >> gvs[MEM_APPEND] >> imp_res_tac MEM_DROP_IMP >>
+        fs[pown_def, ALL_DISTINCT_APPEND] >> metis_tac[]) >>
+  qpat_x_assum ‘∀k. own _ _’ (qspec_then ‘SUC k’ mp_tac) >> rewrite_tac[own_def] >>
+  disch_then drule >> metis_tac[]
+QED
+
+Theorem rlogs_snoc:
+  rlogs lfd hw ifds m w0 n0 (SUC d) =
+  rlogs lfd hw ifds m w0 n0 d ++ rlog lfd hw ifds m w0 (n0 + d)
+Proof
+  ‘SUC d = d + 1’ by simp[] >> pop_assum SUBST1_TAC >>
+  simp[rlogs_add] >> simp[rlogs_def]
+QED
+
+(* Round by round from k: unless its EOF is fetched, an fd with a handle
+   keeps it, and its client's fetched data grows by the fd's log *)
+Theorem dl_iter:
+  simple_run p lfd sched hw ifds m w1 ⇒
+  ∀d k f c.
+    MEM f (MAP SND (rstate lfd hw ifds m w1 k).b.tbl) ∧
+    ALOOKUP (rworld lfd hw ifds m w1 k).open_fds f = SOME c ⇒
+    MEM (Eof2 c) (upto (parr lfd hw ifds m w1) (k + d)) ∨
+    (MEM f (MAP SND (rstate lfd hw ifds m w1 (k + d)).b.tbl) ∧
+     ALOOKUP (rworld lfd hw ifds m w1 (k + d)).open_fds f = SOME c ∧
+     data_of c (upto (parr lfd hw ifds m w1) (k + d)) =
+       data_of c (upto (parr lfd hw ifds m w1) k) ++ fdata f (rlogs lfd hw ifds m w1 k d) ∧
+     ¬fend f (rlogs lfd hw ifds m w1 k d) ∧
+     ∀bs. MEM (FData f bs) (rlogs lfd hw ifds m w1 k d) ⇒ bs ≠ [])
+Proof
+  strip_tac >> Induct >- simp[rlogs_def] >>
+  rpt gen_tac >> strip_tac >>
+  first_x_assum drule_all >> strip_tac
+  >- (disj1_tac >> irule upto_mem_mono >> qexists_tac ‘k + d’ >> simp[]) >>
+  Cases_on ‘MEM (Eof2 c) (upto (parr lfd hw ifds m w1) (k + SUC d))’ >> simp[] >>
+  ‘¬MEM (Eof2 c) (upto (parr lfd hw ifds m w1) (k + d))’
+    by (strip_tac >> qpat_x_assum ‘¬MEM _ (upto _ (k + SUC d))’ mp_tac >> simp[] >>
+        irule upto_mem_mono >> qexists_tac ‘k + d’ >> simp[]) >>
+  drule run_link >> disch_then (qspecl_then [‘k + d’, ‘f’, ‘c’] mp_tac) >> simp[] >>
+  strip_tac >>
+  drule tbl_step >> disch_then (qspecl_then [‘k + d’, ‘f’, ‘c’] mp_tac) >>
+  fs[ADD_CLAUSES] >> strip_tac >>
+  fs[upto_SUC, rlogs_snoc] >> metis_tac[]
+QED

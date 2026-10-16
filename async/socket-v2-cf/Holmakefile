@@ -1,0 +1,9 @@
+# The version-2 socket world in CakeML: SocketClose.close, the CF specs of
+# the Socket calls against the version-2 part, and the sockets-only world.
+# The program extends the version-1 echo program's translation state.
+INCLUDES = ../model ../cf-spike ../cf-actions ../cf-reactive ../ffi-spike \
+           ../m3-assembly ../m4-server ../m4-common ../spec ../m4-safety \
+           ../socket-v2
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

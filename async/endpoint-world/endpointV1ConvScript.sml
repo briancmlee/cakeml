@@ -273,3 +273,67 @@ Proof
                   ‘n’ |-> ‘LENGTH (ticks2 n sk2).clients’] rn2_sched_LTL) >>
   simp[]
 QED
+
+(* ------------------------------------------------------------------------
+   The version-1 world is fair
+   ------------------------------------------------------------------------ *)
+
+(* MAIN (arrivals, the converse of v12core_deliver's premise): an effective
+   version-2 step, its clients named by their (fresh) fds, is an effective
+   version-1 step, and the relation follows it *)
+Theorem v12core_step_rev:
+  ∀st2 n s1 s2.
+    v12core lfd (GENLIST fdf n) k s1 s2 ∧ step_ok2 s2 st2 ∧
+    (∀i i'. i < N ∧ i' < N ∧ fdf i = fdf i' ⇒ i = i') ∧ (∀i. i < N ⇒ fdf i ≠ lfd) ∧
+    FST (rn2_step fdf n st2) ≤ N ⇒
+    step_ok s1 (SND (rn2_step fdf n st2))
+Proof
+  Induct >- simp[rn2_step_def, step_ok_def] >>
+  Cases >> rpt gen_tac >> strip_tac
+  >- ((* a connect: the next client, on its fresh fd *)
+      fs[rn2_step_cons, rn2_arr_def, step_ok_def, step_ok2_def] >>
+      rename1 ‘arrival_ok2 s2 (Connect2 l)’ >>
+      ‘n < N’ by (‘n + 1 ≤ FST (rn2_step fdf (n + 1) st2)’ by simp[rn2_step_mono] >>
+                  decide_tac) >>
+      ‘¬MEM (fdf n) (GENLIST fdf n)’
+        by (simp[MEM_GENLIST] >> rpt strip_tac >> rename1 ‘fdf n = fdf q’ >>
+            ‘q < N’ by decide_tac >> ‘n = q’ by metis_tac[] >> fs[]) >>
+      ‘arrival_ok s1 (Connect l (fdf n))’
+        by (fs[arrival_ok2_def, v12core_def, arrival_ok_def, is_listener_def, is_conn_def,
+               ALOOKUP_NONE] >> gvs[AllCaseEqs()] >> rw[] >> metis_tac[MEM_REVERSE]) >>
+      simp[] >>
+      drule_all v12core_deliver >> simp[rn1_arr_def] >> strip_tac >>
+      ‘GENLIST fdf n ++ [fdf n] = GENLIST fdf (n + 1)’
+        by simp[GSYM ADD1, GENLIST, SNOC_APPEND] >>
+      fs[] >> first_x_assum irule >> simp[] >> metis_tac[])
+  >- ((* data from a client *)
+      fs[rn2_step_cons, rn2_arr_def, step_ok_def, step_ok2_def] >>
+      rename1 ‘arrival_ok2 s2 (Data2 j bs)’ >> rename1 ‘v12core lfd (GENLIST fdf m) k s1 s2’ >>
+      ‘j < m’ by fs[arrival_ok2_def, v12core_def] >>
+      ‘findi (fdf j) (GENLIST fdf m) = j’
+        by (irule findi_GENLIST >> conj_tac >- first_assum ACCEPT_TAC >>
+            qexists_tac ‘N’ >> simp[] >>
+            ‘m ≤ FST (rn2_step fdf m st2)’ by simp[rn2_step_mono] >> decide_tac) >>
+      ‘arrival_ok s1 (Data (fdf j) bs)’
+        by (fs[arrival_ok2_def, arrival_ok_def, v12core_def] >>
+            qpat_x_assum ‘∀j. j < m ⇒ _’ (qspec_then ‘j’ mp_tac) >> simp[EL_GENLIST] >>
+            TRY (impl_tac >- fs[]) >> strip_tac >> qexists_tac ‘cn’ >> fs[]) >>
+      simp[] >>
+      drule_all v12core_deliver >> simp[rn1_arr_def] >> strip_tac >>
+      first_x_assum irule >> simp[] >> metis_tac[])
+  >> (* EOF from a client *)
+  fs[rn2_step_cons, rn2_arr_def, step_ok_def, step_ok2_def] >>
+  rename1 ‘arrival_ok2 s2 (Eof2 j)’ >> rename1 ‘v12core lfd (GENLIST fdf m) k s1 s2’ >>
+  ‘j < m’ by fs[arrival_ok2_def, v12core_def] >>
+  ‘findi (fdf j) (GENLIST fdf m) = j’
+    by (irule findi_GENLIST >> conj_tac >- first_assum ACCEPT_TAC >>
+        qexists_tac ‘N’ >> simp[] >>
+        ‘m ≤ FST (rn2_step fdf m st2)’ by simp[rn2_step_mono] >> decide_tac) >>
+  ‘arrival_ok s1 (Eof (fdf j))’
+    by (fs[arrival_ok2_def, arrival_ok_def, v12core_def] >>
+        qpat_x_assum ‘∀j. j < m ⇒ _’ (qspec_then ‘j’ mp_tac) >> simp[EL_GENLIST] >>
+            TRY (impl_tac >- fs[]) >> strip_tac >> qexists_tac ‘cn’ >> fs[]) >>
+  simp[] >>
+  drule_all v12core_deliver >> simp[rn1_arr_def] >> strip_tac >>
+  first_x_assum irule >> simp[] >> metis_tac[]
+QED

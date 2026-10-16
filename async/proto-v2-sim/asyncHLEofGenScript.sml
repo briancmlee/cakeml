@@ -10,7 +10,7 @@ Theory asyncHLEofGen
 Ancestors
   words asyncCore asyncLevel1 asyncTranscript asyncServer asyncServerSafety
   asyncProgress asyncM4ServerUses asyncM4SockModel ffiSpikeSocketFFI
-  asyncM3World asyncM4GRounds asyncM4GTrans asyncM4SockInv asyncRunOkGen
+  asyncM3World asyncM4GRounds asyncM4GTrans asyncM4SockInv asyncM4EchoRunOk asyncRunOkGen
   asyncM4LiveProg asyncM4ReadSoon asyncHLEof asyncProtoEof
 Libs
   preamble
@@ -25,6 +25,12 @@ Proof
   drule gen_trans_split >> strip_tac >>
   drule TREL_accepted >> drule TREL_NONE >> rpt strip_tac >>
   simp[accepted_NONE]
+QED
+
+Theorem eof_last_split_g[local]:
+  ∀X. eof_last fd (X ++ (asyncServer$Read fd, SOME asyncServer$Eof) :: Y) ⇒ Y = []
+Proof
+  Induct >> rw[eof_last_def] >> gvs[]
 QED
 
 Theorem sfa_sock_on_g[local]:
@@ -47,7 +53,7 @@ Theorem TS_on_fd_lt_g[local]:
   MEM fd (accepted (TSg m ifds s0 n)) ∧ fd < dimword (:64)
 Proof
   strip_tac >>
-  qpat_x_assum ‘uses_ok _ _’ (strip_assume_tac o REWRITE_RULE [uses_ok_def]) >>
+  qpat_assum ‘uses_ok _ _’ (strip_assume_tac o REWRITE_RULE [uses_ok_def]) >>
   first_x_assum (qspec_then ‘MAP sfs (ghist ifds (srelabel m) s0 n)’ strip_assume_tac) >>
   first_x_assum (qspec_then ‘fd’ mp_tac) >> REWRITE_TAC[acc_first_MEM] >>
   disch_then (qspecl_then [‘t1’, ‘p’, ‘t2’] mp_tac) >> impl_tac >- fs[] >>
@@ -82,7 +88,7 @@ Proof
   drule_all gen_sinv >>
   disch_then (qspecl_then [‘ifds’, ‘n’] strip_assume_tac) >>
   drule gen_trans_split >> strip_tac >>
-  ‘grun_ok ifds (srelabel m) s0’ by (irule gen_grun_ok >> simp[]) >>
+  ‘grun_ok ifds (srelabel m) s0’ by metis_tac[gen_grun_ok] >>
   (* the model pairs at the two positions *)
   ‘LENGTH tt1 = LENGTH (SPg m ifds s0 n)’
     by metis_tac[LENGTH_MAP] >>
@@ -155,13 +161,13 @@ Proof
                  metis_tac[]) >>
   qpat_x_assum ‘fd' = fd’ SUBST_ALL_TAC >>
   (* the handler's transcript ends at the EOF *)
-  ‘fresh (TSg m ifds s0 n)’ by (irule gen_fresh >> simp[]) >>
+  ‘fresh (TSg m ifds s0 n)’ by metis_tac[gen_fresh] >>
   ‘prompt m (MAP sfs (ghist ifds (srelabel m) s0 n))’
     by (irule prompt_ghist >> first_assum ACCEPT_TAC) >>
   ‘eof_last fd (FILTER (on_fd fd) (TSg m ifds s0 n))’
     by metis_tac[srv_eof_last_def] >>
   qpat_x_assum ‘TSg _ _ _ _ = TAKE i tt1 ++ _’ (fn th => pop_assum (mp_tac o REWRITE_RULE[th])) >>
-  simp[FILTER_APPEND] >> strip_tac >> drule eof_last_split >>
+  simp[FILTER_APPEND] >> strip_tac >> drule eof_last_split_g >>
   simp[FILTER_EQ_NIL, EVERY_MEM] >>
   disj1_tac >> qexists_tac ‘EL i' tt1’ >>
   conj_tac >- (simp[MEM_EL] >> qexists_tac ‘i' − (i + 1)’ >> fs[EL_DROP]) >>

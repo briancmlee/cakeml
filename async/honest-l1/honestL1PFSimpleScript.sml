@@ -291,21 +291,20 @@ QED
    ======================================================================== *)
 
 (* One channel against its kernel client: established, not broken, the
-   peer's EOF is the client's, and the peer's data is the client's (a
-   prefix once the program has closed the channel: later data is dropped) *)
+   peer's EOF and data are the client's *)
 Definition wch_def:
   wch (a : lchan) (v : conn) ⇔
     ¬a.connecting ∧ ¬a.broken ∧ a.err = NONE ∧ (a.peer_eof ⇔ v.peer_closed) ∧
-    a.peer_sent ≼ v.incoming ∧ (¬a.closed ⇒ a.peer_sent = v.incoming)
+    a.peer_sent = v.incoming
 End
 
 (* One channel against L1's fetches from it: d, the data fetched, then the
    kernel inbox, is the data its peer sent; e (an EOF was fetched) only
-   after the peer's EOF *)
+   after the peer's EOF, with nothing left in the inbox; and the program
+   closes a channel only once its EOF was fetched (L1 closes on EOF only) *)
 Definition dch_def:
   dch d e (a : lchan) ⇔
-    d ++ a.inbox ≼ a.peer_sent ∧ (¬a.closed ⇒ d ++ a.inbox = a.peer_sent) ∧
-    (e ⇒ a.peer_eof)
+    d ++ a.inbox = a.peer_sent ∧ (e ⇒ a.peer_eof ∧ a.inbox = []) ∧ (a.closed ⇒ e)
 End
 
 (* The L0 world mirrors the kernel's world s *)
@@ -360,7 +359,7 @@ Theorem ch_data:
   dch d e (if a.closed then a with aborted := T
            else a with <| inbox := a.inbox ++ bs; peer_sent := a.peer_sent ++ bs |>)
 Proof
-  rw[wch_def, dch_def] >> gvs[prefix_append_r]
+  strip_tac >> Cases_on ‘a.closed’ >> fs[wch_def, dch_def] >> metis_tac[]
 QED
 
 Theorem ch_eof:
@@ -482,6 +481,24 @@ Proof
   >> simp[]
 QED
 
+Theorem deliver_open_fds[simp]:
+  (l0_deliver w a).open_fds = w.open_fds
+Proof
+  Cases_on ‘a’ >> rw[l0_deliver_def, upd_lchan_def] >> every_case_tac >> simp[]
+QED
+
+Theorem FOLDL_deliver_open_fds[simp]:
+  ∀as w. (FOLDL l0_deliver w as).open_fds = w.open_fds
+Proof
+  Induct >> simp[]
+QED
+
+Theorem ticks_open_fds[simp]:
+  ∀k w. (l0_tick nm w).open_fds = w.open_fds ∧ (l0_ticks nm k w).open_fds = w.open_fds
+Proof
+  Induct >> simp[l0_ticks_def, l0_tick_def]
+QED
+
 (* ========================================================================
    C. One call
    ======================================================================== *)
@@ -534,27 +551,19 @@ QED
 (* A change to one channel that keeps wch and dch keeps the invariant *)
 Theorem sinv_upd:
   sinv lfd p a cm D E s w ∧
-  (∀v d e. wch (EL j w.chans) v ∧ dch d e (EL j w.chans) ⇒
-           wch (g (EL j w.chans)) v ∧ dch d e (g (EL j w.chans))) ⇒
+  (∀v. wch (EL j w.chans) v ∧ dch (D j) (E j) (EL j w.chans) ⇒
+       wch (g (EL j w.chans)) v ∧ dch (D j) (E j) (g (EL j w.chans))) ⇒
   sinv lfd p a cm D E s (upd_lchan j g w)
 Proof
   rpt strip_tac >> qpat_x_assum ‘sinv _ _ _ _ _ _ _ _’
     (strip_assume_tac o SIMP_RULE std_ss [sinv_def, wk_def, lk_def]) >>
   simp_tac std_ss [sinv_def, wk_def, lk_def] >> simp[upd_lchan_def, qof_def] >>
-  rpt conj_tac
-  >- (rpt strip_tac >> simp[EL_LUPDATE] >> rw[]
-      >- (‘wch (EL c w.chans) (EL c s.clients) ∧ dch (D c) (E c) (EL c w.chans)’
-            by fs[] >>
-          qpat_x_assum ‘∀v d e. _’ (qspecl_then [‘EL c s.clients’, ‘D c’, ‘E c’] mp_tac) >>
-          simp[])
-      >> qpat_x_assum ‘∀c. c < LENGTH w.chans ⇒ wch _ _’ irule >> simp[])
-  >- (rpt strip_tac >> res_tac)
-  >> rpt strip_tac >> simp[EL_LUPDATE] >> rw[]
-  >- (‘wch (EL c w.chans) (EL c s.clients) ∧ dch (D c) (E c) (EL c w.chans)’
-        by fs[] >>
-      qpat_x_assum ‘∀v d e. _’ (qspecl_then [‘EL c s.clients’, ‘D c’, ‘E c’] mp_tac) >>
-      simp[])
-  >> qpat_x_assum ‘∀c. c < LENGTH w.chans ⇒ dch _ _ _’ irule >> simp[]
+  rpt conj_tac >> rpt strip_tac >>
+  TRY (res_tac >> NO_TAC) >>
+  TRY (gvs[qof_def] >> NO_TAC) >>
+  simp[EL_LUPDATE] >> IF_CASES_TAC >> gvs[] >>
+  ‘wch (EL c w.chans) (EL c s.clients) ∧ dch (D c) (E c) (EL c w.chans)’ by fs[] >>
+  qpat_x_assum ‘∀v. _’ (qspecl_then [‘EL c s.clients’] mp_tac) >> simp[]
 QED
 
 (* Fewer open fds keep it *)
@@ -580,11 +589,11 @@ Proof
 QED
 
 Theorem ch_close:
-  wch a v ∧ dch d e a ⇒
+  wch a v ∧ dch d e a ∧ e ⇒
   wch (a with <| shut := T; closed := T; aborted := x |>) v ∧
   dch d e (a with <| shut := T; closed := T; aborted := x |>)
 Proof
-  rw[wch_def, dch_def] >> Cases_on ‘a.closed’ >> gvs[]
+  strip_tac >> gvs[wch_def, dch_def]
 QED
 
 Theorem sinv_reserved[simp]:
@@ -594,18 +603,21 @@ Proof
 QED
 
 Theorem sinv_close_fd:
-  sinv lfd p a cm D E s w ∧ f ≠ lfd ⇒ sinv lfd p a cm D E s (close_fd f w)
+  sinv lfd p a cm D E s w ∧ f ≠ lfd ∧ (∀c. ALOOKUP w.open_fds f = SOME c ⇒ E c) ⇒
+  sinv lfd p a cm D E s (close_fd f w)
 Proof
   strip_tac >>
   ‘FILTER (λ(l,p,q). l = f) w.listeners = []’ by fs[sinv_def, wk_def] >>
-  simp[close_fd_def] >> CASE_TAC >> simp[] >>
+  simp[close_fd_def] >> Cases_on ‘l0_chan_of w f’ >> fs[] >>
+  ‘E x’ by (fs[l0_chan_of_def, AllCaseEqs()] >> res_tac) >>
   irule sinv_upd >> conj_tac
   >- (simp[] >> rpt strip_tac >> drule_all ch_close >> simp[])
   >> irule sinv_open_fds >> simp[] >> metis_tac[ALOOKUP_ADELKEY_SOME]
 QED
 
 Theorem sinv_close:
-  sinv lfd p a cm D E s w ∧ f ≠ lfd ∧ l0_close f w = (r, w') ⇒ sinv lfd p a cm D E s w'
+  sinv lfd p a cm D E s w ∧ f ≠ lfd ∧ (∀c. ALOOKUP w.open_fds f = SOME c ⇒ E c) ∧
+  l0_close f w = (r, w') ⇒ sinv lfd p a cm D E s w'
 Proof
   simp[l0_close_def] >> strip_tac >> every_case_tac >> gvs[] >>
   metis_tac[sinv_close_fd]
@@ -621,6 +633,7 @@ QED
 
 Theorem call_close:
   sinv lfd p a cm D E s w ∧ bytes_fd conf ≠ lfd ∧
+  (∀c. ALOOKUP w.open_fds (bytes_fd conf) = SOME c ⇒ E c) ∧
   l0_call «sys_close» conf bytes w = SOME (FFIreturn out w') ⇒
   sinv lfd p a cm D E s w'
 Proof
@@ -633,14 +646,15 @@ QED
 (* The quiet calls: non-blocking polls, sends, closes of fds other than
    the listener *)
 Definition quiet_call_def:
-  quiet_call lfd n (conf : word8 list) ⇔
+  quiet_call lfd E (w : l0world) n (conf : word8 list) ⇔
     (n = «sys_poll» ∧ conf ≠ [] ∧ HD conf = 0w) ∨ n = «sys_send» ∨
-    (n = «sys_close» ∧ bytes_fd conf ≠ lfd)
+    (n = «sys_close» ∧ bytes_fd conf ≠ lfd ∧
+     ∀c. ALOOKUP w.open_fds (bytes_fd conf) = SOME c ⇒ E c)
 End
 
 Theorem kinv_do_quiet:
   kinv p lfd sched w1 a cm D E w ∧ sched_wf2 (sk_of p lfd sched w1) ∧
-  l0_do n conf alen w = SOME (out, w', ev) ∧ quiet_call lfd n conf ⇒
+  l0_do n conf alen w = SOME (out, w', ev) ∧ quiet_call lfd E w n conf ⇒
   kinv p lfd sched w1 a cm D E w'
 Proof
   strip_tac >> drule l0_do_env >> strip_tac >>
@@ -659,18 +673,21 @@ Proof
   ‘npolls w.hist + (if n = «sys_poll» then 1 else 0) − npolls w1.hist =
    npolls w.hist − npolls w1.hist + (if n = «sys_poll» then 1 else 0)’ by (rw[] >> fs[]) >>
   pop_assum SUBST1_TAC >>
-  qpat_x_assum ‘quiet_call _ _ _’
+  qpat_x_assum ‘quiet_call _ _ _ _ _’
     (strip_assume_tac o SIMP_RULE std_ss [quiet_call_def]) >> gvs[]
   >- (drule_all call_poll_same >> strip_tac >> gvs[])
   >- (drule_all call_send >> simp[])
-  >> drule_all call_close >> simp[]
+  >> ‘∀c. ALOOKUP (l0_tick «sys_close» w).open_fds (bytes_fd conf) = SOME c ⇒ E c’
+       by fs[] >>
+  drule_all call_close >> simp[]
 QED
 
 Theorem kinv_sys_quiet:
   kinv p lfd sched w1 a cm D E w ∧ sched_wf2 (sk_of p lfd sched w1) ⇒
   (sys_poll fes w = SOME (out, w', ev) ⇒ kinv p lfd sched w1 a cm D E w') ∧
   (sys_send f bs w = SOME (out, w', ev) ⇒ kinv p lfd sched w1 a cm D E w') ∧
-  (f ≠ lfd ∧ sys_close f w = SOME (out, w', ev) ⇒ kinv p lfd sched w1 a cm D E w')
+  (f ≠ lfd ∧ (∀c. ALOOKUP w.open_fds f = SOME c ⇒ E c) ∧ sys_close f w = SOME (out, w', ev) ⇒
+   kinv p lfd sched w1 a cm D E w')
 Proof
   rw[sys_poll_def, sys_send_def, sys_close_def] >>
   drule_at (Pos (el 3)) kinv_do_quiet >> simp[poll_conf_def, quiet_call_def]
@@ -700,7 +717,8 @@ QED
 
 (* The peer's EOF fetched *)
 Theorem sinv_E:
-  sinv lfd p a cm D E s w ∧ c < LENGTH w.chans ∧ c < a ∧ (EL c w.chans).peer_eof ⇒
+  sinv lfd p a cm D E s w ∧ c < LENGTH w.chans ∧ c < a ∧ (EL c w.chans).peer_eof ∧
+  (EL c w.chans).inbox = [] ⇒
   sinv lfd p a cm D ((c =+ T) E) s w
 Proof
   rpt strip_tac >> qpat_x_assum ‘sinv _ _ _ _ _ _ _ _’
@@ -758,9 +776,9 @@ Proof
 QED
 
 Theorem ch_recv:
-  dch d e a ⇒ dch (d ++ TAKE k a.inbox) e (a with inbox := DROP k a.inbox)
+  dch d e a ∧ a.inbox ≠ [] ⇒ dch (d ++ TAKE k a.inbox) e (a with inbox := DROP k a.inbox)
 Proof
-  rw[dch_def] >> metis_tac[TAKE_DROP, APPEND_ASSOC]
+  rw[dch_def] >> gvs[] >> metis_tac[TAKE_DROP, APPEND_ASSOC]
 QED
 
 (* A recv on an open fd of channel c: EOF, a retried failure, or data, which
@@ -768,7 +786,8 @@ QED
 Theorem sinv_recv:
   sinv lfd p a cm D E s w ∧ (∀h. w.ch.transient h = NONE) ∧ (∀j h x. w.ch.short j h x = x) ∧
   ALOOKUP w.open_fds g = SOME c ∧ 0 < n ∧ l0_recv g n w = (r, d, w') ⇒
-  (r = Ok 0 ∧ d = [] ∧ w' = w ∧ c < LENGTH w.chans ∧ c < a ∧ (EL c w.chans).peer_eof) ∨
+  (r = Ok 0 ∧ d = [] ∧ w' = w ∧ c < LENGTH w.chans ∧ c < a ∧ (EL c w.chans).peer_eof ∧
+   (EL c w.chans).inbox = []) ∨
   (∃e x. r = Fail e x ∧ l1_transient e ∧ d = [] ∧ w' = w) ∨
   (∃k. r = Ok k ∧ 0 < k ∧ LENGTH d = k ∧ w'.open_fds = w.open_fds ∧
        sinv lfd p a cm ((c =+ D c ++ d) D) E s w')
@@ -791,6 +810,14 @@ Proof
       >- simp[wch_def]
       >> irule ch_recv >> fs[])
   >> IF_CASES_TAC >> simp[] >> strip_tac >> gvs[fail_def, l1_transient_def]
+QED
+
+Theorem kinv_sys_close:
+  kinv p lfd sched w1 a cm D E w ∧ sched_wf2 (sk_of p lfd sched w1) ∧ f ≠ lfd ∧
+  (∀c. ALOOKUP w.open_fds f = SOME c ⇒ E c) ∧ sys_close f w = SOME (out, w', ev) ⇒
+  kinv p lfd sched w1 a cm D E w'
+Proof
+  rw[sys_close_def] >> drule_at (Pos (el 3)) kinv_do_quiet >> simp[quiet_call_def]
 QED
 
 (* The invariant's world facts at the world with the clock advanced *)
@@ -864,6 +891,7 @@ Theorem kinv_sys_recv:
   sys_recv g pf_chunk w = SOME (out, w', ev) ⇒
   w'.open_fds = w.open_fds ∧
   ((l0_res_of out = Ok 0 ∧ c < a ∧ c < LENGTH w'.chans ∧ (EL c w'.chans).peer_eof ∧
+    (EL c w'.chans).inbox = [] ∧
     kinv p lfd sched w1 a cm D E w') ∨
    (∃e x. l0_res_of out = Fail e x ∧ l1_transient e ∧ kinv p lfd sched w1 a cm D E w') ∨
    (∃k. l0_res_of out = Ok k ∧ 0 < k ∧
@@ -901,8 +929,22 @@ Proof
   fs[APPEND_ASSOC] >> disj2_tac >> irule kinv_after >> simp[] >> metis_tac[]
 QED
 
+(* The fds L1 has seen the end of (its EOF list and the closing fds) are
+   channels whose EOF was fetched: L1 closes only those *)
+Definition eown_def:
+  eown (E : num -> bool) (ps : l1p) (w : l0world) ⇔
+    ∀f c. (MEM f ps.eof ∨ MEM f ps.b.closing) ∧ ALOOKUP w.open_fds f = SOME c ⇒ E c
+End
+
+(* ... and they are in use (so an accept never returns one of them) *)
+Definition eused_def:
+  eused (ps : l1p) (w : l0world) ⇔
+    ∀f. MEM f ps.eof ∨ MEM f ps.b.closing ⇒ MEM f (l0_used w)
+End
+
 Theorem kinv_E:
-  kinv p lfd sched w1 a cm D E w ∧ c < LENGTH w.chans ∧ c < a ∧ (EL c w.chans).peer_eof ⇒
+  kinv p lfd sched w1 a cm D E w ∧ c < LENGTH w.chans ∧ c < a ∧ (EL c w.chans).peer_eof ∧
+  (EL c w.chans).inbox = [] ⇒
   kinv p lfd sched w1 a cm D ((c =+ T) E) w
 Proof
   rw[kinv_def] >> irule sinv_E >> simp[]
@@ -926,12 +968,13 @@ QED
 Theorem kinv_fetch:
   ∀fs w ps w' ps' log evs a cm D E.
     pf_fetch lfd hw fs (w, ps) = SOME ((w', ps'), log, evs) ∧
-    kinv p lfd sched w1 a cm D E w ∧ winv w ∧
+    kinv p lfd sched w1 a cm D E w ∧ winv w ∧ eown E ps w ∧ eused ps w ∧
     (∀g. MEM g fs ∧ g ≠ lfd ⇒ ∃c. ALOOKUP w.open_fds g = SOME c) ⇒
     ∃as cm' a'.
       arrs lfd (cm, a) log = (as, (cm', a')) ∧
       kinv p lfd sched w1 a' cm' (λj. D j ++ data_of j as) (λj. E j ∨ MEM (Eof2 j) as) w' ∧
-      winv w' ∧ (∀g c. ALOOKUP w.open_fds g = SOME c ⇒ ALOOKUP w'.open_fds g = SOME c)
+      winv w' ∧ eown (λj. E j ∨ MEM (Eof2 j) as) ps' w' ∧
+      (∀g c. ALOOKUP w.open_fds g = SOME c ⇒ ALOOKUP w'.open_fds g = SOME c)
 Proof
   Induct
   >- (simp[pf_fetch_def] >> rpt strip_tac >> gvs[arrs_def, data_of_def] >>
@@ -953,25 +996,34 @@ Proof
       rename1 ‘pf_fetch lfd hw fs (wa, ps1) = SOME y’ >> PairCases_on ‘y’ >> simp[] >>
       strip_tac >> rveq >>
       drule_all (el 4 (CONJUNCTS sys_winv)) >> strip_tac >>
+      ‘∀g. MEM g (l0_used w) ⇒ MEM g (l0_used wa)’
+        by (qpat_x_assum ‘sys_accept _ _ = _’ mp_tac >> simp[sys_accept_def] >>
+            strip_tac >> drule l0_do_used >> simp[]) >>
       drule_all kinv_sys_accept >> strip_tac
       >- ((* failed: nothing logged *)
-          ‘fl' = []’ by (Cases_on ‘l0_res_of out’ >> fs[]) >> rveq >>
+          ‘fl' = [] ∧ ps1.eof = ps.eof ∧ ps1.b = ps.b’
+            by (Cases_on ‘l0_res_of out’ >> fs[] >> rw[] >> fs[]) >> rveq >>
+          ‘eown E ps1 wa ∧ eused ps1 wa’ by (fs[eown_def, eused_def] >> metis_tac[]) >>
           first_x_assum (qspecl_then [‘wa’, ‘ps1’, ‘w'’, ‘ps'’, ‘y2’, ‘y3’, ‘a’, ‘cm’, ‘D’, ‘E’]
                           mp_tac) >>
           impl_tac >- (simp[] >> metis_tac[]) >> strip_tac >> simp[] >> metis_tac[])
       >> (* a new connection *)
-      ‘fl' = [FConn (n2w k)]’ by fs[] >> rveq >>
+      ‘fl' = [FConn (n2w k)] ∧ ps1.eof = ps.eof ∧ ps1.b = ps.b’ by (fs[] >> rw[]) >>
+      rveq >>
+      ‘eown E ps1 wa ∧ eused ps1 wa’
+        by (fs[eown_def, eused_def] >> rpt strip_tac >> gvs[] >> res_tac >>
+            TRY (‘f ≠ n2w k’ by (strip_tac >> gvs[])) >> gvs[]) >>
       first_x_assum (qspecl_then [‘wa’, ‘ps1’, ‘w'’, ‘ps'’, ‘y2’, ‘y3’, ‘a + 1’,
                                   ‘(n2w k, a) :: cm’, ‘D’, ‘E’] mp_tac) >>
       impl_tac
       >- (simp[] >> rpt strip_tac >>
           ‘∃c. ALOOKUP w.open_fds g = SOME c’ by metis_tac[] >>
           qexists_tac ‘c’ >> simp[] >> rw[] >> metis_tac[used_open_fds]) >>
-      strip_tac >> simp[arrs_def] >> conj_tac
-      >- (‘(λj. D j ++ data_of j (Connect2 lfd :: as)) = (λj. D j ++ data_of j as) ∧
-           (λj. E j ∨ MEM (Eof2 j) (Connect2 lfd :: as)) = (λj. E j ∨ MEM (Eof2 j) as)’
-            by simp[FUN_EQ_THM, data_of_def] >>
-          simp[]) >>
+      strip_tac >> simp[arrs_def] >>
+      ‘(λj. D j ++ data_of j (Connect2 lfd :: as)) = (λj. D j ++ data_of j as) ∧
+       (λj. E j ∨ MEM (Eof2 j) (Connect2 lfd :: as)) = (λj. E j ∨ MEM (Eof2 j) as)’
+        by simp[FUN_EQ_THM, data_of_def] >>
+      asm_rewrite_tac[] >>
       rpt strip_tac >> first_x_assum irule >> simp[] >> rw[] >> metis_tac[used_open_fds])
   >> (* a recv *)
   strip_tac >>
@@ -986,12 +1038,19 @@ Proof
   drule_all (el 3 (CONJUNCTS sys_winv)) >> strip_tac >>
   ‘∃c. ALOOKUP w.open_fds g = SOME c’ by metis_tac[] >>
   drule_all kinv_cl >> strip_tac >>
+  ‘l0_used wa = l0_used w’
+    by (qpat_x_assum ‘sys_recv _ _ _ = _’ mp_tac >> simp[sys_recv_def] >>
+        strip_tac >> drule l0_do_used >> simp[]) >>
   drule_all kinv_sys_recv >> strip_tac
   >- ((* EOF *)
-      ‘fl' = [FEof g]’ by fs[] >> rveq >>
+      ‘fl' = [FEof g] ∧ ps1 = ps with eof := g :: ps.eof’ by fs[] >> rveq >>
       ‘kinv p lfd sched w1 a cm D ((cl cm g =+ T) E) wa’ by (irule kinv_E >> fs[]) >>
-      first_x_assum (qspecl_then [‘wa’, ‘ps1’, ‘w'’, ‘ps'’, ‘y2’, ‘y3’, ‘a’, ‘cm’, ‘D’,
-                                  ‘(cl cm g =+ T) E’] mp_tac) >>
+      ‘eown ((cl cm g =+ T) E) (ps with eof := g :: ps.eof) wa ∧
+       eused (ps with eof := g :: ps.eof) wa’
+        by (fs[eown_def, eused_def, APPLY_UPDATE_THM] >> rpt strip_tac >> gvs[] >>
+            TRY (metis_tac[used_open_fds]) >> rw[] >> metis_tac[]) >>
+      first_x_assum (qspecl_then [‘wa’, ‘ps with eof := g :: ps.eof’, ‘w'’, ‘ps'’, ‘y2’, ‘y3’,
+                                  ‘a’, ‘cm’, ‘D’, ‘(cl cm g =+ T) E’] mp_tac) >>
       impl_tac >- (simp[] >> metis_tac[]) >> strip_tac >>
       simp[arrs_def] >>
       ‘(λj. D j ++ data_of j (Eof2 (cl cm g) :: as)) = (λj. D j ++ data_of j as) ∧
@@ -1000,12 +1059,15 @@ Proof
         by (simp[FUN_EQ_THM, APPLY_UPDATE_THM, data_of_def] >> rw[] >> metis_tac[]) >>
       asm_rewrite_tac[] >> metis_tac[])
   >- ((* a retried failure *)
-      ‘fl' = []’ by (Cases_on ‘l0_res_of out’ >> fs[]) >> rveq >>
-      first_x_assum (qspecl_then [‘wa’, ‘ps1’, ‘w'’, ‘ps'’, ‘y2’, ‘y3’, ‘a’, ‘cm’, ‘D’, ‘E’]
+      ‘fl' = [] ∧ ps1 = ps’ by (Cases_on ‘l0_res_of out’ >> fs[]) >> rveq >>
+      ‘eown E ps wa ∧ eused ps wa’ by (fs[eown_def, eused_def] >> metis_tac[]) >>
+      first_x_assum (qspecl_then [‘wa’, ‘ps’, ‘w'’, ‘ps'’, ‘y2’, ‘y3’, ‘a’, ‘cm’, ‘D’, ‘E’]
                       mp_tac) >>
       impl_tac >- (simp[] >> metis_tac[]) >> strip_tac >> simp[] >> metis_tac[])
   >> (* data *)
-  ‘fl' = [FData g (TAKE k (DROP 13 out))]’ by fs[] >> rveq >>
+  ‘fl' = [FData g (TAKE k (DROP 13 out))] ∧ ps1.eof = ps.eof ∧ ps1.b = ps.b’
+    by (fs[] >> rw[]) >> rveq >>
+  ‘eown E ps1 wa ∧ eused ps1 wa’ by (fs[eown_def, eused_def] >> metis_tac[]) >>
   first_x_assum (qspecl_then [‘wa’, ‘ps1’, ‘w'’, ‘ps'’, ‘y2’, ‘y3’, ‘a’, ‘cm’,
                               ‘(cl cm g =+ D (cl cm g) ++ TAKE k (DROP 13 out)) D’, ‘E’] mp_tac) >>
   impl_tac >- (simp[] >> metis_tac[]) >> strip_tac >>
@@ -1084,23 +1146,6 @@ Definition chown_def:
     ∀f. MEM f (MAP SND ps.b.tbl) ∨ MEM f ps.acq ⇒ ∃c. ALOOKUP w.open_fds f = SOME c
 End
 
-Theorem deliver_open_fds[simp]:
-  (l0_deliver w a).open_fds = w.open_fds
-Proof
-  Cases_on ‘a’ >> rw[l0_deliver_def, upd_lchan_def] >> every_case_tac >> simp[]
-QED
-
-Theorem FOLDL_deliver_open_fds[simp]:
-  ∀as w. (FOLDL l0_deliver w as).open_fds = w.open_fds
-Proof
-  Induct >> simp[]
-QED
-
-Theorem ticks_open_fds[simp]:
-  ∀k w. (l0_tick nm w).open_fds = w.open_fds ∧ (l0_ticks nm k w).open_fds = w.open_fds
-Proof
-  Induct >> simp[l0_ticks_def, l0_tick_def]
-QED
 
 (* Polls and sends keep the open fds *)
 Theorem sys_quiet_open:
@@ -1130,38 +1175,64 @@ Proof
 QED
 
 (* One action of the server *)
+Theorem upd_lchan_open_fds[simp]:
+  (upd_lchan j g w).open_fds = w.open_fds
+Proof
+  simp[upd_lchan_def]
+QED
+
+Theorem FOLDL_upd_open_fds[simp]:
+  ∀q w0. (FOLDL (λw j. upd_lchan j g w) w0 q).open_fds = w0.open_fds
+Proof
+  Induct >> simp[] >> simp[upd_lchan_def]
+QED
+
+Theorem sys_close_open_back:
+  sys_close f w = SOME (out, w', ev) ∧ ALOOKUP w'.open_fds g = SOME c ⇒
+  ALOOKUP w.open_fds g = SOME c
+Proof
+  rw[sys_close_def] >> drule l0_do_cases >> strip_tac >> gvs[l0_call_def] >>
+  pairarg_tac >> gvs[] >>
+  gvs[l0_close_def, AllCaseEqs()] >>
+  gvs[close_fd_def] >> qpat_x_assum ‘ALOOKUP _ _ = SOME _’ mp_tac >>
+  rpt (CASE_TAC >> simp[]) >> strip_tac >> imp_res_tac ALOOKUP_ADELKEY_SOME >> fs[]
+QED
+
 Theorem pdo_kinv:
   pdo lfd (w, ps) act = SOME (r, (w', ps'), evs) ∧
   kinv p lfd sched w1 a cm D E w ∧ winv w ∧ sched_wf2 (sk_of p lfd sched w1) ∧
-  pown lfd ps ∧ chown ps w ⇒
-  kinv p lfd sched w1 a cm D E w' ∧ winv w' ∧ chown ps' w'
+  pown lfd ps ∧ chown ps w ∧ eown E ps w ⇒
+  kinv p lfd sched w1 a cm D E w' ∧ winv w' ∧ chown ps' w' ∧ eown E ps' w'
 Proof
   Cases_on ‘act’ >> simp[pdo_def] >> strip_tac
   >- ((* Accept *)
-      gvs[AllCaseEqs()] >> fs[chown_def] >> metis_tac[MEM])
+      gvs[AllCaseEqs()] >> fs[chown_def, eown_def] >> metis_tac[MEM])
   >- ((* Read *)
       qpat_x_assum ‘option_CASE _ _ _ = _’ mp_tac >>
       Cases_on ‘ALOOKUP ps.b.tbl c’ >> simp[] >- (strip_tac >> gvs[]) >>
       rename1 ‘ALOOKUP ps.b.tbl c = SOME f’ >>
-      IF_CASES_TAC >- (strip_tac >> gvs[chown_def] >> metis_tac[]) >>
+      IF_CASES_TAC >- (strip_tac >> gvs[chown_def, eown_def] >> metis_tac[]) >>
       reverse IF_CASES_TAC >- (strip_tac >> gvs[]) >>
       ‘f ≠ lfd ∧ ¬MEM f ps.acq ∧ ALL_DISTINCT (MAP SND ps.b.tbl)’
         by (imp_res_tac ALOOKUP_MEM >> fs[pown_def, ALL_DISTINCT_APPEND, MEM_MAP] >>
             metis_tac[SND]) >>
+      ‘∀c. ALOOKUP w.open_fds f = SOME c ⇒ E c’ by (fs[eown_def] >> metis_tac[]) >>
       IF_CASES_TAC
       >- (simp[l1_close_def] >> Cases_on ‘sys_close f w’ >> simp[] >>
           rename1 ‘sys_close f w = SOME z’ >> PairCases_on ‘z’ >> simp[] >>
           strip_tac >> rveq >> rpt conj_tac
           >- metis_tac[kinv_sys_quiet]
           >- metis_tac[sys_winv]
-          >> simp[chown_def, forget_def, set_outbox_def] >> rpt strip_tac
-          >- (drule_all adelkey_snd >> strip_tac >>
+          >- (simp[chown_def, forget_def, set_outbox_def] >> rpt strip_tac
+              >- (drule_all adelkey_snd >> strip_tac >>
+                  ‘∃c'. ALOOKUP w.open_fds f' = SOME c'’ by fs[chown_def] >>
+                  metis_tac[sys_close_open])
+              >> ‘f' ≠ f’ by (strip_tac >> gvs[]) >>
               ‘∃c'. ALOOKUP w.open_fds f' = SOME c'’ by fs[chown_def] >>
               metis_tac[sys_close_open])
-          >> ‘f' ≠ f’ by (strip_tac >> gvs[]) >>
-          ‘∃c'. ALOOKUP w.open_fds f' = SOME c'’ by fs[chown_def] >>
-          metis_tac[sys_close_open])
-      >> strip_tac >> gvs[chown_def] >> rpt strip_tac >>
+          >> simp[eown_def, forget_def, set_outbox_def, MEM_FILTER] >> rpt strip_tac >>
+          drule_all sys_close_open_back >> strip_tac >> fs[eown_def] >> metis_tac[])
+      >> strip_tac >> gvs[chown_def, eown_def, MEM_FILTER] >> rpt strip_tac >>
       TRY (imp_res_tac MEM_SND_ADELKEY_sub) >> metis_tac[])
   >> (* Write *)
   PairCases_on ‘z’ >> gvs[] >>
@@ -1169,22 +1240,22 @@ Proof
   simp[l1do_def] >> Cases_on ‘ALOOKUP ps.b.tbl c’ >> simp[] >- (strip_tac >> gvs[]) >>
   rename1 ‘ALOOKUP ps.b.tbl c = SOME f’ >>
   IF_CASES_TAC >- (strip_tac >> gvs[]) >>
-  IF_CASES_TAC >- (strip_tac >> gvs[chown_def, set_outbox_def] >> metis_tac[]) >>
+  IF_CASES_TAC >- (strip_tac >> gvs[chown_def, eown_def, set_outbox_def] >> metis_tac[]) >>
   Cases_on ‘sys_send f l w’ >> simp[] >>
   rename1 ‘sys_send f l w = SOME z’ >> PairCases_on ‘z’ >> simp[] >>
   strip_tac >> rveq >> rpt conj_tac
   >- metis_tac[kinv_sys_quiet]
   >- metis_tac[sys_winv]
   >> drule (CONJUNCT2 sys_quiet_open) >> strip_tac >>
-  fs[chown_def, set_outbox_def] >> metis_tac[]
+  fs[chown_def, eown_def, set_outbox_def] >> metis_tac[]
 QED
 
 Theorem pacts_kinv:
   ∀acts w ps s rs evs w' ps'.
     pacts lfd (w, ps) acts = SOME (rs, evs, (w', ps')) ∧ pv_rel lfd cm0 ps s ∧ pown lfd ps ∧
     kinv p lfd sched w1 a cm D E w ∧ winv w ∧ sched_wf2 (sk_of p lfd sched w1) ∧
-    chown ps w ⇒
-    kinv p lfd sched w1 a cm D E w' ∧ winv w' ∧ chown ps' w'
+    chown ps w ∧ eown E ps w ⇒
+    kinv p lfd sched w1 a cm D E w' ∧ winv w' ∧ chown ps' w' ∧ eown E ps' w'
 Proof
   Induct >> simp[pacts_def] >> rpt gen_tac >> strip_tac >> gvs[AllCaseEqs()] >>
   rename1 ‘pdo _ _ _ = SOME (r1, ws1, evs1)’ >> PairCases_on ‘ws1’ >>
@@ -1225,17 +1296,25 @@ QED
 Theorem l1_reap_kinv:
   ∀fs w st w' st' evs.
     l1_reap fs (w, st) = SOME ((w', st'), evs) ∧ kinv p lfd sched w1 a cm D E w ∧ winv w ∧
-    sched_wf2 (sk_of p lfd sched w1) ∧ ¬MEM lfd fs ⇒
-    kinv p lfd sched w1 a cm D E w' ∧ winv w' ∧ st'.tbl = st.tbl
+    sched_wf2 (sk_of p lfd sched w1) ∧ ¬MEM lfd fs ∧
+    (∀f c. MEM f fs ∧ ALOOKUP w.open_fds f = SOME c ⇒ E c) ⇒
+    kinv p lfd sched w1 a cm D E w' ∧ winv w' ∧ st'.tbl = st.tbl ∧
+    (∀f. MEM f st'.closing ⇒ MEM f st.closing) ∧
+    (∀g c. ALOOKUP w'.open_fds g = SOME c ⇒ ALOOKUP w.open_fds g = SOME c)
 Proof
   Induct >> simp[l1_reap_def] >> rpt gen_tac >>
   IF_CASES_TAC >> strip_tac
   >- (gvs[AllCaseEqs(), l1_close_def] >>
       rename1 ‘sys_close h w = SOME (out, wa, ev)’ >>
-      ‘kinv p lfd sched w1 a cm D E wa’ by metis_tac[kinv_sys_quiet] >>
+      ‘kinv p lfd sched w1 a cm D E wa’ by (irule kinv_sys_close >> fs[] >> metis_tac[]) >>
       ‘winv wa’ by metis_tac[sys_winv] >>
-      first_x_assum drule_all >> simp[forget_def, set_outbox_def])
-  >> first_x_assum drule_all >> simp[]
+      (first_x_assum drule >> impl_tac
+       >- (simp[] >> rpt strip_tac >> drule_all sys_close_open_back >> strip_tac >>
+           first_x_assum irule >> simp[] >> metis_tac[]) >>
+       simp[forget_def, set_outbox_def, MEM_FILTER] >> strip_tac >>
+       metis_tac[sys_close_open_back]))
+  >> first_x_assum (qspecl_then [‘w’, ‘st’, ‘w'’, ‘st'’, ‘evs’] mp_tac) >>
+  impl_tac >- (simp[] >> metis_tac[]) >> simp[]
 QED
 
 Theorem in_fds_poll_set:
@@ -1252,16 +1331,17 @@ QED
 Theorem pround_kinv:
   pround lfd hw hs (w, ps) acts = SOME (snap, (w', ps'), log, evs) ∧
   kinv p lfd sched w1 a cm D E w ∧ winv w ∧ sched_wf2 (sk_of p lfd sched w1) ∧
-  pv_rel lfd cm0 ps s ∧ pown lfd ps ∧ l0own lfd w ps ∧ chown ps w ⇒
+  pv_rel lfd cm0 ps s ∧ pown lfd ps ∧ l0own lfd w ps ∧ chown ps w ∧ eown E ps w ⇒
   ∃as cm' a'.
     arrs lfd (cm, a) log = (as, (cm', a')) ∧
     kinv p lfd sched w1 a' cm' (λj. D j ++ data_of j as) (λj. E j ∨ MEM (Eof2 j) as) w' ∧
-    winv w' ∧ chown ps' w'
+    winv w' ∧ chown ps' w' ∧ eown (λj. E j ∨ MEM (Eof2 j) as) ps' w'
 Proof
   simp[pround_def, AllCaseEqs()] >> strip_tac >> PairCases_on ‘ws1’ >>
   gvs[pf_tail_def, AllCaseEqs()] >>
   rename1 ‘pacts _ _ _ = SOME (rs, aevs, wa, pa)’ >>
-  drule_all pacts_kinv >> strip_tac >>
+  mp_tac (Q.SPECL [‘acts’, ‘w’, ‘ps’, ‘s’, ‘rs’, ‘aevs’, ‘wa’, ‘pa’] pacts_kinv) >>
+  impl_tac >- simp[] >> strip_tac >>
   drule_all pacts_hacts >> strip_tac >>
   ‘l0_rely w ∧ fds_lt w’ by gvs[winv_def] >>
   drule_all pacts_l0 >> strip_tac >>
@@ -1277,28 +1357,44 @@ Proof
   ‘∀g. MEM g fs ∧ g ≠ lfd ⇒ ∃c. ALOOKUP wc.open_fds g = SOME c’
     by (rw[Abbr ‘fs’, MEM_FILTER] >> drule in_fds_poll_set >> strip_tac >> gvs[] >>
         fs[chown_def] >> metis_tac[]) >>
+  ‘eown E (pa with b := bc) wc’ by (fs[eown_def] >> metis_tac[]) >>
+  ‘eused (pa with b := bc) wc’
+    by (simp[eused_def] >> rpt strip_tac
+        >- (‘MEM f (MAP SND pa.b.tbl)’ by (fs[pown_def] >> metis_tac[]) >>
+            ‘∃c. ALOOKUP wa.open_fds f = SOME c’ by fs[chown_def] >>
+            gvs[] >> metis_tac[used_open_fds])
+        >> gvs[l0own_def]) >>
   drule_all kinv_fetch >> strip_tac >>
   drule_all pf_fetch_acq >> strip_tac >>
   drule pf_fetch_b >> strip_tac >>
   rename1 ‘l1_reap _ (wd, _) = SOME ((we, be), cevs)’ >>
   ‘¬MEM lfd pd.b.closing’ by gvs[pown_def, ALL_DISTINCT_APPEND] >>
-  drule_all l1_reap_kinv >> strip_tac >>
+  ‘∀f c. MEM f (hup_step (hup_fds rv) (outbox_of pa.b) log pd).b.closing ∧
+         ALOOKUP wd.open_fds f = SOME c ⇒ (λj. E j ∨ MEM (Eof2 j) as) c’
+    by (simp_tac std_ss [hup_step_fields] >> fs[eown_def] >> metis_tac[]) >>
+  mp_tac (Q.SPECL [‘pd.b.closing’, ‘wd’,
+                   ‘(hup_step (hup_fds rv) (outbox_of pa.b) log pd).b’, ‘we’, ‘be’, ‘cevs’]
+          (Q.INST [‘E’ |-> ‘λj. E j ∨ MEM (Eof2 j) as’, ‘a’ |-> ‘a'’, ‘cm’ |-> ‘cm'’,
+                   ‘D’ |-> ‘λj. D j ++ data_of j as’] l1_reap_kinv)) >>
+  impl_tac >- (simp[] >> gvs[] >> metis_tac[]) >> strip_tac >>
   drule l1_reap_wkeep >> strip_tac >>
   qexistsl_tac [‘as’, ‘cm'’, ‘a'’] >> simp[] >>
-  simp[chown_def] >> rpt strip_tac
-  >- ((* a handle's fd *)
-      ‘MEM f (MAP SND pa.b.tbl)’ by gvs[] >>
-      ‘¬MEM f pa.b.closing’
-        by (gvs[pown_def, ALL_DISTINCT_APPEND] >> metis_tac[]) >>
-      ‘∃c. ALOOKUP wa.open_fds f = SOME c’ by fs[chown_def] >>
+  conj_tac
+  >- (simp[chown_def] >> rpt strip_tac
+      >- ((* a handle's fd *)
+          ‘MEM f (MAP SND pa.b.tbl)’ by gvs[] >>
+          ‘¬MEM f pa.b.closing’
+            by (gvs[pown_def, ALL_DISTINCT_APPEND] >> metis_tac[]) >>
+          ‘∃c. ALOOKUP wa.open_fds f = SOME c’ by fs[chown_def] >>
+          fs[wkeep_def] >> gvs[] >> metis_tac[])
+      >> (* a queued fd *)
+      qpat_x_assum ‘∀f. MEM f pd.acq ⇒ _’ drule >> strip_tac
+      >- (‘¬MEM f pa.b.closing’ by (gvs[pown_def, ALL_DISTINCT_APPEND] >> metis_tac[]) >>
+          ‘∃c. ALOOKUP wa.open_fds f = SOME c’ by fs[chown_def] >>
+          fs[wkeep_def] >> gvs[] >> metis_tac[])
+      >> ‘¬MEM f pa.b.closing’ by (gvs[l0own_def] >> metis_tac[]) >>
       fs[wkeep_def] >> gvs[] >> metis_tac[])
-  >> (* a queued fd *)
-  qpat_x_assum ‘∀f. MEM f pd.acq ⇒ _’ drule >> strip_tac
-  >- (‘¬MEM f pa.b.closing’ by (gvs[pown_def, ALL_DISTINCT_APPEND] >> metis_tac[]) >>
-      ‘∃c. ALOOKUP wa.open_fds f = SOME c’ by fs[chown_def] >>
-      fs[wkeep_def] >> gvs[] >> metis_tac[])
-  >> ‘¬MEM f pa.b.closing’ by (gvs[l0own_def] >> metis_tac[]) >>
-  fs[wkeep_def] >> gvs[] >> metis_tac[]
+  >> fs[eown_def] >> rpt strip_tac >> res_tac >> gvs[] >> metis_tac[]
 QED
 
 (* ========================================================================
@@ -1329,7 +1425,9 @@ Definition rinv_def:
          (λj. data_of j (upto (parr lfd hw ifds m w1) k))
          (λj. MEM (Eof2 j) (upto (parr lfd hw ifds m w1) k))
          (rworld lfd hw ifds m w1 k) ∧
-    chown (rstate lfd hw ifds m w1 k) (rworld lfd hw ifds m w1 k)
+    chown (rstate lfd hw ifds m w1 k) (rworld lfd hw ifds m w1 k) ∧
+    eown (λj. MEM (Eof2 j) (upto (parr lfd hw ifds m w1) k))
+         (rstate lfd hw ifds m w1 k) (rworld lfd hw ifds m w1 k)
 End
 
 Theorem rinv_run:
@@ -1343,7 +1441,7 @@ Proof
   Induct
   >- (simp[rinv_def, rworld_def, rstate_def, prun_0, pcm_def, data_of_def] >>
       fs[kinv_def, kworld_def, ticks2_def, sinv_def, wk_def, lk_def, sk_of_def, qof_def,
-         chown_def, pinit_def, l1init_def]) >>
+         chown_def, eown_def, pinit_def, l1init_def]) >>
   drule_all round_facts >> disch_then (qspec_then ‘k’ strip_assume_tac) >>
   drule prun_round' >> disch_then (qspecl_then [‘ARB’, ‘k’] strip_assume_tac) >>
   fs[rinv_def] >>

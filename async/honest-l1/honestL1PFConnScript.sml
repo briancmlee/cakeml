@@ -10,7 +10,8 @@
 Theory honestL1PFConn
 Ancestors
   honestL1PFClient honestL1PFStream honestL1PFLive honestL1PFRound honestL1PFRefine
-  honestL1PFModel honestL1Model honestL0WorldInv honestL0World honestL0 asyncCore alist
+  honestL1PFModel honestL1Steps honestL1Inv honestL1Model honestL0WorldInv honestL0Rely
+  honestL0World honestL0 asyncCore alist
 Libs
   preamble
 
@@ -127,13 +128,13 @@ QED
    and either accepted (opened under the new fd) or dropped (it is broken) *)
 Theorem accept_queue:
   l0_accept l w = (r, w') ⇒
-  qof w' l = qof w l ∨
+  (qof w' l = qof w l ∧ ∀k. r ≠ Ok k) ∨
   ∃j q'. qof w l = j :: q' ∧ qof w' l = q' ∧
          ((∃k. r = Ok (w2n k) ∧ ALOOKUP w'.open_fds k = SOME j) ∨
           ((∀k. r ≠ Ok k) ∧ (j < LENGTH w.chans ⇒ (EL j w'.chans).broken)))
 Proof
   rw[l0_accept_def] >>
-  Cases_on ‘FILTER (λ(l',p,q). l' = l) w.listeners’ >> gvs[] >>
+  Cases_on ‘FILTER (λ(l',p,q). l' = l) w.listeners’ >> gvs[fail_def] >>
   PairCases_on ‘h’ >> gvs[] >>
   ‘h0 = l’ by (‘MEM (h0, h1, h2) (FILTER (λ(l',p,q). l' = l) w.listeners)’ by simp[] >>
                fs[MEM_FILTER]) >>
@@ -144,4 +145,64 @@ Proof
   ‘qof w l = h2’ by simp[qof_def] >>
   gvs[AllCaseEqs(), l0_alloc_def, fail_def] >>
   simp[upd_lchan_def, EL_LUPDATE, break_lchan_def] >> rw[] >> gvs[]
+QED
+
+(* An L0 call that is neither an accept nor a close on l only appends to
+   l's queue *)
+Theorem qof_call:
+  l0_call n conf bytes w = SOME (FFIreturn bytes' w') ∧ n ≠ «sys_connect» ∧
+  ¬((n = «sys_accept» ∨ n = «sys_close») ∧ bytes_fd conf = l) ⇒
+  ∃t. qof w' l = qof w l ++ t
+Proof
+  rw[l0_call_def] >> gvs[AllCaseEqs()] >>
+  rpt (pairarg_tac >> gvs[]) >> imp_res_tac qof_ops >> gvs[] >>
+  TRY (qexists_tac ‘[]’ >> simp[] >> NO_TAC) >>
+  metis_tac[qof_ticks]
+QED
+
+(* An accept on l *)
+Theorem qof_call_accept:
+  l0_call «sys_accept» conf bytes w = SOME (FFIreturn bytes' w') ∧ bytes_fd conf = l ⇒
+  ∃r. l0_accept l w = (r, w') ∧ bytes' = enc_res r
+Proof
+  rw[l0_call_def] >> pairarg_tac >> gvs[]
+QED
+
+Theorem qof_do:
+  n ≠ «sys_connect» ∧ ¬((n = «sys_accept» ∨ n = «sys_close») ∧ bytes_fd conf = l) ∧
+  l0_do n conf alen w = SOME (out, w', ev) ⇒
+  ∃t. qof w' l = qof w l ++ t
+Proof
+  strip_tac >> drule l0_do_cases >> strip_tac >> gvs[] >>
+  qspecl_then [‘w’] strip_assume_tac (Q.GEN ‘w’ (Q.SPECL [‘l’, ‘n’] (Q.GENL [‘l’, ‘nm’] qof_tick))) >>
+  drule qof_call >> simp[] >> disch_then (qspec_then ‘l’ mp_tac) >> simp[] >>
+  strip_tac >> simp[]
+QED
+
+Theorem accept_chans_len:
+  l0_accept l w = (r, w') ⇒ LENGTH w'.chans = LENGTH w.chans
+Proof
+  rw[l0_accept_def, AllCaseEqs()] >> simp[upd_lchan_def]
+QED
+
+(* L1's accept on the listener l *)
+Theorem sys_accept_queue:
+  winv w ∧ sys_accept l w = SOME (out, w', ev) ⇒
+  ∃t. (qof w' l = qof w l ++ t ∧ ∀k. l0_res_of out ≠ Ok k) ∨
+      ∃j q'. qof w l ++ t = j :: q' ∧ qof w' l = q' ∧
+             ((∃k. l0_res_of out = Ok k ∧ ALOOKUP w'.open_fds (n2w k) = SOME j) ∨
+              ((∀k. l0_res_of out ≠ Ok k) ∧
+               (j < LENGTH w'.chans ⇒ (EL j w'.chans).broken)))
+Proof
+  rw[sys_accept_def] >> drule l0_do_cases >> strip_tac >> gvs[] >>
+  drule qof_call_accept >> simp[] >> strip_tac >> gvs[] >>
+  qspecl_then [‘w’] strip_assume_tac (Q.GEN ‘w’ (Q.SPECL [‘l’, ‘«sys_accept»’] (Q.GENL [‘l’, ‘nm’] qof_tick))) >>
+  ‘l0_rely (l0_tick «sys_accept» w)’
+    by (gvs[winv_def] >> irule l0_rely_ch >> qexists_tac ‘w’ >> simp[]) >>
+  drule_all l0_accept_res >> strip_tac >>
+  ‘l0_res_of (enc_res r) = r’ by (irule l0_res_of_enc >> simp[]) >>
+  drule accept_chans_len >> strip_tac >>
+  drule accept_queue >> strip_tac >> qexists_tac ‘t’ >> gvs[] >>
+  disj2_tac >> qexists_tac ‘j’ >> gvs[] >>
+  TRY (qexists_tac ‘w2n k’ >> simp[] >> NO_TAC)
 QED

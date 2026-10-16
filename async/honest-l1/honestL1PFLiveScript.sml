@@ -123,7 +123,7 @@ Definition fetched_at_def:
       (EL k (SND (SND (SND (prun lfd hw ifds m w0 (SUC k))))))
 End
 
-(* TO PROVE (the statement, kept as a comment until proved; no cheats):
+(* TO PROVE (the statement, kept as a comment until it is proved):
 
 (* PROGRESS: if fd f is an open handle's fd at round n and its channel has
    input pending (data, EOF, or broken), then L1 eventually fetches on f,

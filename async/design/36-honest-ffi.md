@@ -960,6 +960,75 @@ pins down where each short read ends.
 - **(C) Keep the lazy L1 and assume C1–C5 away.** That gives R2-plus,
   not R1.
 
+**Decision (user, 2026-10-16): (A).** "If this is what a real server
+would do, we should do it." Prefetching buffered readers are the norm:
+OCaml Async's `Reader`, libuv's `uv_read_start`, Netty. The prefetching
+L1 becomes *the* L1.
+- It is built additively in new theories (`honestL1PF*`, starting with
+  `honestL1PFModel`), and the servers then switch over to it.
+- The lazy L1 (`honestL1Model`…`honestL1Round`, PRs #107/#110/#132)
+  stays for the record and is superseded.
+
+**The prefetching L1, precisely** (`honestL1PFModel`):
+
+- **Backpressure.** L1 fetches only within the program's current poll
+  interest.
+  - A connection fd is fetched only if its handle is in the interest,
+    its inbox is empty, it has no EOF, and it is not paused (outbox ≤
+    hw, D4).
+  - The listener is fetched only if it is in the interest, its accept
+    queue is empty, and it is not exhausted. So there is **at most one
+    accept per round per listener**, and a server that stops polling its
+    listener stops accepting: there are no eager accepts behind its
+    back.
+  - An fd that the poll asked about only for output (paused, or
+    closing) is never fetched, even if it reports HUP/ERR.
+- **Bounds.**
+  - Each inbox holds at most one chunk (`pf_chunk` = 64 KiB), because a
+    fetch fills only an empty inbox.
+  - Each listener's accept queue holds at most one fd.
+  - L1's input memory is therefore at most `pf_chunk` × (connections in
+    the interest). With 4096 connections that is 256 MiB in the worst
+    case. The chunk is a constant of the model and can be lowered.
+  - **Relation to D4 pausing:** pausing stops *fetching*. A paused fd
+    keeps its at most one chunk, and stays ready until the server reads
+    it. For servers that write only in response to reads, the outbox is
+    still bounded by hw plus the responses to one chunk.
+- **Reset vs EOF.** L1 keeps the distinction.
+  - The fetch log records `FEof f` (an orderly FIN: recv returned 0)
+    separately from `FReset f` (a hard error such as ECONNRESET), and
+    the raw error is in the trace.
+  - The server's vocabulary, `Got`, has only EOF, so both read as EOF,
+    and both are `Eof2` in the version-2 world.
+  - A richer L1 interface can expose the difference later at no cost to
+    this one.
+- **Syscall-level cost** (what differs from the lazy L1, on the wire and
+  in the trace):
+  - **Extra calls.** L1 makes at most one recv per round per
+    interest-readable connection with an empty inbox, and at most one
+    accept per round per listener. A recv happens whether or not the
+    server reads that round; the server's Reads make no syscalls. When
+    the server keeps up, the recv count is about the same as before (one
+    per chunk received, plus the final 0 or error).
+  - **Prefetched, never served.** A connection L1 accepted but the
+    server never Accepted is visible only as an fd in L1's queue. The
+    client already saw an established connection before any accept,
+    since the kernel completes the handshake, so the wire is unchanged.
+    If the program exits, the kernel closes the fd like any other: FIN,
+    or RST if unread bytes remain in the kernel. Without the prefetch,
+    the connection would have been reset from the backlog at exit.
+  - **FIN, not RST.** Fetched bytes leave the kernel's receive buffer.
+    If the program exits, or an fd is closed while L1's inbox still
+    holds unread bytes, the kernel's receive buffer may be empty. The
+    close then sends **FIN** where the lazy L1 (bytes still in the
+    kernel) would have caused an **RST** (RFC 1122 §4.2.2.13; RFC 9293
+    §3.6). This is documented behaviour; both are within the standards.
+  - **EMFILE.** One failing accept per exhaustion: the listener is not
+    polled until L1 closes an fd, and the pending connection waits in
+    the kernel's backlog. It is not dropped. The server is told
+    "ready" only when L1's queue holds an fd, so it never sees a failed
+    Accept.
+
 **(R3) Per-wrapper lemmas** (model level, on L1's functional core; the
 cheap part). For example:
 

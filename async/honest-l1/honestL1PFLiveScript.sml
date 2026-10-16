@@ -5,14 +5,14 @@
 
   The run: an infinite run of L1 in the L0 world w0 (total by
   honestL1PFInv's prun_total).  Its CALL SEQUENCE is the L0 world's
-  history, which only grows; [F1] is stated on it exactly as approved:
-  for each call name and configuration (fd), a call made infinitely often
-  does not fail transiently (the world's choice `transient`) infinitely
-  often.
+  history, which only grows; [F1] is stated on it as approved (D11): per
+  call kind and per fd (a poll involves every fd it lists), calls made
+  infinitely often do not fail transiently (the world's choice
+  `transient`) infinitely often.
 *)
 Theory honestL1PFLive
 Ancestors
-  honestL1PFInv honestL1PFModel honestL1Inv honestL1Model honestL0Rely honestL0World
+  honestL1PFInv honestL1PFRefine honestL1PFModel honestL1Inv honestL1Model honestL0Rely honestL0World
   honestL0 asyncCore asyncLevel1 asyncM3World alist
 Libs
   preamble
@@ -113,6 +113,47 @@ Definition S4_def:
 End
 
 (* ------------------------------------------------------------------------
+   The run, step by step
+   ------------------------------------------------------------------------ *)
+
+(* The run's hypotheses (as prun_total) *)
+Definition run_ok_def:
+  run_ok lfd hw ifds m w0 ⇔
+    l0_rely w0 ∧ psmall lfd pinit ∧ pl2_ok lfd hw ifds m (w0, pinit)
+End
+
+Theorem prun_some:
+  run_ok lfd hw ifds m w0 ⇒
+  ∀n. prounds lfd hw ifds m (w0, pinit) n = SOME (prun lfd hw ifds m w0 n)
+Proof
+  rw[run_ok_def] >> drule_all prounds_ok >>
+  disch_then (qspec_then ‘n’ strip_assume_tac) >> simp[prun_def]
+QED
+
+(* Round n's step: the round from state n gives state SUC n *)
+Theorem prun_step:
+  run_ok lfd hw ifds m w0 ⇒
+  ∀n. ∃snap log revs.
+    pround lfd hw (ifds (rhist lfd hw ifds m w0 n))
+      (rworld lfd hw ifds m w0 n, rstate lfd hw ifds m w0 n)
+      (new_actions (log_of m) (rhist lfd hw ifds m w0 n)) =
+      SOME (snap, (rworld lfd hw ifds m w0 (SUC n), rstate lfd hw ifds m w0 (SUC n)),
+            log, revs) ∧
+    rhist lfd hw ifds m w0 (SUC n) = rhist lfd hw ifds m w0 n ++ [snap] ∧
+    EL n (SND (SND (SND (prun lfd hw ifds m w0 (SUC n))))) = log
+Proof
+  rpt strip_tac >> drule prun_some >> strip_tac >>
+  first_assum (qspec_then ‘SUC n’ mp_tac) >> first_x_assum (qspec_then ‘n’ mp_tac) >>
+  simp[prounds_def] >>
+  Cases_on ‘prun lfd hw ifds m w0 n’ >> rename1 ‘_ = (h, r)’ >> PairCases_on ‘r’ >>
+  rename1 ‘_ = (h, (w, ps), evs, logs)’ >> rpt strip_tac >> gvs[AllCaseEqs()] >>
+  PairCases_on ‘ws'’ >>
+  simp[rworld_def, rstate_def, rhist_def] >>
+  drule prounds_logs >> strip_tac >>
+  qpat_x_assum ‘_ = prun _ _ _ _ _ (SUC n)’ (SUBST1_TAC o SYM) >> simp[EL_APPEND2]
+QED
+
+(* ------------------------------------------------------------------------
    The core: L1 fetches on an fd whose kernel input is pending
    ------------------------------------------------------------------------ *)
 
@@ -125,7 +166,7 @@ End
 
 (* TO PROVE (the statement, kept as a comment until it is proved):
 
-(* PROGRESS: if fd f is an open handle's fd at round n and its channel has
+PROGRESS: if fd f is an open handle's fd at round n and its channel has
    input pending (data, EOF, or broken), then L1 eventually fetches on f,
    or f stops being an open handle's fd *-)
 Theorem fetch_progress:

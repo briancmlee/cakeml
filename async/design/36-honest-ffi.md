@@ -1208,6 +1208,11 @@ them:
     written.
   - For a broadcast server, D7's slow-client drop is what makes it hold.
 
+*Formal shape of S4 (as the proof needs it; the same meaning as D15):*
+eventually, until f is next fetched, the server issues no Write on f's
+handle and f's outbox stays within hw. Reply-only servers satisfy it:
+while nothing new is read on f, nothing new is written to f.
+
 *Corollary shape (per server, for example echo):* from `echo_live2 psk
 io` with R1-safe and R1-live, every byte delivered by a peer that
 drains is eventually written to that peer on the wire. The writes reach

@@ -893,6 +893,48 @@ QED
 
 (* MAIN: a program meeting the endpoint form of EchoSpec2 in the simple
    class meets EchoSpec2 *)
+(* MAIN (helper): in the drained world of a version-2 world, the endpoint
+   liveness of a run is EchoSpec2's *)
+Theorem echo_live2_of_dworld:
+  server_world2 lfd sk ∧
+  semantics_prog (init_state (socket2_ffi sk)) init_env prog (Diverge io) ∧
+  semantics_prog (init_state (ep_ffi (dworld lfd a sk))) init_env prog (Diverge io) ∧
+  sym_live (λx y. x ≼ y) (dworld lfd a sk) io ∧ ticks_forever (dworld lfd a sk) io ⇒
+  echo_live2 sk io
+Proof
+  strip_tac >>
+  drule_then (qspec_then ‘a’ strip_assume_tac) dworld_props >>
+  qabbrev_tac ‘w = dworld lfd a sk’ >>
+  ‘∀evs. LPREFIX (fromList evs) io ⇒ replay_ok w evs’ by metis_tac[trace_replay_ok] >>
+  ‘∀evs. LPREFIX (fromList evs) io ⇒ EVERY (event_ok no_conn_send) evs’
+    by (rpt strip_tac >>
+        qpat_assum ‘semantics_prog (init_state (socket2_ffi _)) _ _ _’
+          (fn th => mp_tac (MATCH_MP (REWRITE_RULE [GSYM AND_IMP_INTRO]
+             (Q.INST [‘P’ |-> ‘no_conn_send’] run_events_ok)) th)) >>
+        simp[socket2_ffi_def, socket2_oracle_ok]) >>
+  rw[echo_live2_def] >>
+  qpat_assum ‘ticks_forever _ _’ (strip_assume_tac o SIMP_RULE std_ss [ticks_forever_def, eventually_def] o Q.SPEC ‘n’ o REWRITE_RULE [ticks_forever_def]) >>
+  rename1 ‘n ≤ (ep_replay w evs1).clock’ >>
+  Cases_on ‘sent2_upto j n sk = []’ >- (qexists_tac ‘[]’ >> simp[]) >>
+  ‘dgood lfd a sk evs1 (ep_replay w evs1)’ by metis_tac[dworld_inv] >>
+  ‘peer_sent_at w evs1 j = sent2_upto j (ep_replay w evs1).clock sk’
+    by fs[dgood_def, peer_at_of] >>
+  ‘sent2_upto j n sk ≼ peer_sent_at w evs1 j’ by simp[sent2_mono] >>
+  ‘peer_sent_at w evs1 j ≠ []’ by (strip_tac >> fs[]) >>
+  ‘j < LENGTH (ep_replay w evs1).chans’
+    by (CCONTR_TAC >> fs[peer_at_of, recv_of_def]) >>
+  ‘reads_fair w io j’
+    by (‘w = dworld lfd a sk’ by fs[markerTheory.Abbrev_def] >>
+        pop_assum SUBST_ALL_TAC >> irule dworld_reads_fair >> metis_tac[]) >>
+  qpat_x_assum ‘sym_live _ _ _’
+    (mp_tac o SIMP_RULE std_ss [sym_live_def, eventually_def]) >>
+  disch_then (qspecl_then [‘evs1’, ‘j’] mp_tac) >> simp[] >> strip_tac >>
+  rename1 ‘ep_chan w evs2 j' = SOME j’ >>
+  ‘j' = j’ by metis_tac[dworld_chan] >> gvs[] >>
+  qexists_tac ‘evs2’ >> simp[] >>
+  metis_tac[ch_sent_ep_written, IS_PREFIX_TRANS]
+QED
+
 Theorem echo_spec2_of_endpoint:
   rg_spec (λw. ep_server_world v2_calls lfd a w ∧ no_backpressure w ∧ open_loop w)
     ep_echo2_guar prog ⇒
@@ -918,25 +960,5 @@ Proof
   fs[ep_echo2_guar_def] >> rpt conj_tac
   >- (rw[echo_safe2_def] >> fs[always_def] >> res_tac >>
       metis_tac[ch_sent_ep_written, ch_read_ep_read]) >>
-  rw[echo_live2_def] >>
-  qpat_assum ‘ticks_forever _ _’ (strip_assume_tac o SIMP_RULE std_ss [ticks_forever_def, eventually_def] o Q.SPEC ‘n’ o REWRITE_RULE [ticks_forever_def]) >>
-  rename1 ‘n ≤ (ep_replay w evs1).clock’ >>
-  Cases_on ‘sent2_upto j n sk = []’ >- (qexists_tac ‘[]’ >> simp[]) >>
-  ‘dgood lfd a sk evs1 (ep_replay w evs1)’ by metis_tac[dworld_inv] >>
-  ‘peer_sent_at w evs1 j = sent2_upto j (ep_replay w evs1).clock sk’
-    by fs[dgood_def, peer_at_of] >>
-  ‘sent2_upto j n sk ≼ peer_sent_at w evs1 j’ by simp[sent2_mono] >>
-  ‘peer_sent_at w evs1 j ≠ []’ by (strip_tac >> fs[]) >>
-  ‘j < LENGTH (ep_replay w evs1).chans’
-    by (CCONTR_TAC >> fs[peer_at_of, recv_of_def]) >>
-  ‘reads_fair w io j’
-    by (‘w = dworld lfd a sk’ by fs[markerTheory.Abbrev_def] >>
-        pop_assum SUBST_ALL_TAC >> irule dworld_reads_fair >> metis_tac[]) >>
-  qpat_x_assum ‘sym_live _ _ _’
-    (mp_tac o SIMP_RULE std_ss [sym_live_def, eventually_def]) >>
-  disch_then (qspecl_then [‘evs1’, ‘j’] mp_tac) >> simp[] >> strip_tac >>
-  rename1 ‘ep_chan w evs2 j' = SOME j’ >>
-  ‘j' = j’ by metis_tac[dworld_chan] >> gvs[] >>
-  qexists_tac ‘evs2’ >> simp[] >>
-  metis_tac[ch_sent_ep_written, IS_PREFIX_TRANS]
+  irule echo_live2_of_dworld >> fs[markerTheory.Abbrev_def] >> metis_tac[]
 QED

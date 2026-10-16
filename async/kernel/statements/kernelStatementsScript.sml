@@ -16,16 +16,18 @@
     program stops, or it runs forever with raw safety (echo_safe_l0, the
     approved statement) and raw liveness under [F1] (D11′, on observed
     outcomes) and [F2] (D12).  Liveness is WEAKENED honestly where POSIX is
-    loose (D16: unless a hard error was observed on the episode; D19:
-    unless POLLHUP was observed on it; D18: unless accepts on the listener
-    fail infinitely often); l0_echo2_strong_claim is the corollary form
-    under explicit hypotheses (D16's HD16, D19's hups_real, D18's H1 and
-    H3; no [F3], design/36 §6, 2026-10-17).
+    loose (D16: unless a hard error was observed on the episode; D18:
+    unless accepts on the listener fail infinitely often), and per episode
+    it assumes the peer reads, also within K rounds of a hang-up (D19);
+    l0_echo2_strong_claim is the corollary form under explicit hypotheses
+    (D16's HD16, D18's H1 and H3; no [F3], design/36 §6, 2026-10-17).
   - quiet_on_kernel_claim: quiescence on the kernel, through a blocking
     variant of L1: with finitely many arrivals the program eventually
     sleeps in a blocking poll, unless [F1] fails.  It relies on D19 (user
-    decision Q-L3-1): on POLLHUP, L1 reads what is left, drops the pending
-    outbox and closes the fd.  hup_spin_bite (PROVED) is why: [P poll]
+    decision Q-L3-1, option 2): on POLLHUP, L1 reads what is left; a
+    broken fd's outbox is dropped and it is closed; a half-closed one keeps
+    flushing, is closed when drained, and is dropped after K rounds without
+    send progress.  hup_spin_bite (PROVED) is why: [P poll]
     lets the kernel report POLLHUP on a hung-up socket on every poll,
     whatever events were asked for, so a blocking poll that lists such an
     fd returns at once, forever.
@@ -272,15 +274,50 @@ Definition accepts_below_def:
     ∀evs. LPREFIX (fromList evs) io ⇒ LENGTH (l0_accepted evs) < 2 ** 64 − 1
 End
 
+(* A poll (blocking or not) that reported POLLHUP for fd f *)
+Definition poll_hup_def:
+  poll_hup f (IO_event nm conf bs) ⇔
+    nm = ExtCall «sys_poll» ∧
+    ∃i. i < LENGTH (poll_entries (DROP 1 conf)) ∧ FST (EL i (poll_entries (DROP 1 conf))) = f ∧
+        13 + i < LENGTH bs ∧ word_bit 3 (SND (EL (13 + i) bs))
+End
+
+
+(* The polls in a list of events (each L1 round polls at least once, so
+   K polls are at most K rounds) *)
+Definition n_polls_def:
+  n_polls (evs : io_event list) =
+    LENGTH (FILTER (λev. ∃conf bs. ev = IO_event (ExtCall «sys_poll») conf bs) evs)
+End
+
+(* D19 (user decision, option 2: the bounded flush), per episode: once
+   POLLHUP has been reported on episode j's fd, while channel c has bytes in
+   flight its peer reads some within K polls.  L1 keeps flushing a
+   half-closed fd and closes it when drained, but drops its outbox after K
+   rounds without send progress; a broken one is dropped at once (its hard
+   error is D16's excuse) *)
+Definition hup_drains_def:
+  hup_drains K w0 io j c ⇔
+    ∀evs ev mid w.
+      LPREFIX (fromList (evs ++ [ev] ++ mid)) io ∧ ep_open j evs ∧
+      poll_hup (EL j (l0_accepted evs)) ev ∧
+      world_at w0 (evs ++ [ev] ++ mid) = SOME w ∧ c < LENGTH w.chans ∧
+      0 < (EL c w.chans).inflight ⇒
+      ∃more w'. LPREFIX (fromList (evs ++ [ev] ++ mid ++ more)) io ∧ n_polls more ≤ K ∧
+                world_at w0 (evs ++ [ev] ++ mid ++ more) = SOME w' ∧ c < LENGTH w'.chans ∧
+                (EL c w.chans).drained < (EL c w'.chans).drained
+End
+
 (* Raw liveness of the echo, per episode, unless X: if episode j is open on
    channel c after evs and c's peer drains, then everything c's peer has
    sent so far is eventually sent back (taken by the kernel), and if the
    peer has closed its side, the episode is eventually closed *)
 Definition echo_live_unless_def:
-  echo_live_unless X w0 io ⇔
+  echo_live_unless X K w0 io ⇔
     ∀evs j c w.
       LPREFIX (fromList evs) io ∧ ep_open j evs ∧ world_at w0 evs = SOME w ∧
-      l0_chan_of w (EL j (l0_accepted evs)) = SOME c ∧ drains w0 io c ⇒
+      l0_chan_of w (EL j (l0_accepted evs)) = SOME c ∧ drains w0 io c ∧
+      hup_drains K w0 io j c ⇒
       X j c ∨
       ((∃evs'. LPREFIX (fromList evs') io ∧ (EL c w.chans).peer_sent ≼ l0_sent j evs') ∧
        ((EL c w.chans).peer_eof ⇒ ∃evs'. LPREFIX (fromList evs') io ∧ ep_closed j evs'))
@@ -308,42 +345,24 @@ Definition conn_live_unless_def:
       broke w0 io j0
 End
 
-(* A poll (blocking or not) that reported POLLHUP for fd f *)
-Definition poll_hup_def:
-  poll_hup f (IO_event nm conf bs) ⇔
-    nm = ExtCall «sys_poll» ∧
-    ∃i. i < LENGTH (poll_entries (DROP 1 conf)) ∧ FST (EL i (poll_entries (DROP 1 conf))) = f ∧
-        13 + i < LENGTH bs ∧ word_bit 3 (SND (EL (13 + i) bs))
-End
-
-(* D19's excuse, observed: POLLHUP was reported on episode j's fd while it
-   was open.  Under D19 (user decision Q-L3-1) L1 then reads what is left,
-   drops the pending outbox and closes; [P poll] leaves POLLHUP on sockets
-   to the implementation and the L0 model allows it after the peer's EOF
-   alone, so a half-closed peer may lose its reply *)
-Definition ep_hup_def:
-  ep_hup j io ⇔
-    ∃evs ev. LPREFIX (fromList (evs ++ [ev])) io ∧ ep_open j evs ∧
-             poll_hup (EL j (l0_accepted evs)) ev
-End
-
 (* The main (weakened) forms *)
 Definition echo_live_l0_def:
-  echo_live_l0 w0 io ⇔ echo_live_unless (λj c. ep_hard_err j io ∨ ep_hup j io) w0 io
+  echo_live_l0 K w0 io ⇔ echo_live_unless (λj c. ep_hard_err j io) K w0 io
 End
 
 Definition conn_live_l0_def:
   conn_live_l0 w0 io ⇔ conn_live_unless (accepts_fail_io io) w0 io
 End
 
-(* R4′, the template: the echo server with close, on the honest L0 FFI *)
+(* R4′, the template: the echo server with close, on the honest L0 FFI;
+   K is L1's hang-up flush bound (D19) *)
 Definition l0_echo2_claim_def:
-  l0_echo2_claim prog ⇔
+  l0_echo2_claim K prog ⇔
     ∀w0. l0_server_world w0 ⇒
       ∃b. semantics_prog (init_state (l0_ffi w0)) init_env prog b ∧
           (listen_failed b ∨
            ∃io. b = Diverge io ∧ echo_safe_l0 io ∧
-                (F1_io io ∧ F2 w0 ∧ accepts_below io ⇒ echo_live_l0 w0 io ∧ conn_live_l0 w0 io))
+                (F1_io io ∧ F2 w0 ∧ accepts_below io ⇒ echo_live_l0 K w0 io ∧ conn_live_l0 w0 io))
 End
 
 (* ------------------------------------------------------------------------
@@ -368,16 +387,6 @@ Definition flushed_ch_def:
   flushed_ch w0 io c ⇔
     ∃evs w. LPREFIX (fromList evs) io ∧ world_at w0 evs = SOME w ∧
             c < LENGTH w.chans ∧ (EL c w.chans).broken ∧ (EL c w.chans).inbox = []
-End
-
-(* D19's corollary hypothesis: POLLHUP is reported only on a channel that
-   broke (not after the peer's EOF alone) *)
-Definition hups_real_def:
-  hups_real w0 io ⇔
-    ∀evs ev f w.
-      LPREFIX (fromList (evs ++ [ev])) io ∧ poll_hup f ev ∧
-      world_at w0 (evs ++ [ev]) = SOME w ⇒
-      ∃c. l0_chan_of w f = SOME c ∧ (EL c w.chans).broken
 End
 
 (* D18's H1, read off the trace: an accept that fails with an error L1
@@ -408,13 +417,13 @@ Definition H3_io_def:
 End
 
 Definition l0_echo2_strong_claim_def:
-  l0_echo2_strong_claim prog ⇔
+  l0_echo2_strong_claim K prog ⇔
     ∀w0. l0_server_world w0 ⇒
       ∃b. semantics_prog (init_state (l0_ffi w0)) init_env prog b ∧
           (listen_failed b ∨
            ∃io. b = Diverge io ∧
-                (F1_io io ∧ F2 w0 ∧ accepts_below io ∧ HD16_io w0 io ∧ hups_real w0 io ⇒
-                 echo_live_unless (λj c. flushed_ch w0 io c) w0 io) ∧
+                (F1_io io ∧ F2 w0 ∧ accepts_below io ∧ HD16_io w0 io ⇒
+                 echo_live_unless (λj c. flushed_ch w0 io c) K w0 io) ∧
                 (F1_io io ∧ accepts_below io ∧ H1_io w0 io ∧ H3_io io ⇒
                  conn_live_unless F w0 io))
 End
@@ -454,8 +463,8 @@ End
 
 (* The echo's guarantee, for its quiet instance *)
 Definition echo2_guar_l0_def:
-  echo2_guar_l0 w0 io ⇔
-    echo_safe_l0 io ∧ (F1_io io ∧ F2 w0 ∧ accepts_below io ⇒ echo_live_l0 w0 io ∧ conn_live_l0 w0 io)
+  echo2_guar_l0 K w0 io ⇔
+    echo_safe_l0 io ∧ (F1_io io ∧ F2 w0 ∧ accepts_below io ⇒ echo_live_l0 K w0 io ∧ conn_live_l0 w0 io)
 End
 
 (* ------------------------------------------------------------------------

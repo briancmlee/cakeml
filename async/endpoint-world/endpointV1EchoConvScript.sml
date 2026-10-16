@@ -41,7 +41,11 @@ Definition echo_spec_le_def:
                 echo_safe io ∧ echo_live sk io
 End
 
-(* HYPOTHESIS: nonsat, with room for one more client *)
+(* HYPOTHESIS (user decision 2026-10-16, design/35): nonsat, with room for
+   one more client.  With plain nonsat the converse is false at reserved =
+   [], M = 2^64 - 4: a program that stops polling once it has accepted
+   2^64 - 4 clients and seen all their EOFs meets echo_spec_le but not
+   ticks_forever *)
 Definition nonsat1_def:
   nonsat1 lfd a (w:eworld) ⇔
     ∃M. LENGTH w.reserved + M + 4 < dimword (:64) ∧ ∀n. nconn (v2of lfd a w) n ≤ M

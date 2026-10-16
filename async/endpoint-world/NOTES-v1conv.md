@@ -24,7 +24,7 @@ step effective), v1of2_conns (sched_conns m = GENLIST F2 (nconn sk2 m)), v1of2_p
 (server_world, ∀m. LENGTH (sched_conns m ..) ≤ M, v12rel). Steps 2-4 below are DONE.
 sched_connects_le form: convert with V1Inst's sched_connects_le_conns (make it public).
 
-BOUNDARY ISSUE (reported to coordinator 2026-10-16, awaiting user decision): ⇒ with
+BOUNDARY ISSUE (DECIDED 2026-10-16 by the user: nonsat1 for the three ⇒ directions): ⇒ with
 nonsat is false when w.reserved = [] and M = 2^64-4 (a program that stops polling after
 accepting 2^64-4 clients that have all sent EOF meets echo_spec_le but not ticks_forever).
 Proposed: nonsat1 (reserved + M + 4 < 2^64) for the v1 ⇒ directions. Working with nonsat1.

@@ -1,8 +1,35 @@
 # Quiescence for stateful servers (design/37): with_store at Level 2
-# (asyncWithStore2), its quiet_on and finiteness; then the stability lemma
-# for with_store2 over the library's server_v2.  asyncWithStore is
-# spike/kv-live's (http-kv), placed here as is.
-INCLUDES = ../../model/core ../../model/level2
+# (asyncWithStore2); the library skeleton server_v's per-action facts
+# (asyncSVActs) and its query handler's (asyncProtoVActs); then the
+# stability lemma for with_store2 over server_v2.
+# asyncWithStore is spike/kv-live's (http-kv), placed here as is.
+INCLUDES = ../../model/core \
+           ../../model/level2 \
+           ../../model/sched \
+           ../../servers/echo \
+           ../../servers/closed-loop \
+           ../../servers/relabel \
+           ../../servers/http \
+           ../../servers/http-quiet \
+           ../../option-c-loop \
+           ../../spec \
+           ../../world/sockets \
+           ../../world/clock \
+           ../../world/composed \
+           ../../cakeml/library \
+           ../../loop/polling \
+           ../../programs/echo \
+           ../../programs/echo-live \
+           ../../programs/echo-blocking \
+           ../../loop/blocking \
+           ../../cakeml/approx \
+           ../../quiet/ffi \
+           ../../quiet/echo \
+           ../http-proto \
+           ../library-liveness \
+           ../option-c-proto \
+           $(CAKEMLDIR)/semantics \
+           ../proto-stable
 ifdef POLY
 HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
 endif

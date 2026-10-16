@@ -4,7 +4,9 @@
 # stability lemma for with_store2 over server_v2.
 # (asyncWrapActs carries them through the store wrapper.)  Stability:
 # asyncStableGen (any server's actions stop), asyncStoreSafe (the store
-# server meets its conditions), asyncStoreReact (Level 2 reactions).
+# server meets its conditions), asyncStoreReact (Level 2 reactions),
+# asyncStoreAcc (what it waits for), asyncStorePending (a pending query
+# acts), asyncStoreStable (store_stable, proto_stable's analogue).
 # asyncWithStore and asyncServerVKv are spike/kv-live's, placed here as is.
 INCLUDES = ../../model/core \
            ../../model/level2 \

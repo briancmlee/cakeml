@@ -1154,6 +1154,60 @@ hypothesis of the v2 server theorems.
 - **Not yet:** R1-live (fetch completeness; [F1] weak, [F2]); connecting
   to `semantics_prog`; the switch-over of the servers to this L1.
 
+**R1-live, the statement (for review; not yet proved).** R1-safe makes
+L2's liveness theorems true *of `psk`*: what client j sent in `psk` is
+served. R1-live says `psk` misses nothing the kernel delivered, so the
+promise reaches the real peers.
+
+*Setting.* An infinite L1 run in L0 world w0. A prerequisite, not yet
+built, is the PF analogue of `lrun_ok_thm`: the run never fails, given
+the handle-layer conditions. Each channel c that L1 accepted has an fd f
+and is client j of `psk`. The fetch log is `plog`.
+
+*Hypotheses:*
+- **[F1] (D11, weak fairness, trusted):** for each call kind (recv,
+  accept, send, poll) and each fd or listener, if the run makes that
+  call infinitely often, it succeeds (no transient error) infinitely
+  often.
+- **[F2] (D12, trusted):** `0 < n ⇒ 0 < w0.ch.takes j h 0 n`.
+- **S1 (server, interest):** at every round, the poll interest contains
+  every open handle and the listener. This is the asyncServer shape,
+  proved per server.
+- **S2 (server, accepting):** if the listener is reported ready at some
+  round, the server issues `Accept lfd` at some later round. Also
+  proved per server.
+- **D(c) (the peer of c drains):** whenever c has bytes in flight, an
+  `LDrain` for c eventually arrives. This is per episode, not trusted:
+  it is the condition under which service is owed (D4 backpressure).
+- **[F3] (fds free up):** infinitely often, an accept attempt finds the
+  lowest fd below the limit. This is needed only for the connection
+  part.
+
+*Conclusions:*
+- **(live-data)** If D(c) holds, then for every L0 step k there is a
+  round n such that `peer_sent` of c at step k, less any bytes flushed
+  by a break (`LBreak … F`), is a prefix of client j's data in the
+  first n steps of `psk`. If c's peer closes or c breaks, then `Eof2 j`
+  is eventually in `psk`.
+- **(live-conn)** Assume [F3]. Every connection that reaches the
+  listener's backlog (`LIncoming` on its port) is eventually a
+  `Connect2` in `psk`, unless it is dropped. It is dropped only if it
+  broke while pending (ECONNABORTED: its peer reset it) or was reset
+  under EMFILE (`emfile_drops`, macOS).
+
+*Corollary shape (per server, for example echo):* from `echo_live2 psk
+io` with R1-safe and R1-live, every byte delivered by a peer that
+drains is eventually written to that peer on the wire. The writes reach
+the wire because flushes progress under [F2] and D(c).
+
+*Why it should hold:*
+- A byte in c's kernel inbox makes c's next unpaused poll report IN.
+- L1 then recvs, or retries after a transient failure ([F1]).
+- c is unpaused eventually because its outbox drains ([F2] with D(c)).
+- The inbox is emptied by L2's reads. Under S1, the v2 liveness
+  forces those reads, because `psk` delivered the data.
+- The accept queue is emptied by S2.
+
 **(R3) Per-wrapper lemmas** (model level, on L1's functional core; the
 cheap part). For example:
 

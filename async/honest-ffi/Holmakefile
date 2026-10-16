@@ -1,0 +1,5 @@
+# Built against the prebuilt shared base (async/design/shared-base-build.md).
+# basis heap: see async/design/conventions.md for the measurements.
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

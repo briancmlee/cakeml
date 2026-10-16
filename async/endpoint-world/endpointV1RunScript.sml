@@ -228,22 +228,23 @@ Proof
   simp[ml_progTheory.init_state_def]
 QED
 
-(* The calls of a diverging version-1 run are those of events that replay
-   the oracle and lie on the trace *)
-Theorem v1_clock_calls:
-  semantics_prog (init_state (socket_ffi s1)) init_env prog (Diverge io) ∧
-  cs ≼ clock_calls (init_state (socket_ffi s1)) init_env prog k ⇒
-  ∃evs t. cs = calls_of evs ∧ replays socket_oracle s1 evs t ∧ LPREFIX (fromList evs) io
+(* The calls of a diverging run are those of events that replay the
+   oracle and lie on the trace *)
+Theorem clock_calls_trace:
+  f.io_events = [] ∧
+  semantics_prog (init_state f) init_env prog (Diverge io) ∧
+  cs ≼ clock_calls (init_state f) init_env prog k ⇒
+  ∃evs t. cs = calls_of evs ∧ replays f.oracle f.ffi_state evs t ∧ LPREFIX (fromList evs) io
 Proof
-  qabbrev_tac ‘st = init_state (socket_ffi s1)’ >>
+  qabbrev_tac ‘st = init_state f’ >>
   simp[semantics_prog_def] >> strip_tac >>
   qpat_x_assum ‘∀k. ∃ffi. _’ (qspec_then ‘k’ strip_assume_tac) >>
   fs[ext_def, calls_of_def] >>
   drule prefix_MAP >> strip_tac >> gvs[GSYM calls_of_def] >>
-  ‘replays socket_oracle s1 ffi.io_events ffi.ffi_state’
+  ‘replays f.oracle f.ffi_state ffi.io_events ffi.ffi_state’
     by (qspecl_then [‘st’, ‘init_env’, ‘k’, ‘prog’] mp_tac
           (Q.GENL [‘st’, ‘env’, ‘k’, ‘prog’] clock_run_replays) >>
-        simp[Abbr ‘st’, init_state_ffi, socket_ffi_def]) >>
+        simp[Abbr ‘st’, init_state_ffi]) >>
   ‘LPREFIX (fromList ffi.io_events) io’
     by (fs[lprefix_lub_def] >> first_x_assum irule >> simp[] >>
         qexists_tac ‘k’ >> simp[]) >>
@@ -252,6 +253,19 @@ Proof
   qexistsl_tac [‘evs’, ‘m’] >> simp[] >>
   irule LPREFIX_TRANS >> first_x_assum (irule_at Any) >>
   simp[LPREFIX_fromList, from_toList]
+QED
+
+(* The calls of a diverging version-1 run are those of events that replay
+   the oracle and lie on the trace *)
+Theorem v1_clock_calls:
+  semantics_prog (init_state (socket_ffi s1)) init_env prog (Diverge io) ∧
+  cs ≼ clock_calls (init_state (socket_ffi s1)) init_env prog k ⇒
+  ∃evs t. cs = calls_of evs ∧ replays socket_oracle s1 evs t ∧ LPREFIX (fromList evs) io
+Proof
+  strip_tac >>
+  ‘(socket_ffi s1).io_events = [] ∧ (socket_ffi s1).oracle = socket_oracle ∧
+   (socket_ffi s1).ffi_state = s1’ by simp[socket_ffi_def] >>
+  metis_tac[clock_calls_trace]
 QED
 
 (* Version 1's calls only *)

@@ -16,6 +16,10 @@
     (ideal_kv2_trace_spec).
   HttpKvSpec's own bites (lost writes, a store per connection, stale
   reads, never answering) carry over per episode.
+  - From the spec review (kv2): non-vacuity on a trace the FFI really
+    produces, with real polls and the second accept reusing fd 4, idling
+    forever (real_trace_spec); real time across two episodes on the same
+    reused fd (broken_stale_across_reuse).
 *)
 Theory HttpKvSpec2Bite
 Ancestors
@@ -406,4 +410,440 @@ Proof
   rw[] >> Cases_on ‘evs' ≼ noclose_kv2’ >> simp[] >> gvs[prefix_take] >>
   ‘n = 0 ∨ n = 1 ∨ n = 2 ∨ n = 3 ∨ n = 4 ∨ n = 5 ∨ n = 6 ∨ n = 7 ∨
    n = 8’ by simp[] >> gvs[] >> EVAL_TAC
+QED
+
+(* ========================================================================
+   From the spec review of HttpKvSpec2 (checks R1 and R2):
+
+   R1  Non-vacuity with REAL polls: the trace is the one CakeML's call_FFI
+       produces when a program makes these FFI calls in two_gets_world2
+       (polls included; the second accept really reuses fd 4), and the
+       infinite trace that then polls forever ("stutters") is
+       linearizable, live and closes.
+   R2  Real time across two episodes on the SAME reused fd: episode 0
+       POSTs x and is answered and closed; episode 1, on fd 4 again,
+       GETs x and is answered 404 (a stale read): rejected.
+   ======================================================================== *)
+
+(* ------------------------------------------------------------------------
+   R1: running FFI calls exactly as CakeML's semantics does
+   ------------------------------------------------------------------------ *)
+
+Definition run2_def:
+  run2 st [] = SOME st ∧
+  run2 st ((n, conf, bytes) :: cs) =
+    case call_FFI st (ExtCall n) conf bytes of
+    | FFI_return st' _ => run2 st' cs
+    | FFI_final _ => NONE
+End
+
+Theorem run2_append:
+  ∀xs st. run2 st (xs ++ ys) =
+          case run2 st xs of NONE => NONE | SOME st' => run2 st' ys
+Proof
+  Induct >> simp[run2_def, FORALL_PROD] >> rw[] >> CASE_TAC >> simp[]
+QED
+
+(* The calls of a simple server: poll the listener; accept; read the
+   request; write the 404; read the EOF; close.  Twice. *)
+Overload pollc = “(«sock_poll», fd_bytes 3w, [0w : word8])”
+Overload epc =
+  “[(«sock_accept», fd_bytes 3w, REPLICATE 9 (0w : word8));
+    («sock_read», fd_bytes 4w, REPLICATE 109 (0w : word8));
+    («sock_write», fd_bytes 4w ++ reply_bytes [NotFound], [] : word8 list);
+    («sock_read», fd_bytes 4w, REPLICATE 109 (0w : word8));
+    («sock_close», fd_bytes 4w, [] : word8 list)]”
+Overload real_calls = “pollc :: epc ++ pollc :: epc”
+
+(* A poll of the listener that reported b *)
+Definition poll_ev_def:
+  poll_ev (b : word8) = IO_event (ExtCall «sock_poll») (fd_bytes 3w) (ZIP ([0w], [b]))
+End
+
+Overload ep_evs =
+  “[acc L 4w; rd 4w gR 100; wr 4w (reply_bytes [NotFound]); rdeof 4w 100; cls 4w]”
+Overload real_tr = “poll_ev 1w :: ep_evs ++ poll_ev 1w :: ep_evs”
+
+Theorem lowest_free_0123[local]:
+  lowest_free [0w; 1w; 2w; 3w] = 4w
+Proof
+  REWRITE_TAC[lowest_free_def] >>
+  ‘(LEAST n. ¬MEM (n2w n : word64) [0w; 1w; 2w; 3w]) = 4’
+    suffices_by simp[] >>
+  numLib.LEAST_ELIM_TAC >> rw[]
+  >- (qexists_tac ‘4’ >> EVAL_TAC) >>
+  CCONTR_TAC >> ‘n < 4 ∨ 4 < n’ by simp[]
+  >- (‘n = 0 ∨ n = 1 ∨ n = 2 ∨ n = 3’ by simp[] >> gvs[]) >>
+  first_x_assum (qspec_then ‘4’ mp_tac) >> simp[] >> EVAL_TAC
+QED
+
+(* Evaluate the run, keeping lowest_free folded until it is rewritten *)
+val real_run_eval =
+  (computeLib.RESTR_EVAL_CONV [“lowest_free”] THENC REWRITE_CONV [lowest_free_0123] THENC
+   computeLib.RESTR_EVAL_CONV [“lowest_free”] THENC REWRITE_CONV [lowest_free_0123] THENC
+   EVAL) “run2 (socket2_ffi two_gets_world2) real_calls”;
+
+(* MAIN (R1): the FFI really produces real_tr, and leaves a world in which
+   nothing more arrives and the listener has nothing pending *)
+Theorem real_run:
+  ∃st. run2 (socket2_ffi two_gets_world2) real_calls = SOME st ∧
+       st.io_events = real_tr ∧ st.oracle = socket2_oracle ∧
+       st.ffi_state.future = [||] ∧ st.ffi_state.listening = [(3w, [])] ∧
+       st.ffi_state.open_fds = []
+Proof
+  REWRITE_TAC [real_run_eval, optionTheory.SOME_11] >>
+  CONV_TAC (QUANT_CONV (LAND_CONV SYM_CONV)) >>
+  CONV_TAC Unwind.UNWIND_EXISTS_CONV >> EVAL_TAC
+QED
+
+Theorem run2_polls:
+  ∀m st. st.oracle = socket2_oracle ∧ st.ffi_state.future = [||] ∧
+         st.ffi_state.listening = [(3w, [])] ∧ st.ffi_state.open_fds = [] ⇒
+         ∃st'. run2 st (REPLICATE m pollc) = SOME st' ∧
+               st'.io_events = st.io_events ++ REPLICATE m (poll_ev 0w) ∧
+               st'.oracle = socket2_oracle ∧ st'.ffi_state = st.ffi_state
+Proof
+  Induct >> simp[run2_def] >> rpt strip_tac >>
+  ‘call_FFI st (ExtCall «sock_poll») (fd_bytes 3w) [0w] =
+   FFI_return (st with io_events := st.io_events ++ [poll_ev 0w]) [0w]’
+    by (simp[ffiTheory.call_FFI_def, socket2_oracle_def, socket2_fn_def,
+             ffi_sock_poll2_def, tick2_def, is_ready2_def, client_of_def,
+             poll_ev_def] >>
+        EVAL_TAC >> simp[ffiTheory.ffi_state_component_equality]) >>
+  simp[] >>
+  first_x_assum (qspec_then ‘st with io_events := st.io_events ++ [poll_ev 0w]’ mp_tac) >>
+  simp[] >> strip_tac >> simp[]
+QED
+
+(* MAIN (R1): every finite stretch of "real_tr, then m idle polls" is what
+   the FFI produces *)
+Theorem real_run_polls:
+  ∀m. ∃st. run2 (socket2_ffi two_gets_world2) (real_calls ++ REPLICATE m pollc) = SOME st ∧
+           st.io_events = real_tr ++ REPLICATE m (poll_ev 0w)
+Proof
+  gen_tac >> strip_assume_tac real_run >>
+  drule_all run2_polls >> disch_then (qspec_then ‘m’ strip_assume_tac) >>
+  ONCE_REWRITE_TAC [run2_append] >> ASM_REWRITE_TAC [] >> simp[]
+QED
+
+(* ------------------------------------------------------------------------
+   R1: stutter lemmas: idle polls change no projection
+   ------------------------------------------------------------------------ *)
+
+Theorem ep_events_append:
+  ∀xs k opn. ∃k' opn'.
+    ep_events j k opn (xs ++ ys) = ep_events j k opn xs ++ ep_events j k' opn' ys
+Proof
+  Induct >> simp[ep_events_def] >- metis_tac[] >>
+  rpt gen_tac >> rpt (CASE_TAC >> simp[]) >> metis_tac[APPEND_ASSOC]
+QED
+
+Theorem poll_ev_inert:
+  event_accepted (poll_ev b) = NONE ∧ event_closed (poll_ev b) = NONE ∧
+  event_eof (poll_ev b) = NONE ∧ event_read c (poll_ev b) = [] ∧
+  event_written c (poll_ev b) = []
+Proof
+  simp[poll_ev_def] >> EVAL_TAC
+QED
+
+Theorem ep_events_polls:
+  ∀m k opn. EVERY (λe. e = poll_ev 0w) (ep_events j k opn (REPLICATE m (poll_ev 0w)))
+Proof
+  Induct >> simp[ep_events_def, poll_ev_inert] >> rw[]
+QED
+
+Theorem every_poll_proj[local]:
+  EVERY (λe. e = poll_ev 0w) l ⇒
+  bytes_read_from c l = [] ∧ bytes_written_to c l = [] ∧
+  ¬EXISTS (λev. event_eof ev = SOME f) l ∧ ¬EXISTS (λev. event_closed ev = SOME f) l
+Proof
+  Induct_on ‘l’ >> simp[bytes_read_from_def, bytes_written_to_def] >>
+  rw[] >> fs[poll_ev_inert, bytes_read_from_def, bytes_written_to_def]
+QED
+
+(* MAIN (stutter): idle polls after a trace change none of the per-episode
+   projections the spec uses *)
+Theorem stutter:
+  accepted_fds (tr ++ REPLICATE m (poll_ev 0w)) = accepted_fds tr ∧
+  ep_read j (tr ++ REPLICATE m (poll_ev 0w)) = ep_read j tr ∧
+  ep_written j (tr ++ REPLICATE m (poll_ev 0w)) = ep_written j tr ∧
+  (ep_eof_read j (tr ++ REPLICATE m (poll_ev 0w)) ⇔ ep_eof_read j tr) ∧
+  (ep_closed j (tr ++ REPLICATE m (poll_ev 0w)) ⇔ ep_closed j tr)
+Proof
+  ‘∀m. accepted_fds (REPLICATE m (poll_ev 0w)) = []’
+    by (Induct >> fs[accepted_fds_def, poll_ev_inert]) >>
+  ‘accepted_fds (tr ++ REPLICATE m (poll_ev 0w)) = accepted_fds tr’
+    by (pop_assum (qspec_then ‘m’ mp_tac) >> simp[accepted_fds_def]) >>
+  qspecl_then [‘tr’, ‘0’, ‘[]’] strip_assume_tac
+    (Q.GEN ‘ys’ ep_events_append |> Q.SPEC ‘REPLICATE m (poll_ev 0w)’) >>
+  qspecl_then [‘m’, ‘k'’, ‘opn'’] assume_tac ep_events_polls >>
+  drule every_poll_proj >> strip_tac >>
+  simp[ep_read_def, ep_written_def, ep_eof_read_def, ep_closed_def,
+       bytes_read_from_def, bytes_written_to_def] >>
+  fs[bytes_read_from_def, bytes_written_to_def]
+QED
+
+(* ------------------------------------------------------------------------
+   R1: the infinite trace: real_tr, then idle polls forever
+   ------------------------------------------------------------------------ *)
+
+Definition io_real_def:
+  io_real = LGENLIST (λn. if n < LENGTH real_tr then EL n real_tr else poll_ev 0w) NONE
+End
+
+Theorem LGENLIST_NONE_CONS[local]:
+  LGENLIST f NONE = f 0 ::: LGENLIST (f o SUC) NONE
+Proof
+  simp[LNTH_EQ] >> Cases >> simp[LNTH_LGENLIST]
+QED
+
+Theorem LTAKE_LGENLIST_NONE[local]:
+  ∀n f. LTAKE n (LGENLIST f NONE) = SOME (GENLIST f n)
+Proof
+  Induct >> simp[] >> rpt gen_tac >> ONCE_REWRITE_TAC[LGENLIST_NONE_CONS] >>
+  simp[GENLIST_CONS]
+QED
+
+Theorem LPREFIX_LGENLIST_NONE[local]:
+  LPREFIX (fromList evs) (LGENLIST f NONE) ⇔ evs = GENLIST f (LENGTH evs)
+Proof
+  simp[LPREFIX_fromList] >>
+  ‘toList (LGENLIST f NONE) = NONE’
+    by simp[toList] >>
+  simp[LTAKE_LGENLIST_NONE] >> metis_tac[]
+QED
+
+Theorem genlist_real[local]:
+  GENLIST (λn. if n < LENGTH tr then EL n tr else p) k =
+  if k ≤ LENGTH tr then TAKE k tr else tr ++ REPLICATE (k - LENGTH tr) p
+Proof
+  rw[LIST_EQ_REWRITE, EL_GENLIST, EL_TAKE] >>
+  rw[EL_APPEND1, EL_APPEND2, EL_REPLICATE]
+QED
+
+(* Every finite prefix of io_real is a prefix of real_tr, or real_tr
+   followed by idle polls *)
+Theorem take_prefix[local]:
+  TAKE n l ≼ l
+Proof
+  simp[IS_PREFIX_APPEND] >> qexists_tac ‘DROP n l’ >> simp[TAKE_DROP]
+QED
+
+Theorem LENGTH_real_tr[local]:
+  LENGTH real_tr = 12
+Proof
+  EVAL_TAC
+QED
+
+(* Every finite prefix of io_real is a prefix of real_tr, or real_tr
+   followed by idle polls *)
+Theorem io_real_prefixes:
+  LPREFIX (fromList evs) io_real ⇔
+  (LENGTH evs ≤ 12 ∧ evs = TAKE (LENGTH evs) real_tr) ∨
+  ∃m. evs = real_tr ++ REPLICATE m (poll_ev 0w)
+Proof
+  REWRITE_TAC[io_real_def, LPREFIX_LGENLIST_NONE] >> REWRITE_TAC[genlist_real] >>
+  REWRITE_TAC[LENGTH_real_tr] >> eq_tac >> strip_tac
+  >- (Cases_on ‘LENGTH evs ≤ 12’ >> fs[] >> metis_tac[])
+  >- (IF_CASES_TAC >- first_assum ACCEPT_TAC >> fs[])
+  >> qpat_x_assum ‘evs = _’ SUBST1_TAC >>
+  REWRITE_TAC[LENGTH_APPEND, LENGTH_real_tr, LENGTH_REPLICATE] >>
+  Cases_on ‘m’ >> simp[]
+QED
+
+Theorem real_tr_lprefix[local]:
+  LPREFIX (fromList real_tr) io_real
+Proof
+  REWRITE_TAC[io_real_prefixes] >> disj2_tac >> qexists_tac ‘0’ >>
+  REWRITE_TAC[REPLICATE, APPEND_NIL]
+QED
+
+Theorem real_tr_gets[local]:
+  gets_trace real_tr
+Proof
+  rw[gets_trace_def, prefix_take] >>
+  ‘n ≤ 12’ by (pop_assum mp_tac >> EVAL_TAC >> simp[]) >>
+  ‘n = 0 ∨ n = 1 ∨ n = 2 ∨ n = 3 ∨ n = 4 ∨ n = 5 ∨ n = 6 ∨ n = 7 ∨
+   n = 8 ∨ n = 9 ∨ n = 10 ∨ n = 11 ∨ n = 12’ by fs[] >>
+  TRY (‘j = 0 ∨ j = 1 ∨ 2 ≤ j’ by fs[]) >> gvs[] >>
+  rpt (pop_assum mp_tac) >> EVAL_TAC >> rw[] >> fs[]
+QED
+
+Theorem TAKE_REPLICATE[local]:
+  ∀m k. TAKE k (REPLICATE m x) = REPLICATE (MIN k m) x
+Proof
+  Induct >> Cases >> simp[MIN_DEF] >> rw[] >> fs[MIN_DEF]
+QED
+
+(* gets_trace survives idle polls *)
+Theorem gets_trace_polls[local]:
+  gets_trace tr ⇒ gets_trace (tr ++ REPLICATE m (poll_ev 0w))
+Proof
+  rw[gets_trace_def] >>
+  ‘evs ≼ tr ∨ ∃m'. evs = tr ++ REPLICATE m' (poll_ev 0w)’
+    by (qpat_x_assum ‘evs ≼ _’ mp_tac >> simp[prefix_take] >> rw[] >>
+        Cases_on ‘n ≤ LENGTH tr’
+        >- (disj1_tac >> simp[TAKE_APPEND1, IS_PREFIX_APPEND] >>
+            metis_tac[TAKE_DROP]) >>
+        disj2_tac >> simp[TAKE_APPEND2, TAKE_REPLICATE] >> metis_tac[]) >>
+  gvs[stutter] >> metis_tac[IS_PREFIX_REFL]
+QED
+
+Theorem kv_safe2_from_finite[local]:
+  (∀evs. LPREFIX (fromList evs) io ⇒ ∃l. evs ≼ l ∧ kv_safe2 (fromList l)) ⇒
+  kv_safe2 io
+Proof
+  rw[kv_safe2_def] >> first_x_assum drule >> strip_tac >>
+  first_x_assum irule >> simp[LPREFIX_fromList_fromList] >> metis_tac[]
+QED
+
+Theorem real_live[local]:
+  kv_live2 two_gets_world2 io_real
+Proof
+  rw[kv_live2_def] >> drule_all sent_gx >> rw[]
+  >- (qexistsl [‘[]’, ‘[]’] >> simp[io_real_prefixes] >> EVAL_TAC) >>
+  qexistsl [‘real_tr’, ‘[NotFound]’] >> simp[real_tr_lprefix] >> EVAL_TAC
+QED
+
+Theorem accepted_fds_prefix[local]:
+  evs ≼ l ⇒ accepted_fds evs ≼ accepted_fds l
+Proof
+  rw[IS_PREFIX_APPEND] >>
+  REWRITE_TAC [accepted_fds_def, MAP_APPEND, FLAT_APPEND] >> metis_tac[]
+QED
+
+Theorem real_closes[local]:
+  echo_closes2 io_real
+Proof
+  rw[echo_closes2_def] >> qexists_tac ‘real_tr’ >>
+  conj_tac >- simp[real_tr_lprefix] >>
+  ‘j < LENGTH (accepted_fds evs)’ by gvs[ep_eof_read_def] >>
+  ‘LENGTH (accepted_fds real_tr) = 2’ by EVAL_TAC >>
+  ‘LENGTH (accepted_fds evs) ≤ 2’
+    by (qpat_x_assum ‘LPREFIX _ _’ (strip_assume_tac o REWRITE_RULE [io_real_prefixes])
+        >- (‘evs ≼ real_tr’ by metis_tac[take_prefix] >>
+            drule accepted_fds_prefix >> strip_tac >>
+            imp_res_tac IS_PREFIX_LENGTH >> fs[]) >>
+        qpat_x_assum ‘evs = _’ SUBST1_TAC >> REWRITE_TAC[stutter] >> fs[]) >>
+  ‘j = 0 ∨ j = 1’ by simp[] >> pop_assum strip_assume_tac >>
+  pop_assum SUBST1_TAC >> EVAL_TAC
+QED
+
+(* MAIN (R1, non-vacuity with real polls): the world is fair; every finite
+   stretch of the trace is what the FFI produces; and the infinite trace
+   (real_tr, then idle polls forever) is linearizable, live and closes *)
+Theorem real_trace_spec:
+  server_world2 3w two_gets_world2 ∧
+  (∀m. ∃st. run2 (socket2_ffi two_gets_world2) (real_calls ++ REPLICATE m pollc) = SOME st ∧
+            st.io_events = real_tr ++ REPLICATE m (poll_ev 0w)) ∧
+  (∀evs. LPREFIX (fromList evs) io_real ⇒
+         ∃m. evs ≼ real_tr ++ REPLICATE m (poll_ev 0w)) ∧
+  kv_safe2 io_real ∧ kv_live2 two_gets_world2 io_real ∧ echo_closes2 io_real
+Proof
+  rpt conj_tac
+  >- simp[server_world2_two_gets]
+  >- simp[real_run_polls]
+  >- (rw[io_real_prefixes]
+      >- (qexists_tac ‘0’ >> simp[] >> metis_tac[take_prefix]) >>
+      qexists_tac ‘m’ >> simp[])
+  >- (irule kv_safe2_from_finite >> rw[io_real_prefixes]
+      >- (qexists_tac ‘real_tr’ >> simp[gets_kv_safe2, real_tr_gets] >>
+          metis_tac[take_prefix])
+      >> qexists_tac ‘real_tr ++ REPLICATE m (poll_ev 0w)’ >>
+      simp[gets_kv_safe2, gets_trace_polls, real_tr_gets])
+  >- simp[real_live]
+  >> simp[real_closes]
+QED
+
+(* ------------------------------------------------------------------------
+   R2: real time across two episodes on the same reused fd
+   ------------------------------------------------------------------------ *)
+
+Overload stale2 =
+  “[acc L 4w; rd 4w (brequests [x1]) 100; wr 4w (reply_bytes [Ok ""]);
+    rdeof 4w 100; cls 4w;
+    acc L 4w; rd 4w gR 100; wr 4w (reply_bytes [NotFound])]”
+
+Overload rss2 = “λj:num. if j = 0 then [x1] else if j = 1 then [gx] else []”
+
+Theorem order2_mem[local]:
+  (∀j. MAP SND (FILTER (λx. FST x = j) (order : (num # num) list)) =
+       if j < 2 then [0] else []) ⇒
+  ∀p q. MEM (p,q) order ⇒ (p,q) = (0,0) ∨ (p,q) = (1,0)
+Proof
+  rpt strip_tac >> first_x_assum (qspec_then ‘p’ mp_tac) >> rw[]
+  >- (‘MEM (p,q) (FILTER (λx. FST x = p) order)’ by simp[MEM_FILTER] >> gvs[] >>
+      ‘p = 0 ∨ p = 1’ by simp[] >> gvs[])
+  >> simp[FILTER_NEQ_NIL] >> qexists_tac ‘(p,q)’ >> simp[]
+QED
+
+Theorem split01[local]:
+  ∀l : (num # num) list. (∀x. MEM x l ⇒ x = (0,0) ∨ x = (1,0)) ⇒
+    LENGTH l = LENGTH (FILTER (λx. FST x = 0) l) + LENGTH (FILTER (λx. FST x = 1) l)
+Proof
+  Induct >> simp[] >> rpt strip_tac >>
+  ‘h = (0,0) ∨ h = (1,0)’ by metis_tac[] >> gvs[] >>
+  first_x_assum irule >> metis_tac[]
+QED
+
+Theorem order_two_core[local]:
+  (∀j. MAP SND (FILTER (λx. FST x = j) (order : (num # num) list)) =
+       if j < 2 then [0] else []) ⇒
+  order = [(0,0); (1,0)] ∨ order = [(1,0); (0,0)]
+Proof
+  strip_tac >>
+  ‘∀x. MEM x order ⇒ x = (0,0) ∨ x = (1,0)’ by (Cases >> metis_tac[order2_mem]) >>
+  qpat_x_assum ‘∀j. _’ (fn th => assume_tac (SIMP_RULE arith_ss [] (Q.SPEC ‘0’ th)) >>
+                                  assume_tac (SIMP_RULE arith_ss [] (Q.SPEC ‘1’ th))) >>
+  ‘LENGTH order = 2’
+    by (drule split01 >> disch_then SUBST1_TAC >>
+        rpt (qpat_x_assum ‘MAP SND _ = _’ (mp_tac o Q.AP_TERM ‘LENGTH’)) >> simp[]) >>
+  Cases_on ‘order’ >> fs[] >> Cases_on ‘t’ >> fs[] >> Cases_on ‘t'’ >> fs[] >>
+  ‘h = (0,0) ∨ h = (1,0)’ by metis_tac[] >> ‘h' = (0,0) ∨ h' = (1,0)’ by metis_tac[] >>
+  gvs[]
+QED
+
+(* With requests in episodes 0 and 1 only, one each, an order is one of
+   the two interleavings *)
+Theorem order_two2[local]:
+  is_order2 rss order ∧ (∀j. LENGTH (rss j) = if j < 2 then 1 else 0) ⇒
+  order = [(0,0); (1,0)] ∨ order = [(1,0); (0,0)]
+Proof
+  rw[is_order2_def] >> irule order_two_core >>
+  gen_tac >> qpat_assum ‘∀j. MAP SND _ = _’ (qspec_then ‘j’ SUBST1_TAC) >>
+  qpat_assum ‘∀j. LENGTH _ = _’ (qspec_then ‘j’ SUBST1_TAC) >>
+  rw[] >> EVAL_TAC
+QED
+
+Theorem earlier_two[local]:
+  ¬earlier [(1n,0n); (0n,0n)] (0n,0n) (1n,0n)
+Proof
+  simp[earlier_def] >> rpt strip_tac >>
+  Cases_on ‘l1’ >> gvs[] >> Cases_on ‘t’ >> gvs[] >>
+  Cases_on ‘l2’ >> gvs[]
+QED
+
+(* MAIN (R2): episode 0 POSTs x=1, is answered and closed; episode 1 is
+   accepted on the SAME fd 4, GETs x and is answered 404.  The POST's
+   response was written before episode 1 read anything, so real time puts
+   it first: kv_safe2 rejects the stale read *)
+Theorem broken_stale_across_reuse:
+  starts_with stale2 io ⇒ ¬kv_safe2 io
+Proof
+  rw[kv_safe2_def] >>
+  qexistsl [‘stale2’, ‘rss2’, ‘λj. []’] >> simp[no_full_nil] >>
+  conj_tac
+  >- (gen_tac >> Cases_on ‘j = 0’ >- (simp[] >> EVAL_TAC) >>
+      Cases_on ‘j = 1’ >- (simp[] >> EVAL_TAC) >>
+      simp[brequests_nil] >> simp[ep_read_def] >> rw[] >>
+      pop_assum mp_tac >> EVAL_TAC >> simp[]) >>
+  gen_tac >> CCONTR_TAC >> fs[] >>
+  ‘order = [(0,0); (1,0)] ∨ order = [(1,0); (0,0)]’
+    by (irule order_two2 >> qexists_tac ‘rss2’ >> rw[])
+  >- (qpat_x_assum ‘order = _’ SUBST_ALL_TAC >>
+      qpat_x_assum ‘∀j. ep_written _ _ ≼ _’ (qspec_then ‘1’ mp_tac) >> EVAL_TAC) >>
+  qpat_x_assum ‘order = _’ SUBST_ALL_TAC >>
+  qpat_x_assum ‘∀x y. _’ (qspecl_then [‘(0,0)’, ‘(1,0)’] mp_tac) >>
+  simp[earlier_two] >>
+  simp[precedes2_def] >> qexists_tac ‘TAKE 5 stale2’ >> EVAL_TAC
 QED

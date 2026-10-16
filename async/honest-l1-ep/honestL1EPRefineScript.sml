@@ -270,6 +270,17 @@ QED
 
 (* The prefetching part changed within its own fds and handles: L1's
    invariant kept *)
+Theorem eown_p_disj:
+  eown lfd es ∧ pown lfd ps' ∧ ps'.b.nxt = es.p.b.nxt ∧
+  (∀g. MEM g (MAP SND ps'.b.tbl) ∨ MEM g ps'.b.closing ∨ MEM g ps'.acq ⇒
+       ¬MEM g (MAP SND es.ctbl)) ∧
+  (∀k. MEM k (MAP FST ps'.b.tbl) ⇒ MEM k (MAP FST es.p.b.tbl)) ⇒
+  eown lfd (es with p := ps')
+Proof
+  simp[eown_def, cstat_of_def] >> strip_tac >>
+  gvs[pown_def, ALL_DISTINCT_APPEND] >> metis_tac[]
+QED
+
 Theorem eown_p:
   eown lfd es ∧ pown lfd ps' ∧ ps'.b.nxt = es.p.b.nxt ∧
   (∀g. MEM g (MAP SND ps'.b.tbl) ∨ MEM g ps'.b.closing ∨ MEM g ps'.acq ⇒
@@ -277,8 +288,8 @@ Theorem eown_p:
   (∀k. MEM k (MAP FST ps'.b.tbl) ⇒ MEM k (MAP FST es.p.b.tbl)) ⇒
   eown lfd (es with p := ps')
 Proof
-  simp[eown_def, cstat_of_def] >> strip_tac >>
-  gvs[pown_def, ALL_DISTINCT_APPEND] >> metis_tac[]
+  strip_tac >> irule eown_p_disj >> simp[] >>
+  gvs[eown_def, ALL_DISTINCT_APPEND] >> metis_tac[]
 QED
 
 (* One channel changed: the relation holds if its fd's view is right *)
@@ -1002,4 +1013,57 @@ Proof
         ‘MEM f (MAP FST cm)’ by metis_tac[] >>
         ‘cl cm f < LENGTH w.chans’ by metis_tac[] >> simp[]) >>
   gvs[vagree_def]
+QED
+
+Theorem FOLDL_deliver2_open_fds[simp]:
+  ∀as s. (FOLDL deliver2 s as).open_fds = s.open_fds ∧
+         (FOLDL deliver2 s as).reserved = s.reserved
+Proof
+  Induct >> simp[] >> Cases >> rw[deliver2_def, update_client_def]
+QED
+
+(* The fetch: the fetched arrivals delivered to the endpoint world keep the
+   relation (with the accepted connections' channels numbered next) *)
+Theorem ev_fetch:
+  ev_rel lfd a cm es w ∧ eown lfd es ∧ l0owne lfd w0 es ∧ l0_rely w0 ∧ fds_lt w0 ∧
+  pf_fetch lfd hw fs (w0, es.p) = SOME ((w0', ps'), log, evs) ∧
+  arrs lfd (cm, LENGTH w.chans) log = (as, (cm', k')) ∧
+  (∀f. MEM f fs ⇒ f = lfd ∨ MEM f (MAP SND es.p.b.tbl)) ∧
+  (∀f j. MEM (f, j) cm' ∧ LENGTH w.chans ≤ j ⇒ ∀used. ¬MEM f used ⇒ w.alloc j used = f) ∧
+  k' + 1 < dimword (:64) ⇒
+  ev_rel lfd a cm' (es with p := ps') (FOLDL ep_deliver w (MAP (conv a) as)) ∧
+  eown lfd (es with p := ps') ∧ l0owne lfd w0' (es with p := ps') ∧
+  l0_rely w0' ∧ fds_lt w0' ∧
+  ep_grows w (FOLDL ep_deliver w (MAP (conv a) as)) ∧
+  k' = LENGTH (FOLDL ep_deliver w (MAP (conv a) as)).chans ∧
+  ps'.b.tbl = es.p.b.tbl ∧ ps'.b.nxt = es.p.b.nxt ∧ ps'.b.closing = es.p.b.closing
+Proof
+  strip_tac >>
+  drule_all ev_pv >> strip_tac >>
+  qabbrev_tac ‘s = v2v lfd cm es w’ >>
+  ‘LENGTH s.clients = LENGTH w.chans ∧ s.alloc = w.alloc ∧
+   s.open_fds = FILTER (λ(f, j). MEM f (MAP SND es.p.b.tbl)) w.open_fds’
+    by simp[Abbr ‘s’, v2v_def] >>
+  ‘l0own lfd w0 es.p’ by gvs[l0owne_def] >>
+  ‘arrs lfd (cm, LENGTH s.clients) log = (as, (cm', k'))’ by simp[] >>
+  ‘∀f j. MEM (f, j) cm' ∧ LENGTH s.clients ≤ j ⇒ ∀used. ¬MEM f used ⇒ s.alloc j used = f’
+    by metis_tac[] >>
+  ‘pown lfd es.p’ by gvs[eown_def] >>
+  drule_all fetch_rel >> strip_tac >>
+  drule_all fetch_acq >> strip_tac >>
+  drule arrs_new >> strip_tac >>
+  drule arrs_connects >> strip_tac >>
+  drule_all vagree_deliver_all >> strip_tac >>
+  ‘∀f. MEM f (MAP FST new) ⇒
+       ¬MEM f (MAP SND es.ctbl) ∧ ¬MEM f es.p.acq ∧ ¬MEM f (MAP SND es.p.b.tbl)’
+    by (rpt strip_tac >> gvs[l0owne_def, l0own_def] >> metis_tac[]) >>
+  ‘LENGTH (FOLDL ep_deliver w (MAP (conv a) as)).chans =
+   LENGTH (FOLDL deliver2 s as).clients’ by gvs[vagree_def] >>
+  rpt conj_tac
+  >- (gvs[] >> irule ev_back >> simp[] >> qexists_tac ‘FOLDL deliver2 s as’ >>
+      simp[] >> rw[] >> gvs[MEM_APPEND] >> metis_tac[])
+  >- (irule eown_p_disj >> simp[] >> rpt strip_tac >> gvs[MEM_APPEND] >>
+      gvs[eown_def, ALL_DISTINCT_APPEND, l0owne_def, l0own_def] >> metis_tac[])
+  >- (gvs[l0owne_def])
+  >> gvs[]
 QED

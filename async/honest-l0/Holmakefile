@@ -1,0 +1,5 @@
+# The L0 socket world (design/36 §4).  Pure HOL over the socket encodings.
+INCLUDES = ../honest-ffi ../ffi-spike
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

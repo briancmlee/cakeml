@@ -31,11 +31,11 @@ for line in rd:
     if cmd[0] == "rlimit":
         resource.setrlimit(resource.RLIMIT_NOFILE, (cmd[1], resource.getrlimit(resource.RLIMIT_NOFILE)[1]))
         out = "ok"
+    elif cmd[0] == "getrlimit":
+        out = resource.getrlimit(resource.RLIMIT_NOFILE)[0]
     elif cmd[0] == "fds":
         out = []
         for f in range(1024):
-            if f in (60, 61):
-                continue
             try:
                 os.fstat(f); out.append(f)
             except OSError:
@@ -83,8 +83,11 @@ class Server:
 
     def call(self, name, conf, alen):
         out = bytes.fromhex(self.raw([name, conf.hex(), alen]))
-        self.log.append((name, conf.hex(), alen, out.hex()))
+        self.log.append(["call", name, conf.hex(), alen, out.hex()])
         return out
+
+    def client(self, port):
+        return Client(self, port)
 
     # The L0 calls, decoded
     def listen(self, port):
@@ -112,6 +115,7 @@ class Server:
         return decode(self.call("close", fd8(fd), HDR))
 
     def rlimit(self, n):
+        self.log.append(["fd_limit", n])
         return self.raw(["rlimit", n])
 
     def fds(self):
@@ -119,3 +123,53 @@ class Server:
 
     def stop(self):
         self.wr.close(); self.p.wait()
+
+    def start_log(self):
+        """The conformance log starts here: the child's open fds are the
+        model's reserved fds, and its RLIMIT_NOFILE the fd limit"""
+        import resource
+        self.log = [["reserved", self.fds()], ["fd_limit", self.raw(["getrlimit"])]]
+
+
+class Client:
+    """A loopback client whose actions are logged (they are the
+    environment's arrivals, delivered to the server's kernel at some
+    moment the model leaves open)"""
+    count = 0
+
+    def __init__(self, server, port, connect=True):
+        import socket
+        self.s = server
+        self.id = Client.count; Client.count += 1
+        self.sock = socket.socket()
+        self.sock.connect(("127.0.0.1", port))
+        self.s.log.append(["connect", self.id, port])
+
+    def send(self, data):
+        self.sock.sendall(data); self.s.log.append(["data", self.id, data.hex()])
+
+    def shutdown(self):
+        import socket
+        self.sock.shutdown(socket.SHUT_WR); self.s.log.append(["eof", self.id])
+
+    def close(self):
+        self.sock.close(); self.s.log.append(["close", self.id])
+
+    def rst(self):
+        import socket, struct
+        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))
+        self.sock.close(); self.s.log.append(["rst", self.id])
+
+    def recv(self, n, timeout=0.2):
+        """What the client got; ("err", errno) on an error"""
+        import socket
+        self.sock.settimeout(timeout)
+        try:
+            d = self.sock.recv(n)
+            self.s.log.append(["drain", self.id, len(d)])
+            return d
+        except socket.timeout:
+            return None
+        except OSError as e:
+            self.s.log.append(["client_err", self.id, e.errno])
+            return ("err", e.errno)

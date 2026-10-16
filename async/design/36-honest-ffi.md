@@ -393,10 +393,19 @@ dispatches on a call number) was considered and is **not recommended**:
 for about 1.5 days more than (b). (d) only moves trust from C into HOL
 constants.
 
-## 4. L0's world model: an extension of the endpoint world
+## 4. L0's world model
 
-L0 is modelled as a variant of `endpointWorld` (close-v2's file; this is
-a **proposal**, not an edit). The design rule: **over-approximate**.
+**As built (phase 3):** a new theory, `async/honest-l0/honestL0WorldScript.sml`
+(trusted). It sits beside close-v2's `endpointWorld`, which stays the
+idealised world (agreed with close-v2: they fix M2/M3 there; M1, M4 and
+D3's time are fixed here). It is anchored on the standards (§4.2) and
+checked by conformance tests (§4.3). The rely is in
+`honestL0RelyScript.sml`; `honestL0WorldPropsScript.sml` proves that
+buffers keep their length and that the rely holds along a run. The text
+below is the original proposal; where they differ, §4.2 and the theory
+win.
+
+The design rule: **over-approximate**.
 Wherever platforms differ or timing is uncontrollable, the model lets the
 world choose (a field of the world, ∀-quantified in specs), and L1 must
 handle every choice.
@@ -499,28 +508,100 @@ this; settled here):
   idealised full write, because the v1/v2 instance theorems use it. The
   honest C no longer provides it (§8 phase 1).
 
-### 4.2 Probe results (macOS 26 / Darwin 25.6, arm64; `runnable/l0/tester/probes-macos.txt`)
+### 4.2 Anchored on the standards (user decision, 2026-10-16)
 
-The real C (`socket_ffi_l0.c`) was run against real loopback clients
-(`probes.py`). The findings correct §4 above in five places; the L0
-world (phase 3) follows the probes.
+The L0 world (`async/honest-l0/honestL0WorldScript.sml`, trusted) is
+written from the standards, not from one platform. Sections are cited in
+its comments.
 
-| probe | observed | consequence for the model |
-|---|---|---|
-| P1 a client that never reads | ≈ 540 KB accepted, one partial send (15708 of 65536), then EAGAIN; poll shows no OUT while full; OUT again after the client reads | as §4 (`takes`) |
-| P2 a peer reset | poll IN\|HUP (**no ERR**); recv: ECONNRESET once, then EOF; send: EPIPE | ERR stays "only if" (Linux reports it; macOS doesn't) |
-| P3 a reset with unread data | the data first, then ECONNRESET, then EOF | the data is kept (the world may still discard it: Linux can) |
-| P4 a send after peer FIN, then RST | send OK; then **send EPIPE without clearing the pending error**; recv then ECONNRESET | **corrects §4:** send on a broken channel returns EPIPE *or* the pending error (world's choice), clearing it only in the second case |
-| P5 EMFILE | the pending connections are **dropped and their clients reset** (on Linux they stay queued); the listener stops being readable | **corrects §4:** on EMFILE the world chooses: keep queued, or drop with the peer reset |
-| P6 close with unread input | the client gets ECONNRESET and **loses the response**; with the input drained first, it gets it | L8 confirmed |
-| P7 arrivals between calls | data sent after an EAGAIN is returned by the next recv, with no poll in between | L6/D3 confirmed |
-| P8 a pending connection reset before accept | **accept returns the fd** (no ECONNABORTED); its first recv is ECONNRESET | both remain world choices (BSDs return ECONNABORTED) |
-| P9 HUP | **HUP on a peer FIN alone**; after our shutdown, send gives EPIPE | **corrects §4:** HUP may be shown once the peer has sent EOF |
-| P10 misc | NVAL for a closed fd; EBADF; send on a listener: ENOTCONN; accept on fd 0: ENOTSOCK; listen on a used port: EADDRINUSE at step 3, with the socket closed again | as §3 |
+- **[P]** POSIX.1-2024 (IEEE Std 1003.1-2024, Issue 8), XSH:
+  - `send`, `recv`, `accept`, `poll`, `close`, `shutdown`, `listen`,
+    `bind`, `socket`;
+  - 2.3 Error Numbers;
+  - 2.6 File Descriptor Allocation;
+  - 2.10.7 Socket I/O Mode;
+  - 2.10.14 Signals.
+- **[T]** RFC 9293 (TCP), and RFC 1122 §4.2.2.13.
 
-Linux has not been probed: no Linux machine is available here. The model
-takes the union of the two platforms' documented behaviours. Running
-`make probes` on Linux is a to-do before the C is used for a release.
+The citations were checked against the primary texts. The rules:
+
+1. **Where a standard is specific**, the model follows it.
+2. **Where it is loose or silent**, the model is nondeterministic: a world
+   choice (`lchoices`), with every permitted behaviour allowed.
+3. **Where a real platform does what the standard forbids**, the model
+   allows it too, as a documented **platform extension [X]**.
+4. **Constraints the standards don't give but the model assumes** are
+   marked **[A]**. The conformance tests check them on every platform.
+
+| topic | standard | model | platforms |
+|---|---|---|---|
+| fd of a new socket | [P 2.6]: the **lowest** available fd (accept, socket) | follows it: `lowest_fd`; EMFILE if it is not below the limit | macOS conforms (tested) |
+| partial send | [P 2.10.7]: "transfer only as much as is available"; EAGAIN only if nothing fits | `takes` (the room is the kernel's) | macOS: a partial 15708 of 65536, then EAGAIN |
+| non-blocking per call | `MSG_DONTWAIT` is **not** in Issue 8 | treated as O_NONBLOCK for one call ([P 2.10.7]) | **[X4]** a non-standard flag, in macOS and Linux |
+| SIGPIPE | [P send, 2.10.14]: EPIPE is returned "regardless of whether the generation of the signal is suppressed"; `MSG_NOSIGNAL` is standard | EPIPE is a result | macOS lacks `MSG_NOSIGNAL`: the startup contract ignores SIGPIPE (standard behaviour, not an extension) |
+| short recv | [P recv]: data "as soon as it becomes available" | `short` (≥ 1 byte, ≤ available) | macOS: short reads seen (261 times in the random test) |
+| arrivals between calls | none | the environment delivers before **every** call (D3) | macOS: data after an EAGAIN with no poll (P7) |
+| errors at other times | [P 2.3]: implementations "may generate errors ... under circumstances other than those described" | `transient`: any error at any call, **except** EAGAIN (**[A2]**) | none seen (0 warnings in the random test) |
+| reset, unread input | [T §3.10.7.4]: "All segment queues should be flushed" (lowercase: not BCP 14) | `LBreak j e keep`: kept or flushed | macOS keeps it (P3) |
+| reset, how reported | [T §3.10.7.4]: "reset" responses; [P recv/send]: ECONNRESET, EPIPE "no longer connected" | a pending error, reported once (`err`); then `broken_recv`/`broken_send` | macOS: recv ECONNRESET once, then 0; send EPIPE, leaving the error pending (P2, P4) |
+| close, unread input | [T §3.6.1]: SHOULD send RST (SHLD-3) | `aborted` (the peer *may* lose data) | macOS: the client lost the response (P6) |
+| close, interrupted | [P close]: EINTR with the fd open, EINPROGRESS with it closed, or 0 (unspecified which) | `close_intr` | none seen (no signal handlers) |
+| sending after the peer's FIN | [T §3.6.1]: permitted | permitted | macOS (P4) |
+| accept, EMFILE | [P accept]: shall fail; the pending connection's fate is **unspecified** | `emfile_drops`: queued, or dropped with the peer reset | macOS drops and resets (P5); Linux keeps it queued (documented) |
+| accept, broken pending | [P accept]: ECONNABORTED (shall), EPROTO (may) | `accept_aborts`: dropped with an error, or returned | macOS returns it (P8); BSDs: ECONNABORTED; **[X3]** Linux also returns network errors not in the list |
+| shutdown when not connected | [P shutdown]: ENOTCONN | `shut_err` on a broken or already-shut channel | macOS: ENOTCONN once both sides have sent FIN (**found by the random test**) |
+| POLLERR | [P poll]: **required** for every condition a read or write would report with −1 | `show_err`, **only if** an error is pending or the channel is broken or shut | **[X1]** macOS never shows it (P2) |
+| POLLHUP | [P poll]: defined for devices, pipes and FIFOs; **not for sockets** | `show_hup`; **[A1]** only after the peer's EOF, a break, or our own shutdown | macOS shows it after our SHUT_WR alone (**found by the random test**; [A1] widened) |
+| POLLHUP with POLLOUT | [P poll]: "mutually-exclusive" | not excluded | **[X2]** Linux sets both after a reset (documented) |
+| POLLERR/HUP/NVAL not requested | [P poll]: reported "even if the application did not set the corresponding bit" | yes | conforms |
+| accepted socket and O_NONBLOCK | [P accept]: implementation-defined | irrelevant: every call uses MSG_DONTWAIT | — |
+
+### 4.3 The probes and tests are conformance tests
+
+- **The checker** (`runnable/l0/tester/l0check.py`) replays a logged run
+  against a transcription of the L0 world. It reads the run's choices off
+  the observations, and keeps the set of possible states for choices that
+  are only visible later. It delivers each client action at the latest
+  moment that still explains every observation.
+- **Any observation no state explains is a finding.** One explained only
+  through POSIX 2.3's "any error at any time" escape is a warning, for
+  review.
+- **Mutation test** (`mutants.py`): 8 forbidden observations planted in
+  real logs (wrong bytes, a non-lowest fd, a false EAGAIN, NVAL on an
+  open fd, ...). **All 8 caught.**
+
+| run | result |
+|---|---|
+| the 10 probes, macOS 26 (Darwin 25.6, arm64): `probes-darwin.txt` / `.json` | **10/10 conform** |
+| random test (`random_test.py`): 100 scenarios × 200 steps, 12146 calls. Exercised: 195 partial sends, 237 resets seen, 100 EMFILEs, 261 short reads, 1080 EOFs, 273 closes without reading first | **0 findings, 0 warnings** |
+
+**The five macOS corrections of the first probe round, reclassified:**
+
+| observation | under the standards |
+|---|---|
+| HUP on a peer FIN alone | permitted: POLLHUP is unspecified for sockets |
+| send gives EPIPE and leaves the reset pending | permitted: [P send] EPIPE "no longer connected"; when the pending error is reported is not specified |
+| EMFILE drops and resets the pending connection | permitted: its fate is unspecified |
+| accept returns a reset pending connection | permitted reading of [P accept] (Linux does the same) |
+| no POLLERR | **forbidden** by [P poll]: platform extension [X1] |
+
+**Three model gaps found by the random test, all fixed before freezing:**
+
+1. **EMFILE is about fd numbers, not a count of open fds** (as first
+   written). [P]: no fd *below the limit* is free.
+2. **shutdown → ENOTCONN once both sides have sent FIN** (a second
+   shutdown). This is now `shut_err` on an already-shut channel. Before
+   the fix, the checker had to invent a reset to explain it, which a
+   later EOF then contradicted.
+3. **POLLHUP after our own SHUT_WR**, so [A1] was widened.
+
+Plus one checker limitation, found and fixed: a cap on the number of
+candidate states. The checker now warns when the cap is reached.
+
+**Linux has not been tested yet:** no Linux machine is available here.
+`make probes` and `random_test.py` on Linux are the **conformance check**
+to run before a release. [X2], [X3] and Linux's EMFILE behaviour are
+expected; anything else would be a finding.
 
 ## 5. L1: the verified wrapper layer
 
@@ -800,10 +881,12 @@ even if it is more work.**
 | D2 | `sys_listen` is made by the program (straight-line, restricted). The constructor **checks** that fds 0–2 are open, and sets SIGPIPE to ignored | **decided** |
 | D3 | **Time is fixed in the model:** arrivals and state changes may happen before **any** call. L1's round discipline + the regrouping simulation prove our programs unaffected | **decided** |
 | D4 | Buffered outboxes with read pausing (no server proof changes) | taken on the agents' recommendation; **revisable** |
-| D5 | Retire the v1 runnables in favour of v2, and move HTTP onto the v2 handle layer | **pending the user**: planned for, not started |
+| D5 | Retire the v1 runnables in favour of v2, and move HTTP onto the v2 handle layer | **approved** (see D5′) |
 | D6 | `«sock_write»` stays model-only (for the v1/v2 instance theorems); the honest C drops it | **agreed** |
 | D7 | Chat: drop a slow client at a hard outbox limit | taken on the agents' recommendation; **revisable** |
 | D8 | Point (c) of §3.5 | **decided** |
+| D5′ | (D5 approved later the same day) the v1 runnables are retired; L1 and the refinement target the version-2 world for every shipped program (echo2, HTTP on the v2 handle layer, KV); the v1 programs stay as model-level theorems | **approved** |
+| D9 | The L0 model is anchored on the standards (POSIX.1-2024, RFC 9293/1122), with cited sections. Where they are loose: nondeterminism. A platform behaviour they forbid is a documented extension [X]. The probes are conformance tests (§4.2–4.3) | **decided** |
 
 §4.1 (the refused/error encoding) is approved with D1/D3, and close-v2
 implements it in the endpoint world.

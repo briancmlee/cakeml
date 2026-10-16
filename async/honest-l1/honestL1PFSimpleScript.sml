@@ -324,7 +324,8 @@ Definition lk_def:
            ALOOKUP cm f = SOME c ∧ c < a ∧ ¬(EL c w.chans).closed ∧ f ≠ lfd) ∧
     (∀f g c. ALOOKUP w.open_fds f = SOME c ∧ ALOOKUP w.open_fds g = SOME c ⇒ f = g) ∧
     (∀c. c < LENGTH w.chans ⇒ dch (D c) (E c) (EL c w.chans)) ∧
-    (∀c. a ≤ c ⇒ D c = [] ∧ ¬E c)
+    (∀c. a ≤ c ⇒ D c = [] ∧ ¬E c) ∧
+    (∀c. c < a ⇒ (EL c w.chans).closed ∨ ∃f. ALOOKUP w.open_fds f = SOME c)
 End
 
 Definition sinv_def:
@@ -411,10 +412,10 @@ Proof
       >- (‘q = GENLIST (λi. a + i) (LENGTH s.clients − a)’ by gvs[qof_def] >>
           simp[GENLIST_plus_SNOC])
       >- (rpt strip_tac >> res_tac >> ‘c < LENGTH w.chans’ by simp[] >> gvs[EL_APPEND1])
-      >> rpt strip_tac >> Cases_on ‘c < LENGTH w.chans’
-      >- gvs[EL_APPEND1]
-      >> ‘c = LENGTH w.chans’ by simp[] >> simp[EL_APPEND2] >>
-      ‘D c = [] ∧ ¬E c’ by gvs[] >> simp[ch_fresh])
+      >> (rpt strip_tac >> Cases_on ‘c < LENGTH w.chans’
+          >- (gvs[EL_APPEND1] >> metis_tac[])
+          >> ‘c = LENGTH w.chans’ by fs[] >> simp[EL_APPEND2] >>
+          ‘D c = [] ∧ ¬E c’ by gvs[] >> gvs[ch_fresh]))
   >- ((* LData *)
       rename1 ‘LData j bs’ >>
       ‘arrival_ok2 s (Data2 j bs)’ by (first_x_assum irule >> simp[]) >>
@@ -430,7 +431,7 @@ Proof
       >- (rpt strip_tac >> simp[EL_LUPDATE] >> IF_CASES_TAC >> gvs[])
       >- (rpt strip_tac >> res_tac >> fs[EL_LUPDATE] >> every_case_tac >> gvs[])
       >- (rpt strip_tac >> simp[EL_LUPDATE] >> IF_CASES_TAC >> gvs[])
-      >> metis_tac[])
+      >> (rpt strip_tac >> simp[EL_LUPDATE] >> rw[] >> gvs[] >> metis_tac[]))
   >- ((* LEof *)
       rename1 ‘LEof j’ >>
       ‘arrival_ok2 s (Eof2 j)’ by (first_x_assum irule >> simp[]) >>
@@ -445,7 +446,7 @@ Proof
       >- (rpt strip_tac >> simp[EL_LUPDATE] >> IF_CASES_TAC >> gvs[])
       >- (rpt strip_tac >> res_tac >> fs[EL_LUPDATE] >> every_case_tac >> gvs[])
       >- (rpt strip_tac >> simp[EL_LUPDATE] >> IF_CASES_TAC >> gvs[])
-      >> metis_tac[])
+      >> (rpt strip_tac >> simp[EL_LUPDATE] >> rw[] >> gvs[] >> metis_tac[]))
   >- ((* LBreak: excluded *) fs[])
   >- ((* LDrain *)
       rename1 ‘LDrain j k’ >>
@@ -457,7 +458,7 @@ Proof
           >- (rpt strip_tac >> res_tac >> fs[EL_LUPDATE] >> every_case_tac >> gvs[])
           >- (rpt strip_tac >> simp[EL_LUPDATE] >> IF_CASES_TAC >> gvs[] >>
               metis_tac[ch_drain])
-          >> metis_tac[])
+          >> (rpt strip_tac >> simp[EL_LUPDATE] >> rw[] >> gvs[] >> metis_tac[]))
       >> simp_tac std_ss [sinv_def, wk_def, lk_def] >> metis_tac[])
   >- ((* LConnUp *)
       rename1 ‘LConnUp j’ >> simp[l0_deliver_def] >>
@@ -555,7 +556,8 @@ Theorem sinv_upd:
   sinv lfd p a cm D E s w ∧
   (∀v. wch (EL j w.chans) v ∧ dch (D j) (E j) (EL j w.chans) ⇒
        wch (g (EL j w.chans)) v ∧ dch (D j) (E j) (g (EL j w.chans))) ∧
-  ((g (EL j w.chans)).closed ⇒ (EL j w.chans).closed ∨ ∀f. ALOOKUP w.open_fds f ≠ SOME j) ⇒
+  ((g (EL j w.chans)).closed ⇒ (EL j w.chans).closed ∨ ∀f. ALOOKUP w.open_fds f ≠ SOME j) ∧
+  ((EL j w.chans).closed ⇒ (g (EL j w.chans)).closed) ⇒
   sinv lfd p a cm D E s (upd_lchan j g w)
 Proof
   rpt strip_tac >> qpat_x_assum ‘sinv _ _ _ _ _ _ _ _’
@@ -564,29 +566,16 @@ Proof
   rpt conj_tac >> rpt strip_tac >>
   TRY (res_tac >> NO_TAC) >>
   TRY (gvs[qof_def] >> NO_TAC) >>
-  rpt conj_tac
-  >- (Cases_on ‘c = j’
-      >- (pop_assum SUBST_ALL_TAC >> simp[EL_LUPDATE] >>
-          ‘j < LENGTH w.chans’ by fs[] >>
-          first_x_assum (qspec_then ‘EL j s.clients’ mp_tac) >> simp[])
-      >> simp[EL_LUPDATE])
-  >- (qpat_x_assum ‘_.closed’ mp_tac >> simp[EL_LUPDATE] >> rw[] >> res_tac >> fs[] >>
-      metis_tac[])
-  >> (Cases_on ‘c = j’
-      >- (pop_assum SUBST_ALL_TAC >> simp[EL_LUPDATE] >>
-          ‘j < LENGTH w.chans’ by fs[] >>
-          first_x_assum (qspec_then ‘EL j s.clients’ mp_tac) >> simp[])
-      >> simp[EL_LUPDATE])
+  TRY (Cases_on ‘c = j’
+       >- (pop_assum SUBST_ALL_TAC >> simp[EL_LUPDATE] >>
+           ‘j < LENGTH w.chans’ by fs[] >>
+           first_x_assum (qspec_then ‘EL j s.clients’ mp_tac) >> simp[]) >>
+       simp[EL_LUPDATE] >> NO_TAC) >>
+  TRY (qpat_x_assum ‘_.closed’ mp_tac >> simp[EL_LUPDATE] >> rw[] >> res_tac >> fs[] >>
+       metis_tac[] >> NO_TAC) >>
+  simp[EL_LUPDATE] >> rw[] >> metis_tac[]
 QED
 
-(* Fewer open fds keep it *)
-Theorem sinv_open_fds:
-  sinv lfd p a cm D E s w ∧
-  (∀f c. ALOOKUP ofs f = SOME c ⇒ ALOOKUP w.open_fds f = SOME c) ⇒
-  sinv lfd p a cm D E s (w with open_fds := ofs)
-Proof
-  rw[sinv_def, wk_def, lk_def, qof_def] >> metis_tac[]
-QED
 
 Theorem sinv_send:
   sinv lfd p a cm D E s w ∧ l0_send f bs w = (r, w') ⇒ sinv lfd p a cm D E s w'
@@ -622,13 +611,24 @@ Proof
   strip_tac >>
   ‘FILTER (λ(l,p,q). l = f) w.listeners = []’ by fs[sinv_def, wk_def] >>
   simp[close_fd_def] >> Cases_on ‘l0_chan_of w f’ >> fs[] >>
-  ‘E x’ by (fs[l0_chan_of_def, AllCaseEqs()] >> res_tac) >>
-  ‘ALOOKUP w.open_fds f = SOME x’ by fs[l0_chan_of_def, AllCaseEqs()] >>
-  irule sinv_upd >> rpt conj_tac
-  >- (simp[] >> rpt strip_tac >> drule_all ch_close >> simp[])
-  >- (simp[] >> disj2_tac >> rw[ALOOKUP_ADELKEY] >>
-      fs[sinv_def, lk_def] >> metis_tac[])
-  >> irule sinv_open_fds >> simp[] >> metis_tac[ALOOKUP_ADELKEY_SOME]
+  TRY (qpat_x_assum ‘l0_chan_of _ _ = NONE’ kall_tac >> metis_tac[sinv_reserved] >> NO_TAC) >>
+  rename1 ‘l0_chan_of w f = SOME x’ >>
+  ‘ALOOKUP w.open_fds f = SOME x ∧ x < LENGTH w.chans’ by fs[l0_chan_of_def, AllCaseEqs()] >>
+  ‘E x’ by res_tac >>
+  qpat_x_assum ‘sinv _ _ _ _ _ _ _ _’
+    (strip_assume_tac o SIMP_RULE std_ss [sinv_def, wk_def, lk_def]) >>
+  simp_tac std_ss [sinv_def, wk_def, lk_def] >> simp[upd_lchan_def, qof_def] >>
+  rpt conj_tac >> rpt strip_tac >>
+  gvs[ALOOKUP_ADELKEY, AllCaseEqs()] >>
+  TRY (res_tac >> fs[] >> NO_TAC) >>
+  TRY (Cases_on ‘c = x’
+       >- (pop_assum SUBST_ALL_TAC >> simp[EL_LUPDATE] >>
+           ‘wch (EL x w.chans) (EL x s.clients) ∧ dch (D x) (E x) (EL x w.chans)’ by fs[] >>
+           drule_all ch_close >> simp[]) >>
+       simp[EL_LUPDATE] >> NO_TAC) >>
+  TRY (qpat_x_assum ‘_.closed’ mp_tac >> simp[EL_LUPDATE] >> rw[] >> res_tac >> fs[] >>
+       metis_tac[] >> NO_TAC) >>
+  simp[EL_LUPDATE] >> rw[] >> metis_tac[SOME_11]
 QED
 
 Theorem sinv_close:
@@ -729,7 +729,7 @@ Proof
       >> fs[])
   >- (rpt strip_tac >> res_tac >> fs[EL_LUPDATE] >> every_case_tac >> gvs[])
   >- (rpt strip_tac >> simp[EL_LUPDATE, APPLY_UPDATE_THM] >> IF_CASES_TAC >> gvs[])
-  >> rpt strip_tac >> simp[APPLY_UPDATE_THM] >> IF_CASES_TAC >> gvs[]
+  >> (rpt strip_tac >> simp[APPLY_UPDATE_THM, EL_LUPDATE] >> rw[] >> gvs[] >> metis_tac[])
 QED
 
 (* The peer's EOF fetched *)
@@ -759,6 +759,12 @@ QED
 
 (* An accept on the listener: nothing changes, or the next queued channel
    (number a) is opened on a fresh fd *)
+Theorem used_open_fds:
+  ALOOKUP w.open_fds g = SOME c ⇒ MEM g (l0_used w)
+Proof
+  rw[l0_used_def] >> imp_res_tac ALOOKUP_MEM >> simp[MEM_MAP] >> metis_tac[FST]
+QED
+
 Theorem sinv_accept:
   sinv lfd p a cm D E s w ∧ (∀h. w.ch.transient h = NONE) ∧
   (∀h. ¬w.ch.emfile_drops h) ∧ fds_lt w ∧ w.fd_limit ≤ 2 ** 31 ∧
@@ -787,10 +793,13 @@ Proof
       simp_tac std_ss [sinv_def, wk_def, lk_def] >>
       ‘¬(EL a w.chans).closed’
         by (‘dch (D a) (E a) (EL a w.chans) ∧ ¬E a’ by fs[] >> fs[dch_def]) >>
-      ‘lowest_fd w ≠ lfd’
-        by (‘¬MEM (lowest_fd w) (l0_used w)’ by (irule lowest_fd_fresh >> simp[]) >>
-            strip_tac >> gvs[sinv_def, wk_def, l0_used_def]) >>
+      ‘¬MEM (lowest_fd w) (l0_used w)’ by (irule lowest_fd_fresh >> simp[]) >>
+      ‘lowest_fd w ≠ lfd’ by (strip_tac >> gvs[sinv_def, wk_def, l0_used_def]) >>
       simp[AFUPDKEY_def, qof_def] >> rpt conj_tac >> rpt strip_tac >>
+      TRY (Cases_on ‘c = a’ >- (disj2_tac >> qexists_tac ‘lowest_fd w’ >> simp[]) >>
+           ‘c < a’ by simp[] >>
+           ‘(EL c w.chans).closed ∨ ∃f. ALOOKUP w.open_fds f = SOME c’ by fs[] >> fs[] >>
+           disj2_tac >> qexists_tac ‘f’ >> rw[] >> metis_tac[used_open_fds] >> NO_TAC) >>
       TRY (Cases_on ‘f = lowest_fd w’ >> gvs[] >> res_tac >> simp[] >> NO_TAC) >>
       TRY (Cases_on ‘f = lowest_fd w’ >> Cases_on ‘g = lowest_fd w’ >> gvs[] >>
            res_tac >> fs[] >> NO_TAC) >>
@@ -981,11 +990,6 @@ Proof
   rw[kinv_def, sinv_def, lk_def] >> res_tac >> simp[cl_def]
 QED
 
-Theorem used_open_fds:
-  ALOOKUP w.open_fds g = SOME c ⇒ MEM g (l0_used w)
-Proof
-  rw[l0_used_def] >> imp_res_tac ALOOKUP_MEM >> simp[MEM_MAP] >> metis_tac[FST]
-QED
 
 (* The fetch, against the client numbering: the fetched data and EOFs are
    psk's arrivals of the round *)
@@ -2624,4 +2628,48 @@ Proof
       first_x_assum (qspec_then ‘n’ mp_tac) >> simp[EVERY_EL, ok_ev_def])
   >> rw[accepts_fail_def] >> qexists_tac ‘0’ >> rpt strip_tac >>
   first_x_assum (qspec_then ‘n’ mp_tac) >> simp[EVERY_EL, ok_ev_def] >> metis_tac[]
+QED
+
+(* ========================================================================
+   G3. Every connection the kernel queued is eventually accepted
+   ======================================================================== *)
+
+Theorem rinv_sinv:
+  rinv p lfd sched w1 hw ifds m k ⇒
+  ∃s. sinv lfd p (SND (pcm lfd hw ifds m w1 k)) (FST (pcm lfd hw ifds m w1 k))
+           (λj. data_of j (upto (parr lfd hw ifds m w1) k))
+           (λj. MEM (Eof2 j) (upto (parr lfd hw ifds m w1) k)) s (rworld lfd hw ifds m w1 k)
+Proof
+  rw[rinv_def, kinv_def] >> metis_tac[]
+QED
+
+Theorem conns_caught_up:
+  simple_v2 p lfd sched w1 ∧ (∀h. ¬w1.ch.emfile_drops h) ∧ sched_wf2 (sk_of p lfd sched w1) ∧
+  winv w1 ∧ w1.listeners = [(lfd, p, [])] ∧ w1.chans = [] ∧ w1.open_fds = [] ∧
+  run_ok lfd hw ifds m w1 ∧ (∀n. SND (pcm lfd hw ifds m w1 n) + 1 < dimword (:64)) ∧
+  fds_room lfd hw ifds m w1 ∧ S1 lfd hw ifds m w1 ∧ S2 lfd hw ifds m w1 ⇒
+  ∀N. ∃k. LENGTH (rworld lfd hw ifds m w1 N).chans ≤ SND (pcm lfd hw ifds m w1 k)
+Proof
+  rpt strip_tac >>
+  drule_all rinv_run >> strip_tac >>
+  drule_all run_ok_ev >> strip_tac >>
+  ‘F1 lfd hw ifds m w1 ∧ ¬accepts_fail lfd hw ifds m w1’ by metis_tac[simple_F1] >>
+  qpat_assum ‘∀k. rinv _ _ _ _ _ _ _ k’ (qspec_then ‘N’ assume_tac) >>
+  drule rinv_sinv >> strip_tac >>
+  qabbrev_tac ‘L = LENGTH (rworld lfd hw ifds m w1 N).chans’ >>
+  Cases_on ‘L ≤ SND (pcm lfd hw ifds m w1 N)’ >- metis_tac[] >>
+  ‘MEM (L − 1) (qof (rworld lfd hw ifds m w1 N) lfd)’
+    by (fs[sinv_def, lk_def, MEM_GENLIST, Abbr ‘L’] >>
+        qexists_tac ‘LENGTH (rworld lfd hw ifds m w1 N).chans − 1 −
+                     SND (pcm lfd hw ifds m w1 N)’ >> simp[]) >>
+  ‘MEM lfd (l0_used w1) ∧ linv lfd w1’ by simp[l0_used_def, linv_def] >>
+  drule_all live_conn >> strip_tac >> gvs[] >>
+  qpat_assum ‘∀k. rinv _ _ _ _ _ _ _ k’ (qspec_then ‘SUC k’ assume_tac) >>
+  drule rinv_sinv >> strip_tac >>
+  fs[resolved_def]
+  >- (qexists_tac ‘SUC k’ >> fs[sinv_def, lk_def] >> res_tac >> simp[])
+  >> fs[sinv_def, wk_def] >>
+  ‘wch (EL (L − 1) (rworld lfd hw ifds m w1 (SUC k)).chans)
+       (EL (L − 1) s'.clients)’ by fs[] >>
+  fs[wch_def]
 QED

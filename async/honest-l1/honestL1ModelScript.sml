@@ -260,12 +260,14 @@ Definition l1_poll_set_def:
 End
 
 (* The C polls at most 4096 fds per call (MAX_FDS; more is misuse), so L1
-   polls in chunks of at most 4096 entries *)
+   polls in chunks of at most 4096 entries; always at least one poll per
+   round, even of no fds, so that time passes every round as in the
+   handle layer *)
 Definition poll_chunks_def:
   poll_chunks (l : 'a list) =
-    if l = [] then [] else TAKE 4096 l :: poll_chunks (DROP 4096 l)
+    if LENGTH l ≤ 4096 then [l] else TAKE 4096 l :: poll_chunks (DROP 4096 l)
 Termination
-  WF_REL_TAC ‘measure LENGTH’ >> rw[LENGTH_DROP] >> Cases_on ‘l’ >> gvs[]
+  WF_REL_TAC ‘measure LENGTH’ >> rw[LENGTH_DROP]
 End
 
 (* The revents of the poll's entries; none if the poll failed *)

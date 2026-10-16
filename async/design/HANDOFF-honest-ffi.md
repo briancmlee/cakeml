@@ -61,3 +61,24 @@ Next: phase 4, the L1 functional core (extend honestL1 to the L0 world, v2 only 
   - `chunks` clashes with rich_list's `chunks` (the statement silently used the wrong constant): renamed to poll_chunks;
   - macOS sed has no \b;
   - `LENGTH acts + st.nxt` vs `st.nxt + LENGTH acts` blocks drule_all: restate the hypothesis.
+
+## Phase 6 (R2: L1 refines asyncHLModel in simple worlds), branch spike/honest-refine (on spike/honest-l1-inv)
+
+- This branch also merges origin/spike/v2-events @87cdc6733 (close-v2's light theory socketV2Events, which holds spoll2_event and close_event).
+- `async/honest-l1/`:
+  - honestL1Refine: l1v2_rel, core_rel, rdy_ok, drops support.
+  - honestL1Steps: act_step and its per-action lemmas.
+  - honestL1Round: acts_step, tail_step, round_step, hl_ok, polp_at, hround_SUC, and **l1_refines_hl** (R2).
+  - Full Holmake is green; no cheats. Design/36 §6 has "R2, as built".
+- Model change: poll_chunks always polls at least once per round (an empty interest still ticks the clock, as the handle layer's poll does).
+- Findings:
+  - the trace relation is `drops` (L1 deletes would-block events), not equality;
+  - the discipline is tracked per polled (handle, fd) pair;
+  - core_rel needed four extra invariants.
+- Gotchas:
+  - `GSYM MAP_APPEND` in simp loops, like GSYM APPEND_ASSOC. To find a looping tactic, run a holslot Holmake under `timeout 240` with printing progress markers (`fun MK s g = (print ...; ALL_TAC g)`), not the LSP.
+  - Keep at most one hol-lsp and restart it between big checks: it sits outside the holslot limit.
+  - `metis_tac[Abbrev_def]` on a big assumption set hangs. Substitute instead (SUBST1_TAC o SYM).
+- Next:
+  - R1: general worlds, with regrouping;
+  - then sys_connect and its L1 wrapper (a moonshot dependency).

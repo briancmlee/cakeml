@@ -577,3 +577,58 @@ Proof
   TRY (drule_all sys_recv_len >> strip_tac) >>
   ‘0 < pf_chunk’ by EVAL_TAC >> CCONTR_TAC >> gvs[] >> res_tac >> gvs[]
 QED
+
+Theorem pround_data:
+  pround lfd hw hs (w, ps) acts = SOME (snap, (w', ps'), log, evs) ∧ winv w ⇒
+  ∀g. ¬MEM (FData g []) log
+Proof
+  simp[pround_def, AllCaseEqs()] >> strip_tac >> PairCases_on ‘ws1’ >>
+  gvs[pf_tail_def, AllCaseEqs()] >>
+  drule_all pacts_winv >> strip_tac >>
+  drule_all l1_polls_winv >> strip_tac >>
+  drule_all l1_flush_winv >> strip_tac >>
+  drule_all pf_fetch_data >> simp[]
+QED
+
+(* ------------------------------------------------------------------------
+   Along the run
+   ------------------------------------------------------------------------ *)
+
+Theorem fl_pend:
+  fl w f R ∧ R ≠ [] ⇒ pend w f
+Proof
+  rw[fl_def, front_def, flushed_def, pend_def] >> gvs[] >>
+  Cases_on ‘(EL j w.chans).inbox’ >> gvs[]
+QED
+
+Theorem fetched_fend:
+  fetched f log ⇔ fend f log ∨ ∃bs. MEM (FData f bs) log
+Proof
+  simp[fetched_def, fend_def, EXISTS_MEM] >> metis_tac[]
+QED
+
+Theorem fdata_nil:
+  (∀bs. ¬MEM (FData f bs) log) ⇒ fdata f log = []
+Proof
+  Induct_on ‘log’ >> simp[] >> Cases >> simp[] >> rw[] >> metis_tac[]
+QED
+
+Theorem fdata_nonnil:
+  MEM (FData f bs) log ∧ bs ≠ [] ⇒ fdata f log ≠ []
+Proof
+  Induct_on ‘log’ >> simp[] >> Cases >> rw[] >> gvs[]
+QED
+
+(* The fetch logs of the d rounds from n0 *)
+Definition rlogs_def:
+  rlogs lfd hw ifds m w0 n0 d = FLAT (GENLIST (λi. rlog lfd hw ifds m w0 (n0 + i)) d)
+End
+
+Theorem rlogs_add:
+  ∀b a. rlogs lfd hw ifds m w0 n0 (a + b) =
+        rlogs lfd hw ifds m w0 n0 a ++ rlogs lfd hw ifds m w0 (n0 + a) b
+Proof
+  rpt gen_tac >> ‘a + b = b + a’ by simp[] >> pop_assum SUBST1_TAC >>
+  REWRITE_TAC [rlogs_def, GENLIST_APPEND, FLAT_APPEND] >>
+  AP_TERM_TAC >> AP_TERM_TAC >> simp[GENLIST_FUN_EQ]
+QED

@@ -1,0 +1,5 @@
+# The async translator prototype (design/43): model term -> CakeML + CF proof.
+INCLUDES = ../model ../cf-spike ../cf-actions ../m4-server
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

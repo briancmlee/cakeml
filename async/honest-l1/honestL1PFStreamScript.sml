@@ -632,3 +632,43 @@ Proof
   REWRITE_TAC [rlogs_def, GENLIST_APPEND, FLAT_APPEND] >>
   AP_TERM_TAC >> AP_TERM_TAC >> simp[GENLIST_FUN_EQ]
 QED
+
+(* Round k of the run, seen from f's kernel inbox *)
+Theorem stream_step:
+  run_ok lfd hw ifds m w0 ∧ winv w0 ∧
+  fl (rworld lfd hw ifds m w0 k) f R ∧ fkeep lfd h f (rstate lfd hw ifds m w0 k) ⇒
+  fend f (rlog lfd hw ifds m w0 k) ∨ R ≼ fdata f (rlog lfd hw ifds m w0 k) ∨
+  ∃R'. R = fdata f (rlog lfd hw ifds m w0 k) ++ R' ∧
+       fl (rworld lfd hw ifds m w0 (SUC k)) f R' ∧
+       fkeep lfd h f (rstate lfd hw ifds m w0 (SUC k))
+Proof
+  strip_tac >> drule prun_round' >> disch_then (qspecl_then [‘f’, ‘k’] strip_assume_tac) >>
+  ‘winv (rworld lfd hw ifds m w0 k)’ by (drule_all winv_run >> simp[]) >>
+  drule_all pround_stream >> simp[]
+QED
+
+(* Rounds in which nothing is fetched on f keep R at the front *)
+Theorem stay_rounds:
+  run_ok lfd hw ifds m w0 ∧ winv w0 ∧ R ≠ [] ⇒
+  ∀i. fl (rworld lfd hw ifds m w0 n0) f R ∧ fkeep lfd h f (rstate lfd hw ifds m w0 n0) ∧
+      (∀j. n0 ≤ j ∧ j < n0 + i ⇒ ¬fetched_at lfd hw ifds m w0 j f) ⇒
+      fl (rworld lfd hw ifds m w0 (n0 + i)) f R ∧
+      fkeep lfd h f (rstate lfd hw ifds m w0 (n0 + i)) ∧
+      fdata f (rlogs lfd hw ifds m w0 n0 i) = [] ∧ ¬fend f (rlogs lfd hw ifds m w0 n0 i)
+Proof
+  strip_tac >> Induct >- simp[rlogs_def] >> strip_tac >>
+  qpat_x_assum ‘fl _ _ _ ∧ _ ⇒ _’ mp_tac >> impl_tac
+  >- (simp[] >> rpt strip_tac >>
+      qpat_x_assum ‘∀j. n0 ≤ j ∧ j < n0 + SUC i ⇒ _’ (qspec_then ‘j’ mp_tac) >> simp[]) >>
+  strip_tac >>
+  ‘¬fetched_at lfd hw ifds m w0 (n0 + i) f’
+    by (qpat_x_assum ‘∀j. n0 ≤ j ∧ j < n0 + SUC i ⇒ _’ (qspec_then ‘n0 + i’ mp_tac) >>
+        simp[]) >>
+  drule prun_round' >> disch_then (qspecl_then [‘f’, ‘n0 + i’] strip_assume_tac) >>
+  ‘¬fend f (rlog lfd hw ifds m w0 (n0 + i)) ∧ fdata f (rlog lfd hw ifds m w0 (n0 + i)) = []’
+    by (gvs[fetched_fend] >> irule fdata_nil >> metis_tac[]) >>
+  ‘rlogs lfd hw ifds m w0 n0 (SUC i) =
+   rlogs lfd hw ifds m w0 n0 i ++ rlog lfd hw ifds m w0 (n0 + i)’
+    by (simp[ADD1, rlogs_add] >> simp[rlogs_def]) >>
+  drule_all stream_step >> strip_tac >> gvs[ADD_CLAUSES]
+QED

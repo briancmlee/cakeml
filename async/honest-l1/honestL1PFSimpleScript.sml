@@ -1280,7 +1280,7 @@ Proof
   drule_all kinv_fetch >> strip_tac >>
   drule_all pf_fetch_acq >> strip_tac >>
   drule pf_fetch_b >> strip_tac >>
-  rename1 ‘l1_reap _ (wd, pd.b) = SOME ((we, be), cevs)’ >>
+  rename1 ‘l1_reap _ (wd, _) = SOME ((we, be), cevs)’ >>
   ‘¬MEM lfd pd.b.closing’ by gvs[pown_def, ALL_DISTINCT_APPEND] >>
   drule_all l1_reap_kinv >> strip_tac >>
   drule l1_reap_wkeep >> strip_tac >>

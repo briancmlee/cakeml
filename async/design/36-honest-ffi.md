@@ -1208,6 +1208,53 @@ the wire because flushes progress under [F2] and D(c).
   forces those reads, because `psk` delivered the data.
 - The accept queue is emptied by S2.
 
+**sys_connect (phase 8, branch `spike/honest-connect`).**
+
+*Done (L0):*
+- **The C:** `sys_connect` (socket + O_NONBLOCK + connect 127.0.0.1:port).
+  Its value is the fd as soon as `socket()` succeeded, also when connect
+  then fails; value 0 means no socket. `sys_connerr` reads `SO_ERROR`:
+  value 1 is the socket's pending error, value 0 a failed getsockopt.
+- **The L0 world (trusted, for review):**
+  - a channel may be `connecting`;
+  - `connect_now` (EINPROGRESS / at once / failed at once) and
+    `pending_err` (recv, send, shutdown while pending) are world
+    choices, cited to [P connect];
+  - arrivals `LConnUp` / `LConnFail e` settle a pending connect;
+  - a pending socket shows no revents.
+- **Conformance (macOS):** probes 13/13 conform (P11 connect, P12
+  refused, P13 pending), mutants 11/11 caught, and the random test has 0
+  findings. On P12, macOS shows IN|HUP and no ERR for a refused connect,
+  which [X1] allows. On P13 the pending state was not observed: macOS
+  completed every connect, even with backlog 0.
+
+*The L1 wrapper: a decision first.* A client's abstract world is close-v2's
+endpoint world (`spike/refused-connect`, PR #104):
+- Connecting settles to Up or Refused at the next tick, by the world's
+  `accepts a j`;
+- a refused channel's read reports the error (status 3, code 4), then
+  the channel is Failed;
+- `sock_send` takes 0 while Connecting.
+
+There is **no endpoint handle layer** (no asyncHLModel counterpart with a
+Connect action). The options:
+
+- **(E1) Recommended: an endpoint handle layer**, close-v2-style, over
+  `endpointWorld`.
+  - Actions: Accept, Read, Write (buffered, complete), Connect a, and
+    Close. Connect returns a handle or none. Refused and Failed read as
+    the endpoint world says.
+  - The prefetching L1 refines it exactly as R1-safe does: a world
+    built from L1's run, with fetches as arrivals, and connect outcomes
+    observed by L1 (sys_connerr after poll OUT/ERR) as the settle choices
+    `accepts`. Writes are complete in the abstract world, using the
+    no-backpressure instance `takes j b n = n`, since L1 buffers.
+  - The proxy's cross-fd backpressure (§5.4) needs a write-completion
+    event, which is an addition to this layer, not a change.
+- **(E2) Refine the endpoint FFI calls directly.** L1's buffering and its
+  answering would-block without a syscall mean the call-level traces
+  differ. This would need a weaker relation, so I don't recommend it.
+
 **(R3) Per-wrapper lemmas** (model level, on L1's functional core; the
 cheap part). For example:
 

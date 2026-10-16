@@ -134,10 +134,32 @@ Theorem readk_writtenk_simps[simp]:
   readk fd [(Kv q, r)] = [] ∧ writtenk fd [(Kv q, r)] = [] ∧
   readk fd [(Sock (Write g d), r)] = [] ∧
   writtenk fd [(Sock (Write g d), r)] = (if g = fd then [d] else []) ∧
-  writtenk fd [(Sock (Read g), r)] = []
+  writtenk fd [(Sock (Read g), r)] = [] ∧
+  readk fd [(Sock (Read fd), SOME (SockR r0))] =
+    (case r0 of Data d => [d] | _ => []) ∧
+  readk fd [(Sock (Read g), SOME (KvR b))] = [] ∧
+  readk fd [(Sock (Read g), NONE)] = []
 Proof
   simp[readk_def, writtenk_def, untag_def, read_def, written_def] >>
   every_case_tac >> simp[]
+QED
+
+Theorem readk_CONS:
+  readk fd (p :: l) = readk fd [p] ++ readk fd l
+Proof
+  simp[readk_def, untag_def, read_def]
+QED
+
+Theorem writtenk_CONS:
+  writtenk fd (p :: l) = writtenk fd [p] ++ writtenk fd l
+Proof
+  simp[writtenk_def, untag_def, written_def]
+QED
+
+Theorem kvs_CONS[simp]:
+  kvs ((Kv q, r) :: l) = (q, r) :: kvs l ∧ kvs ((Sock a, r) :: l) = kvs l
+Proof
+  simp[kvs_def]
 QED
 
 (* The answers got, in order, until the first query without one *)
@@ -170,24 +192,29 @@ Proof
       >- simp[trans_emit, on_fdk_def, kvs_def, got_def] >>
       drule first_done_emit >> strip_tac >> gvs[trans_emit] >>
       simp[on_fdk_def, Abbr ‘K0’] >>
-      reverse (Cases_on ‘x’) >> simp[kvs_def, got_def]
-      >- (rename1 ‘SockR r0’ >> simp[got_def]) >>
-      rename1 ‘KvR ans’ >> simp[GSYM kvs_def] >>
-      qmatch_goalsub_abbrev_tac ‘trans (bind (emit W) K1) h2’ >>
-      qspecl_then [‘emit W’, ‘K1’, ‘h2’] mp_tac
+      ONCE_REWRITE_TAC[readk_CONS, writtenk_CONS] >> simp[] >>
+      Cases_on ‘x’ >> simp[got_def] >>
+      qmatch_goalsub_abbrev_tac ‘trans (bind (emit Wr) K1) h2’ >>
+      qspecl_then [‘emit Wr’, ‘K1’, ‘h2’] mp_tac
         (Q.GENL [‘m’, ‘f’, ‘h’] trans_bind_cases) >>
       simp[wf_emit, settled_emit] >> strip_tac
-      >- simp[trans_emit, Abbr ‘W’, on_fdk_def, kvs_def, got_def] >>
-      drule first_done_emit >> strip_tac >> gvs[trans_emit, Abbr ‘K1’, Abbr ‘W’] >>
-      ‘LENGTH h2' < LENGTH h1 + (LENGTH h2' + 1)’ by (Cases_on ‘h1’ >> gvs[]) >>
+      >- (simp[trans_emit, Abbr ‘Wr’, on_fdk_def] >>
+          simp[writtenk_def, readk_def, untag_def, written_def, read_def, kvs_def,
+               got_def] >>
+          every_case_tac >> simp[]) >>
+      drule first_done_emit >> strip_tac >> gvs[trans_emit, Abbr ‘K1’, Abbr ‘Wr’] >>
       first_x_assum (qspec_then ‘h2'’ mp_tac) >> simp[] >>
       disch_then (qspec_then ‘rest’ strip_assume_tac) >>
-      simp[on_fdk_def, kvs_def, got_def, GSYM kvs_def])
+      ONCE_REWRITE_TAC[readk_CONS, writtenk_CONS] >>
+      simp[on_fdk_def] >>
+      simp[readk_def, writtenk_def, untag_def, read_def, written_def] >>
+      fs[readk_def, writtenk_def])
   (* incomplete: wait until fd is readable, read, continue *)
   >> qmatch_goalsub_abbrev_tac ‘trans (bind (readable fd) K0) hh’
   >> qspecl_then [‘readable fd’, ‘K0’, ‘hh’] mp_tac
        (Q.GENL [‘m’, ‘f’, ‘h’] trans_bind_cases)
-  >> simp[readable_def, wf_wait, settled_wait] >> strip_tac >> simp[kvs_def, got_def]
+  >> simp[readable_def, wf_wait, settled_wait] >> strip_tac
+  >- simp[kvs_def, got_def]
   >> drule first_done_wait_nonempty >> strip_tac
   >> simp[Abbr ‘K0’]
   >> qmatch_goalsub_abbrev_tac ‘trans (bind (emit (Sock (Read fd))) K1) h2’
@@ -200,17 +227,13 @@ Proof
   >> rename1 ‘oHD s.results = SOME res’
   >> ‘LENGTH h2' < LENGTH h1 + (LENGTH h2' + 1)’ by (Cases_on ‘h1’ >> gvs[])
   >> simp[Abbr ‘K1’, on_fdk_def]
-  >> ‘readk fd [(Sock (Read fd), SOME res)] =
-        (case res of SockR (Data d) => [d] | _ => []) ∧
-      kvs [(Sock (Read fd), SOME res)] = []’
-       by (simp[readk_def, untag_def, read_def, kvs_def] >> every_case_tac >> simp[])
-  >> simp[GSYM kvs_def]
+  >> ONCE_REWRITE_TAC[readk_CONS, writtenk_CONS]
   >> Cases_on ‘res’ >> simp[]
   >- (rename1 ‘SockR r0’ >> Cases_on ‘r0’ >> simp[]
       >> TRY (rename1 ‘Data d’ >>
               first_x_assum (qspec_then ‘h2'’ mp_tac) >> simp[] >>
               disch_then (qspec_then ‘buf ++ d’ strip_assume_tac) >> simp[] >>
-              fs[GSYM APPEND_ASSOC] >> NO_TAC)
+              fs[] >> NO_TAC)
       >> TRY (simp[kvs_def, got_def] >> NO_TAC)
       >> first_x_assum (qspec_then ‘h2'’ mp_tac) >> simp[])
   >> first_x_assum (qspec_then ‘h2'’ mp_tac) >> simp[]

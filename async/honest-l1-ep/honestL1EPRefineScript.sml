@@ -2136,3 +2136,193 @@ Proof
       drule_at (Pos hd) l0owne_promote >> disch_then irule >> fs[])
   >> rpt conj_tac >> fs[fds_lt_def, promote_fields, Abbr ‘wS’]
 QED
+
+(* ------------------------------------------------------------------------
+   The endpoint world built from L1's run (R1-safe: a function of the run,
+   fixed before the layer runs)
+   ------------------------------------------------------------------------ *)
+
+(* Round n's actions, from the state before it *)
+Definition eacts_of_def:
+  eacts_of lfd hw ifds m w0 n =
+    case erounds lfd hw ifds m (w0, einit) n of
+    | SOME (h, ws, evs, logs) => eacts lfd hw ws (new_actions (log_of m) h)
+    | NONE => NONE
+End
+
+(* Round n's connects' fds, in order *)
+Definition econ_def:
+  econ lfd hw ifds m w0 n =
+    case eacts_of lfd hw ifds m w0 n of
+    | SOME (rs, evs, ws1) => rfds (SND ws1) rs
+    | NONE => []
+End
+
+(* What round n fetched *)
+Definition elog_def:
+  elog lfd hw ifds m w0 n =
+    case erounds lfd hw ifds m (w0, einit) (SUC n) of
+    | SOME (_, _, _, logs) => EL n logs
+    | NONE => []
+End
+
+(* The channel map and count before round n *)
+Definition ecm_def:
+  ecm lfd hw ifds m w0 0 = ([], 0) ∧
+  ecm lfd hw ifds m w0 (SUC n) =
+    let (cm, k) = ecm lfd hw ifds m w0 n;
+        fs = econ lfd hw ifds m w0 n in
+      SND (arrs lfd (cnew k fs ++ cm, k + LENGTH fs) (elog lfd hw ifds m w0 n))
+End
+
+(* ... and after round n's connects *)
+Definition ecm1_def:
+  ecm1 lfd hw ifds m w0 n =
+    let (cm, k) = ecm lfd hw ifds m w0 n;
+        fs = econ lfd hw ifds m w0 n in
+      (cnew k fs ++ cm, k + LENGTH fs)
+End
+
+Theorem ecm_SUC:
+  ecm lfd hw ifds m w0 (SUC n) =
+    SND (arrs lfd (ecm1 lfd hw ifds m w0 n) (elog lfd hw ifds m w0 n))
+Proof
+  simp[ecm_def, ecm1_def] >> pairarg_tac >> simp[]
+QED
+
+(* The connects that settled in round n's tail *)
+Definition esett_def:
+  esett lfd hw ifds m w0 n =
+    case (eacts_of lfd hw ifds m w0 n, erounds lfd hw ifds m (w0, einit) (SUC n)) of
+    | (SOME (rs, evs, ws1), SOME (h', ws', evs', logs)) =>
+        rsettles (FST (ecm1 lfd hw ifds m w0 n)) (SND ws1) (SND ws')
+    | _ => []
+End
+
+(* The arrivals of tick n: what round n fetched (accepted connections to
+   the listener's address a), then the connects that settled *)
+Definition earr_def:
+  earr lfd a hw ifds m w0 n =
+    MAP (conv a) (FST (arrs lfd (ecm1 lfd hw ifds m w0 n) (elog lfd hw ifds m w0 n))) ++
+    esett lfd hw ifds m w0 n
+End
+
+(* The fd of channel j: the one L1 got (by accept or connect) *)
+Definition erun_alloc_def:
+  erun_alloc lfd hw ifds m w0 (j : num) (used : word64 list) =
+    if ∃n f. MEM (f, j) (FST (ecm lfd hw ifds m w0 n)) then
+      let f = @f. ∃n. MEM (f, j) (FST (ecm lfd hw ifds m w0 n)) in
+        if MEM f used then lowest_free used else f
+    else lowest_free used
+End
+
+(* The endpoint world: listener lfd on address a, the calls given, every
+   write taken (no backpressure), and the arrivals above *)
+Definition pew_def:
+  pew lfd a hw ifds m w0 calls =
+    <| listening := [(lfd, a, [])]; chans := []; open_fds := []; reserved := [];
+       alloc := erun_alloc lfd hw ifds m w0; takes := (λj b n. n); calls := calls;
+       env := (λn hist. earr lfd a hw ifds m w0 n); clock := 0; hist := [] |>
+End
+
+(* No round's response is a connect that got no socket *)
+Definition no_socketless_def:
+  no_socketless h ⇔ ∀s. MEM s h ⇒ ¬MEM (EConnected NONE) s.results
+End
+
+Theorem erounds_logs:
+  ∀n h ws evs logs.
+    erounds lfd hw ifds m ws0 n = SOME (h, ws, evs, logs) ⇒
+    LENGTH logs = n ∧
+    ∀k. k ≤ n ⇒ ∃h' ws' evs'. erounds lfd hw ifds m ws0 k = SOME (h', ws', evs', TAKE k logs)
+Proof
+  Induct >> simp[erounds_def] >> rpt gen_tac >> strip_tac >> gvs[AllCaseEqs()] >>
+  rw[] >>
+  Cases_on ‘k = SUC (LENGTH logs')’
+  >- (gvs[erounds_def] >> simp[TAKE_LENGTH_ID_rwt]) >>
+  first_x_assum (qspec_then ‘k’ mp_tac) >> simp[] >> strip_tac >>
+  simp[TAKE_APPEND1]
+QED
+
+Theorem elog_EL:
+  erounds lfd hw ifds m (w0, einit) n = SOME (h, ws, evs, logs) ∧ k < n ⇒
+  elog lfd hw ifds m w0 k = EL k logs
+Proof
+  rw[elog_def] >> drule erounds_logs >> strip_tac >>
+  first_x_assum (qspec_then ‘SUC k’ mp_tac) >> simp[] >> strip_tac >>
+  simp[EL_TAKE]
+QED
+
+Theorem cnew_snd:
+  MAP SND (cnew k fs) = REVERSE (GENLIST (λi. k + i) (LENGTH fs)) ∧
+  MAP FST (cnew k fs) = REVERSE fs
+Proof
+  simp[cnew_def, MAP_REVERSE, MAP_ZIP]
+QED
+
+Theorem ecm_inv:
+  ∀n. ALL_DISTINCT (MAP SND (FST (ecm lfd hw ifds m w0 n))) ∧
+      EVERY (λj. j < SND (ecm lfd hw ifds m w0 n)) (MAP SND (FST (ecm lfd hw ifds m w0 n)))
+Proof
+  Induct >> simp[ecm_def] >>
+  Cases_on ‘ecm lfd hw ifds m w0 n’ >> rename1 ‘_ = (cm, k)’ >> gvs[] >>
+  qabbrev_tac ‘fs = econ lfd hw ifds m w0 n’ >>
+  Cases_on ‘arrs lfd (cnew k fs ++ cm, k + LENGTH fs) (elog lfd hw ifds m w0 n)’ >>
+  rename1 ‘_ = (as, ck)’ >> PairCases_on ‘ck’ >> simp[] >>
+  drule arrs_inv >> impl_tac
+  >- (simp[cnew_snd, ALL_DISTINCT_APPEND, ALL_DISTINCT_REVERSE, MEM_GENLIST, EVERY_MEM,
+           MEM_REVERSE, ALL_DISTINCT_GENLIST] >>
+      gvs[EVERY_MEM] >> rw[] >> res_tac >> simp[] >>
+      strip_tac >> res_tac >> simp[]) >>
+  simp[]
+QED
+
+Theorem ecm_step:
+  ∀n. ∃new'. FST (ecm lfd hw ifds m w0 (SUC n)) = new' ++ FST (ecm lfd hw ifds m w0 n) ∧
+             FST (ecm lfd hw ifds m w0 (SUC n)) =
+               (new' ++ FST (ecm lfd hw ifds m w0 n))
+Proof
+  gen_tac >> simp[ecm_def] >>
+  Cases_on ‘ecm lfd hw ifds m w0 n’ >> simp[] >>
+  qabbrev_tac ‘fs = econ lfd hw ifds m w0 n’ >>
+  Cases_on ‘arrs lfd (cnew r fs ++ q, r + LENGTH fs) (elog lfd hw ifds m w0 n)’ >>
+  rename1 ‘_ = (as, ck)’ >> PairCases_on ‘ck’ >> simp[] >> drule arrs_suffix >> rw[] >>
+  qexists_tac ‘new ++ cnew r fs’ >> simp[]
+QED
+
+Theorem ecm_mono:
+  ∀d n. ∃new. FST (ecm lfd hw ifds m w0 (n + d)) = new ++ FST (ecm lfd hw ifds m w0 n)
+Proof
+  Induct >> simp[] >> gen_tac >>
+  first_x_assum (qspec_then ‘n’ strip_assume_tac) >>
+  qspecl_then [‘n + d’] strip_assume_tac ecm_step >>
+  qexists_tac ‘new' ++ new’ >>
+  ‘n + SUC d = SUC (n + d)’ by simp[] >> pop_assum SUBST1_TAC >>
+  REWRITE_TAC[GSYM APPEND_ASSOC] >> ASM_REWRITE_TAC[]
+QED
+
+Theorem ecm_unique:
+  MEM (f, j) (FST (ecm lfd hw ifds m w0 n)) ∧ MEM (g, j) (FST (ecm lfd hw ifds m w0 n')) ⇒
+  f = g
+Proof
+  strip_tac >>
+  qspecl_then [‘n'’, ‘n’] strip_assume_tac ecm_mono >>
+  rename1 ‘FST (ecm _ _ _ _ _ (n + n')) = new1 ++ _’ >>
+  qspecl_then [‘n’, ‘n'’] strip_assume_tac ecm_mono >>
+  rename1 ‘FST (ecm _ _ _ _ _ (n' + n)) = new2 ++ _’ >>
+  ‘n' + n = n + n'’ by simp[] >>
+  ‘ALL_DISTINCT (MAP SND (FST (ecm lfd hw ifds m w0 (n + n'))))’ by simp[ecm_inv] >>
+  ‘MEM (f, j) (FST (ecm lfd hw ifds m w0 (n + n'))) ∧
+   MEM (g, j) (FST (ecm lfd hw ifds m w0 (n + n')))’ by metis_tac[MEM_APPEND] >>
+  qspecl_then [‘FST (ecm lfd hw ifds m w0 (n + n'))’, ‘f’, ‘g’, ‘j’] mp_tac snd_unique >> simp[]
+QED
+
+Theorem erun_alloc_eq:
+  MEM (f, j) (FST (ecm lfd hw ifds m w0 n)) ∧ ¬MEM f used ⇒
+  erun_alloc lfd hw ifds m w0 j used = f
+Proof
+  strip_tac >>
+  ‘(@g. ∃n. MEM (g, j) (FST (ecm lfd hw ifds m w0 n))) = f’
+    by (SELECT_ELIM_TAC >> metis_tac[ecm_unique]) >>
+  rw[erun_alloc_def] >> metis_tac[]
+QED

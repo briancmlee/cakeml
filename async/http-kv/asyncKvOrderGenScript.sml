@@ -16,7 +16,8 @@
   the bytes of WS k c), the model serves (kv_server_serves' two facts,
   for the model's fd kinv c of key c), the queries grow, the projections
   are monotone, keys and model fds correspond (kmap / kinv), and only
-  finitely many keys have been read from.  The order is the store's
+  finitely many keys have been read from in
+  the first k rounds.  The order is the store's
   queries, in its order, then the complete requests not queried yet; a
   query commits at the start of the round in which with_store answered it
   (asyncKvSafe's kv_comp_safe, with the projections as parameters).
@@ -299,7 +300,8 @@ Definition kv_rounds_def:
            WS k c ≼ MAP print_response (fd_answers (kinv c) (G k))) ∧
     (∀c. kmap (kinv c) = c) ∧
     (∀k q. MEM q (G k) ⇒ kinv (kmap (FST q)) = FST q) ∧
-    (∀evs. ∃CS. ALL_DISTINCT CS ∧ ∀c. RD c evs ≠ [] ⇒ MEM c CS)
+    (∀k. ∃CS. ALL_DISTINCT CS ∧
+         ∀c evs. evs ≼ GP EV k ∧ RD c evs ≠ [] ⇒ MEM c CS)
 End
 
 (* MAIN: the order construction, once *)
@@ -329,7 +331,7 @@ Proof
     by (gen_tac >> simp[Abbr ‘Gc’, Abbr ‘Gn’] >> irule IS_PREFIX_TRANS >>
         qexists_tac ‘parse_all_b (RS n c)’ >> simp[]) >>
   (* the order *)
-  qpat_assum ‘∀evs. ∃CS. _’ (qspec_then ‘evs’ strip_assume_tac) >>
+  qpat_assum ‘∀k. ∃CS. _’ (qspec_then ‘SUC n’ strip_assume_tac) >>
   qabbrev_tac ‘L1 = MAP (λq. (kmap (FST q), SND q)) Gn’ >>
   qabbrev_tac ‘pend = FLAT (MAP (λc. MAP (λr. (c, r)) (DROP (LENGTH (Gc c)) (rss c))) CS)’ >>
   qabbrev_tac ‘L = L1 ++ pend’ >>

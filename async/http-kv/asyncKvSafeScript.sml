@@ -162,6 +162,9 @@ Proof
     >- metis_tac[kv_rounds_serves]
     >- metis_tac[kv_rounds_serves]
     >- (‘FST q < dimword(:64)’ by metis_tac[kv_rounds_bounded] >> fs[])
-    >> metis_tac[conns_of_trace]) >>
+    >> qspec_then ‘KP lfdn ifds s0 k’ strip_assume_tac (GEN_ALL conns_of_trace) >>
+       qexists_tac ‘CS’ >> rw[] >> first_x_assum irule >> strip_tac >>
+       ‘bytes_read_from c evs ≼ bytes_read_from c (KP lfdn ifds s0 k)’
+         by metis_tac[bytes_read_from_prefix] >> gvs[]) >>
   simp[]
 QED

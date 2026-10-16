@@ -24,7 +24,7 @@ Ancestors
   socketV2Fair EchoSpec2 endpointWorld endpointFair endpointSpecForms
   endpointSemantics endpointInstances endpointServers endpointV2Sim endpointEcho2
   endpointV2Prefix endpointEcho2Conv endpointV1Sim endpointV1Run endpointV1Inst
-  endpointV1Proj endpointV1Conv endpointV1Echo
+  endpointV1Proj endpointV1Conv endpointV1Echo endpointV2Hide endpointV2Accept
 Libs
   preamble
 
@@ -92,41 +92,6 @@ Proof
         by simp[eworld_component_equality] >>
       simp[ep_step_ok_calls]) >>
   simp[v1_calls_def]
-QED
-
-(* ------------------------------------------------------------------------
-   Clients not yet connected have sent nothing
-   ------------------------------------------------------------------------ *)
-
-Theorem step_ok2_data[local]:
-  ∀xs s. step_ok2 s xs ∧ data_of j xs ≠ [] ⇒
-         j < LENGTH s.clients + LENGTH (FILTER is_conn2 xs)
-Proof
-  Induct >- simp[data_of_def] >> Cases >> rpt gen_tac >> strip_tac >>
-  fs[step_ok2_def, arrival_ok2_def, is_conn2_def] >>
-  first_x_assum drule >>
-  fs[data_of_def, deliver2_def, update_client_def] >> rw[] >> fs[] >>
-  Cases_on ‘n = j’ >> fs[]
-QED
-
-Theorem sent2_unconn:
-  server_world2 lfd sk ∧ nconn sk n ≤ j ⇒ sent2_upto j n sk = []
-Proof
-  strip_tac >>
-  ‘∀m. m ≤ n ⇒ sent2_upto j m sk = []’ suffices_by simp[] >>
-  Induct >- simp[sent2_upto_def, arrivals2_upto_def] >> strip_tac >>
-  ‘sent2_upto j m sk = []’ by fs[] >> simp[sent2_upto_SUC] >>
-  CCONTR_TAC >>
-  ‘step_ok2 (ticks2 m sk) (fut_step sk.future m)’
-    by (fs[server_world2_def, sched_wf2_def] >>
-        first_x_assum (qspec_then ‘m’ mp_tac) >> simp[next_step2_fut, ticks2_future]) >>
-  drule_all step_ok2_data >>
-  ‘LENGTH (ticks2 m sk).clients = nconn sk m’
-    by (fs[server_world2_def] >> drule ticks2_clients >> simp[]) >>
-  ‘nconn sk (SUC m) = nconn sk m + LENGTH (FILTER is_conn2 (fut_step sk.future m))’
-    by simp[nconn_def, arrivals2_upto_SUC, FILTER_APPEND] >>
-  ‘nconn sk (SUC m) ≤ nconn sk n’ by simp[nconn_mono] >>
-  decide_tac
 QED
 
 (* ------------------------------------------------------------------------

@@ -21,6 +21,7 @@
 Theory honestL1EPRefine
 Ancestors
   honestL1EPModel honestL1PFRefine honestL1PFModel honestL1Model honestL1Steps
+  socketV2FFI ffiSpikeSocketFFI
   honestL1Inv honestL0Rely honestL0World honestL0
   endpointHLModel endpointWorld asyncHLModel asyncCore asyncLevel1 asyncM3World
   llist alist
@@ -719,4 +720,286 @@ Proof
   >> qpat_x_assum ‘ehs_rel _ _’ mp_tac >> simp[ehs_rel_def] >> strip_tac >> conj_tac
   >- (gen_tac >> Cases_on ‘h = hn’ >> simp[])
   >> gen_tac >> Cases_on ‘h = hn’ >> simp[]
+QED
+
+(* ------------------------------------------------------------------------
+   The fetch, through a version-2 view of the endpoint world: the
+   prefetching part's fetch lemma (fetch_rel) is about a version-2 world;
+   the endpoint world agrees with that world on its up channels
+   ------------------------------------------------------------------------ *)
+
+(* The version-2 world the prefetching part sees: the clients are the
+   channels, the open fds its own *)
+Definition v2v_def:
+  v2v lfd cm es w =
+    <| listening := [(lfd, MAP (cl cm) es.p.acq)];
+       clients := MAP (λc. <| incoming := c.inbox; peer_closed := c.peer_eof;
+                              outgoing := c.sent |>) w.chans;
+       open_fds := FILTER (λ(f, j). MEM f (MAP SND es.p.b.tbl)) w.open_fds;
+       reserved := []; alloc := w.alloc; future := [||] |>
+End
+
+(* A version-2 world and an endpoint world: the same listener queue and
+   channel count; the up channels' streams agree *)
+Definition vagree_def:
+  vagree lfd a s w ⇔
+    (∃q. s.listening = [(lfd, q)] ∧ w.listening = [(lfd, a, q)]) ∧
+    LENGTH s.clients = LENGTH w.chans ∧
+    ∀j. j < LENGTH w.chans ∧ (EL j w.chans).status = Up ⇒
+        (EL j s.clients).incoming = (EL j w.chans).inbox ∧
+        ((EL j s.clients).peer_closed ⇔ (EL j w.chans).peer_eof)
+End
+
+(* A version-2 arrival as an endpoint arrival (connects: to the listener's
+   address) *)
+Definition conv_def:
+  conv a (Connect2 l) = Incoming a ∧
+  conv a (Data2 j bs) = PData j bs ∧
+  conv a (Eof2 j) = PEof j
+End
+
+(* What a non-settling arrival leaves: the channels' statuses and shut
+   flags, a channel not up untouched, new channels up *)
+Definition ep_grows_def:
+  ep_grows w w' ⇔
+    LENGTH w.chans ≤ LENGTH w'.chans ∧
+    (∀j. j < LENGTH w.chans ⇒
+         (EL j w'.chans).status = (EL j w.chans).status ∧
+         (EL j w'.chans).shut = (EL j w.chans).shut ∧
+         ((EL j w.chans).status ≠ Up ⇒ EL j w'.chans = EL j w.chans)) ∧
+    (∀j. LENGTH w.chans ≤ j ∧ j < LENGTH w'.chans ⇒
+         (EL j w'.chans).status = Up ∧ ¬(EL j w'.chans).shut) ∧
+    w'.open_fds = w.open_fds ∧ w'.reserved = w.reserved ∧ w'.alloc = w.alloc ∧
+    w'.takes = w.takes ∧ w'.env = w.env ∧ w'.clock = w.clock ∧ w'.hist = w.hist ∧
+    w'.calls = w.calls
+End
+
+Theorem ep_grows_refl[simp]:
+  ep_grows w w
+Proof
+  simp[ep_grows_def]
+QED
+
+Theorem ep_grows_trans:
+  ep_grows w1 w2 ∧ ep_grows w2 w3 ⇒ ep_grows w1 w3
+Proof
+  rw[ep_grows_def] >> rpt strip_tac >> res_tac >> gvs[] >>
+  Cases_on ‘j < LENGTH w2.chans’ >> gvs[] >> res_tac >> gvs[] >>
+  first_x_assum (qspec_then ‘j’ mp_tac) >> simp[]
+QED
+
+Theorem vagree_deliver:
+  vagree lfd a s w ∧ (∀l. x = Connect2 l ⇒ l = lfd) ⇒
+  vagree lfd a (deliver2 s x) (ep_deliver w (conv a x)) ∧
+  ep_grows w (ep_deliver w (conv a x))
+Proof
+  Cases_on ‘x’ >> simp[conv_def] >> strip_tac
+  >- (gvs[vagree_def, deliver2_def, ep_deliver_def, AFUPDKEY_def, ep_grows_def] >>
+      rw[EL_APPEND_EQN, empty_conn_def, new_chan_def] >> gvs[] >>
+      ‘j = LENGTH w.chans’ by simp[] >> gvs[])
+  >- (gvs[vagree_def, deliver2_def, ep_deliver_def, ep_grows_def] >>
+      rw[upd_chan_def, update_client_def, EL_LUPDATE] >> rw[] >> gvs[])
+  >> gvs[vagree_def, deliver2_def, ep_deliver_def, ep_grows_def] >>
+  rw[upd_chan_def, update_client_def, EL_LUPDATE] >> rw[] >> gvs[]
+QED
+
+Theorem vagree_deliver_all:
+  ∀as s w. vagree lfd a s w ∧ EVERY (λx. ∀l. x = Connect2 l ⇒ l = lfd) as ⇒
+           vagree lfd a (FOLDL deliver2 s as) (FOLDL ep_deliver w (MAP (conv a) as)) ∧
+           ep_grows w (FOLDL ep_deliver w (MAP (conv a) as))
+Proof
+  Induct >> simp[] >> rpt gen_tac >> strip_tac >>
+  drule_all vagree_deliver >> strip_tac >>
+  first_x_assum drule_all >> strip_tac >> simp[] >>
+  metis_tac[ep_grows_trans]
+QED
+
+Theorem arrs_connects:
+  ∀l cm k as cm' k'.
+    arrs lfd (cm, k) l = (as, (cm', k')) ⇒ EVERY (λx. ∀l. x = Connect2 l ⇒ l = lfd) as
+Proof
+  Induct >> simp[arrs_def] >> Cases >> simp[arrs_def] >> rpt gen_tac >>
+  pairarg_tac >> gvs[] >> strip_tac >> gvs[] >>
+  first_x_assum drule >> simp[]
+QED
+
+(* The fds a fetch log accepted *)
+Definition fconns_def:
+  fconns [] = [] ∧
+  fconns (FConn f :: l) = f :: fconns l ∧
+  fconns (FData f bs :: l) = fconns l ∧
+  fconns (FEof f :: l) = fconns l ∧
+  fconns (FReset f :: l) = fconns l
+End
+
+Theorem arrs_new:
+  ∀l cm k as cm' k'.
+    arrs lfd (cm, k) l = (as, (cm', k')) ⇒
+    ∃new. cm' = new ++ cm ∧ (∀f. MEM f (MAP FST new) ⇔ MEM f (fconns l)) ∧
+          EVERY (λj. k ≤ j) (MAP SND new)
+Proof
+  Induct >> simp[arrs_def, fconns_def] >> Cases >> simp[arrs_def, fconns_def] >>
+  rpt gen_tac >> pairarg_tac >> gvs[] >> rpt strip_tac >> gvs[] >>
+  first_x_assum drule >> strip_tac >> gvs[]
+  >- (gvs[EVERY_MEM] >> rw[] >- metis_tac[] >> res_tac >> simp[])
+  >> qexists_tac ‘new’ >> simp[]
+QED
+
+Theorem ALL_DISTINCT_MAP_FILTER_FST:
+  ∀l. ALL_DISTINCT (MAP FST l) ⇒ ALL_DISTINCT (MAP FST (FILTER P l))
+Proof
+  Induct >> rw[] >> gvs[MEM_MAP, MEM_FILTER] >> metis_tac[]
+QED
+
+(* The view of a world in the relation is in the prefetching part's
+   relation, and agrees with the world *)
+Theorem ev_pv:
+  ev_rel lfd a cm es w ∧ eown lfd es ⇒
+  pv_rel lfd cm es.p (v2v lfd cm es w) ∧ vagree lfd a (v2v lfd cm es w) w
+Proof
+  strip_tac >>
+  ‘∀g. MEM g (MAP FST cm) ⇒ cl cm g < LENGTH w.chans’ by metis_tac[ev_rel_cl_lt] >>
+  qpat_x_assum ‘ev_rel _ _ _ _ _’ mp_tac >>
+  simp[ev_rel_def, pv_rel_def, vagree_def, v2v_def, EL_MAP] >> strip_tac >>
+  rpt conj_tac
+  >- (irule ALL_DISTINCT_MAP_FILTER_FST >> simp[])
+  >- (gen_tac >> eq_tac
+      >- (rw[MEM_MAP, MEM_FILTER] >> pairarg_tac >> gvs[] >> metis_tac[]) >>
+      strip_tac >>
+      ‘MEM f (MAP FST w.open_fds)’
+        by (qpat_x_assum ‘∀f. MEM f (MAP FST w.open_fds) ⇔ _’ (fn th => REWRITE_TAC [th]) >>
+            simp[]) >>
+      pop_assum (strip_assume_tac o REWRITE_RULE [MEM_MAP]) >>
+      rw[MEM_MAP, MEM_FILTER] >> qexists_tac ‘y’ >> PairCases_on ‘y’ >> gvs[] >>
+      gvs[MEM_MAP] >> metis_tac[]) >>
+  rpt gen_tac >> strip_tac >> first_x_assum drule >> strip_tac >>
+  ‘MEM f (MAP SND es.p.b.tbl)’ by metis_tac[ALOOKUP_SOME_MEM_SND] >>
+  ‘cl cm f < LENGTH w.chans’ by metis_tac[] >>
+  simp[ALOOKUP_FILTER, EL_MAP]
+QED
+
+Theorem fconns_APPEND:
+  ∀l1 l2. fconns (l1 ++ l2) = fconns l1 ++ fconns l2
+Proof
+  Induct >> simp[fconns_def] >> Cases >> simp[fconns_def]
+QED
+
+(* A fetch's accepted fds: queued, and new to L0 *)
+Theorem fetch_acq:
+  ∀fs w ps w' ps' log evs.
+    pf_fetch lfd hw fs (w, ps) = SOME ((w', ps'), log, evs) ∧ l0_rely w ∧ fds_lt w ⇒
+    ps'.acq = ps.acq ++ fconns log ∧
+    (∀f. MEM f (fconns log) ⇒ ¬MEM f (l0_used w)) ∧
+    (∀g. MEM g (l0_used w) ⇒ MEM g (l0_used w'))
+Proof
+  Induct >- simp[pf_fetch_def, fconns_def] >>
+  rpt gen_tac >> rename1 ‘pf_fetch _ _ (f :: fs)’ >> strip_tac >>
+  qpat_x_assum ‘pf_fetch _ _ _ _ = _’ mp_tac >> simp[Once pf_fetch_def] >>
+  IF_CASES_TAC >- (strip_tac >> first_x_assum drule_all >> simp[]) >>
+  IF_CASES_TAC
+  >- (qpat_x_assum ‘f = lfd’ SUBST_ALL_TAC >>
+      Cases_on ‘sys_accept lfd w’ >> simp[] >> rename1 ‘_ = SOME x’ >>
+      PairCases_on ‘x’ >> rename1 ‘sys_accept _ _ = SOME (out, w1, ev)’ >> simp[] >>
+      pairarg_tac >> simp[] >> rename1 ‘_ = (ps1, fl)’ >>
+      Cases_on ‘pf_fetch lfd hw fs (w1, ps1)’ >> simp[] >> rename1 ‘_ = SOME y’ >>
+      PairCases_on ‘y’ >> simp[] >> strip_tac >> gvs[] >>
+      ‘l0_rely w1’
+        by (qpat_assum ‘sys_accept _ _ = _’ (assume_tac o REWRITE_RULE [sys_accept_def]) >>
+            drule_all l0_do_rely >> simp[]) >>
+      ‘fds_lt w1’ by (drule_all sys_accept_fds_lt >> simp[]) >>
+      ‘∀g. MEM g (l0_used w) ⇒ MEM g (l0_used w1)’
+        by (qpat_assum ‘sys_accept _ _ = _’ (assume_tac o REWRITE_RULE [sys_accept_def]) >>
+            drule l0_do_used >> simp[]) >>
+      first_x_assum drule_all >> strip_tac >>
+      simp[fconns_APPEND] >>
+      Cases_on ‘l0_res_of out’ >> gvs[fconns_def]
+      >- (drule_all sys_accept_fresh >> strip_tac >> rw[] >> metis_tac[]) >>
+      rw[] >> metis_tac[]) >>
+  Cases_on ‘sys_recv f pf_chunk w’ >> simp[] >> rename1 ‘_ = SOME x’ >>
+  PairCases_on ‘x’ >> rename1 ‘sys_recv _ _ _ = SOME (out, w1, ev)’ >> simp[] >>
+  pairarg_tac >> simp[] >> rename1 ‘_ = (ps1, fl)’ >>
+  Cases_on ‘pf_fetch lfd hw fs (w1, ps1)’ >> simp[] >> rename1 ‘_ = SOME y’ >>
+  PairCases_on ‘y’ >> simp[] >> strip_tac >> gvs[] >>
+  ‘l0_rely w1’
+    by (qpat_assum ‘sys_recv _ _ _ = _’ (assume_tac o REWRITE_RULE [sys_recv_def]) >>
+        drule_all l0_do_rely >> simp[]) >>
+  ‘l0_used w1 = l0_used w ∧ w1.fd_limit = w.fd_limit’
+    by (qpat_assum ‘sys_recv _ _ _ = _’ (assume_tac o REWRITE_RULE [sys_recv_def]) >>
+        imp_res_tac l0_do_env >> drule l0_do_used >> simp[]) >>
+  ‘fds_lt w1’ by gvs[fds_lt_def] >>
+  first_x_assum drule_all >> strip_tac >>
+  ‘fconns fl = [] ∧ ps1.acq = ps.acq’
+    by (Cases_on ‘l0_res_of out’ >> gvs[AllCaseEqs(), fconns_def] >> rw[] >> gvs[fconns_def]) >>
+  gvs[fconns_APPEND]
+QED
+
+Theorem cl_append:
+  cl (new ++ cm) f = if MEM f (MAP FST new) then cl new f else cl cm f
+Proof
+  Cases_on ‘ALOOKUP new f’ >> simp[cl_def, ALOOKUP_APPEND] >> gvs[ALOOKUP_NONE] >>
+  imp_res_tac ALOOKUP_MEM >> rw[] >> gvs[MEM_MAP] >> metis_tac[FST]
+QED
+
+Theorem cl_new_mem:
+  MEM f (MAP FST new) ⇒ MEM (cl new f) (MAP SND new)
+Proof
+  rw[cl_def] >> Cases_on ‘ALOOKUP new f’ >> gvs[ALOOKUP_NONE] >>
+  metis_tac[ALOOKUP_SOME_MEM_SND]
+QED
+
+(* Back from the view: the world with the fetched arrivals delivered is in
+   the relation with the state after the fetch *)
+Theorem ev_back:
+  ev_rel lfd a cm es w ∧ eown lfd es ∧
+  pv_rel lfd (new ++ cm) ps' s' ∧ vagree lfd a s' w' ∧ ep_grows w w' ∧
+  s'.open_fds = FILTER (λ(f, j). MEM f (MAP SND es.p.b.tbl)) w.open_fds ∧
+  s'.alloc = w.alloc ∧ ps'.b.tbl = es.p.b.tbl ∧
+  EVERY (λj. LENGTH w.chans ≤ j) (MAP SND new) ∧
+  (∀f. MEM f (MAP FST new) ⇒
+       ¬MEM f (MAP SND es.ctbl) ∧ ¬MEM f es.p.acq ∧ ¬MEM f (MAP SND es.p.b.tbl)) ∧
+  (∀f. MEM f ps'.acq ⇒ MEM f es.p.acq ∨ MEM f (MAP FST new)) ⇒
+  ev_rel lfd a (new ++ cm) (es with p := ps') w'
+Proof
+  strip_tac >>
+  ‘∀g. MEM g (MAP FST cm) ⇒ cl cm g < LENGTH w.chans’ by metis_tac[ev_rel_cl_lt] >>
+  ‘LENGTH s'.clients = LENGTH w'.chans’ by gvs[vagree_def] >>
+  qpat_x_assum ‘pv_rel _ _ _ _’ mp_tac >> qpat_x_assum ‘ev_rel _ _ _ _ _’ mp_tac >>
+  simp[ev_rel_def, pv_rel_def, cstat_of_def, inb_of_def] >>
+  ntac 2 (disch_then strip_assume_tac) >> gvs[ep_grows_def] >> rpt conj_tac
+  >- gvs[vagree_def]
+  >- (rpt gen_tac >> strip_tac >>
+      ‘MEM f (MAP SND es.p.b.tbl)’ by metis_tac[ALOOKUP_SOME_MEM_SND] >>
+      qpat_x_assum ‘∀h f. ALOOKUP es.p.b.tbl h = SOME f ⇒ (MEM f (MAP FST new) ∨ _) ∧ _’
+        drule >> strip_tac >>
+      qpat_x_assum ‘∀h f. ALOOKUP es.p.b.tbl h = SOME f ⇒ MEM f (MAP FST cm) ∧ _’
+        drule >> strip_tac >>
+      gvs[ALOOKUP_FILTER] >>
+      ‘cl cm f < LENGTH w.chans’ by metis_tac[] >>
+      qpat_x_assum ‘∀j. j < LENGTH w.chans ⇒ _’ (qspec_then ‘cl cm f’ mp_tac) >>
+      simp[] >> strip_tac >> gvs[vagree_def])
+  >- (rpt gen_tac >> strip_tac >>
+      ‘MEM f (MAP SND es.ctbl)’ by metis_tac[ALOOKUP_SOME_MEM_SND] >>
+      ‘¬MEM f (MAP FST new)’ by metis_tac[] >>
+      qpat_x_assum ‘∀h f. ALOOKUP es.ctbl h = SOME f ⇒ _’ drule >> strip_tac >>
+      ‘cl cm f < LENGTH w.chans’ by metis_tac[] >>
+      simp[cl_append] >>
+      qpat_x_assum ‘∀j. j < LENGTH w.chans ⇒ _’ (qspec_then ‘cl cm f’ mp_tac) >>
+      simp[] >> rw[] >> gvs[]) >>
+  rpt gen_tac >> strip_tac >>
+  qpat_x_assum ‘∀f. MEM f ps'.acq ⇒ (MEM f (MAP FST new) ∨ _) ∧ _’ drule >> strip_tac >>
+  ‘(EL (cl (new ++ cm) f) w'.chans).status = Up ∧ ¬(EL (cl (new ++ cm) f) w'.chans).shut’
+    by (Cases_on ‘MEM f (MAP FST new)’ >> simp[cl_append]
+        >- (drule cl_new_mem >> strip_tac >>
+            qpat_x_assum ‘∀j. LENGTH w.chans ≤ j ∧ _ ⇒ _’ irule >> gvs[EVERY_MEM]) >>
+        ‘MEM f es.p.acq’ by metis_tac[] >>
+        qpat_x_assum ‘∀f. MEM f es.p.acq ⇒ _’ drule >> strip_tac >>
+        ‘cl cm f < LENGTH w.chans’ by metis_tac[] >>
+        qpat_x_assum ‘∀j. j < LENGTH w.chans ⇒ _’ (qspec_then ‘cl cm f’ mp_tac) >>
+        simp[]) >>
+  ‘cl (new ++ cm) f < LENGTH w'.chans’
+    by (Cases_on ‘MEM f (MAP FST new)’ >> simp[cl_append]
+        >- (drule cl_new_mem >> gvs[EVERY_MEM]) >>
+        ‘MEM f (MAP FST cm)’ by metis_tac[] >>
+        ‘cl cm f < LENGTH w.chans’ by metis_tac[] >> simp[]) >>
+  gvs[vagree_def]
 QED

@@ -895,6 +895,71 @@ Still open:
 - R1 for general worlds, with regrouping;
 - the per-server proofs of `hl_ok`.
 
+**R1: a finding before proving (phase 7, 2026-10-16). R1 is false for
+the current L1, and the fix (for decision) is a prefetching L1.**
+
+R1 asks for exact history equality with *some* v2 world. The v2 world's
+readiness is **exact and sticky**:
+- a listener is ready iff a client is pending, and then an accept
+  succeeds;
+- a connection is ready iff it has unread data or EOF, and stays ready
+  until it is read.
+
+The current L1 reports what the kernel's poll said and learns the truth
+only at the later syscall. Each of these runs has no v2 counterpart,
+whatever the regrouping:
+
+| # | L0 run | L1 tells L2 | v2 must say |
+|---|---|---|---|
+| C1 | listener reported ready; `accept` gives ECONNABORTED, EMFILE or a transient error | `Accepted NONE` | `Accepted (SOME _)`, because ready means pending |
+| C2 | fd reported ready; `recv` gives EINTR, ENOBUFS or EAGAIN | `Got NONE` | data or EOF |
+| C3 | ready; `Read h 100` gets 10 bytes (fewer than available, or more arrive later); a second `Read h 100` in the same round gets new bytes | data twice | the first short read emptied `incoming`, so the second is `Got NONE` |
+| C4 | ready and unread; L2 then writes past the high-water mark, so the next poll leaves the fd out | not ready | ready (its data is still there) |
+| C5 | the poll fails (EINTR) | nothing ready | the previous ready fds are still ready |
+
+§5.2's regrouping argument overlooked stickiness and failing accepts.
+C3 also defeats "place the data at the poll", because v2's `TAKE n`
+pins down where each short read ends.
+
+**Options:**
+
+- **(A) A prefetching L1. Recommended.** L1 pulls input into its own
+  buffers in the round's tail, then reports from the buffers.
+  - After the poll, for each fd reported IN/HUP/ERR, not paused, and with
+    an empty buffer, L1 makes one `recv` of a fixed chunk:
+    - data goes into the fd's inbox;
+    - 0 bytes, or a hard error, sets `eof` (the episode ends, as now);
+    - a transient error does nothing.
+  - For a readable listener (not exhausted), L1 makes one `accept`;
+    success appends the fd to L1's accept queue.
+  - L2 is told: ready iff the inbox is non-empty, `eof` is set, or the
+    accept queue is non-empty.
+  - `Read h n` is `TAKE n` of the inbox; `Accept` pops the queue; neither
+    makes a syscall.
+  - This is v2's semantics exactly. R1 becomes a plain forward
+    simulation, with no regrouping and no discipline:
+    - v2 client j = the j-th connection L1 accepted;
+    - `incoming` = its inbox; `peer_closed` = `eof`;
+    - the schedule's step n = what round n's tail fetched (the world is
+      defined from L1's deterministic run, which does not depend on
+      it);
+    - `alloc j used` = the kernel's fd for j if it is not in `used`,
+      else `lowest_free used`. This satisfies `alloc_ok`, and in the
+      run the kernel's fd is never in v2's `used`, since v2's open fds
+      are among the kernel's.
+  - C1–C5 are absorbed below the buffers. Each inbox is bounded by one
+    chunk, because L1 fetches only into an empty inbox.
+  - Pausing becomes "don't fetch", and in v2 terms that is just a later
+    arrival.
+  - Cost: the L1 model, honestL1Props/Simple/Inv, and R2 must be
+    re-proved. R2 should get easier: the history is equal as before, and
+    the raw trace is the tail's fetches.
+- **(B) A weaker abstract world**, v2 plus spurious readiness and
+  failing accepts. L2's existing theorems would not apply unchanged,
+  which is the point of §5.2. Rejected.
+- **(C) Keep the lazy L1 and assume C1–C5 away.** That gives R2-plus,
+  not R1.
+
 **(R3) Per-wrapper lemmas** (model level, on L1's functional core; the
 cheap part). For example:
 

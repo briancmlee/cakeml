@@ -7,7 +7,7 @@
 Theory honestEchoL0Sem
 Ancestors
   ml_translator ml_prog cfMain cfDiv cfStore llist std_prelude
-  honestL0 honestL0World honestL1Model honestL0Part honestL0Proof honestL1PFSpec
+  honestL0 honestL0World honestL0Rely honestL1Model honestL1Steps honestL0Part honestL0Proof honestL1PFSpec
   honestEchoL0Prog honestEchoL0Main ffiSpikeDivMain
 Libs
   preamble basis cfDivLib cfTacticsLib ml_progLib basisFunctionsLib
@@ -97,6 +97,31 @@ Proof
   every_case_tac >> gvs[]
 QED
 
+Theorem FOLDL_deliver_fd_limit[local]:
+  ∀as w. (FOLDL l0_deliver w as).fd_limit = w.fd_limit
+Proof
+  Induct >> simp[used_deliver]
+QED
+
+(* The listener fd is small: below the fd limit, at most 2^31 *)
+Theorem listen_fd_small:
+  l0_rely w ∧ sys_listen_echo w = SOME (out, w1, ev) ∧ listen_fd out = SOME k ⇒
+  k < 2147483648
+Proof
+  rw[sys_listen_echo_def, l0_do_def, l0_ffi_fn_def] >>
+  gvs[AllCaseEqs(), l0_call_def, echo_port_conf_def]
+  >- (‘dec_res (enc_res (Ok (w2n f)) ++ []) = SOME (Ok (w2n f))’
+        by (irule dec_enc_res >> simp[l0_res_ok_def] >>
+            assume_tac (INST_TYPE [alpha |-> “:64”] wordsTheory.w2n_lt) >> fs[]) >>
+      gvs[listen_fd_def, l0_res_of_def] >>
+      gvs[l0_listen_def, AllCaseEqs(), l0_alloc_def, l0_tick_def, FOLDL_deliver_fd_limit] >>
+      gvs[l0_rely_def]) >>
+  PairCases_on ‘ke’ >>
+  ‘n2w (err_code ke1) ≠ (0w:word8)’
+    by (mp_tac (Q.INST [‘e’ |-> ‘ke1’] err_code_range) >> simp[wordsTheory.n2w_11]) >>
+  gvs[enc_listen_fail_def, listen_fd_def, l0_res_of_def, dec_res_def, AllCaseEqs()]
+QED
+
 (* The listen fails: the program terminates after the one event *)
 Theorem echo_l0_fail_semantics:
   l0_rely w0 ∧ w0.hist = [] ∧
@@ -143,4 +168,36 @@ Proof
       irule (SIMP_RULE (srw_ss()) [] main_div_spec) >> simp[UNIT_TYPE_def, l0_reach_init] >>
       metis_tac[limited_parts_l0]) >>
   rw[echo_l0_prog_def, main_call_def] >> gvs[]
+QED
+
+Theorem echo_l0_prog_eq =
+  REWRITE_CONV [echo_l0_prog_def, echo_l0_decs_def, main_call_def,
+                listTheory.SNOC_APPEND, listTheory.APPEND] “echo_l0_prog”;
+
+Theorem echo_l0_prog_syntax_ok:
+  prog_syntax_ok echo_l0_prog
+Proof
+  REWRITE_TAC [echo_l0_prog_eq, prog_syntax_ok_def] >> EVAL_TAC
+QED
+
+(* MAIN (P3 semantics): from a startup world, the program listens; if that
+   fails it terminates after the one event, else it diverges with the
+   listen event then the prefetching L1 loop's rounds, running the echo
+   server on the returned listener fd k *)
+Theorem echo_l0_semantics_prog:
+  l0_rely w0 ∧ w0.hist = [] ⇒
+  ∃out w1 ev.
+    sys_listen_echo w0 = SOME (out, w1, ev) ∧
+    ((listen_fd out = NONE ∧
+      semantics_prog (init_state (l0_ffi w0)) init_env echo_l0_prog (Terminate Success [ev])) ∨
+     (∃k. listen_fd out = SOME k ∧
+          semantics_prog (init_state (l0_ffi w0)) init_env echo_l0_prog
+            (Diverge (LCONS ev (echo_l0_run k w1)))))
+Proof
+  strip_tac >>
+  qspec_then ‘w0’ strip_assume_tac (Q.GEN ‘w’ sys_listen_echo_SOME) >>
+  simp[GSYM (MATCH_MP prog_syntax_ok_semantics echo_l0_prog_syntax_ok)] >>
+  Cases_on ‘listen_fd out’ >> simp[]
+  >- (irule echo_l0_fail_semantics >> simp[] >> metis_tac[]) >>
+  irule echo_l0_div_semantics >> simp[] >> metis_tac[listen_fd_small]
 QED

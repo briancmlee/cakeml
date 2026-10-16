@@ -1426,6 +1426,8 @@ even if it is more work.**
 | D10 | L1 prefetches (§6, option (A)): it fetches input into its own buffers in the round's tail and reports what they hold. It becomes *the* L1, built additively and then switched to; the lazy L1 is superseded. "If this is what a real server would do, we should do it" | **approved** |
 | D11 | **[F1]**, for R1-live only. A fairness assumption on transient failures, **per call kind and per fd/listener**: a call that is attempted infinitely often succeeds (does not fail transiently) infinitely often. Transient failures may recur forever, but never refuse permanently. The stronger "finitely many failures" was rejected as unrealistic for a long-running server (occasional ENOMEM/ENOBUFS forever). Using the stronger form needs a fresh decision | **approved (weak form)** |
 | D12 | **[F2]**, for R1-live only. With nothing in flight, send accepts at least one byte (`0 < n ⇒ 0 < takes j h 0 n`) | **approved** |
+| D13 | The L0 connect model is trusted surface: the `connecting` state; the world choices `connect_now` and `pending_err`; the arrivals `LConnUp` / `LConnFail`; no revents while pending. Cited to [P connect]. Untested on macOS: the pending state was never observed (§6) | **approved** |
+| D14 | The R1-live statement (§6), with hypotheses [F1] (weak), [F2], S1, S2, D(c) and [F3]. [F3] (fds free up infinitely often) is an explicit hypothesis of the connection half of the theorem | **approved** |
 
 §4.1 (the refused/error encoding) is approved with D1/D3, and close-v2
 implements it in the endpoint world.

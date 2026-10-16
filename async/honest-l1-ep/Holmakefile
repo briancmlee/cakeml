@@ -1,0 +1,6 @@
+# The prefetching L1 with connect, for the endpoint handle layer (design/36 §6, E1).
+INCLUDES = ../honest-l1 ../endpoint-hl ../endpoint-world ../honest-l0 ../honest-ffi \
+           ../ffi-spike ../model ../cf-actions ../m3-assembly ../socket-v2 ../close-v2-loop
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

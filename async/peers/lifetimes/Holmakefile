@@ -1,0 +1,11 @@
+# L2 (peers) 02: the lifetimes level is an exact instance of the peer world; echo with close in both forms
+INCLUDES = ../../lifetimes/spec \
+           ../../lifetimes/world \
+           ../world \
+           ../../quiet/ffi \
+           ../../spec \
+           ../../world/sockets \
+           $(CAKEMLDIR)/semantics
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

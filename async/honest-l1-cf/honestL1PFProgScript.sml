@@ -270,16 +270,17 @@ Definition set_b_def:
   set_b ps b = ps with b := b
 End
 
-(* Room for n more handles: a round with at most n accepts cannot overflow
-   the handle counter.  Without room the loop stops (spins without I/O):
+(* Room for n more handles, with one to spare (a pending accepted
+   connection): a round with at most n accepts cannot overflow the handle
+   counter.  Without room the loop stops (spins without I/O):
    after 2^64 accepted connections, unreachable in practice; a deliberate
    choice over wrapping the counter (which would reuse handles) *)
 Definition hdl_room_def:
-  hdl_room (lfd:word64) ps n ⇔ l1hdln (w2n lfd) (ps.b.nxt + n) < dimword (:64)
+  hdl_room (lfd:word64) ps n ⇔ l1hdln (w2n lfd) (ps.b.nxt + n + 1) < dimword (:64)
 End
 
 Theorem hdl_room_num:
-  hdl_room (lfd:word64) ps n ⇔ l1hdln (w2n lfd) (ps.b.nxt + n) < 18446744073709551616
+  hdl_room (lfd:word64) ps n ⇔ l1hdln (w2n lfd) (ps.b.nxt + n + 1) < 18446744073709551616
 Proof
   simp[hdl_room_def]
 QED

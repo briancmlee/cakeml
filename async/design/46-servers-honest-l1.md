@@ -18,7 +18,7 @@ HTTP and KV (P4) come later, and their statements go to the user first.
 
 The model's `pdo` fails (`NONE`) once the handle counter overflows, which happens after about 2^64 handed-out connections. The CakeML loop is made faithful to that:
 
-- `step_pf` first checks `hdl_room lfd ps (LENGTH acts)`.
+- `step_pf` first checks `hdl_room lfd ps (LENGTH acts)`: room in the handle counter for the round's actions, plus one for a pending accepted connection.
 - If there is no room, the step returns its state unchanged. From then on, the loop spins without I/O.
 
 So **after 2^64 accepted connections the L1 loop stops doing I/O (it spins). This is unreachable in practice.** We chose this deliberately over wrapping the counter, because wrapping would reuse handles.

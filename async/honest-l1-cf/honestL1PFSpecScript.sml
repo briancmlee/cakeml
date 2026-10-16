@@ -463,7 +463,8 @@ Theorem pround_ok_room[local]:
                         l0_rely w' ∧ psmall lfd ps'
 Proof
   strip_tac >>
-  ‘l1hdln (w2n lfd) (ps.b.nxt + LENGTH acts) < dimword (:64)’ by fs[hdl_room_def] >>
+  ‘l1hdln (w2n lfd) (ps.b.nxt + LENGTH acts) < dimword (:64)’
+    by (fs[hdl_room_def, l1hdln_def] >> rw[] >> fs[]) >>
   drule_all pround_ok >> metis_tac[]
 QED
 

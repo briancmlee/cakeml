@@ -7,7 +7,7 @@
 Theory honestEchoL0Sem
 Ancestors
   ml_translator ml_prog cfMain cfDiv cfStore llist std_prelude
-  honestL0 honestL0World honestL0Rely honestL1Model honestL1Steps honestL0Part honestL0Proof honestL1PFSpec
+  honestL0 honestL0World honestL0Rely honestL1Model honestL0WorldProps honestL0Part honestL0Proof honestL1PFSpec
   honestEchoL0Prog honestEchoL0Main ffiSpikeDivMain
 Libs
   preamble basis cfDivLib cfTacticsLib ml_progLib basisFunctionsLib

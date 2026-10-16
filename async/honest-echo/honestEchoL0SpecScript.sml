@@ -15,7 +15,7 @@
 *)
 Theory honestEchoL0Spec
 Ancestors
-  llist ffi honestL0 honestL0World honestL0Rely honestL1Steps ffiSpikeSocketFFI
+  llist ffi honestL0 honestL0World honestL0Rely honestL0WorldProps ffiSpikeSocketFFI
 Libs
   preamble
 

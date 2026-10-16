@@ -521,3 +521,33 @@ Proof
        qpat_x_assum ‘fkeep _ _ _ _’ mp_tac >> simp[fkeep_def] >> NO_TAC) >>
   simp[]
 QED
+
+(* One round, seen from f's kernel inbox: R (at the front) is fetched in
+   order, or the episode ends, or a prefix of it is fetched and the rest
+   stays at the front *)
+Theorem pround_stream:
+  pround lfd hw hs (w, ps) acts = SOME (snap, (w', ps'), log, evs) ∧
+  winv w ∧ fl w f R ∧ fkeep lfd h f ps ⇒
+  fend f log ∨ R ≼ fdata f log ∨
+  ∃R'. R = fdata f log ++ R' ∧ fl w' f R' ∧ fkeep lfd h f ps'
+Proof
+  simp[pround_def, AllCaseEqs()] >> strip_tac >> PairCases_on ‘ws1’ >>
+  gvs[pf_tail_def, AllCaseEqs()] >>
+  rename1 ‘pacts _ _ _ = SOME (rs, aevs, wa, pa)’ >>
+  drule_all pacts_fl >> strip_tac >>
+  drule_all pacts_f >> strip_tac >>
+  drule_all pacts_winv >> strip_tac >>
+  drule_all l1_polls_fl >> strip_tac >>
+  drule_all l1_polls_winv >> strip_tac >>
+  drule_all l1_flush_fl >> strip_tac >>
+  drule_all l1_flush_f >> strip_tac >>
+  drule_all l1_flush_winv >> strip_tac >>
+  ‘fkeep lfd h f (pa with b := b2)’ by (irule fkeep_b_same >> fs[]) >>
+  drule_all pf_fetch_winv >> strip_tac >>
+  drule_all pf_fetch_stream >> strip_tac >> simp[] >>
+  ‘¬MEM f ps3.b.closing’ by (qpat_x_assum ‘fkeep _ _ _ ps3’ mp_tac >> simp[fkeep_def]) >>
+  drule_all l1_reap_fl >> strip_tac >>
+  drule_all l1_reap_f >> strip_tac >>
+  disj2_tac >> disj2_tac >> simp[] >>
+  irule fkeep_b_same >> fs[]
+QED

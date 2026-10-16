@@ -85,6 +85,14 @@ End
    A toy HTTP client
    ------------------------------------------------------------------------ *)
 
+(* Channel c reaches status st along the run (a connect settles when the
+   environment says, endpointWorld's Settle) *)
+Definition ch_reaches_def:
+  ch_reaches w io c st ⇔
+    eventually (λevs. c < LENGTH (ep_replay w evs).chans ∧
+                      (EL c (ep_replay w evs).chans).status = st) io
+End
+
 Definition client_guar_def:
   client_guar a r w io ⇔
     (* it opens one channel, to a, and sends a prefix of the request *)
@@ -92,7 +100,7 @@ Definition client_guar_def:
                   (0 < LENGTH (opened_fds evs) ⇒ ep_connected_to evs 0 a) ∧
                   ch_sent 0 evs ≼ brequests [r]) io ∧
     (* if the server accepts the connection and reads, it sends all of it *)
-    (∀evs c. LPREFIX (fromList evs) io ∧ ep_chan w evs 0 = SOME c ∧ w.accepts a c ∧
+    (∀evs c. LPREFIX (fromList evs) io ∧ ep_chan w evs 0 = SOME c ∧ ch_reaches w io c Up ∧
              reads_fair w io c ⇒
              eventually (λevs'. ch_sent 0 evs' = brequests [r]) io) ∧
     (* it reads everything the server sends *)
@@ -101,7 +109,7 @@ Definition client_guar_def:
     (∀evs. LPREFIX (fromList evs) io ∧ ch_eof_read 0 evs ⇒
            eventually (λevs'. ch_closed 0 evs') io) ∧
     (* if the server refuses, the client is told so, and closes *)
-    (∀evs c. LPREFIX (fromList evs) io ∧ ep_chan w evs 0 = SOME c ∧ ¬w.accepts a c ⇒
+    (∀evs c. LPREFIX (fromList evs) io ∧ ep_chan w evs 0 = SOME c ∧ ch_reaches w io c Refused ⇒
              eventually (λevs'. ch_refused 0 evs' ∧ ch_closed 0 evs') io) ∧
     (* and it does not take a refusal for an empty answer: once told, it
        reads no EOF (which a refused channel gives after the error) *)
@@ -179,4 +187,49 @@ Proof
   simp[client_guar_def, always_def] >> rpt disj2_tac >>
   qexists_tac ‘refused_trace a f’ >>
   simp[refused_trace_bad, LPREFIX_fromList, from_toList, toList_THM]
+QED
+
+(* ------------------------------------------------------------------------
+   Bite: a slow handshake is expressible.  The environment settles a
+   connect when it chooses (endpointWorld's Settle), so a channel can stay
+   Connecting for any number of ticks, as a kernel's can (a SYN to a busy
+   host settles after retransmits)
+   ------------------------------------------------------------------------ *)
+
+(* A client world whose first connect settles Up at tick k *)
+Definition slow_world_def:
+  slow_world k =
+    <| listening := []; chans := []; open_fds := []; reserved := [];
+       alloc := (λj used. 5w); takes := (λj b n. n); calls := all_calls;
+       env := (λn h. if n = k then [Settle 0 T] else []); clock := 0; hist := [] |>
+End
+
+Theorem slow_ticks[local]:
+  ∀n w. n ≤ k ∧ w.env = (slow_world k).env ∧ w.clock + n ≤ k ⇒
+        (FUNPOW ep_tick n w).chans = w.chans ∧
+        (FUNPOW ep_tick n w).clock = w.clock + n ∧
+        (FUNPOW ep_tick n w).env = w.env
+Proof
+  Induct >> simp[FUNPOW] >> rpt gen_tac >> strip_tac >>
+  ‘w.clock ≠ k’ by decide_tac >>
+  first_x_assum (qspec_then ‘ep_tick w’ mp_tac) >>
+  simp[ep_tick_def, slow_world_def]
+QED
+
+(* MAIN: after its connect, the channel is still Connecting after any k
+   ticks, and Up after k + 1 *)
+Theorem slow_handshake:
+  ep_connect a (slow_world k) = (SOME 5w, w) ⇒
+  (∀n. n ≤ k ⇒ (EL 0 (FUNPOW ep_tick n w).chans).status = Connecting) ∧
+  (EL 0 (FUNPOW ep_tick (SUC k) w).chans).status = Up
+Proof
+  rw[ep_connect_def, ep_alloc_def, ep_used_def, slow_world_def, AllCaseEqs()] >>
+  qmatch_goalsub_abbrev_tac ‘FUNPOW ep_tick _ w0’ >>
+  ‘w0.env = (slow_world k).env ∧ w0.clock = 0 ∧
+   w0.chans = [new_chan (SOME a) Connecting]’ by simp[Abbr ‘w0’, slow_world_def] >>
+  TRY (qspecl_then [‘n’, ‘w0’] mp_tac slow_ticks >> simp[new_chan_def] >> NO_TAC) >>
+  simp[FUNPOW_SUC] >>
+  qspecl_then [‘k’, ‘w0’] mp_tac slow_ticks >> simp[] >>
+  strip_tac >> simp[ep_tick_def] >>
+  fs[slow_world_def, ep_deliver_def, upd_chan_def, new_chan_def, LUPDATE_def]
 QED

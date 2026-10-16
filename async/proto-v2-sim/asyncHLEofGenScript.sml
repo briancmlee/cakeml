@@ -47,7 +47,7 @@ QED
 
 (* A pair of the model transcript on fd comes after fd's accept, and the
    accepted fds are the handed-out connections *)
-Theorem TS_on_fd_lt_g[local]:
+Theorem TS_on_fd_lt_g:
   uses_ok lfdn m ∧ s0.listeners = [(n2w lfdn, [])] ∧ s0.conns = [] ∧
   TSg m ifds s0 n = t1 ++ p :: t2 ∧ on_fd fd p ⇒
   MEM fd (accepted (TSg m ifds s0 n)) ∧ fd < dimword (:64)

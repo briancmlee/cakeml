@@ -1277,3 +1277,83 @@ Proof
     by (SELECT_ELIM_TAC >> metis_tac[pcm_unique]) >>
   rw[run_alloc_def] >> metis_tac[]
 QED
+
+(* ------------------------------------------------------------------------
+   R1-safe: the run
+   ------------------------------------------------------------------------ *)
+
+(* One round of the handle layer's run, unfolded *)
+Theorem hround_step:
+  hacts_tot lfd (hst lfd ifds m s0 n) (hacts_of lfd ifds m s0 n) = (rs, evs, (s1, hs1)) ⇒
+  hhist lfd ifds m s0 (SUC n) =
+    hhist lfd ifds m s0 n ++
+      [ssnap (FST (hpoll lfd hs1 (ifds (hhist lfd ifds m s0 n)) s1)) rs] ∧
+  hst lfd ifds m s0 (SUC n) = (SND (hpoll lfd hs1 (ifds (hhist lfd ifds m s0 n)) s1), hs1)
+Proof
+  strip_tac >>
+  ONCE_REWRITE_TAC[hhist_def, hst_def] >>
+  REWRITE_TAC[hrounds_SUC] >>
+  simp[GSYM hhist_def, GSYM hst_def]
+QED
+
+(* MAIN (R1-safe): in ANY L0 world, the prefetching L1 running the
+   computation m has exactly the history of close-v2's handle layer running
+   m in the version-2 world psk built from L1's own run, round by round; the
+   relation pv_rel (L1's buffers are the world's state) and the invariants
+   hold throughout *)
+Theorem l1pf_refines_hl:
+  l0_rely w0 ∧ fds_lt w0 ∧ MEM lfd (l0_used w0) ⇒
+  ∀n h ws evs logs.
+    prounds lfd hw ifds m (w0, pinit) n = SOME (h, ws, evs, logs) ⇒
+    hhist lfd ifds m (psk lfd hw ifds m w0) n = h ∧
+    SND (hst lfd ifds m (psk lfd hw ifds m w0) n) = hs_of (SND ws) ∧
+    pv_rel lfd (FST (pcm lfd hw ifds m w0 n)) (SND ws)
+      (FST (hst lfd ifds m (psk lfd hw ifds m w0) n)) ∧
+    LENGTH (FST (hst lfd ifds m (psk lfd hw ifds m w0) n)).clients =
+      SND (pcm lfd hw ifds m w0 n) ∧
+    (FST (hst lfd ifds m (psk lfd hw ifds m w0) n)).alloc = run_alloc lfd hw ifds m w0 ∧
+    (FST (hst lfd ifds m (psk lfd hw ifds m w0) n)).future =
+      LGENLIST (λi. parr lfd hw ifds m w0 (n + i)) NONE ∧
+    pown lfd (SND ws) ∧ l0own lfd (FST ws) (SND ws) ∧
+    l0_rely (FST ws) ∧ fds_lt (FST ws)
+Proof
+  strip_tac >> Induct
+  >- (simp[prounds_def, hhist_def, hst_def, hrounds_def, pcm_def, psk_def] >>
+      rw[] >> simp[hs_of_def, pinit_def, l1init_def, hinit_def, pv_rel_def,
+                   pown_def, l0own_def, inb_of_def] >>
+      AP_THM_TAC >> AP_TERM_TAC >> simp[FUN_EQ_THM]) >>
+  rpt gen_tac >> strip_tac >>
+  qpat_assum ‘prounds _ _ _ _ _ (SUC _) = _’
+    (strip_assume_tac o SIMP_RULE (srw_ss()) [AllCaseEqs()] o
+     ONCE_REWRITE_RULE [prounds_def]) >>
+  rpt BasicProvers.VAR_EQ_TAC >>
+  rename1 ‘prounds _ _ _ _ _ n = SOME (h0, ws0, evs0, logs0)’ >>
+  rename1 ‘pround _ _ _ _ _ = SOME (snap, ws1, log, revs)’ >>
+  first_x_assum drule >> strip_tac >>
+  ‘hacts_of lfd ifds m (psk lfd hw ifds m w0) n = new_actions (log_of m) h0’
+    by simp[hacts_of_def] >>
+  PairCases_on ‘ws0’ >> rename1 ‘prounds _ _ _ _ _ n = SOME (h0, (w, ps), evs0, logs0)’ >>
+  PairCases_on ‘ws1’ >> rename1 ‘pround _ _ _ _ _ = SOME (snap, (w', ps'), log, revs)’ >>
+  gvs[] >>
+  Cases_on ‘hst lfd ifds m (psk lfd hw ifds m w0) n’ >> rename1 ‘_ = (s, hs)’ >> gvs[] >>
+  ‘plog lfd hw ifds m w0 n = log’
+    by (drule prounds_logs >> strip_tac >>
+        qpat_x_assum ‘prounds _ _ _ _ _ (SUC n) = _’ assume_tac >>
+        drule plog_EL >> disch_then (qspec_then ‘n’ mp_tac) >>
+        simp[EL_APPEND2]) >>
+  Cases_on ‘pcm lfd hw ifds m w0 n’ >> rename1 ‘pcm _ _ _ _ _ n = (cm, k)’ >> gvs[] >>
+  Cases_on ‘arrs lfd (cm, LENGTH s.clients) (plog lfd hw ifds m w0 n)’ >>
+  rename1 ‘_ = (as, ck)’ >> PairCases_on ‘ck’ >>
+  ‘pcm lfd hw ifds m w0 (SUC n) = (ck0, ck1) ∧ parr lfd hw ifds m w0 n = as’
+    by simp[pcm_def, parr_def] >>
+  ‘∀f j. MEM (f, j) ck0 ∧ LENGTH s.clients ≤ j ⇒
+         ∀used. ¬MEM f used ⇒ s.alloc j used = f’
+    by (rw[] >> irule run_alloc_eq >> simp[] >> qexists_tac ‘SUC n’ >> simp[]) >>
+  ‘LHD s.future = SOME as’ by simp[] >>
+  drule_all round_rel >> strip_tac >>
+  ‘hacts_tot lfd (hst lfd ifds m (psk lfd hw ifds m w0) n)
+     (hacts_of lfd ifds m (psk lfd hw ifds m w0) n) = (rs, hevs, (s1, hs_of ps'))’
+    by simp[hacts_tot_def] >>
+  drule hround_step >> strip_tac >> simp[] >>
+  gvs[] >> AP_THM_TAC >> AP_TERM_TAC >> simp[FUN_EQ_THM, ADD_CLAUSES]
+QED

@@ -114,3 +114,38 @@ Proof
        poll_flag_def] >>
   rw[] >> gvs[] >> metis_tac[]
 QED
+
+Theorem poll_set_simple:
+  st.outbox = [] ∧ ¬st.exhausted ∧ st.tbl = hs.tbl ⇒
+  l1_poll_set lfd hw st hfds = MAP (λf. (f, 1n)) (hpoll_fds lfd hs hfds)
+Proof
+  strip_tac >> simp[l1_poll_set_def, hpoll_fds_def, MAP_FLAT, MAP_MAP_o, combinTheory.o_DEF] >>
+  AP_TERM_TAC >> simp[MAP_EQ_f] >> rw[] >>
+  every_case_tac >> gvs[outbox_of_def]
+QED
+
+Theorem poll_chunks_small:
+  LENGTH l ≤ 4096 ⇒ poll_chunks l = [l]
+Proof
+  simp[Once poll_chunks_def]
+QED
+
+Theorem l1_flush_noout:
+  ∀fs w. st.outbox = [] ⇒ l1_flush fs (w, st) = SOME ((w, st), [])
+Proof
+  Induct >> simp[l1_flush_def, outbox_of_def]
+QED
+
+Theorem l1_ready_hready:
+  st.tbl = hs.tbl ⇒ l1_ready lfd st rdy hfds = hready lfd hs rdy hfds
+Proof
+  simp[l1_ready_def, hready_def]
+QED
+
+(* The pairs (handle, fd) a poll of the interest hfds polls *)
+Definition poll_pairs_def:
+  poll_pairs lfd (st : l1st) hfds =
+    FLAT (MAP (λh. case ALOOKUP st.tbl h of
+                   | SOME f => [(h, f)]
+                   | NONE => if h = lfd then [(lfd, lfd)] else []) hfds)
+End

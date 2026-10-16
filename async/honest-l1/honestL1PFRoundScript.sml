@@ -391,17 +391,13 @@ QED
    The round, seen from f
    ------------------------------------------------------------------------ *)
 
-(* ------------------------------------------------------------------------
-   WORK IN PROGRESS (kept as a comment until proved; the statements are
-   the plan for R1-live's round step, design/36 §6; the *_winv lemmas
-   below loop on TRY metis_tac[] and need targeted tactics):
-
 Theorem pdo_winv:
   pdo lfd (w, ps) a = SOME (r, (w', ps'), evs) ∧ winv w ⇒ winv w'
 Proof
-  Cases_on ‘a’ >> rw[pdo_def, AllCaseEqs()] >> gvs[] >>
-  rpt (pairarg_tac >> gvs[]) >> TRY (metis_tac[l1_close_winv]) >>
-  gvs[l1do_def, AllCaseEqs()] >> metis_tac[sys_winv]
+  Cases_on ‘a’ >> simp[pdo_def] >> rw[AllCaseEqs()] >> gvs[] >>
+  PairCases_on ‘z’ >> gvs[] >>
+  TRY (drule_all l1_close_winv >> simp[] >> NO_TAC) >>
+  gvs[l1do_def, AllCaseEqs(), sys_send_def] >> drule_at (Pos last) winv_do >> simp[]
 QED
 
 Theorem pacts_winv:
@@ -416,16 +412,20 @@ Theorem l1_flush_winv:
   ∀fs w st w' st' evs. l1_flush fs (w, st) = SOME ((w', st'), evs) ∧ winv w ⇒ winv w'
 Proof
   Induct >> simp[l1_flush_def] >> rpt gen_tac >> rw[] >>
-  gvs[AllCaseEqs()] >> TRY (metis_tac[]) >>
-  Cases_on ‘ws’ >> gvs[] >> metis_tac[sys_winv]
+  TRY (first_x_assum drule_all >> simp[] >> NO_TAC) >>
+  gvs[AllCaseEqs()] >> rename1 ‘sys_send _ _ _ = SOME (out, w1, ev)’ >>
+  ‘winv w1’ by (gvs[sys_send_def, sys_recv_def, sys_accept_def] >>
+                 drule_at (Pos last) winv_do >> simp[]) >>
+  first_x_assum drule_all >> simp[]
 QED
 
 Theorem l1_reap_winv:
   ∀fs w st w' st' evs. l1_reap fs (w, st) = SOME ((w', st'), evs) ∧ winv w ⇒ winv w'
 Proof
   Induct >> simp[l1_reap_def] >> rpt gen_tac >> rw[] >>
-  gvs[AllCaseEqs()] >> TRY (metis_tac[]) >>
-  Cases_on ‘ws’ >> Cases_on ‘ws'’ >> gvs[] >> metis_tac[l1_close_winv]
+  TRY (first_x_assum drule_all >> simp[] >> NO_TAC) >>
+  gvs[AllCaseEqs()] >> Cases_on ‘ws’ >> drule_all l1_close_winv >>
+  strip_tac >> first_x_assum drule_all >> simp[]
 QED
 
 Theorem pf_fetch_winv:
@@ -433,20 +433,28 @@ Theorem pf_fetch_winv:
     pf_fetch lfd hw fs (w, ps) = SOME ((w', ps'), log, evs) ∧ winv w ⇒ winv w'
 Proof
   Induct >> simp[pf_fetch_def] >> rpt gen_tac >> rw[] >>
-  gvs[AllCaseEqs()] >> TRY (metis_tac[]) >>
-  rpt (pairarg_tac >> gvs[]) >> Cases_on ‘ws’ >> gvs[] >> metis_tac[sys_winv]
+  TRY (first_x_assum drule_all >> simp[] >> NO_TAC) >>
+  gvs[AllCaseEqs()] >> pairarg_tac >> gvs[AllCaseEqs()] >>
+  rename1 ‘SOME (out, w1, ev)’ >>
+  ‘winv w1’ by (gvs[sys_recv_def, sys_accept_def] >>
+                 drule_at (Pos last) winv_do >> simp[]) >>
+  first_x_assum drule_all >> simp[]
 QED
 
 Theorem pround_winv:
   pround lfd hw hs (w, ps) acts = SOME (snap, (w', ps'), log, evs) ∧ winv w ⇒ winv w'
 Proof
-  rw[pround_def, pf_tail_def, AllCaseEqs()] >>
-  PairCases_on ‘ws1’ >> gvs[] >>
-  rpt (pairarg_tac >> gvs[]) >> gvs[AllCaseEqs()] >>
-  imp_res_tac pacts_winv >> imp_res_tac l1_polls_winv >>
-  imp_res_tac l1_flush_winv >> imp_res_tac pf_fetch_winv >>
-  imp_res_tac l1_reap_winv >> metis_tac[]
+  rw[pround_def, AllCaseEqs()] >>
+  PairCases_on ‘ws1’ >> drule_all pacts_winv >> strip_tac >>
+  gvs[pf_tail_def, AllCaseEqs()] >>
+  drule_all l1_polls_winv >> strip_tac >> drule_all l1_flush_winv >> strip_tac >>
+  drule_all pf_fetch_winv >> strip_tac >> drule_all l1_reap_winv >> simp[]
 QED
+
+(* ------------------------------------------------------------------------
+   WORK IN PROGRESS (kept as a comment until proved; the statements are
+   the plan for R1-live's round step, design/36 §6; the *_winv lemmas
+   below loop on TRY metis_tac[] and need targeted tactics):
 
 (-* ... and a retried recv on f *-)
 Theorem pend_recv_retried:

@@ -181,3 +181,83 @@ Proof
   rw[] >> first_x_assum drule >> strip_tac >> simp[EL_LUPDATE] >>
   rw[] >> gvs[] >> metis_tac[ALL_DISTINCT_EL_IMP]
 QED
+
+Theorem v12core_sched[simp]:
+  v12core lfd cs k (s1 with sched := x) (s2 with <| future := y |>) ⇔ v12core lfd cs k s1 s2
+Proof
+  simp[v12core_def]
+QED
+
+Theorem deliver1_sched[local]:
+  (deliver1 s a).sched = s.sched
+Proof
+  Cases_on ‘a’ >> rw[deliver1_def]
+QED
+
+Theorem FOLDL_deliver1_sched[local]:
+  ∀st s. (FOLDL deliver1 s st).sched = s.sched
+Proof
+  Induct >> simp[deliver1_sched]
+QED
+
+Theorem FOLDL_deliver2_fields[local]:
+  ∀st s. (FOLDL deliver2 s st).future = s.future ∧ (FOLDL deliver2 s st).alloc = s.alloc
+Proof
+  Induct >> simp[] >> rpt gen_tac >> Cases_on ‘h’ >>
+  rw[deliver2_def, update_client_def]
+QED
+
+Theorem step_ok_with_sched[local]:
+  ∀st s. step_ok (s with sched := x) st ⇔ step_ok s st
+Proof
+  ‘∀a s. deliver1 (s with sched := x) a = (deliver1 s a) with sched := x’
+    by (Cases >> rw[deliver1_def, is_listener_def, is_conn_def]) >>
+  Induct >> simp[step_ok_def] >> Cases >>
+  simp[arrival_ok_def, is_listener_def, is_conn_def]
+QED
+
+(* A whole step of effective arrivals keeps the relation *)
+Theorem v12core_step:
+  ∀st cs s1 s2.
+    v12core lfd cs k s1 s2 ∧ step_ok s1 st ⇒
+    v12core lfd (FST (rn1_step cs st)) k (FOLDL deliver1 s1 st)
+                (FOLDL deliver2 s2 (SND (rn1_step cs st)))
+Proof
+  Induct >> simp[rn1_step_def, step_ok_def] >> rpt gen_tac >> strip_tac >>
+  rpt (pairarg_tac >> gvs[]) >>
+  drule_all v12core_deliver >> strip_tac >> gvs[] >>
+  first_x_assum drule_all >> simp[]
+QED
+
+(* The relation, with the schedules: version 2's future is version 1's
+   schedule renamed, and the allocation knows every connection's fd *)
+Definition v12rel_def:
+  v12rel lfd ll0 (s1 : sockets) (s2 : sockets2) ⇔
+    ∃cs k. v12core lfd cs k s1 s2 ∧
+           s2.future = rn1_sched cs s1.sched ∧ s2.alloc = alloc1 ll0 ∧
+           ∀m j. j < LENGTH (cs ++ sched_conns m s1.sched) ⇒
+                 conn_fd ll0 j = EL j (cs ++ sched_conns m s1.sched)
+End
+
+(* MAIN: a tick of effective arrivals keeps the relation *)
+Theorem v12rel_tick:
+  v12rel lfd ll0 s1 s2 ∧ step_ok s1 (next_step s1) ⇒ v12rel lfd ll0 (tick s1) (tick2 s2)
+Proof
+  rw[v12rel_def] >>
+  Cases_on ‘LHD s1.sched’
+  >- (‘LHD s2.future = NONE’ by (asm_rewrite_tac[rn1_sched_LHD] >> simp[]) >>
+      simp[tick_def, tick2_def] >> metis_tac[]) >>
+  rename1 ‘LHD s1.sched = SOME st’ >>
+  ‘LHD s2.future = SOME (SND (rn1_step cs st))’ by (asm_rewrite_tac[rn1_sched_LHD] >> simp[]) >>
+  ‘THE (LTL s2.future) = rn1_sched (FST (rn1_step cs st)) (THE (LTL s1.sched))’
+    by (drule rn1_sched_LTL >> simp[]) >>
+  simp[tick_def, tick2_def, deliver_def, FOLDL_deliver1_sched, FOLDL_deliver2_fields] >>
+  qexistsl_tac [‘FST (rn1_step cs st)’, ‘k’] >>
+  ‘step_ok (s1 with sched := THE (LTL s1.sched)) st’
+    by fs[next_step_def, step_ok_with_sched] >>
+  conj_tac
+  >- (irule v12core_step >> simp[]) >>
+  rw[rn1_step_conns] >>
+  first_x_assum (qspecl_then [‘SUC m’, ‘j’] mp_tac) >>
+  simp[sched_conns_def]
+QED

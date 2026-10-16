@@ -1433,3 +1433,165 @@ Proof
     by metis_tac[conn_hdls_cons, LENGTH_APPEND] >>
   simp[]
 QED
+
+(* ------------------------------------------------------------------------
+   The tail's settling: settled connects' channels settle (Settle arrivals),
+   up connect handles join the prefetching table
+   ------------------------------------------------------------------------ *)
+
+Theorem ALOOKUP_FILTER_SOME:
+  ∀l. ALOOKUP l k = SOME v ∧ P (k, v) ⇒ ALOOKUP (FILTER P l) k = SOME v
+Proof
+  Induct >> simp[FORALL_PROD] >> rw[] >> gvs[]
+QED
+
+Theorem ALOOKUP_FILTER_NONE:
+  ∀l. ALOOKUP l k = NONE ⇒ ALOOKUP (FILTER P l) k = NONE
+Proof
+  Induct >> simp[FORALL_PROD] >> rw[] >> gvs[]
+QED
+
+Theorem cstat_of_promote:
+  cstat_of es f ≠ CUp ⇒ cstat_of (promote es) f = cstat_of es f
+Proof
+  rw[cstat_of_def, promote_def] >> Cases_on ‘ALOOKUP es.cst f’ >> gvs[]
+  >- simp[ALOOKUP_FILTER_NONE] >>
+  ‘ALOOKUP (FILTER (λ(f, c). c ≠ CUp) es.cst) f = SOME x’
+    by (irule ALOOKUP_FILTER_SOME >> simp[]) >> simp[]
+QED
+
+(* Settles on distinct connecting channels *)
+Theorem settles_deliver:
+  ∀l w. ALL_DISTINCT (MAP FST l) ∧
+        (∀j b. MEM (j, b) l ⇒ j < LENGTH w.chans ∧ (EL j w.chans).status = Connecting) ⇒
+        let w' = FOLDL ep_deliver w (MAP (λ(j, b). Settle j b) l) in
+          LENGTH w'.chans = LENGTH w.chans ∧
+          w'.listening = w.listening ∧ w'.open_fds = w.open_fds ∧ w'.reserved = w.reserved ∧
+          w'.alloc = w.alloc ∧ w'.takes = w.takes ∧ w'.env = w.env ∧ w'.clock = w.clock ∧
+          w'.hist = w.hist ∧ w'.calls = w.calls ∧
+          ∀k. k < LENGTH w.chans ⇒
+              EL k w'.chans = case ALOOKUP l k of
+                              | SOME b => EL k w.chans with status := (if b then Up else Refused)
+                              | NONE => EL k w.chans
+Proof
+  Induct >> simp[FORALL_PROD] >> rpt gen_tac >> strip_tac >>
+  rename1 ‘Settle j b’ >>
+  first_x_assum (qspec_then ‘ep_deliver w (Settle j b)’ mp_tac) >>
+  ‘ep_deliver w (Settle j b) =
+   upd_chan j (λc. c with status := if b then Up else Refused) w’
+    by (simp[ep_deliver_def] >> metis_tac[]) >>
+  simp[] >> impl_tac
+  >- (rw[] >> res_tac >> simp[upd_chan_def, EL_LUPDATE] >> rw[] >> gvs[MEM_MAP] >>
+      metis_tac[FST]) >>
+  strip_tac >> simp[] >> rw[] >> simp[upd_chan_def, EL_LUPDATE] >> rw[] >>
+  gvs[] >> Cases_on ‘ALOOKUP l j’ >> gvs[] >>
+  imp_res_tac ALOOKUP_MEM >> gvs[MEM_MAP] >> metis_tac[FST]
+QED
+
+Theorem ALOOKUP_FILTER_IMP:
+  ∀l. ALL_DISTINCT (MAP FST l) ∧ ALOOKUP (FILTER P l) k = SOME v ⇒
+      ALOOKUP l k = SOME v ∧ P (k, v)
+Proof
+  Induct >> simp[FORALL_PROD] >> rw[] >> gvs[] >>
+  imp_res_tac ALOOKUP_MEM >> gvs[MEM_FILTER, MEM_MAP] >> metis_tac[FST]
+QED
+
+(* Promotion moves handles between the tables: the same lookups *)
+Theorem promote_lookup:
+  ALL_DISTINCT (MAP FST es.p.b.tbl ++ MAP FST es.ctbl) ⇒
+  (case ALOOKUP (promote es).p.b.tbl h of
+   | SOME f => SOME f | NONE => ALOOKUP (promote es).ctbl h) =
+  (case ALOOKUP es.p.b.tbl h of SOME f => SOME f | NONE => ALOOKUP es.ctbl h)
+Proof
+  rw[promote_def, ALOOKUP_APPEND, ALL_DISTINCT_APPEND] >>
+  Cases_on ‘ALOOKUP es.ctbl h’ >> simp[]
+  >- (simp[ALOOKUP_FILTER_NONE] >> CASE_TAC >> simp[]) >>
+  rename1 ‘ALOOKUP es.ctbl h = SOME f’ >>
+  ‘ALOOKUP es.p.b.tbl h = NONE’
+    by (simp[ALOOKUP_NONE] >> metis_tac[ALOOKUP_SOME_MEM_FST]) >>
+  Cases_on ‘cstat_of es f = CUp’
+  >- (‘ALOOKUP (FILTER (λ(h, f). cstat_of es f = CUp) es.ctbl) h = SOME f’
+        by (irule ALOOKUP_FILTER_SOME >> simp[]) >> simp[]) >>
+  ‘ALOOKUP (FILTER (λ(h, f). cstat_of es f = CUp) es.ctbl) h = NONE’
+    by (Cases_on ‘ALOOKUP (FILTER (λ(h, f). cstat_of es f = CUp) es.ctbl) h’ >> simp[] >>
+        imp_res_tac ALOOKUP_FILTER_IMP >> gvs[]) >>
+  simp[] >> irule ALOOKUP_FILTER_SOME >> simp[]
+QED
+
+(* The settled connects, and their Settle arrivals *)
+Definition settled_def:
+  settled es es5 =
+    FILTER (λ(h, f). cstat_of es f = CPending ∧ cstat_of es5 f ≠ CPending) es.ctbl
+End
+
+Definition settles_def:
+  settles cm es es5 =
+    MAP (λ(h, f). Settle (cl cm f) (cstat_of es5 f = CUp)) (settled es es5)
+End
+
+(* After the Settle arrivals, a connect channel has its new status *)
+Theorem settle_world:
+  ev_rel lfd a cm es w ∧ eown lfd es ⇒
+  let w' = FOLDL ep_deliver w (settles cm es es5) in
+    LENGTH w'.chans = LENGTH w.chans ∧
+    w'.listening = w.listening ∧ w'.open_fds = w.open_fds ∧ w'.reserved = w.reserved ∧
+    w'.alloc = w.alloc ∧ w'.takes = w.takes ∧ w'.env = w.env ∧ w'.clock = w.clock ∧
+    w'.hist = w.hist ∧ w'.calls = w.calls ∧
+    (∀h f. ALOOKUP es.ctbl h = SOME f ⇒
+       EL (cl cm f) w'.chans =
+         if cstat_of es f = CPending ∧ cstat_of es5 f ≠ CPending
+         then EL (cl cm f) w.chans with status := (if cstat_of es5 f = CUp then Up else Refused)
+         else EL (cl cm f) w.chans) ∧
+    (∀k. k < LENGTH w.chans ∧ (∀h f. ALOOKUP es.ctbl h = SOME f ⇒ k ≠ cl cm f) ⇒
+       EL k w'.chans = EL k w.chans)
+Proof
+  strip_tac >>
+  qabbrev_tac ‘l = MAP (λ(h, f). (cl cm f, cstat_of es5 f = CUp)) (settled es es5)’ >>
+  ‘settles cm es es5 = MAP (λ(j, b). Settle j b) l’
+    by simp[Abbr ‘l’, settles_def, MAP_MAP_o, combinTheory.o_DEF, LAMBDA_PROD] >>
+  ‘ALL_DISTINCT (MAP FST es.ctbl) ∧ ALL_DISTINCT (MAP SND es.ctbl)’
+    by gvs[eown_def, ALL_DISTINCT_APPEND] >>
+  ‘∀h f. MEM (h, f) es.ctbl ⇔ ALOOKUP es.ctbl h = SOME f’
+    by metis_tac[ALOOKUP_ALL_DISTINCT_MEM, ALOOKUP_MEM] >>
+  ‘∀f g. MEM f (MAP SND es.ctbl) ∧ MEM g (MAP SND es.ctbl) ∧ cl cm f = cl cm g ⇒ f = g’
+    by metis_tac[ev_rel_cl_ne] >>
+  ‘∀j b. MEM (j, b) l ⇔ ∃h f. ALOOKUP es.ctbl h = SOME f ∧ cstat_of es f = CPending ∧
+                               cstat_of es5 f ≠ CPending ∧ j = cl cm f ∧
+                               (b ⇔ cstat_of es5 f = CUp)’
+    by (simp[Abbr ‘l’, MEM_MAP, settled_def, MEM_FILTER, EXISTS_PROD] >> metis_tac[]) >>
+  ‘ALL_DISTINCT (MAP FST l)’
+    by (simp[Abbr ‘l’, MAP_MAP_o, combinTheory.o_DEF, LAMBDA_PROD, settled_def] >>
+        irule ALL_DISTINCT_MAP_INJ >> simp[FORALL_PROD, MEM_FILTER] >> conj_tac
+        >- (rpt gen_tac >> strip_tac >>
+            ‘MEM p_2 (MAP SND es.ctbl) ∧ MEM p_2' (MAP SND es.ctbl)’
+              by (imp_res_tac ALOOKUP_SOME_MEM_SND >> simp[]) >>
+            ‘p_2 = p_2'’
+              by (qpat_x_assum ‘∀f g. MEM f (MAP SND es.ctbl) ∧ _ ⇒ _’ irule >> simp[]) >>
+            gvs[] >> imp_res_tac ALOOKUP_MEM >>
+            irule (Q.ISPEC ‘es.ctbl’ snd_unique) >> qexistsl_tac [‘es’, ‘p_2’] >> simp[]) >>
+        irule FILTER_ALL_DISTINCT >> qpat_x_assum ‘ALL_DISTINCT (MAP FST es.ctbl)’ assume_tac >>
+        drule ALL_DISTINCT_MAP >> simp[]) >>
+  ‘∀j b. MEM (j, b) l ⇒ j < LENGTH w.chans ∧ (EL j w.chans).status = Connecting’
+    by (rw[] >> drule_all ev_rel_ctbl >> simp[cstat_of_def] >> gvs[cstat_of_def]) >>
+  drule_all settles_deliver >> simp[] >> strip_tac >> simp[] >> conj_tac
+  >- (rpt gen_tac >> strip_tac >>
+      ‘cl cm f < LENGTH w.chans’ by (drule_all ev_rel_ctbl >> simp[]) >> simp[] >>
+      IF_CASES_TAC
+      >- (‘MEM (cl cm f, cstat_of es5 f = CUp) l’
+            by (qpat_x_assum ‘∀j b. MEM (j, b) l ⇔ _’ (fn th => REWRITE_TAC [th]) >>
+                qexistsl_tac [‘h’, ‘f’] >> gvs[]) >>
+          ‘ALOOKUP l (cl cm f) = SOME (cstat_of es5 f = CUp)’
+            by (irule ALOOKUP_ALL_DISTINCT_MEM >> simp[]) >> simp[]) >>
+      ‘ALOOKUP l (cl cm f) = NONE’
+        by (simp[ALOOKUP_NONE] >> simp[Once MEM_MAP, EXISTS_PROD] >> rpt strip_tac >>
+            ‘MEM f (MAP SND es.ctbl) ∧ MEM f' (MAP SND es.ctbl)’
+              by (imp_res_tac ALOOKUP_SOME_MEM_SND >> simp[]) >>
+            ‘f' = f’ by (qpat_x_assum ‘∀f g. MEM f (MAP SND es.ctbl) ∧ _ ⇒ _’ irule >> simp[]) >>
+            fs[]) >>
+      simp[]) >>
+  rpt strip_tac >>
+  ‘ALOOKUP l k = NONE’
+    by (simp[ALOOKUP_NONE] >> simp[Once MEM_MAP, EXISTS_PROD] >> rpt strip_tac >>
+        qpat_x_assum ‘∀h f. ALOOKUP es.ctbl h = SOME f ⇒ k ≠ _’ drule >> simp[]) >>
+  simp[]
+QED

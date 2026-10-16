@@ -421,13 +421,6 @@ Proof
        data_of1_def, data_of2_def]
 QED
 
-(* The fd of the j-th connect *)
-Theorem conn_fd_EL:
-  j < LENGTH (sched_conns n ll) ⇒ conn_fd ll j = EL j (sched_conns n ll)
-Proof
-  rw[conn_fd_def] >- (numLib.LEAST_ELIM_TAC >> metis_tac[sched_conns_EL]) >>
-  metis_tac[]
-QED
 
 (* ------------------------------------------------------------------------
    The renamed trace, prefix by prefix

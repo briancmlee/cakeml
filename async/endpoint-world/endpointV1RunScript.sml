@@ -385,8 +385,9 @@ Proof
         asm_rewrite_tac[] >> simp[MAP_REVERSE, MAP_GENLIST, combinTheory.o_DEF]) >>
   asm_rewrite_tac[] >> rpt conj_tac >>
   TRY (simp[LIST_EQ_REWRITE, EL_TAKE] >> NO_TAC) >>
-  TRY (qpat_x_assum ‘∀m. LENGTH _ + 3 < _’ (qspec_then ‘0’ mp_tac) >>
+  TRY (qpat_x_assum ‘∀m. _ < dimword _’ (qspec_then ‘0’ mp_tac) >>
        simp[sched_conns_def] >> NO_TAC) >>
   rpt strip_tac >>
-  qpat_x_assum ‘∀m j. _’ (qspecl_then [‘0’, ‘j’] mp_tac) >> simp[sched_conns_def]
+  qpat_x_assum ‘∀m j. _ ⇒ conn_fd _ _ = _’ (qspecl_then [‘0’, ‘j’] mp_tac) >>
+  simp[sched_conns_def]
 QED

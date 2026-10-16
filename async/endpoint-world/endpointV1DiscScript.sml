@@ -153,7 +153,7 @@ Proof
     by (‘j < LENGTH (sched_conns n sk.sched)’ by simp[Abbr ‘j’, MEM_findi] >>
         ‘j < LENGTH cs’ by gvs[LENGTH_TAKE] >>
         ‘EL j (opened_fds evs) = EL j cs’ by gvs[EL_TAKE] >>
-        ‘conn_fd sk.sched j = EL j (sched_conns n sk.sched)’ by simp[conn_fd_EL] >>
+        ‘conn_fd sk.sched j = EL j (sched_conns n sk.sched)’ by simp[conn_fd_sched] >>
         ‘EL j (sched_conns n sk.sched) = c’ by simp[Abbr ‘j’, EL_findi] >>
         metis_tac[]) >>
   ‘ep_written j evs = bytes_written_to c evs’

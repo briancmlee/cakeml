@@ -60,7 +60,7 @@ QED
 (* A send on a healthy channel takes everything *)
 Theorem send_simple:
   simple0 w ∧ l0_chan_of w f = SOME j ∧ ¬(EL j w.chans).broken ∧ ¬(EL j w.chans).shut ∧
-  w2n f < 2 ** 31 ⇒
+  ¬(EL j w.chans).connecting ∧ w2n f < 2 ** 31 ⇒
   ∃w'. sys_send f bs w =
          SOME (enc_res (Ok (LENGTH bs)), w',
                IO_event (ExtCall «sys_send») (fd_bytes f ++ bs)
@@ -91,7 +91,7 @@ QED
 Theorem write_simple:
   simple0 w ∧ ALOOKUP st.tbl h = SOME f ∧ ¬MEM f st.gone ∧ outbox_of st f = [] ∧
   l0_chan_of w f = SOME j ∧ ¬(EL j w.chans).broken ∧ ¬(EL j w.chans).shut ∧
-  w2n f < 2 ** 31 ∧ LENGTH bs < 256 ** 8 ⇒
+  ¬(EL j w.chans).connecting ∧ w2n f < 2 ** 31 ∧ LENGTH bs < 256 ** 8 ⇒
   ∃w' st'. l1do lfd (w, st) (Write h bs) =
              SOME (Wrote, (w', st'),
                    [IO_event (ExtCall «sys_send») (fd_bytes f ++ bs)
@@ -123,7 +123,7 @@ QED
    recv returns all that is available *)
 Theorem l0_recv_data:
   (∀h. w.ch.transient h = NONE) ∧ (∀j h a. w.ch.short j h a = a) ∧
-  l0_chan_of w f = SOME j ∧ (EL j w.chans).inbox ≠ [] ⇒
+  l0_chan_of w f = SOME j ∧ (EL j w.chans).inbox ≠ [] ∧ ¬(EL j w.chans).connecting ⇒
   l0_recv f n w =
     (Ok (MIN n (LENGTH (EL j w.chans).inbox)), TAKE n (EL j w.chans).inbox,
      upd_lchan j (λc. c with inbox := DROP n c.inbox) w)
@@ -146,7 +146,8 @@ QED
    exactly the data today's «sock_read» returns: TAKE n of the input *)
 Theorem read_simple:
   simple0 w ∧ 0 < n ∧ n < 256 ** 8 ∧ ALOOKUP st.tbl h = SOME f ∧ ¬MEM f st.gone ∧
-  MEM f st.rdy ∧ l0_chan_of w f = SOME j ∧ (EL j w.chans).inbox ≠ [] ∧ w2n f < 2 ** 31 ⇒
+  MEM f st.rdy ∧ l0_chan_of w f = SOME j ∧ (EL j w.chans).inbox ≠ [] ∧
+  ¬(EL j w.chans).connecting ∧ w2n f < 2 ** 31 ⇒
   ∃w' ev. l1do lfd (w, st) (Read h n) =
             SOME (Got (SOME (TAKE n (EL j w.chans).inbox)), (w', st), [ev]) ∧
           l0_chan_of w' f = SOME j ∧

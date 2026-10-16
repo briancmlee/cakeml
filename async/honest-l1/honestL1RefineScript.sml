@@ -46,7 +46,9 @@ Definition conv_arr_def:
   conv_arr p lfd (LData j bs) = [Data2 j bs] ∧
   conv_arr p lfd (LEof j) = [Eof2 j] ∧
   conv_arr p lfd (LBreak j e k) = [] ∧
-  conv_arr p lfd (LDrain j k) = []
+  conv_arr p lfd (LDrain j k) = [] ∧
+  conv_arr p lfd (LConnUp j) = [] ∧
+  conv_arr p lfd (LConnFail j e) = []
 End
 
 Definition conv_step_def:
@@ -80,7 +82,7 @@ End
 
 Definition chan_rel_def:
   chan_rel (c : lchan) (cl : conn) ⇔
-    ¬c.broken ∧ c.err = NONE ∧ c.sent = cl.outgoing ∧ (c.shut ⇒ c.closed) ∧
+    ¬c.broken ∧ ¬c.connecting ∧ c.err = NONE ∧ c.sent = cl.outgoing ∧ (c.shut ⇒ c.closed) ∧
     (¬c.closed ⇒ c.inbox = cl.incoming ∧ c.peer_eof = cl.peer_closed)
 End
 
@@ -249,8 +251,11 @@ Proof
       Cases_on ‘j < LENGTH w.chans’ >> simp[] >>
       drule_all core_rel_chan >> strip_tac >>
       gvs[chan_rel_def] >> irule core_rel_upd >> gvs[chan_rel_def])
-  (* Drain: nothing the relation sees *)
+  (* Drain: nothing the relation sees; a connect completing: no channel here
+     is connecting *)
   >> simp[l0_deliver_def] >> rw[] >>
+  TRY (drule_all core_rel_chan >> simp[chan_rel_def] >> NO_TAC) >>
+  TRY (first_assum ACCEPT_TAC >> NO_TAC) >>
   irule core_rel_upd_left >> simp[] >> drule_all core_rel_chan >> simp[chan_rel_def]
 QED
 

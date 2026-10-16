@@ -23,6 +23,12 @@ Proof
   rw[fail_def, enc_res_def, l0_rely_def, LENGTH_n2w8]
 QED
 
+Theorem LENGTH_enc_err_val:
+  l0_rely w ⇒ LENGTH (enc_err_val w e v) = 13
+Proof
+  rw[enc_err_val_def, l0_rely_def, LENGTH_n2w8]
+QED
+
 Theorem LENGTH_enc_not_chan:
   l0_rely w ⇒ LENGTH (enc_res (not_chan w f)) = 13
 Proof
@@ -89,10 +95,13 @@ Theorem ops_ch:
   (l0_recv f n w = (r, d, w') ⇒ w'.ch = w.ch ∧ w'.fd_limit = w.fd_limit) ∧
   (l0_send f bs w = (r, w') ⇒ w'.ch = w.ch ∧ w'.fd_limit = w.fd_limit) ∧
   (l0_shutdown f w = (r, w') ⇒ w'.ch = w.ch ∧ w'.fd_limit = w.fd_limit) ∧
-  (l0_close f w = (r, w') ⇒ w'.ch = w.ch ∧ w'.fd_limit = w.fd_limit)
+  (l0_close f w = (r, w') ⇒ w'.ch = w.ch ∧ w'.fd_limit = w.fd_limit) ∧
+  (l0_connect p w = (r, v, w') ⇒ w'.ch = w.ch ∧ w'.fd_limit = w.fd_limit) ∧
+  (l0_connerr f w = (y, w') ⇒ w'.ch = w.ch ∧ w'.fd_limit = w.fd_limit)
 Proof
   rpt conj_tac >> rw[l0_listen_def, l0_accept_def, l0_recv_def, l0_send_def,
-                     l0_shutdown_def, l0_close_def, AllCaseEqs()] >> gvs[]
+                     l0_shutdown_def, l0_close_def, l0_connect_def, l0_connerr_def,
+                     AllCaseEqs()] >> gvs[]
 QED
 
 Theorem LENGTH_poll_out:
@@ -117,9 +126,9 @@ Proof
       ‘LENGTH (enc_res r) = 13’ by
         (gvs[l0_recv_def, AllCaseEqs(), LENGTH_enc_fail, LENGTH_enc_not_chan]) >>
       simp[])
-  >> pairarg_tac >> gvs[] >>
-  gvs[l0_send_def, l0_shutdown_def, l0_close_def, AllCaseEqs(),
-      LENGTH_enc_fail, LENGTH_enc_not_chan]
+  >> TRY (pairarg_tac >> gvs[]) >>
+  gvs[l0_send_def, l0_shutdown_def, l0_close_def, l0_connect_def, l0_connerr_def,
+      AllCaseEqs(), LENGTH_enc_fail, LENGTH_enc_not_chan, LENGTH_enc_err_val]
 QED
 
 Theorem l0_call_ch:

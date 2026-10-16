@@ -70,7 +70,8 @@ Datatype:
            ; inflight : num
            ; drained : num
            ; closed : bool
-           ; aborted : bool |>
+           ; aborted : bool
+           ; connecting : bool |>
 End
 
 Datatype:
@@ -83,6 +84,10 @@ Datatype:
                                              segment queues should be flushed"
                                              (lowercase, not BCP 14): either *)
              | LDrain num num             (* the peer of channel j reads k bytes *)
+             | LConnUp num                (* channel j's pending connect completes *)
+             | LConnFail num errcode      (* channel j's pending connect fails with e
+                                             (ECONNREFUSED, ETIMEDOUT, ENETUNREACH, ...):
+                                             the socket's pending error [P connect] *)
 End
 
 (* A call: name, configuration, buffer in *)
@@ -144,6 +149,19 @@ Datatype:
              [EINPROGRESS] and fildes being closed (T)" *)
      ; misuse : lcall list -> errcode           (* a call on an fd of the wrong kind *)
      ; reserved_rev : lcall list -> word64 -> word8   (* poll flags of a reserved fd *)
+     ; connect_now : lcall list -> errcode option option
+          (* connect's immediate outcome [P connect]: NONE: EINPROGRESS ("If the
+             connection cannot be established immediately and O_NONBLOCK is set
+             ... shall fail and set errno to [EINPROGRESS] ... the connection
+             shall be established asynchronously"); SOME NONE: connected at once;
+             SOME (SOME e): failed at once with e (ECONNREFUSED: "The target
+             address was not listening for connections or refused"), after which
+             "the state of the socket is unspecified": the model breaks it *)
+     ; pending_err : lcall list -> mlstring -> errcode
+          (* recv, send, shutdown on a socket whose connect is pending: [P] says
+             only ENOTCONN "not connected" for send/shutdown, and recv's
+             "connection-mode socket not connected"; Linux answers EAGAIN to recv
+             and send: either (the world's choice, per call name) *)
      |>
 End
 
@@ -184,7 +202,7 @@ End
 Definition fresh_lchan_def:
   fresh_lchan = <| inbox := []; peer_sent := []; peer_eof := F; err := NONE;
                    broken := F; shut := F; sent := []; inflight := 0;
-                   drained := 0; closed := F; aborted := F |>
+                   drained := 0; closed := F; aborted := F; connecting := F |>
 End
 
 (*---------------------------------------------------------------------------*)
@@ -211,13 +229,14 @@ Definition l0_deliver_def:
          w with <| listeners := AFUPDKEY l (λ(p, q). (p, q ++ [LENGTH w.chans])) w.listeners
                  ; chans := w.chans ++ [fresh_lchan] |>) ∧
   l0_deliver w (LData j bs) =
-    (if j < LENGTH w.chans ∧ ¬(EL j w.chans).peer_eof ∧ ¬(EL j w.chans).broken then
+    (if j < LENGTH w.chans ∧ ¬(EL j w.chans).peer_eof ∧ ¬(EL j w.chans).broken ∧
+        ¬(EL j w.chans).connecting then
        upd_lchan j (λc. if c.closed then c with aborted := T
                         else c with <| inbox := c.inbox ++ bs;
                                        peer_sent := c.peer_sent ++ bs |>) w
      else w) ∧
   l0_deliver w (LEof j) =
-    (if j < LENGTH w.chans ∧ ¬(EL j w.chans).broken
+    (if j < LENGTH w.chans ∧ ¬(EL j w.chans).broken ∧ ¬(EL j w.chans).connecting
      then upd_lchan j (λc. c with peer_eof := T) w else w) ∧
   l0_deliver w (LBreak j e keep) =
     (if j < LENGTH w.chans then upd_lchan j (break_lchan e keep) w else w) ∧
@@ -225,6 +244,13 @@ Definition l0_deliver_def:
     (if j < LENGTH w.chans
      then upd_lchan j (λc. c with <| inflight := c.inflight − k;
                                      drained := c.drained + 1 |>) w
+     else w) ∧
+  l0_deliver w (LConnUp j) =
+    (if j < LENGTH w.chans ∧ (EL j w.chans).connecting
+     then upd_lchan j (λc. c with connecting := F) w else w) ∧
+  l0_deliver w (LConnFail j e) =
+    (if j < LENGTH w.chans ∧ (EL j w.chans).connecting
+     then upd_lchan j (λc. c with <| connecting := F; broken := T; err := SOME e |>) w
      else w)
 End
 
@@ -249,9 +275,16 @@ End
    [P poll] makes POLLHUP and POLLOUT mutually exclusive; [X2] Linux reports
    both after a reset, so the model does not exclude it. *)
 
+Definition no_revents_def:
+  no_revents = <| rin := F; rout := F; rerr := F; rhup := F; rnval := F |>
+End
+
 Definition chan_revents_def:
   chan_revents w j (ev : num) =
     let c = EL j w.chans; h = w.hist in
+      if c.connecting then no_revents   (* "ready for writing" only once
+                                             established [P connect] *)
+      else
       <| rin := (ODD ev ∧ (c.inbox ≠ [] ∨ c.peer_eof ∨ c.broken ∨ c.err ≠ NONE));
          rout := (2 ≤ ev MOD 4 ∧
                   (if c.broken ∨ c.shut then w.ch.show_out h j
@@ -259,10 +292,6 @@ Definition chan_revents_def:
          rerr := ((c.err ≠ NONE ∨ c.broken ∨ c.shut) ∧ w.ch.show_err h j);
          rhup := ((c.broken ∨ c.peer_eof ∨ c.shut) ∧ w.ch.show_hup h j);
          rnval := F |>
-End
-
-Definition no_revents_def:
-  no_revents = <| rin := F; rout := F; rerr := F; rhup := F; rnval := F |>
 End
 
 (* POLLNVAL: "The specified fd value is not an open file descriptor" *)
@@ -370,7 +399,8 @@ Definition l0_recv_def:
         | SOME e => (fail w e, [], w)
         | NONE =>
             let c = EL j w.chans in
-              if c.inbox ≠ [] then
+              if c.connecting then (fail w (w.ch.pending_err w.hist «sys_recv»), [], w)
+              else if c.inbox ≠ [] then
                 let k = MIN n (w.ch.short j w.hist (LENGTH c.inbox)) in
                   (Ok k, TAKE k c.inbox,
                    upd_lchan j (λc. c with inbox := DROP k c.inbox) w)
@@ -399,7 +429,8 @@ Definition l0_send_def:
         | SOME e => (fail w e, w)
         | NONE =>
             let c = EL j w.chans in
-              if c.broken then
+              if c.connecting then (fail w (w.ch.pending_err w.hist «sys_send»), w)
+              else if c.broken then
                 (case c.err of
                  | SOME e =>
                      if w.ch.send_pending w.hist
@@ -423,7 +454,9 @@ Definition l0_shutdown_def:
         case w.ch.transient w.hist of
         | SOME e => (fail w e, w)
         | NONE =>
-            if (EL j w.chans).broken ∨ (EL j w.chans).shut then
+            if (EL j w.chans).connecting then
+              (fail w (w.ch.pending_err w.hist «sys_shutdown»), w)
+            else if (EL j w.chans).broken ∨ (EL j w.chans).shut then
               (case w.ch.shut_err w.hist of
                | SOME e => (fail w e, w)
                | NONE => (Ok 0, upd_lchan j (λc. c with shut := T) w))
@@ -434,6 +467,47 @@ End
    data is pending may be aborted [T §3.6.1].  Closing a listener drops
    (and resets) its pending connections; closing a reserved fd frees it.
    An interrupted close leaves the fd open or closes it (close_intr). *)
+(* connect [P connect] to 127.0.0.1:p: a new socket (the lowest free fd,
+   [P 2.6]; EMFILE if none is below the limit), made non-blocking, then
+   connected; the result and the value: the new fd (also when connect then
+   fails: the socket stays open until closed); value 0: no socket (fd 0 is
+   always open, by the startup contract, so it is never a new fd).  The
+   peer is the environment: whether and when the connect completes is its
+   choice (connect_now, LConnUp, LConnFail); a connect to one of the
+   program's own listeners also arrives there as LIncoming, also the
+   environment's choice (the model does not link the two ends; every real
+   pairing is a behaviour) *)
+Definition l0_connect_def:
+  l0_connect (p : num) w =
+    case w.ch.transient w.hist of
+    | SOME e => (fail w e, 0n, w)
+    | NONE =>
+        case l0_alloc w of
+        | NONE => (fail w E_MFILE, 0, w)
+        | SOME f =>
+            let j = LENGTH w.chans;
+                w1 = w with <| chans := w.chans ++ [fresh_lchan with connecting := T];
+                               open_fds := (f, j) :: w.open_fds |> in
+              case w.ch.connect_now w.hist of
+              | NONE => (fail w E_INPROGRESS, w2n f, w1)
+              | SOME NONE => (Ok (w2n f), w2n f, upd_lchan j (λc. c with connecting := F) w1)
+              | SOME (SOME e) =>
+                  (fail w e, w2n f,
+                   upd_lchan j (λc. c with <| connecting := F; broken := T |>) w1)
+End
+
+(* getsockopt(SO_ERROR): the pending error, which reading clears; SOME e:
+   the pending error; NONE: none (Ok) *)
+Definition l0_connerr_def:
+  l0_connerr f w =
+    case l0_chan_of w f of
+    | NONE => (INR (not_chan w f), w)
+    | SOME j =>
+        case (EL j w.chans).err of
+        | SOME e => (INL (SOME e), upd_lchan j (λc. c with err := NONE) w)
+        | NONE => (INL NONE, w)
+End
+
 Definition close_fd_def:
   close_fd f w =
     case l0_chan_of w f of
@@ -471,6 +545,11 @@ Definition fd_ok_def:
 End
 
 (* sys_listen's failure: the step is in the value field *)
+(* A result with error e and value v (sys_connect's fd, sys_connerr's 1) *)
+Definition enc_err_val_def:
+  enc_err_val w e (v : num) = n2w (err_code e) :: n2w8 v ++ w.ch.errno_of w.hist
+End
+
 Definition enc_listen_fail_def:
   enc_listen_fail w (k, e) = n2w (err_code e) :: n2w8 k ++ w.ch.errno_of w.hist
 End
@@ -530,6 +609,19 @@ Definition l0_call_def:
     else if n = «sys_shutdown» then
       (if LENGTH conf = 8 ∧ LENGTH bytes = l0_hdr ∧ fd_ok (bytes_fd conf) then
          let (r, w') = l0_shutdown (bytes_fd conf) w in SOME (FFIreturn (enc_res r) w')
+       else NONE)
+    else if n = «sys_connect» then
+      (if LENGTH conf = 2 ∧ LENGTH bytes = l0_hdr then
+         case l0_connect (w22n conf) w of
+         | (Ok v, _, w') => SOME (FFIreturn (enc_res (Ok v)) w')
+         | (Fail e _, v, w') => SOME (FFIreturn (enc_err_val w e v) w')
+       else NONE)
+    else if n = «sys_connerr» then
+      (if LENGTH conf = 8 ∧ LENGTH bytes = l0_hdr ∧ fd_ok (bytes_fd conf) then
+         case l0_connerr (bytes_fd conf) w of
+         | (INL NONE, w') => SOME (FFIreturn (enc_res (Ok 0)) w')
+         | (INL (SOME e), w') => SOME (FFIreturn (enc_err_val w e 1) w')
+         | (INR r, w') => SOME (FFIreturn (enc_res r) w')
        else NONE)
     else if n = «sys_close» then
       (if LENGTH conf = 8 ∧ LENGTH bytes = l0_hdr ∧ fd_ok (bytes_fd conf) then

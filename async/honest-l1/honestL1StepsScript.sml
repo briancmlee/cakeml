@@ -223,10 +223,13 @@ Theorem ops_env:
   (l0_recv f n w = (r, d, w') ⇒ w'.env = w.env) ∧
   (l0_send f bs w = (r, w') ⇒ w'.env = w.env) ∧
   (l0_shutdown f w = (r, w') ⇒ w'.env = w.env) ∧
-  (l0_close f w = (r, w') ⇒ w'.env = w.env)
+  (l0_close f w = (r, w') ⇒ w'.env = w.env) ∧
+  (l0_connect p w = (r, v, w') ⇒ w'.env = w.env) ∧
+  (l0_connerr f w = (y, w') ⇒ w'.env = w.env)
 Proof
   rpt conj_tac >> rw[l0_listen_def, l0_accept_def, l0_recv_def, l0_send_def,
-                     l0_shutdown_def, l0_close_def, AllCaseEqs()] >> gvs[]
+                     l0_shutdown_def, l0_close_def, l0_connect_def, l0_connerr_def,
+                     AllCaseEqs()] >> gvs[]
 QED
 
 Theorem l0_call_env:
@@ -464,7 +467,8 @@ Proof
     by (gvs[l1v2_rel_def, core_rel_def] >> Cases_on ‘ALOOKUP s.open_fds f’ >>
         gvs[] >> metis_tac[]) >>
   ‘chan_rel (EL j w.chans) (EL j s.clients)’ by gvs[l1v2_rel_def, core_rel_def, LIST_REL_EL_EQN] >>
-  ‘¬(EL j w.chans).broken ∧ ¬(EL j w.chans).shut’ by gvs[chan_rel_def] >>
+  ‘¬(EL j w.chans).broken ∧ ¬(EL j w.chans).shut ∧ ¬(EL j w.chans).connecting’
+    by gvs[chan_rel_def] >>
   ‘l0_tick «sys_send» w = w with clock := w.clock + 1’
     by (drule tick_simple_v2 >> disch_then irule >> EVAL_TAC) >>
   ‘outbox_of st f = []’ by simp[outbox_of_def] >>
@@ -508,12 +512,14 @@ QED
 Theorem tbl_open_chan:
   l1v2_rel p lfd sched (w, st) (s, hs) ∧ ALOOKUP st.tbl h = SOME f ⇒
   ∃j. ALOOKUP w.open_fds f = SOME j ∧ j < LENGTH w.chans ∧ ¬(EL j w.chans).closed ∧
-      chan_rel (EL j w.chans) (EL j s.clients) ∧ client_of s f = SOME j
+      chan_rel (EL j w.chans) (EL j s.clients) ∧ client_of s f = SOME j ∧
+      ¬(EL j w.chans).connecting
 Proof
   rw[l1v2_rel_def, core_rel_def] >>
   ‘ALOOKUP s.open_fds f ≠ NONE’ by metis_tac[] >>
   Cases_on ‘ALOOKUP s.open_fds f’ >> gvs[] >>
-  imp_res_tac LIST_REL_LENGTH >> gvs[LIST_REL_EL_EQN, client_of_def] >> metis_tac[]
+  imp_res_tac LIST_REL_LENGTH >> gvs[LIST_REL_EL_EQN, client_of_def] >>
+  metis_tac[chan_rel_def]
 QED
 
 (* A polled handle whose fd was not readable: L1 makes no call; the handle

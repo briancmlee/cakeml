@@ -14,11 +14,12 @@ Ancestors
   ml_translator cfHeapsBase Word8ArrayProof mlstring
   honestL0 honestL0World honestL1Model honestL1PFModel honestL0Part
   honestL0Prog honestL0Proof honestL1PFProg ffiSpikeSocketFFI asyncM3Loop asyncM3World
-  asyncM3Prog asyncM4Loop asyncCfActProg
+  asyncM3Prog asyncM4Loop asyncCfActProg asyncCfActModel asyncChoose honestL1PFInv cfDiv
 Libs
   preamble ml_translatorLib ml_progLib cfLib basisFunctionsLib
 
 val _ = translation_extends "honestL1PFProg";
+val st = get_ml_prog_state ();
 
 Theorem bytes_str_bytes_to_str:
   bytes_str bs = bytes_to_str bs
@@ -377,4 +378,110 @@ Proof
                   L0_EV w0 w' (evs ++ evs' ++ tevs)’
   >- (qpat_x_assum ‘app _ add_accepted_v _ _ _’ xapp_spec >> xsimpl) >>
   xcon >> xsimpl >> simp[ssnap_def]
+QED
+
+(* ------------------------------------------------------------------------
+   The loop diverges
+   ------------------------------------------------------------------------ *)
+
+(* The run after n rounds (total under prun_total), and round n's events *)
+Definition prun_def:
+  prun lfd hw ifds m ws0 n = THE (prounds lfd hw ifds m ws0 n)
+End
+
+Definition pround_evs_def:
+  pround_evs lfd hw ifds m ws0 n =
+    DROP (LENGTH (FST (SND (SND (prun lfd hw ifds m ws0 n)))))
+         (FST (SND (SND (prun lfd hw ifds m ws0 (SUC n)))))
+End
+
+Theorem prun_SUC:
+  (∀n. prounds lfd hw ifds m ws0 n ≠ NONE) ⇒
+  ∃snap ws' log revs.
+    pround lfd hw (ifds (FST (prun lfd hw ifds m ws0 n)))
+      (FST (SND (prun lfd hw ifds m ws0 n)))
+      (new_actions (log_of m) (FST (prun lfd hw ifds m ws0 n))) =
+      SOME (snap, ws', log, revs) ∧
+    prun lfd hw ifds m ws0 (SUC n) =
+      (FST (prun lfd hw ifds m ws0 n) ++ [snap], ws',
+       FST (SND (SND (prun lfd hw ifds m ws0 n))) ++ revs,
+       SND (SND (SND (prun lfd hw ifds m ws0 n))) ++ [log]) ∧
+    pround_evs lfd hw ifds m ws0 n = revs
+Proof
+  strip_tac >>
+  first_assum (qspec_then ‘n’ mp_tac) >> first_x_assum (qspec_then ‘SUC n’ mp_tac) >>
+  simp[prun_def, pround_evs_def, prounds_def] >>
+  Cases_on ‘prounds lfd hw ifds m ws0 n’ >> simp[] >>
+  rename1 ‘SOME x’ >> PairCases_on ‘x’ >> simp[AllCaseEqs(), PULL_EXISTS] >>
+  strip_tac >> Cases_on ‘pround lfd hw (ifds x0) (x1,x2) (new_actions (log_of m) x0)’ >> gvs[] >>
+  rename1 ‘SOME y’ >> PairCases_on ‘y’ >> simp[rich_listTheory.DROP_LENGTH_APPEND]
+QED
+
+Theorem prun_0[simp]:
+  prun lfd hw ifds m ws0 0 = ([], ws0, [], [])
+Proof
+  simp[prun_def, prounds_def]
+QED
+
+(* MAIN (P2): the prefetching L1 loop, running m with interest fds0 (plus
+   every fd accepted) from the world w and the L1 state ps0, never
+   terminates, and its I/O trace is, round by round, the events of
+   pround_evs *)
+Theorem run_pf_spec:
+  limited_parts l0_names p ∧ wf m ∧ l0_reach w0 w ∧ psmall lfd ps0 ∧
+  pl2_ok lfd hw (interest fds0) m (w, ps0) ∧
+  WORD lfd lfdv ∧ NUM hw hwv ∧ LIST_TYPE NUM (MAP w2n fds0) fdsv ∧
+  L1P ps0 psv ∧ COMP p SACT A (SNAPSHOT SREADY SRESP) m cv ⇒
+  app (p:'ffi ffi_proj) run_pf_v [Conv NONE [lfdv; hwv; fdsv; psv; cv]]
+    (L0_EV w0 w [])
+    (POSTd io. io = LFLATTEN (LGENLIST
+       (λi. fromList (pround_evs lfd hw (interest fds0) m (w, ps0) i)) NONE))
+Proof
+  strip_tac >>
+  ‘∀n. prounds lfd hw (interest fds0) m (w, ps0) n ≠ NONE’
+    by (irule prun_total >> gvs[l0_reach_def]) >>
+  xcf_div_rule IMP_app_POSTd_one_FFI_part_FLATTEN "run_pf" st >>
+  qexists_tac ‘K emp’ >>
+  qexists_tac ‘λi. if i = 0 then [] else pround_evs lfd hw (interest fds0) m (w, ps0) (i - 1)’ >>
+  qexists_tac ‘λi stv. ∃fdsv psv cv.
+                 stv = Conv NONE [lfdv; hwv; fdsv; psv; cv] ∧
+                 LIST_TYPE NUM (MAP w2n (interest fds0
+                   (FST (prun lfd hw (interest fds0) m (w, ps0) i)))) fdsv ∧
+                 L1P (SND (FST (SND (prun lfd hw (interest fds0) m (w, ps0) i)))) psv ∧
+                 l0_reach w0 (FST (FST (SND (prun lfd hw (interest fds0) m (w, ps0) i)))) ∧
+                 COMP p SACT A (SNAPSHOT SREADY SRESP)
+                   (suspended m (FST (prun lfd hw (interest fds0) m (w, ps0) i))) cv’ >>
+  qexists_tac ‘λi. l0_enc w0 (FST (FST (SND (prun lfd hw (interest fds0) m (w, ps0) i))))’ >>
+  qexists_tac ‘l0_next w0’ >>
+  simp[] >> rpt conj_tac
+  >- (simp[L0_EV_def] >> xsimpl)
+  >- ((* one iteration: step_pf_spec, with the model, the world, the L1
+         state and the interest list advanced *)
+      rpt strip_tac >> gvs[] >>
+      drule prun_SUC >> disch_then (qspec_then ‘i’ strip_assume_tac) >>
+      qabbrev_tac ‘r = prun lfd hw (interest fds0) m (w, ps0) i’ >>
+      PairCases_on ‘r’ >> gvs[] >> PairCases_on ‘ws'’ >> gvs[] >>
+      ‘(suspended m r0 []).actions = new_actions (log_of m) r0’
+        by simp[suspended_first_poll] >>
+      sg ‘app p step_pf_v [Conv NONE [lfdv; hwv; fdsv'; psv'; cv']] (L0_EV w0 r1 [])
+            (POSTv v.
+               &(∃fdsv2 psv2 cv2. v = Conv NONE [lfdv; hwv; fdsv2; psv2; cv2] ∧
+                   LIST_TYPE NUM (MAP w2n (add_accepted (interest fds0 r0) snap.results)) fdsv2 ∧
+                   L1P ws'1 psv2 ∧
+                   COMP p SACT A (SNAPSHOT SREADY SRESP) (suspended (suspended m r0) [snap]) cv2) *
+               L0_EV w0 ws'0 ([] ++ pround_evs lfd hw (interest fds0) m (w,ps0) i))’
+      >- (irule step_pf_spec >> simp[] >> metis_tac[]) >>
+      gvs[suspended_suspended_one, GSYM interest_SNOC, L0_EV_def, SEP_CLAUSES] >>
+      xlet ‘POSTv v.
+              &(∃fdsv2 psv2 cv2. v = Conv NONE [lfdv; hwv; fdsv2; psv2; cv2] ∧
+                  LIST_TYPE NUM (MAP w2n (interest fds0 (r0 ++ [snap]))) fdsv2 ∧
+                  L1P ws'1 psv2 ∧
+                  COMP p SACT A (SNAPSHOT SREADY SRESP) (suspended m (r0 ++ [snap])) cv2) *
+              (one (FFI_part (l0_enc w0 ws'0) (l0_next w0) l0_names
+                      (pround_evs lfd hw (interest fds0) m (w,ps0) i)) *
+               &l0_reach w0 ws'0)’
+      >- (qpat_x_assum ‘app _ step_pf_v _ _ _’ xapp_spec >> xsimpl) >>
+      xvar >> xsimpl >> rpt strip_tac >> gvs[] >> xsimpl)
+  >> CONV_TAC (LAND_CONV (ONCE_REWRITE_CONV [LGENLIST_NONE_UNFOLD])) >>
+     simp[combinTheory.o_DEF]
 QED

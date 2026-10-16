@@ -1,0 +1,8 @@
+# Quiescence for stateful servers (design/37): with_store at Level 2
+# (asyncWithStore2), its quiet_on and finiteness; then the stability lemma
+# for with_store2 over the library's server_v2.  asyncWithStore is
+# spike/kv-live's (http-kv), placed here as is.
+INCLUDES = ../../model/core ../../model/level2
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

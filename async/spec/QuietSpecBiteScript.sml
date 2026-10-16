@@ -21,9 +21,9 @@
 *)
 Theory QuietSpecBite
 Ancestors
-  QuietSpec EchoSpec EchoSpecBite HttpSpec HttpSpecBite HttpSpecHeaders
-  HttpSpecHeadersBite HttpSpecBodies HttpSpecBodiesBite
-  ffiSpikeSocketFFI ffiSpikeSocketFair llist
+  QuietSpec EchoSpec EchoSpecBite HttpGetSpec HttpGetSpecBite HttpHeadersSpec
+  HttpHeadersSpecBite HttpSpec HttpSpecBite
+  socketWorld socketFair llist
 Libs
   preamble
 
@@ -107,9 +107,9 @@ Theorem broken_runs_forever_h:
   server_world lfd sk ∧ arrivals_finite sk ∧
   (∀b. semantics_prog (init_state (select_ffi sk)) init_env prog b ⇒
        ∃io. b = Diverge io) ⇒
-  ¬http_quiet lfd files prog
+  ¬http_headers_quiet lfd files prog
 Proof
-  rw[http_quiet_def] >> qexists_tac ‘sk’ >> rw[] >>
+  rw[http_headers_quiet_def] >> qexists_tac ‘sk’ >> rw[] >>
   Cases_on ‘semantics_prog (init_state (select_ffi sk)) init_env prog b’ >> simp[] >>
   first_x_assum drule >> rw[] >> simp[asleep_def]
 QED
@@ -118,9 +118,9 @@ Theorem broken_runs_forever_b:
   server_world lfd sk ∧ arrivals_finite sk ∧
   (∀b. semantics_prog (init_state (select_ffi sk)) init_env prog b ⇒
        ∃io. b = Diverge io) ⇒
-  ¬http_quiet_b lfd files prog
+  ¬http_quiet lfd files prog
 Proof
-  rw[http_quiet_b_def] >> qexists_tac ‘sk’ >> rw[] >>
+  rw[http_quiet_def] >> qexists_tac ‘sk’ >> rw[] >>
   Cases_on ‘semantics_prog (init_state (select_ffi sk)) init_env prog b’ >> simp[] >>
   first_x_assum drule >> rw[] >> simp[asleep_def]
 QED
@@ -199,16 +199,16 @@ Proof
 QED
 
 (* NON-VACUITY (HTTP): a run that reads a request, answers it, and sleeps
-   in select meets every clause of http_quiet in a quiet world *)
+   in select meets every clause of http_headers_quiet in a quiet world *)
 Theorem ideal_quiet_h:
   let b = Terminate (FFI_outcome (Final_event (ExtCall «sock_select») conf []
                                    FFI_diverged)) ideal_h in
   server_world 3w (one_client (hrequests [ra])) ∧
   arrivals_finite (one_client (hrequests [ra])) ∧
-  ((∃io. b = Diverge io ∧ http_safe_h site io ∧
-         http_live_h site (one_client (hrequests [ra])) io) ∨
-   (∃io. asleep b io ∧ http_safe_h site (fromList io) ∧
-         http_live_h site (one_client (hrequests [ra])) (fromList io))) ∧
+  ((∃io. b = Diverge io ∧ http_headers_safe site io ∧
+         http_headers_live site (one_client (hrequests [ra])) io) ∨
+   (∃io. asleep b io ∧ http_headers_safe site (fromList io) ∧
+         http_headers_live site (one_client (hrequests [ra])) (fromList io))) ∧
   (arrivals_finite (one_client (hrequests [ra])) ⇒ ∃io. asleep b io)
 Proof
   ‘arrivals_finite (one_client (hrequests [ra]))’
@@ -218,16 +218,16 @@ QED
 
 (* NON-VACUITY (HTTP bodies, the headline): a run that reads a POST /echo
    with a body, answers it, and sleeps in select meets every clause of
-   http_quiet_b in a quiet world *)
+   http_quiet in a quiet world *)
 Theorem ideal_quiet_b:
   let b = Terminate (FFI_outcome (Final_event (ExtCall «sock_select») conf []
                                    FFI_diverged)) ideal_b in
   server_world 3w (one_client (brequests [rp])) ∧
   arrivals_finite (one_client (brequests [rp])) ∧
-  ((∃io. b = Diverge io ∧ http_safe_b site io ∧
-         http_live_b site (one_client (brequests [rp])) io) ∨
-   (∃io. asleep b io ∧ http_safe_b site (fromList io) ∧
-         http_live_b site (one_client (brequests [rp])) (fromList io))) ∧
+  ((∃io. b = Diverge io ∧ http_safe site io ∧
+         http_live site (one_client (brequests [rp])) io) ∨
+   (∃io. asleep b io ∧ http_safe site (fromList io) ∧
+         http_live site (one_client (brequests [rp])) (fromList io))) ∧
   (arrivals_finite (one_client (brequests [rp])) ⇒ ∃io. asleep b io)
 Proof
   ‘arrivals_finite (one_client (brequests [rp]))’

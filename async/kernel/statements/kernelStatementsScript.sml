@@ -5,27 +5,30 @@
   model: hup_spin_bite.
 
   The claims (design/36 §6, "R2/R3/R4 for the prefetching L1", and §7):
-  - l1pf_simple_claim (R2′): in simple L0 worlds, the version-2 world that
-    R1-safe builds from the prefetching L1's own run (psk) is a DELAY of
-    the world the kernel's schedule describes (sk_of), never ahead of it
-    and missing nothing; with a prompt schedule and a prompt server it is
-    that world.
+  - l1pf_simple_claim (R2′, the headline: user decision Q-L3-2): in
+    simple L0 worlds, the version-2 world that R1-safe builds from the
+    prefetching L1's own run (psk) is a DELAY of the world the kernel's
+    schedule describes (sk_of), never ahead of it and missing nothing.
+    l1pf_simple_eq_claim is the optional corollary: with a prompt schedule
+    and a prompt server it is that world.
   - l0_echo2_claim (R4′, the template): the echo server with close, on
     the honest L0 FFI, in every L0 server world: the listen fails and the
     program stops, or it runs forever with raw safety (echo_safe_l0, the
     approved statement) and raw liveness under [F1] (D11′, on observed
     outcomes) and [F2] (D12).  Liveness is WEAKENED honestly where POSIX is
-    loose (D16: unless a hard error was observed on the episode; D18:
-    unless accepts on the listener fail infinitely often);
-    l0_echo2_strong_claim is the corollary form under explicit hypotheses
-    (D16's HD16, D18's H1 and H3; no [F3], design/36 §6, 2026-10-17).
+    loose (D16: unless a hard error was observed on the episode; D19:
+    unless POLLHUP was observed on it; D18: unless accepts on the listener
+    fail infinitely often); l0_echo2_strong_claim is the corollary form
+    under explicit hypotheses (D16's HD16, D19's hups_real, D18's H1 and
+    H3; no [F3], design/36 §6, 2026-10-17).
   - quiet_on_kernel_claim: quiescence on the kernel, through a blocking
     variant of L1: with finitely many arrivals the program eventually
-    sleeps in a blocking poll, unless [F1] fails or POLLHUP keeps waking
-    it (hup_spin).  hup_spin_bite (PROVED) shows that the HUP disjunct is
-    real: [P poll] lets the kernel report POLLHUP on a hung-up socket on
-    every poll, whatever events were asked for, so a blocking poll that
-    lists such an fd returns at once, forever.
+    sleeps in a blocking poll, unless [F1] fails.  It relies on D19 (user
+    decision Q-L3-1): on POLLHUP, L1 reads what is left, drops the pending
+    outbox and closes the fd.  hup_spin_bite (PROVED) is why: [P poll]
+    lets the kernel report POLLHUP on a hung-up socket on every poll,
+    whatever events were asked for, so a blocking poll that lists such an
+    fd returns at once, forever.
 
   The user's policy, followed throughout: no new trusted kernel facts;
   where POSIX is loose, weaken the main statement and give the strong form
@@ -144,7 +147,7 @@ Definition round_instant_def:
     npolls (rworld lfd hw ifds m w1 (SUC n)).hist − npolls w1.hist
 End
 
-(* R2′, for the server m (its type is the server's).  w1 is the world just
+(* R2′, the headline (user decision Q-L3-2), for the server m (its type is the server's).  w1 is the world just
    after the listen.  F1 is not a hypothesis:
    simple worlds have no transient failures *)
 Definition l1pf_simple_claim_def:
@@ -156,9 +159,21 @@ Definition l1pf_simple_claim_def:
       S1 lfd hw ifds m w1 ∧ S2 lfd hw ifds m w1 ∧ S3 lfd hw ifds m w1 ∧
       (∀f. S4 lfd hw ifds m w1 f) ⇒
       delays (round_instant lfd hw ifds m w1) (parr lfd hw ifds m w1)
-             (kernel_steps p lfd sched w1) ∧
-      (prompt_sched p sched ∧ prompt_server lfd hw ifds m w1 ⇒
-       parr lfd hw ifds m w1 = kernel_steps p lfd sched w1)
+             (kernel_steps p lfd sched w1)
+End
+
+(* The optional corollary (user decision Q-L3-2: the delay form is the
+   headline): with a prompt schedule and a prompt server, no delay *)
+Definition l1pf_simple_eq_claim_def:
+  l1pf_simple_eq_claim m ⇔
+    ∀p lfd sched hw ifds w1.
+      simple_v2 p lfd sched w1 ∧ winv w1 ∧ w1.listeners = [(lfd, p, [])] ∧
+      w1.chans = [] ∧ w1.open_fds = [] ∧
+      run_ok lfd hw ifds m w1 ∧ (∀n. SND (pcm lfd hw ifds m w1 n) + 1 < dimword (:64)) ∧
+      S1 lfd hw ifds m w1 ∧ S2 lfd hw ifds m w1 ∧ S3 lfd hw ifds m w1 ∧
+      (∀f. S4 lfd hw ifds m w1 f) ∧
+      prompt_sched p sched ∧ prompt_server lfd hw ifds m w1 ⇒
+      parr lfd hw ifds m w1 = kernel_steps p lfd sched w1
 End
 
 (* ========================================================================
@@ -293,9 +308,28 @@ Definition conn_live_unless_def:
       broke w0 io j0
 End
 
+(* A poll (blocking or not) that reported POLLHUP for fd f *)
+Definition poll_hup_def:
+  poll_hup f (IO_event nm conf bs) ⇔
+    nm = ExtCall «sys_poll» ∧
+    ∃i. i < LENGTH (poll_entries (DROP 1 conf)) ∧ FST (EL i (poll_entries (DROP 1 conf))) = f ∧
+        13 + i < LENGTH bs ∧ word_bit 3 (SND (EL (13 + i) bs))
+End
+
+(* D19's excuse, observed: POLLHUP was reported on episode j's fd while it
+   was open.  Under D19 (user decision Q-L3-1) L1 then reads what is left,
+   drops the pending outbox and closes; [P poll] leaves POLLHUP on sockets
+   to the implementation and the L0 model allows it after the peer's EOF
+   alone, so a half-closed peer may lose its reply *)
+Definition ep_hup_def:
+  ep_hup j io ⇔
+    ∃evs ev. LPREFIX (fromList (evs ++ [ev])) io ∧ ep_open j evs ∧
+             poll_hup (EL j (l0_accepted evs)) ev
+End
+
 (* The main (weakened) forms *)
 Definition echo_live_l0_def:
-  echo_live_l0 w0 io ⇔ echo_live_unless (λj c. ep_hard_err j io) w0 io
+  echo_live_l0 w0 io ⇔ echo_live_unless (λj c. ep_hard_err j io ∨ ep_hup j io) w0 io
 End
 
 Definition conn_live_l0_def:
@@ -336,6 +370,16 @@ Definition flushed_ch_def:
             c < LENGTH w.chans ∧ (EL c w.chans).broken ∧ (EL c w.chans).inbox = []
 End
 
+(* D19's corollary hypothesis: POLLHUP is reported only on a channel that
+   broke (not after the peer's EOF alone) *)
+Definition hups_real_def:
+  hups_real w0 io ⇔
+    ∀evs ev f w.
+      LPREFIX (fromList (evs ++ [ev])) io ∧ poll_hup f ev ∧
+      world_at w0 (evs ++ [ev]) = SOME w ⇒
+      ∃c. l0_chan_of w f = SOME c ∧ (EL c w.chans).broken
+End
+
 (* D18's H1, read off the trace: an accept that fails with an error L1
    does not keep (kept_err: retried, EMFILE, ENFILE) really removed a
    connection from the listener's queue *)
@@ -369,7 +413,7 @@ Definition l0_echo2_strong_claim_def:
       ∃b. semantics_prog (init_state (l0_ffi w0)) init_env prog b ∧
           (listen_failed b ∨
            ∃io. b = Diverge io ∧
-                (F1_io io ∧ F2 w0 ∧ accepts_below io ∧ HD16_io w0 io ⇒
+                (F1_io io ∧ F2 w0 ∧ accepts_below io ∧ HD16_io w0 io ∧ hups_real w0 io ⇒
                  echo_live_unless (λj c. flushed_ch w0 io c) w0 io) ∧
                 (F1_io io ∧ accepts_below io ∧ H1_io w0 io ∧ H3_io io ⇒
                  conn_live_unless F w0 io))
@@ -391,22 +435,11 @@ Definition arrivals_finite_l0_def:
   arrivals_finite_l0 (w0 : l0world) ⇔ ∃N. ∀n h nm. N ≤ n ⇒ w0.env n h nm = []
 End
 
-(* A blocking poll that returned with POLLHUP on some fd it listed *)
-Definition hup_wake_def:
-  hup_wake (IO_event nm conf bs) ⇔
-    nm = ExtCall «sys_poll» ∧ conf ≠ [] ∧ HD conf = 1w ∧
-    ∃i. i < LENGTH (poll_entries (DROP 1 conf)) ∧ 13 + i < LENGTH bs ∧
-        word_bit 3 (SND (EL (13 + i) bs))
-End
-
-(* POLLHUP keeps waking the program *)
-Definition hup_spin_def:
-  hup_spin (io : io_event llist) ⇔ ∀i. ∃i' ev. i ≤ i' ∧ LNTH i' io = SOME ev ∧ hup_wake ev
-End
-
 (* quiet_on_kernel: guar holds whether the program runs forever or sleeps;
-   with finitely many arrivals it sleeps, unless [F1] fails or POLLHUP
-   keeps waking it *)
+   with finitely many arrivals it sleeps, unless [F1] fails.  There is no
+   POLLHUP disjunct: under D19 (user decision Q-L3-1) L1 closes a hung-up
+   fd, so none stays in the blocking set; hup_spin_bite below is why the
+   policy is needed *)
 Definition quiet_on_kernel_claim_def:
   quiet_on_kernel_claim guar prog ⇔
     ∀w0. l0_server_world w0 ⇒
@@ -416,7 +449,7 @@ Definition quiet_on_kernel_claim_def:
            (∃io. asleep_l0 b io ∧ guar w0 (fromList io))) ∧
           (arrivals_finite_l0 w0 ⇒
            listen_failed b ∨ (∃io. asleep_l0 b io) ∨
-           ∃io. b = Diverge io ∧ (¬F1_io io ∨ hup_spin io))
+           ∃io. b = Diverge io ∧ ¬F1_io io)
 End
 
 (* The echo's guarantee, for its quiet instance *)

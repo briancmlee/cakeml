@@ -3351,3 +3351,115 @@ Proof
   disch_then (qspecl_then [‘SUC n'’, ‘f’, ‘c’, ‘pr'’, ‘po'’] mp_tac) >> simp[] >>
   strip_tac >> qexists_tac ‘k'’ >> simp[]
 QED
+
+(* ========================================================================
+   G7. Every client's data and EOF the kernel delivered are eventually
+   fetched
+   ======================================================================== *)
+
+(* After a client's EOF the kernel's schedule has no more data for it *)
+Theorem step_ok2_closed:
+  ∀as s. step_ok2 s as ∧ c < LENGTH s.clients ∧ (EL c s.clients).peer_closed ⇒
+         data_of c as = []
+Proof
+  Induct >> simp[step_ok2_def] >> rpt gen_tac >> strip_tac >>
+  ‘c < LENGTH (deliver2 s h).clients ∧ (EL c (deliver2 s h).clients).peer_closed’
+    by (Cases_on ‘h’ >>
+        rw[deliver2_def, update_client_def, EL_LUPDATE, EL_APPEND1] >> rw[] >> gvs[]) >>
+  first_x_assum drule_all >> strip_tac >>
+  Cases_on ‘h’ >> gvs[data_of_cons, arrival_ok2_def] >> rw[] >> gvs[]
+QED
+
+Theorem kernel_eof_stable:
+  w1.listeners = [(lfd, p, [])] ∧ w1.chans = [] ∧ sched_wf2 (sk_of p lfd sched w1) ⇒
+  ∀d i. MEM (Eof2 c) (upto (kernel_steps p lfd sched w1) i) ⇒
+        data_of c (upto (kernel_steps p lfd sched w1) (i + d)) =
+        data_of c (upto (kernel_steps p lfd sched w1) i)
+Proof
+  strip_tac >> Induct >> simp[] >> rpt strip_tac >>
+  first_x_assum drule >> strip_tac >>
+  simp[ADD_CLAUSES, upto_SUC] >>
+  qabbrev_tac ‘kst = kernel_steps p lfd sched w1’ >>
+  ‘vinv lfd (kworld p lfd sched w1 (i + d)) (upto kst (i + d))’
+    by (simp[Abbr ‘kst’] >> metis_tac[kworld_vinv]) >>
+  ‘MEM (Eof2 c) (upto kst (i + d))’ by (irule upto_mem_mono >> qexists_tac ‘i’ >> simp[]) >>
+  ‘step_ok2 (kworld p lfd sched w1 (i + d)) (kst (i + d))’
+    by (simp[Abbr ‘kst’] >> metis_tac[kworld_step_ok]) >>
+  fs[vinv_def] >>
+  ‘c < LENGTH (kworld p lfd sched w1 (d + i)).clients’
+    by (CCONTR_TAC >> fs[NOT_LESS] >> res_tac) >>
+  ‘(EL c (kworld p lfd sched w1 (d + i)).clients).peer_closed’ by metis_tac[] >>
+  drule_all step_ok2_closed >> simp[]
+QED
+
+Theorem rworld_hgrow:
+  run_ok lfd hw ifds m w1 ⇒
+  ∀d k. ∃h. (rworld lfd hw ifds m w1 (k + d)).hist = (rworld lfd hw ifds m w1 k).hist ++ h
+Proof
+  strip_tac >> Induct >- simp[] >> rpt gen_tac >>
+  first_x_assum (qspec_then ‘k’ strip_assume_tac) >>
+  drule prun_round' >> disch_then (qspecl_then [‘ARB’, ‘k + d’] strip_assume_tac) >>
+  drule pround_hgrow >> rw[hgrow_def] >> simp[ADD_CLAUSES] >> metis_tac[APPEND_ASSOC]
+QED
+
+Theorem npolls_mono:
+  run_ok lfd hw ifds m w1 ∧ k ≤ k' ⇒
+  npolls (rworld lfd hw ifds m w1 k).hist ≤ npolls (rworld lfd hw ifds m w1 k').hist
+Proof
+  strip_tac >> drule rworld_hgrow >> disch_then (qspecl_then [‘k' − k’, ‘k’] strip_assume_tac) >>
+  ‘k + (k' − k) = k'’ by simp[] >> gvs[npolls_append]
+QED
+
+Theorem upto_prefix:
+  n ≤ n' ⇒ upto g n ≼ upto g n'
+Proof
+  strip_tac >> qspecl_then [‘n' − n’, ‘n’] strip_assume_tac (Q.GEN ‘g’ upto_mono |> Q.SPEC ‘g’) >>
+  ‘n + (n' − n) = n'’ by decide_tac >> gvs[]
+QED
+
+Theorem data_of_prefix:
+  as ≼ as' ⇒ data_of j as ≼ data_of j as'
+Proof
+  rw[IS_PREFIX_APPEND] >> simp[]
+QED
+
+Theorem conns_of_prefix:
+  as ≼ as' ⇒ conns_of as ≤ conns_of as'
+Proof
+  rw[IS_PREFIX_APPEND] >> simp[conns_of_def, FILTER_APPEND]
+QED
+
+(* A channel at the start of round k, against the kernel's schedule and
+   psk's arrivals *)
+Theorem rinv_chan:
+  simple_run p lfd sched hw ifds m w1 ⇒
+  ∀k c. c < LENGTH (rworld lfd hw ifds m w1 k).chans ⇒
+    (EL c (rworld lfd hw ifds m w1 k).chans).peer_sent =
+      data_of c (upto (kernel_steps p lfd sched w1)
+                      (npolls (rworld lfd hw ifds m w1 k).hist − npolls w1.hist)) ∧
+    ((EL c (rworld lfd hw ifds m w1 k).chans).peer_eof ⇔
+      MEM (Eof2 c) (upto (kernel_steps p lfd sched w1)
+                         (npolls (rworld lfd hw ifds m w1 k).hist − npolls w1.hist))) ∧
+    data_of c (upto (parr lfd hw ifds m w1) k) ++ (EL c (rworld lfd hw ifds m w1 k).chans).inbox =
+      (EL c (rworld lfd hw ifds m w1 k).chans).peer_sent ∧
+    (MEM (Eof2 c) (upto (parr lfd hw ifds m w1) k) ⇒
+      (EL c (rworld lfd hw ifds m w1 k).chans).peer_eof ∧
+      (EL c (rworld lfd hw ifds m w1 k).chans).inbox = []) ∧
+    ((EL c (rworld lfd hw ifds m w1 k).chans).closed ⇒ MEM (Eof2 c) (upto (parr lfd hw ifds m w1) k))
+Proof
+  strip_tac >>
+  qpat_x_assum ‘simple_run _ _ _ _ _ _ _’ (strip_assume_tac o REWRITE_RULE [simple_run_def]) >>
+  rpt gen_tac >> strip_tac >>
+  drule_all rinv_run >> disch_then (qspec_then ‘k’ mp_tac) >>
+  simp_tac std_ss [rinv_def, kinv_def] >> strip_tac >>
+  qmatch_asmsub_abbrev_tac ‘kworld p lfd sched w1 P’ >>
+  ‘vinv lfd (kworld p lfd sched w1 P) (upto (kernel_steps p lfd sched w1) P)’
+    by metis_tac[kworld_vinv] >>
+  qpat_x_assum ‘sinv _ _ _ _ _ _ _ _’ (strip_assume_tac o SIMP_RULE std_ss [sinv_def, wk_def, lk_def]) >>
+  fs[vinv_def] >>
+  ‘c < LENGTH (kworld p lfd sched w1 P).clients’ by fs[] >>
+  ‘wch (EL c (rworld lfd hw ifds m w1 k).chans) (EL c (kworld p lfd sched w1 P).clients) ∧
+   dch (data_of c (upto (parr lfd hw ifds m w1) k)) (MEM (Eof2 c) (upto (parr lfd hw ifds m w1) k))
+       (EL c (rworld lfd hw ifds m w1 k).chans)’ by fs[] >>
+  fs[wch_def, dch_def]
+QED

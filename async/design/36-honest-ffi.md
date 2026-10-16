@@ -1195,8 +1195,7 @@ and is client j of `psk`. The fetch log is `plog`.
   broke while pending (ECONNABORTED: its peer reset it) or was reset
   under EMFILE (`emfile_drops`, macOS).
 
-*Amendment, proposed while preparing the proof (awaiting the user's
-review).* L1 fetches on f only if f's inbox is empty and f is not paused.
+*Amendment (approved, D15).* L1 fetches on f only if f's inbox is empty and f is not paused.
 Two per-server obligations make that hold, and the theorem must state
 them:
 - **S3, the server reads what it is shown:** a handle that is ready with
@@ -1442,6 +1441,7 @@ even if it is more work.**
 | D12 | **[F2]**, for R1-live only. With nothing in flight, send accepts at least one byte (`0 < n ⇒ 0 < takes j h 0 n`) | **approved** |
 | D13 | The L0 connect model is trusted surface: the `connecting` state; the world choices `connect_now` and `pending_err`; the arrivals `LConnUp` / `LConnFail`; no revents while pending. Cited to [P connect]. Untested on macOS: the pending state was never observed (§6) | **approved** |
 | D14 | The R1-live statement (§6), with hypotheses [F1] (weak), [F2], S1, S2, D(c) and [F3]. [F3] (fds free up infinitely often) is an explicit hypothesis of the connection half of the theorem | **approved** |
+| D15 | R1-live gains S3 (the server reads what it is shown) and S4 (if the peer drains, the outbox eventually falls to ≤ hw) as per-server obligations, not trusted. They are discharged per server: echo, HTTP and KV from their v2 liveness and reply-only writes; chat via D7 | **approved** |
 
 §4.1 (the refused/error encoding) is approved with D1/D3, and close-v2
 implements it in the endpoint world.

@@ -31,3 +31,7 @@ Kept current at every push. Worker state: ~/.cache/moonshot/STATE.md; log ~/.cac
 - `simp` DOES use assumptions (asm_simp): in long proofs it rewrites with context equations — orient them towards abbreviations; SPLITP lemmas need `rich_listTheory.SPLITP` qualified in this context.
 - CF: nested constructor patterns in CakeML (`Kvr (Lines s)`) block xmatch's case split: flatten to one constructor per match. Polymorphic basis functions (List.length) leave existentials at a free type variable: translate a monomorphic wrapper.
 - `dimword(:64)` vs its numeral after simp is the main source of irule/qpat misses in bridge proofs; metis_tac[] with ~25 assumptions loops.
+
+## Translator prototype (PR #114, spike/async-translate)
+- `async/translate/`: asyncTranslate (lemmas), asyncTranslateLib (generator + proof tactic + define_async), asyncTranslateEcho (demo). Design: design/44-async-translator.md.
+- Build: `cd async/translate && ~/.cache/orchestrator/holslot timeout 3000 arch -arm64 /bin/zsh -lc '~/HOL/bin/Holmake -j1 asyncTranslateEchoTheory.uo'` (~3 min).

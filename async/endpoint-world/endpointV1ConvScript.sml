@@ -337,3 +337,141 @@ Proof
   drule_all v12core_deliver >> simp[rn1_arr_def] >> strip_tac >>
   first_x_assum irule >> simp[] >> metis_tac[]
 QED
+
+(* The clients after a tick of the world left alone *)
+Theorem ticks2_count:
+  server_world2 lfd sk2 ∧ LHD (ticks2 n sk2).future = SOME st ⇒
+  LENGTH (ticks2 (SUC n) sk2).clients = FST (rn2_step fdf (LENGTH (ticks2 n sk2).clients) st)
+Proof
+  strip_tac >>
+  ‘step_ok2 (ticks2 n sk2) st’
+    by (fs[server_world2_def, sched_wf2_def] >>
+        qpat_x_assum ‘∀n. step_ok2 _ _’ (qspec_then ‘n’ mp_tac) >> fs[next_step2_def]) >>
+  simp[ticks2_SUC', rn2_step_count, tick2_def] >>
+  ‘step_ok2 (ticks2 n sk2 with future := THE (LTL (ticks2 n sk2).future)) st’
+    by fs[step_ok2_with_future] >>
+  drule step_ok2_clients >> simp[]
+QED
+
+(* The clients' fds are fresh, up to the bound *)
+Theorem F2_fresh:
+  alloc_ok sk2.alloc ∧ LENGTH sk2.reserved + M + 3 < dimword (:64) ⇒
+  (∀i i'. i < M + 1 ∧ i' < M + 1 ∧ F2 lfd sk2 i = F2 lfd sk2 i' ⇒ i = i') ∧
+  (∀i. i < M + 1 ⇒ F2 lfd sk2 i ≠ lfd)
+Proof
+  strip_tac >> conj_tac >- (mp_tac F2_inj >> simp[]) >>
+  rpt strip_tac >>
+  ‘LENGTH sk2.reserved + (M + 1) + 1 < dimword (:64)’ by decide_tac >>
+  drule_all (cj 2 (Q.SPEC ‘M + 1’ cfds_fresh)) >> simp[cfds_GENLIST, MEM_GENLIST] >>
+  metis_tac[]
+QED
+
+(* MAIN: left alone, the version-1 world follows the version-2 world, and
+   every step it takes is effective *)
+Theorem v1of2_ticks:
+  server_world2 lfd sk2 ∧ (∀n. nconn sk2 n ≤ M) ∧
+  LENGTH sk2.reserved + M + 3 < dimword (:64) ⇒
+  ∀m. v12core lfd (GENLIST (F2 lfd sk2) (LENGTH (ticks2 m sk2).clients)) 0
+               (ticks m (v1of2 lfd sk2)) (ticks2 m sk2) ∧
+      (ticks m (v1of2 lfd sk2)).sched =
+        rn2_sched (F2 lfd sk2) (LENGTH (ticks2 m sk2).clients) (ticks2 m sk2).future ∧
+      step_ok (ticks m (v1of2 lfd sk2)) (next_step (ticks m (v1of2 lfd sk2)))
+Proof
+  strip_tac >>
+  ‘∀n. LENGTH (ticks2 n sk2).clients ≤ M’
+    by (gen_tac >> fs[server_world2_def] >> drule ticks2_clients >>
+        disch_then (qspec_then ‘n’ SUBST1_TAC) >> fs[]) >>
+  ‘(∀i i'. i < M + 1 ∧ i' < M + 1 ∧ F2 lfd sk2 i = F2 lfd sk2 i' ⇒ i = i') ∧
+   (∀i. i < M + 1 ⇒ F2 lfd sk2 i ≠ lfd)’
+    by (irule F2_fresh >> fs[server_world2_def]) >>
+  qabbrev_tac ‘s1 = v1of2 lfd sk2’ >>
+  (* the step is effective, given the relation *)
+  ‘∀m. v12core lfd (GENLIST (F2 lfd sk2) (LENGTH (ticks2 m sk2).clients)) 0
+            (ticks m s1) (ticks2 m sk2) ∧
+       (ticks m s1).sched =
+         rn2_sched (F2 lfd sk2) (LENGTH (ticks2 m sk2).clients) (ticks2 m sk2).future ⇒
+       step_ok (ticks m s1) (next_step (ticks m s1))’
+    by (rpt strip_tac >> simp[next_step_def, rn2_sched_LHD] >>
+        Cases_on ‘LHD (ticks2 m sk2).future’ >> simp[step_ok_def] >>
+        rename1 ‘LHD (ticks2 m sk2).future = SOME st2’ >>
+        qspecl_then [‘st2’, ‘LENGTH (ticks2 m sk2).clients’, ‘ticks m s1’, ‘ticks2 m sk2’]
+          mp_tac (Q.INST [‘k’ |-> ‘0’, ‘N’ |-> ‘M + 1’, ‘fdf’ |-> ‘F2 lfd sk2’]
+                    v12core_step_rev) >>
+        impl_tac >- (
+          simp[] >> conj_tac
+          >- (fs[server_world2_def, sched_wf2_def] >>
+              qpat_x_assum ‘∀n. step_ok2 _ _’ (qspec_then ‘m’ mp_tac) >> fs[next_step2_def]) >>
+          drule_all (Q.INST [‘fdf’ |-> ‘F2 lfd sk2’] ticks2_count) >>
+          disch_then (SUBST1_TAC o SYM) >>
+          qpat_x_assum ‘∀n. LENGTH _ ≤ M’ (qspec_then ‘SUC m’ mp_tac) >> decide_tac) >>
+        simp[]) >>
+  Induct
+  >- (simp[ffiSpikeSocketFairTheory.ticks_def, ticks2_def] >>
+      ‘v12core lfd [] 0 s1 sk2 ∧
+       s1.sched = rn2_sched (F2 lfd sk2) 0 sk2.future’
+        by fs[server_world2_def, v12core_def, Abbr ‘s1’, v1of2_def] >>
+      fs[server_world2_def] >>
+      first_x_assum (qspec_then ‘0’ mp_tac) >>
+      fs[ffiSpikeSocketFairTheory.ticks_def, ticks2_def]) >>
+  strip_tac >>
+  qabbrev_tac ‘t1 = ticks m s1’ >> qabbrev_tac ‘t2 = ticks2 m sk2’ >>
+  ‘v12core lfd (GENLIST (F2 lfd sk2) (LENGTH (ticks2 (SUC m) sk2).clients)) 0
+          (ticks (SUC m) s1) (ticks2 (SUC m) sk2) ∧
+   (ticks (SUC m) s1).sched =
+     rn2_sched (F2 lfd sk2) (LENGTH (ticks2 (SUC m) sk2).clients) (ticks2 (SUC m) sk2).future’
+    by (simp[ffiSpikeSocketFairTheory.ticks_SUC, ticks2_SUC'] >>
+  Cases_on ‘LHD t2.future’
+  >- (‘LHD t1.sched = NONE’
+        by (‘t1.sched = rn2_sched (F2 lfd sk2) (LENGTH t2.clients) t2.future’ by metis_tac[] >>
+            pop_assum SUBST1_TAC >> REWRITE_TAC[rn2_sched_LHD] >>
+            qpat_x_assum ‘LHD t2.future = _’ SUBST1_TAC >> simp[]) >>
+      simp[tick_def, tick2_def]) >>
+  rename1 ‘LHD t2.future = SOME st2’ >>
+  qabbrev_tac ‘n = LENGTH t2.clients’ >>
+  ‘t1.sched = rn2_sched (F2 lfd sk2) n t2.future’ by (simp[Abbr ‘n’] >> metis_tac[]) >>
+  ‘LHD t1.sched = SOME (SND (rn2_step (F2 lfd sk2) n st2))’
+    by (qpat_x_assum ‘t1.sched = _’ SUBST1_TAC >> REWRITE_TAC[rn2_sched_LHD] >>
+        qpat_x_assum ‘LHD t2.future = _’ SUBST1_TAC >> simp[]) >>
+  ‘LENGTH (tick2 t2).clients = FST (rn2_step (F2 lfd sk2) n st2)’
+    by (simp[Abbr ‘t2’, Abbr ‘n’, GSYM ticks2_SUC'] >>
+        drule_all (Q.INST [‘fdf’ |-> ‘F2 lfd sk2’] ticks2_count) >> simp[]) >>
+  ‘step_ok t1 (SND (rn2_step (F2 lfd sk2) n st2))’
+    by (‘next_step t1 = SND (rn2_step (F2 lfd sk2) n st2)’ by fs[next_step_def] >>
+        metis_tac[]) >>
+  ‘rn1_step (GENLIST (F2 lfd sk2) n) (SND (rn2_step (F2 lfd sk2) n st2)) =
+   (GENLIST (F2 lfd sk2) (FST (rn2_step (F2 lfd sk2) n st2)), st2)’
+    by (‘LENGTH (tick2 t2).clients ≤ M’
+          by (qpat_x_assum ‘∀n. LENGTH _ ≤ M’ (qspec_then ‘SUC m’ mp_tac) >>
+              simp[ticks2_SUC', Abbr ‘t2’]) >>
+        ‘step_ok2 t2 st2’
+          by (fs[server_world2_def, sched_wf2_def] >>
+              qpat_x_assum ‘∀n. step_ok2 _ _’ (qspec_then ‘m’ mp_tac) >>
+              fs[next_step2_def, Abbr ‘t2’]) >>
+        irule rn1_rn2_step >> conj_tac
+        >- (qexists_tac ‘M + 1’ >> simp[] >> decide_tac) >>
+        simp[Abbr ‘n’] >> metis_tac[step_ok2_ix]) >>
+  ‘step_ok (t1 with sched := THE (LTL t1.sched)) (SND (rn2_step (F2 lfd sk2) n st2))’
+    by fs[step_ok_with_sched] >>
+  ‘v12core lfd (GENLIST (F2 lfd sk2) n) 0 (t1 with sched := THE (LTL t1.sched))
+           (t2 with future := THE (LTL t2.future))’ by (REWRITE_TAC[v12core_sched] >> fs[]) >>
+  drule_all v12core_step >> asm_rewrite_tac[] >> strip_tac >>
+  ‘tick t1 = FOLDL deliver1 (t1 with sched := THE (LTL t1.sched))
+                           (SND (rn2_step (F2 lfd sk2) n st2))’
+    by (qpat_x_assum ‘LHD t1.sched = _’ (fn th => simp[tick_def, deliver_def, th])) >>
+  ‘tick2 t2 = FOLDL deliver2 (t2 with future := THE (LTL t2.future)) st2’
+    by (qpat_x_assum ‘LHD t2.future = _’ (fn th => simp[tick2_def, th])) >>
+  ‘∃ll'. t2.future = st2 ::: ll'’ by (Cases_on ‘t2.future’ >> fs[]) >>
+  ‘THE (LTL t1.sched) = rn2_sched (F2 lfd sk2) (FST (rn2_step (F2 lfd sk2) n st2)) ll'’
+    by (qpat_x_assum ‘t1.sched = _’ SUBST1_TAC >>
+        qpat_x_assum ‘t2.future = _’ SUBST1_TAC >>
+        mp_tac (Q.INST [‘ll’ |-> ‘st2 ::: ll'’, ‘fdf’ |-> ‘F2 lfd sk2’, ‘st’ |-> ‘st2’] rn2_sched_LTL) >>
+        simp[]) >>
+  ‘LENGTH (FOLDL deliver2 (t2 with future := THE (LTL t2.future)) st2).clients =
+   FST (rn2_step (F2 lfd sk2) n st2)’ by metis_tac[] >>
+  qpat_x_assum ‘tick t1 = _’ SUBST1_TAC >> qpat_x_assum ‘tick2 t2 = _’ SUBST1_TAC >>
+  qpat_x_assum ‘v12core _ (GENLIST _ (FST _)) _ _ _’ mp_tac >>
+  qpat_x_assum ‘t1.sched = rn2_sched _ _ _’ (fn th => REWRITE_TAC[SYM th]) >>
+  strip_tac >> asm_rewrite_tac[] >>
+  simp[FOLDL_deliver1_sched, deliver2_future]) >>
+  qpat_assum ‘∀m. _ ⇒ step_ok _ _’ (qspec_then ‘SUC m’ mp_tac) >> fs[]
+QED

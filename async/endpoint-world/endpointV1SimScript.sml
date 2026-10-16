@@ -492,3 +492,32 @@ Proof
   drule_all v12rel_write >> disch_then (qspec_then ‘DROP 8 conf’ strip_assume_tac) >>
   Cases_on ‘sock_write (bytes_fd (TAKE 8 conf)) (DROP 8 conf) s1’ >> gvs[]
 QED
+
+(* Every call keeps sched_wf *)
+Theorem socket_oracle_sched_wf:
+  sched_wf s ∧ socket_oracle (ExtCall n) s conf bytes = Oracle_return s' out ⇒
+  sched_wf s'
+Proof
+  strip_tac >> drule sched_wf_preserved >> strip_tac >>
+  qpat_x_assum ‘socket_oracle _ _ _ _ = _’ mp_tac >>
+  simp[socket_oracle_def, socket_fn_def] >>
+  rw[ffi_sock_poll_def, ffi_sock_accept_def, ffi_sock_read_def, ffi_sock_write_def] >>
+  gvs[sock_poll_def, AllCaseEqs()] >> res_tac
+QED
+
+(* The same, with sched_wf (kept by every call) for the poll hypothesis *)
+Theorem v12_call_wf:
+  v12rel lfd ll0 s1 s2 ∧ sched_wf s1 ∧ socket_fn n ≠ NONE ∧
+  EVERY (v12ok lfd s2) (call_fds n conf) ⇒
+  (socket_oracle (ExtCall n) s1 conf bytes = Oracle_final FFI_failed ∧
+   socket2_oracle (ExtCall n) s2 conf bytes = Oracle_final FFI_failed) ∨
+  ∃out s1' s2'. socket_oracle (ExtCall n) s1 conf bytes = Oracle_return s1' out ∧
+                socket2_oracle (ExtCall n) s2 conf bytes = Oracle_return s2' out ∧
+                v12rel lfd ll0 s1' s2' ∧ sched_wf s1'
+Proof
+  strip_tac >>
+  ‘n = «sock_poll» ⇒ step_ok s1 (next_step s1)’
+    by (fs[sched_wf_def] >> first_x_assum (qspec_then ‘0’ mp_tac) >> simp[ticks_def]) >>
+  drule_all v12_call >> disch_then (qspec_then ‘bytes’ strip_assume_tac) >> simp[] >>
+  metis_tac[socket_oracle_sched_wf]
+QED

@@ -649,12 +649,22 @@ the server unchanged). It sits between the event loop's `perform` and L0.
   - `read_simple`: one `sys_recv`, answering `TAKE n` of the input;
   - `accept_simple`: one `sys_accept`, returning the lowest free fd under
     a fresh handle.
-- **Next (phase 4b/6):**
-  - the fd-ownership invariant (every L0 call names the listener or an
-    fd L1 opened and has not closed, so no EBADF or misuse, hence
-    `lrun_ok`);
-  - then R1/R2 against `asyncHLModel`: the regrouping simulation, and
-    in `simple0` worlds the round-by-round renaming of `hrounds`.
+- **`honestL1Inv`** (phase 4b, 34 theorems): **L1 never makes a failing
+  L0 call.**
+  - The invariant `small_fds`: every fd L1 holds is below 2^31.
+  - **Found and fixed:** the C allows at most 4096 fds per poll, and L1
+    polled its whole interest in one call. A server with more than 4096
+    connections would have aborted. L1 now polls in chunks of at most
+    4096 (`poll_chunks`); the C is unchanged.
+  - Each L0 call succeeds and keeps the rely (`sys_*_ok`).
+  - `l1do_ok`, then `l1round_ok`: a round completes and keeps the rely
+    and the invariant.
+  - `lrounds_ok` and `lrun_ok_thm`: the run never fails, given `l2_ok`.
+    `l2_ok` asks only what the handle layer's `hrun_ok` asks: well-formed
+    reads, and no handle-number overflow.
+- **Next (phase 6):** R1/R2 against `asyncHLModel`: the regrouping
+  simulation, and in `simple0` worlds the round-by-round renaming of
+  `hrounds`.
 
 ### 5.1 The wrappers: spec, what each absorbs, and how
 

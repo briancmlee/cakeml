@@ -52,3 +52,12 @@ Next: phase 4, the L1 functional core (extend honestL1 to the L0 world, v2 only 
   - state hypotheses about fds as numerals (2147483648) for simp's if-conditions;
   - simp ignores ∀-hypotheses: use asm_simp_tac or state the instance.
 - Next: fd-ownership invariant (lrun_ok), then R1/R2 vs asyncHLModel.
+
+## Phase 4b (no failing L0 call), branch spike/honest-l1-inv (on spike/honest-l1)
+
+- honestL1Inv (34 theorems): small_fds invariant; sys_*_ok; l1do_ok; l1round_ok; lrounds_ok; lrun_ok_thm (given l2_ok, which mirrors hrun_ok).
+- Model change: polls are chunked (poll_chunks, ≤ 4096 entries per sys_poll): the C's MAX_FDS made a > 4096-fd poll a misuse.
+- Gotchas:
+  - `chunks` clashes with rich_list's `chunks` (the statement silently used the wrong constant): renamed to poll_chunks;
+  - macOS sed has no \b;
+  - `LENGTH acts + st.nxt` vs `st.nxt + LENGTH acts` blocks drule_all: restate the hypothesis.

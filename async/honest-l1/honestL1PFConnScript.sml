@@ -288,3 +288,99 @@ Proof
       first_x_assum drule_all >> strip_tac >> simp[])
   >> first_x_assum drule_all >> simp[]
 QED
+
+(* ------------------------------------------------------------------------
+   The fetch and the listener's queue
+   ------------------------------------------------------------------------ *)
+
+(* Open fds stay open, channels are only added, and a broken channel stays
+   broken *)
+Definition wmono_def:
+  wmono w w' ⇔
+    (∀g j. ALOOKUP w.open_fds g = SOME j ⇒ ALOOKUP w'.open_fds g = SOME j) ∧
+    LENGTH w.chans ≤ LENGTH w'.chans ∧
+    (∀j. j < LENGTH w.chans ∧ (EL j w.chans).broken ⇒ (EL j w'.chans).broken)
+End
+
+Theorem wmono_refl[simp]:
+  wmono w w
+Proof
+  simp[wmono_def]
+QED
+
+Theorem wmono_trans:
+  wmono w1 w2 ∧ wmono w2 w3 ⇒ wmono w1 w3
+Proof
+  rw[wmono_def] >> res_tac >> gvs[] >>
+  first_x_assum irule >> simp[] >> metis_tac[LESS_LESS_EQ_TRANS]
+QED
+
+Theorem wmono_upd:
+  ((EL j w.chans).broken ⇒ (g (EL j w.chans)).broken) ⇒ wmono w (upd_lchan j g w)
+Proof
+  rw[wmono_def, upd_lchan_def, EL_LUPDATE] >> rw[] >> gvs[]
+QED
+
+Theorem wmono_deliver:
+  wmono w (l0_deliver w a)
+Proof
+  Cases_on ‘a’ >> rw[l0_deliver_def] >>
+  TRY (irule wmono_upd >> rw[break_lchan_def] >> NO_TAC) >>
+  every_case_tac >> simp[wmono_def, EL_APPEND1]
+QED
+
+Theorem wmono_tick:
+  wmono w (l0_tick nm w)
+Proof
+  rw[l0_tick_def] >>
+  ‘∀as w'. wmono w' (FOLDL l0_deliver w' as)’
+    by (Induct >> rw[] >> metis_tac[wmono_trans, wmono_deliver]) >>
+  irule wmono_trans >> qexists_tac ‘w with clock := w.clock + 1’ >>
+  simp[] >> simp[wmono_def]
+QED
+
+Theorem wmono_ticks:
+  ∀k w. wmono w (l0_ticks nm k w)
+Proof
+  Induct >> simp[l0_ticks_def] >> metis_tac[wmono_trans, wmono_tick]
+QED
+
+Theorem wmono_accept:
+  fds_lt w ∧ w.fd_limit ≤ 2 ** 31 ∧ l0_accept l w = (r, w') ⇒ wmono w w'
+Proof
+  rw[l0_accept_def] >> gvs[AllCaseEqs(), fail_def] >>
+  TRY (irule wmono_upd >> simp[break_lchan_def] >> rw[] >> NO_TAC) >>
+  TRY (simp[wmono_def] >> NO_TAC) >>
+  TRY (simp[wmono_def, upd_lchan_def, EL_LUPDATE, break_lchan_def] >> rw[] >> NO_TAC) >>
+  gvs[l0_alloc_def] >>
+  ‘¬MEM (lowest_fd w) (l0_used w)’
+    by (irule lowest_fd_free_lim >> gvs[fds_lt_def]) >>
+  rw[wmono_def] >> rw[] >> gvs[l0_used_def] >>
+  imp_res_tac ALOOKUP_MEM >> gvs[MEM_MAP] >> metis_tac[FST]
+QED
+
+Theorem wmono_recv:
+  l0_recv f n w = (r, d, w') ⇒ wmono w w'
+Proof
+  rw[l0_recv_def] >> gvs[AllCaseEqs()] >>
+  TRY (irule wmono_upd >> simp[] >> NO_TAC) >> simp[]
+QED
+
+Theorem wmono_hist[simp]:
+  wmono w (w' with hist := h) ⇔ wmono w w'
+Proof
+  simp[wmono_def]
+QED
+
+Theorem sys_wmono:
+  (winv w ∧ sys_accept g w = SOME (out, w', ev) ⇒ wmono w w') ∧
+  (sys_recv g k w = SOME (out, w', ev) ⇒ wmono w w')
+Proof
+  rw[sys_accept_def, sys_recv_def] >> drule l0_do_cases >> strip_tac >> gvs[] >>
+  gvs[l0_call_def] >> pairarg_tac >> gvs[]
+  >- (‘fds_lt (l0_tick «sys_accept» w) ∧ l0_rely (l0_tick «sys_accept» w)’
+        by (gvs[winv_def] >> irule l0_rely_ch >> qexists_tac ‘w’ >> simp[]) >>
+      drule_at (Pos last) wmono_accept >> gvs[l0_rely_def] >> strip_tac >>
+      metis_tac[wmono_trans, wmono_tick])
+  >> drule wmono_recv >> metis_tac[wmono_trans, wmono_tick]
+QED

@@ -24,6 +24,10 @@
   The store is shared across all episodes, as across all connections in
   HttpKvSpec, and lives for the whole run.
 
+  APPROVED by the user (2026-10-16, PR #117), as drafted: episodes on a
+  reused fd are distinct concurrent clients, ordered by real time when it
+  applies; the server closes only after the client's EOF.
+
   Nothing here is proved; kv_spec2 is a definition.
   HttpKvSpec2BiteScript.sml shows that it rules out the reuse leak, which
   HttpKvSpec's per-fd kv_safe misses, and a server that never closes, and

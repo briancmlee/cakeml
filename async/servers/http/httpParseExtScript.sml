@@ -1,8 +1,8 @@
 (*
-  Extension facts for the bodies request parser of asyncHttpParseB: once
+  Extension facts for the bodies request parser of httpParse: once
   a buffer is BInvalid, it stays BInvalid however much more is read, so it
   can never become a printed valid request, and parse_all_b finds no
-  requests in it.  The counterpart of asyncHttpParseHExt, which it reuses
+  requests in it.  The counterpart of httpHeadersParseExt, which it reuses
   for the request line and header lines; the new cases are the method and
   an invalid header block (Transfer-Encoding, duplicate or non-canonical
   Content-Length), which reading more cannot change.
@@ -13,10 +13,10 @@
                                  printed valid request
    - parse_all_b_invalid_ext
 *)
-Theory asyncHttpParseBExt
+Theory httpParseExt
 Ancestors
-  HttpSpec HttpSpecHeaders HttpSpecBodies asyncHttpParse asyncHttpParseH
-  asyncHttpParseB asyncHttpParseHExt list rich_list
+  HttpGetSpec HttpHeadersSpec HttpSpec httpGetParse httpHeadersParse
+  httpParse httpHeadersParseExt list rich_list
 Libs
   preamble
 

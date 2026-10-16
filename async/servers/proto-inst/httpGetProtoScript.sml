@@ -1,14 +1,14 @@
 (*
-  asyncProtoStrict: the strict parser (asyncHttpParse) against HttpSpec, as an instance of the generic protocol interface
-  (asyncProto, design/32 phase 1).
+  httpGetProto: the strict parser (httpGetParse) against HttpGetSpec, as an instance of the generic protocol interface
+  (protoInterface, design/32 phase 1).
 
   P_strict packages the parser; proto_ok_strict discharges P1-P4 from the
-  parser's existing theorems (parse_print, parse_complete, parse_invalid); http_spec_proto
+  parser's existing theorems (parse_print, parse_complete, parse_invalid); http_get_spec_proto
   states the trusted spec as proto_spec, by unfolding.
 *)
-Theory asyncProtoStrict
+Theory httpGetProto
 Ancestors
-  asyncProto HttpSpec asyncHttpParse
+  protoInterface HttpGetSpec httpGetParse
 Libs
   preamble
 
@@ -44,10 +44,10 @@ Proof
 QED
 
 (* MAIN: the trusted spec is the generic one, for this protocol *)
-Theorem http_spec_proto:
-  http_spec lfd files prog ⇔ proto_spec P_strict (print_response o handle files) lfd prog
+Theorem http_get_spec_proto:
+  http_get_spec lfd files prog ⇔ proto_spec P_strict (print_response o handle files) lfd prog
 Proof
-  simp[http_spec_def, http_safe_def, http_live_def, requests_def, responses_def, no_full_request_def,
+  simp[http_get_spec_def, http_get_safe_def, http_get_live_def, requests_def, responses_def, no_full_request_def,
        proto_spec_def, proto_safe_def, proto_live_def, preqs_def, presps_def,
        no_full_def, P_strict_def]
 QED

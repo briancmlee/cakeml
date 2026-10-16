@@ -1,14 +1,14 @@
 (*
-  asyncProtoB: the bodies parser (asyncHttpParseB) against HttpSpecBodies, as an instance of the generic protocol interface
-  (asyncProto, design/32 phase 1).
+  httpProto: the bodies parser (httpParse) against HttpSpec, as an instance of the generic protocol interface
+  (protoInterface, design/32 phase 1).
 
   P_b packages the parser; proto_ok_b discharges P1-P4 from the
-  parser's existing theorems (parse_bprint, parse_bcomplete, parse_binvalid); http_spec_b_proto
+  parser's existing theorems (parse_bprint, parse_bcomplete, parse_binvalid); http_spec_proto
   states the trusted spec as proto_spec, by unfolding.
 *)
-Theory asyncProtoB
+Theory httpProto
 Ancestors
-  asyncProto HttpSpecBodies asyncHttpParseB asyncHttpParseBExt
+  protoInterface HttpSpec httpParse httpParseExt
 Libs
   preamble
 
@@ -44,10 +44,10 @@ Proof
 QED
 
 (* MAIN: the trusted spec is the generic one, for this protocol *)
-Theorem http_spec_b_proto:
-  http_spec_b lfd files prog ⇔ proto_spec P_b (print_response o bhandle files) lfd prog
+Theorem http_spec_proto:
+  http_spec lfd files prog ⇔ proto_spec P_b (print_response o bhandle files) lfd prog
 Proof
-  simp[http_spec_b_def, http_safe_b_def, http_live_b_def, brequests_def, bresponses_def, no_full_brequest_def,
+  simp[http_spec_def, http_safe_def, http_live_def, brequests_def, bresponses_def, no_full_brequest_def,
        proto_spec_def, proto_safe_def, proto_live_def, preqs_def, presps_def,
        no_full_def, P_b_def]
 QED

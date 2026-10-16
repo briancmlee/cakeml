@@ -1,8 +1,8 @@
 (*
-  asyncProtoProgB: the bodies HTTP server as an instance of the generic
-  CakeML program (asyncProtoProg), design/32 phase 4.
+  httpProg: the bodies HTTP server as an instance of the generic
+  CakeML program (protoProg), design/32 phase 4.
 
-  The program is asyncProtoProg's (the basis, Socket, the Async library,
+  The program is protoProg's (the basis, Socket, the Async library,
   run_i, the generic handler, server and main) plus the bodies parser and
   responder, translated into the interface's types:
 
@@ -18,23 +18,23 @@
   EQUAL to the original, so every theorem about the parser is unchanged.
   The demo's file map (demo_files) is defined here.
 *)
-Theory asyncProtoProgB
+Theory httpProg
 Ancestors
-  asyncCore asyncLevel1 asyncChoose asyncServer asyncCfActModel
-  asyncCfActProg asyncM4Approx asyncM3World asyncM3Prog asyncM3Loop
-  asyncM4Relabel asyncM4RelabelDist asyncM4SockModel asyncM4SockApprox
-  asyncM4SockServer HttpSpec HttpSpecHeaders HttpSpecBodies asyncHttpParse
-  asyncHttpParseH asyncHttpParseB
-  asyncProto asyncProtoB asyncProtoProg asyncProtoSockSpec
+  asyncCore asyncLevel1 asyncChoose echoServer libModel
+  libProg libApprox loopPollWorld loopPollProg loopPoll
+  relabel relabelDist echoSockModel libSockApprox
+  echoSockServer HttpGetSpec HttpHeadersSpec HttpSpec httpGetParse
+  httpHeadersParse httpParse
+  protoInterface httpProto protoProg protoSockSpec
   ml_translator mlstring mlint std_prelude ListProg
 Libs
   preamble basis ml_translatorLib cfTacticsLib ml_progLib basisFunctionsLib
 
-val _ = translation_extends "asyncProtoProg"
+val _ = translation_extends "protoProg"
 
-val _ = register_type “:asyncHttpParseH$headers_result”;
-val _ = register_type “:HttpSpecBodies$brequest”;
-val _ = register_type “:asyncHttpParseB$bparse_result”;
+val _ = register_type “:httpHeadersParse$headers_result”;
+val _ = register_type “:HttpSpec$brequest”;
+val _ = register_type “:httpParse$bparse_result”;
 
 (* The files the demo server serves *)
 Definition demo_files_def:
@@ -53,8 +53,8 @@ Proof
   simp[num_to_str_def, mlintTheory.toString_thm]
 QED
 
-(* The response to a GET of path p (HttpSpec's handle, printed, written
-   without HttpSpec's response datatype for the translator) *)
+(* The response to a GET of path p (HttpGetSpec's handle, printed, written
+   without HttpGetSpec's response datatype for the translator) *)
 Definition respond_def:
   respond files p =
     case ALOOKUP files p of

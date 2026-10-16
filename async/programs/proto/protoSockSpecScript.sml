@@ -1,28 +1,28 @@
 (*
-  asyncProtoSockSpec: CF specs of the generic CakeML handler and server
-  (asyncProtoProg), proved once for every protocol: they implement
+  protoSockSpec: CF specs of the generic CakeML handler and server
+  (protoProg), proved once for every protocol: they implement
   srelabel (proto_handler P resp ...) and srelabel (proto_server P resp lfd),
   given CakeML values parsev and respv that implement P.parse and resp
-  (the translator's certificates, (LIST_TYPE CHAR --> ASYNCPROTO_PRESULT_TYPE R)
+  (the translator's certificates, (LIST_TYPE CHAR --> PROTOINTERFACE_PRESULT_TYPE R)
   and (R --> LIST_TYPE CHAR)), with the protocol as
   arguments.  The server skeleton's spec (sserver_with_spec, proved once
   for any handler with a spec, SHANDLER) comes first.  The depth-indexed
-  technique is asyncM4SockApprox's (Async_bind_guarded_spec_0/_d,
+  technique is libSockApprox's (Async_bind_guarded_spec_0/_d,
   Async_bind_spec_d, async_both_spec_d, async_map_spec_d).
   design/32 §2.4, phase 4.
 *)
-Theory asyncProtoSockSpec
+Theory protoSockSpec
 Ancestors
-  asyncCore asyncLevel1 asyncChoose asyncServer asyncCfActModel
-  asyncCfActProg asyncM4Approx asyncM3World asyncM3Prog asyncM3Loop
-  asyncM4Relabel asyncM4RelabelDist asyncM4SockModel asyncM4SockApprox
-  asyncM4SockServer asyncServerWith
-  asyncProto asyncProtoServer asyncProtoSockModel asyncProtoProg
+  asyncCore asyncLevel1 asyncChoose echoServer libModel
+  libProg libApprox loopPollWorld loopPollProg loopPoll
+  relabel relabelDist echoSockModel libSockApprox
+  echoSockServer skeleton
+  protoInterface protoServer protoSockModel protoProg
   ml_translator mlstring std_prelude
 Libs
   preamble basis ml_translatorLib cfTacticsLib ml_progLib basisFunctionsLib
 
-val _ = translation_extends "asyncProtoProg"
+val _ = translation_extends "protoProg"
 
 val eq_string_v_thm =
   MATCH_MP (DISCH_ALL (fetch "mlbasicsProg" "eq_v_thm"))
@@ -199,7 +199,7 @@ QED
 (* The protocol's parser and responder, as CakeML values *)
 Definition PROTO_IMPL_def:
   PROTO_IMPL R P resp parsev respv ⇔
-    (LIST_TYPE CHAR --> ASYNCPROTO_PRESULT_TYPE R) P.parse parsev ∧
+    (LIST_TYPE CHAR --> PROTOINTERFACE_PRESULT_TYPE R) P.parse parsev ∧
     (R --> LIST_TYPE CHAR) resp respv
 End
 
@@ -209,18 +209,18 @@ Theorem sproto_handler_spec_d:
   ∀n buf bufv fd fdv.
     PROTO_IMPL R P resp parsev respv ∧
     NUM fd fdv ∧ fd < dimword(:64) ∧ LIST_TYPE CHAR buf bufv ⇒
-    app (p:'ffi ffi_proj) asyncProtoProg$proto_handler_v [parsev; respv; fdv; bufv] emp
+    app (p:'ffi ffi_proj) protoProg$proto_handler_v [parsev; respv; fdv; bufv] emp
       (POSTv v. &COMPd p SACT UNIT_TYPE SSNAP n
                   (srelabel (proto_handler P resp (fd, buf))) v)
 Proof
   completeInduct_on ‘n’ >> rpt strip_tac >>
   gvs[PROTO_IMPL_def] >>
-  xcf_with_def asyncProtoProgTheory.proto_handler_v_def >>
-  xlet ‘POSTv rv. &ASYNCPROTO_PRESULT_TYPE R (P.parse buf) rv’
+  xcf_with_def protoProgTheory.proto_handler_v_def >>
+  xlet ‘POSTv rv. &PROTOINTERFACE_PRESULT_TYPE R (P.parse buf) rv’
   >- (qpat_assum ‘(_ --> _) P.parse _’ xapp_spec >> simp[]) >>
   simp_tac std_ss [Once sproto_handler_unfold] >>
   Cases_on ‘P.parse buf’ >>
-  gvs[ASYNCPROTO_PRESULT_TYPE_def]
+  gvs[PROTOINTERFACE_PRESULT_TYPE_def]
   >- ((* a complete request: write the response, then the handler on rest *)
       xmatch >>
       qmatch_goalsub_rename_tac ‘resp req’ >>
@@ -310,7 +310,7 @@ QED
 Theorem sproto_handler_spec:
   PROTO_IMPL R P resp parsev respv ∧
   NUM fd fdv ∧ fd < dimword(:64) ∧ LIST_TYPE CHAR buf bufv ⇒
-  app (p:'ffi ffi_proj) asyncProtoProg$proto_handler_v [parsev; respv; fdv; bufv] emp
+  app (p:'ffi ffi_proj) protoProg$proto_handler_v [parsev; respv; fdv; bufv] emp
     (POSTv v. &COMP p SACT UNIT_TYPE SSNAP (srelabel (proto_handler P resp (fd, buf))) v)
 Proof
   strip_tac >> irule app_COMP_of_approxd >> simp[] >> gen_tac >>
@@ -321,10 +321,10 @@ QED
    socket vocabulary: the instance of sserver_with_spec for the handler *)
 Theorem sproto_server_spec:
   PROTO_IMPL R P resp parsev respv ∧ NUM lfd lfdv ∧ lfd < dimword(:64) ⇒
-  app (p:'ffi ffi_proj) asyncProtoProg$proto_server_v [parsev; respv; lfdv] emp
+  app (p:'ffi ffi_proj) protoProg$proto_server_v [parsev; respv; lfdv] emp
     (POSTv v. &COMP p SACT UNIT_TYPE SSNAP (srelabel (proto_server P resp lfd)) v)
 Proof
-  rpt strip_tac >> xcf_with_def asyncProtoProgTheory.proto_server_v_def >> xfun ‘h’ >>
+  rpt strip_tac >> xcf_with_def protoProgTheory.proto_server_v_def >> xfun ‘h’ >>
   simp[proto_server_def] >> xapp_spec sserver_with_spec >>
   simp[SHANDLER_def, wf_proto_handler] >> rpt strip_tac >>
   qpat_x_assum ‘curried _ _ h ∧ _’ (irule o CONJUNCT2) >>

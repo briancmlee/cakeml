@@ -1,5 +1,5 @@
 (*
-  The generic handler (asyncProtoServer's proto_handler P resp) as a
+  The generic handler (protoServer's proto_handler P resp) as a
   per-round state machine: asyncHttpMachineB with the protocol's parser
   and response function (design/32 phase 3).
 
@@ -19,11 +19,11 @@
   and so is its transcript (pmachine_trans).  Only pmachine_inv uses
   facts about the parser, and so assumes proto_ok P.
 *)
-Theory asyncProtoMachine
+Theory protoMachine
 Ancestors
   pair list rich_list arithmetic option pred_set string
-  asyncCore asyncLevel1 asyncChoose asyncLoop asyncTranscript asyncServer
-  asyncServerSafety asyncCfActModel asyncProgress asyncProto asyncProtoServer
+  asyncCore asyncLevel1 asyncChoose asyncLoop asyncTranscript echoServer
+  echoServerSafety libModel echoProgress protoInterface protoServer
 Libs
   BasicProvers
 
@@ -210,10 +210,10 @@ Proof
       >- (rpt strip_tac >> drule proto_handler_incomplete >> simp[] >> disch_then kall_tac >>
           simp[suspended_bind, readable_def, wf_wait, wait_needs_snapshot] >>
           qmatch_goalsub_abbrev_tac ‘suspended (wait Q) [s]’ >> rw[]
-          >- (‘suspended (wait Q : (event, asyncServer$response) snapshot list -> (asyncServer$action, unit option) asyncCore$outcome) [s] = finished [] ()’
+          >- (‘suspended (wait Q : (event, echoServer$response) snapshot list -> (echoServer$action, unit option) asyncCore$outcome) [s] = finished [] ()’
                 by (irule suspended_wait_SOME >> simp[Abbr ‘Q’]) >>
               pop_assum SUBST1_TAC >> simp[bind_finished_NIL, pcomp_def])
-          >> ‘suspended (wait Q : (event, asyncServer$response) snapshot list -> (asyncServer$action, unit option) asyncCore$outcome) [s] = wait Q’
+          >> ‘suspended (wait Q : (event, echoServer$response) snapshot list -> (echoServer$action, unit option) asyncCore$outcome) [s] = wait Q’
                by (irule suspended_wait_NONE >> simp[Abbr ‘Q’]) >>
           pop_assum SUBST1_TAC >> simp[pcomp_def] >> drule proto_handler_incomplete >> simp[Abbr ‘Q’, readable_def])
       >> rpt strip_tac >> drule proto_handler_invalid >> simp[pcomp_def] >>

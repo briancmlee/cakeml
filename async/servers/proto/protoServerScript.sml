@@ -1,5 +1,5 @@
 (*
-  asyncProtoServer: the server for any framed request protocol, in the
+  protoServer: the server for any framed request protocol, in the
   async model (design/32 §2.2, phase 2).  The HTTP handler with the
   protocol's parser P.parse and an arbitrary response function resp:
 
@@ -16,11 +16,11 @@
   proto_handler_serves (one connection) and proto_server_safety (the
   whole server, every connection).
 *)
-Theory asyncProtoServer
+Theory protoServer
 Ancestors
   pair list rich_list arithmetic option pred_set string
-  asyncCore asyncLevel1 asyncLoop asyncLevel2 asyncTranscript asyncServer
-  asyncServerSafety asyncServerWith asyncProto
+  asyncCore asyncLevel1 asyncLoop asyncLevel2 asyncTranscript echoServer
+  echoServerSafety skeleton protoInterface
 Libs
   BasicProvers
 
@@ -200,7 +200,7 @@ Proof
   drule proto_handler_serves >> strip_tac >>
   mp_tac (server_with_isolates
           |> INST_TYPE [alpha |-> “:unit”]
-          |> INST [mk_var ("h", “:num -> (event, asyncServer$response) snapshot list ->
+          |> INST [mk_var ("h", “:num -> (event, echoServer$response) snapshot list ->
                                  (action, unit option) asyncCore$outcome”) |->
                    “λfd. proto_handler P resp (fd, "")”]
           |> BETA_RULE) >>

@@ -1,11 +1,11 @@
 (*
   Extension facts for the header-tolerant request parser of
-  asyncHttpParseH: once a buffer is HInvalid, it stays HInvalid however
+  httpHeadersParse: once a buffer is HInvalid, it stays HInvalid however
   much more is read, so it can never become a printed valid request, and
   parse_all_h finds no requests in it.
 
   Liveness needs "an invalid buffer stays invalid": this is the
-  counterpart, for parse_hrequest, of asyncHttpParse's parse_invalid.
+  counterpart, for parse_hrequest, of httpGetParse's parse_invalid.
 
   Main facts:
    - parse_hrequest_invalid_ext: HInvalid persists under extension
@@ -14,9 +14,9 @@
    - parse_all_h_invalid_ext:    parse_all_h of an extended HInvalid buffer
                                  is []
 *)
-Theory asyncHttpParseHExt
+Theory httpHeadersParseExt
 Ancestors
-  HttpSpec HttpSpecHeaders asyncHttpParse asyncHttpParseH list rich_list
+  HttpGetSpec HttpHeadersSpec httpGetParse httpHeadersParse list rich_list
 Libs
   preamble
 

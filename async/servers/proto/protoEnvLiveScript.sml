@@ -1,5 +1,5 @@
 (*
-  asyncProtoEnvLive: the generic handler answers everything owed, in any
+  protoEnvLive: the generic handler answers everything owed, in any
   environment satisfying design/34's four facts (henv), stated on the
   handler's own transcript (design/32 §2.9, phase 3).
 
@@ -17,11 +17,11 @@
     stopped, not invalid      ⇒ an end-of-file read in the transcript
                                 (pmachine_eof).
 *)
-Theory asyncProtoEnvLive
+Theory protoEnvLive
 Ancestors
   pair list rich_list arithmetic option pred_set string
-  asyncCore asyncLevel1 asyncTranscript asyncServer asyncCfActModel asyncProgress
-  asyncProto asyncProtoServer asyncProtoMachine asyncProtoDrain
+  asyncCore asyncLevel1 asyncTranscript echoServer libModel echoProgress
+  protoInterface protoServer protoMachine protoDrain
 Libs
   BasicProvers
 

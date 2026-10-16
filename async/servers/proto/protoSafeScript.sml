@@ -1,5 +1,5 @@
 (*
-  asyncProtoSafe: the generic proto_safe for the loop's trace of
+  protoSafe: the generic proto_safe for the loop's trace of
   proto_server (any interest function), proved once for every protocol
   with proto_ok (design/32 §2.2, phase 2).  asyncHttpSafeH's chain, with
   the protocol's preqs / presps / no_full:
@@ -9,14 +9,14 @@
                       ≼ bytes (proto_responses_to P resp s)               [proto_all_prefix]
                       = presps resp rs                                    [proto_all_requests]
 *)
-Theory asyncProtoSafe
+Theory protoSafe
 Ancestors
-  words asyncCore asyncLevel1 asyncLevel2 asyncTranscript asyncServer
-  asyncServerSafety asyncM4ServerUses asyncM4Relabel asyncM4RelabelDist
-  ffiSpikeSocketFFI asyncM3World asyncM4GRounds asyncM4SockInv
-  asyncM4SockModel asyncM4GTrans asyncM4EchoRunOk asyncM4EchoSafe EchoSpec
-  asyncServerWith HttpSpec asyncServerWithUses asyncRunOkGen
-  asyncProto asyncProtoServer llist
+  words asyncCore asyncLevel1 asyncLevel2 asyncTranscript echoServer
+  echoServerSafety echoServerUses relabel relabelDist
+  socketWorld loopPollWorld loopRounds loopSockInv
+  echoSockModel loopRoundsTrans echoRunOk echoSafe EchoSpec
+  skeleton HttpGetSpec skeletonUses skeletonRunOk
+  protoInterface protoServer llist
 Libs
   preamble
 

@@ -1,7 +1,7 @@
 (*
-  asyncProtoV: the generic protocol handler over an action vocabulary V
-  (asyncServerV), with an optional query per request (design/32 §2.3, for
-  KV; additive over asyncProtoServer).
+  protoV: the generic protocol handler over an action vocabulary V
+  (skeletonV), with an optional query per request (design/32 §2.3, for
+  KV; additive over protoServer).
 
      proto_handler_v V P ansq fin (fd, buf) =
        case P.parse buf of
@@ -18,11 +18,11 @@
   queries (proto_handler_idV), so every result about proto_handler is one
   about proto_handler_v.
 *)
-Theory asyncProtoV
+Theory protoV
 Ancestors
   pair list rich_list arithmetic option pred_set string
-  asyncCore asyncLevel1 asyncLoop asyncLevel2 asyncTranscript asyncServer
-  asyncServerSafety asyncServerWith asyncServerV asyncProto asyncProtoServer
+  asyncCore asyncLevel1 asyncLoop asyncLevel2 asyncTranscript echoServer
+  echoServerSafety skeleton skeletonV protoInterface protoServer
 Libs
   BasicProvers
 

@@ -1,11 +1,11 @@
 (*
-  An incremental parser for HttpSpecBodies' requests (Content-Length
+  An incremental parser for HttpSpec' requests (Content-Length
   framed bodies), proved against the spec's printer.  Internal.
 
      parse_brequest s = BComplete r rest | BIncomplete | BInvalid
 
   Method "GET " or "POST "; then the request line and header lines as in
-  asyncHttpParseH (split_path, the version constants);
+  httpHeadersParse (split_path, the version constants);
   (parse_bheaders: its own header-line parser, the character rules only);
   then the body (bbody): any Transfer-Encoding header or two
   Content-Length headers is invalid; a single Content-Length value must be
@@ -17,9 +17,9 @@
    - parse_bcomplete:  BComplete r rest means s = print_brequest r ++ rest
    - parse_all_brequests, parse_all_b_mono, parse_bextend
 *)
-Theory asyncHttpParseB
+Theory httpParse
 Ancestors
-  HttpSpec HttpSpecHeaders HttpSpecBodies asyncHttpParse asyncHttpParseH
+  HttpGetSpec HttpHeadersSpec HttpSpec httpGetParse httpHeadersParse
   list rich_list ASCIInumbers
 Libs
   preamble
@@ -33,10 +33,10 @@ Definition post_sp_def:
 End
 
 (* The header lines, up to and including the blank line.  The bodies
-   protocol has its own header-line parser: asyncHttpParseH's parse_headers
+   protocol has its own header-line parser: httpHeadersParse's parse_headers
    rejects the body-framing headers (spike/http-nobody), which this
    protocol needs.  parse_bheaders is that parser before the restriction,
-   with HttpSpecBodies' header names: RFC 9110 tokens (tchar). *)
+   with HttpSpec' header names: RFC 9110 tokens (tchar). *)
 Theorem split_at_LENGTH_b[local]:
   ∀s. LENGTH (SND (split_at c s)) ≤ LENGTH s
 Proof
@@ -452,7 +452,7 @@ Proof
   dep_rewrite.DEP_ONCE_REWRITE_TAC[bline_line] >>
   REWRITE_TAC[DROP_sp_http] >>
   dep_rewrite.DEP_REWRITE_TAC[parse_bheaders_print |> REWRITE_RULE [GSYM APPEND_ASSOC]] >>
-  REWRITE_TAC[bfinish_def, asyncHttpParseHTheory.headers_result_case_def] >>
+  REWRITE_TAC[bfinish_def, httpHeadersParseTheory.headers_result_case_def] >>
   fs[IS_PREFIX_APPEND3, sp_http_distinct] >>
   irule bbody_framed >> fs[EVERY_MEM, EXISTS_MEM]
 QED

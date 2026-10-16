@@ -1,5 +1,5 @@
 (*
-  asyncProtoMain: the generic program-level results (design/32 §2.4,
+  protoMain: the generic program-level results (design/32 §2.4,
   phase 4).
 
   - proto_main_spec: the CakeML proto_main runs M4's dynamic-interest loop
@@ -12,20 +12,20 @@
   What stays per instance is the program's Decls theorem, the lookup of
   main and prog_syntax_ok, computed by evaluation (§2.4).
 *)
-Theory asyncProtoMain
+Theory protoMain
 Ancestors
-  asyncCore asyncLevel1 asyncCfActModel asyncCfActProg asyncM3World
-  asyncM3Prog asyncM3Loop asyncM4GRounds asyncM4Loop asyncM4SockModel
-  asyncM4SockApprox asyncM4SockServer asyncServerWith asyncServerWithUses
-  asyncRunOkGen
-  ffiSpikeSocketFFI ffiSpikeSocketProof ffiSpikeSocketDiv ffiSpikeDivMain
-  EchoSpec HttpSpec asyncProto asyncProtoServer asyncProtoSafe asyncProtoSockModel
-  asyncProtoLive asyncProtoProg asyncProtoSockSpec
-  asyncM4EchoSpecSafe cfDiv ml_translator ml_prog std_prelude llist
+  asyncCore asyncLevel1 libModel libProg loopPollWorld
+  loopPollProg loopPoll loopRounds loopPollDyn echoSockModel
+  libSockApprox echoSockServer skeleton skeletonUses
+  skeletonRunOk
+  socketWorld socketProof socketDiv divMain
+  EchoSpec HttpGetSpec protoInterface protoServer protoSafe protoSockModel
+  protoLive protoProg protoSockSpec
+  echoSafeHeadline cfDiv ml_translator ml_prog std_prelude llist
 Libs
   preamble basis cfDivLib cfTacticsLib ml_progLib basisFunctionsLib
 
-val _ = translation_extends "asyncProtoProg"
+val _ = translation_extends "protoProg"
 
 (* The generic server's run against the socket world s0: round i polls
    listener 3w and every connection accepted so far *)
@@ -41,10 +41,10 @@ Theorem proto_main_spec:
   proto_ok P ∧ PROTO_IMPL R P resp parsev respv ∧
   limited_parts socket_names p ∧
   s0.listeners = [(3w, [])] ∧ s0.conns = [] ∧ UNIT_TYPE () uv ⇒
-  app (p:'ffi ffi_proj) asyncProtoProg$proto_main_v [parsev; respv; uv] (SOCKETS_EV s0 [])
+  app (p:'ffi ffi_proj) protoProg$proto_main_v [parsev; respv; uv] (SOCKETS_EV s0 [])
     (POSTd io. io = proto_trace P resp s0)
 Proof
-  rpt strip_tac >> xcf_with_def asyncProtoProgTheory.proto_main_v_def >>
+  rpt strip_tac >> xcf_with_def protoProgTheory.proto_main_v_def >>
   xlet ‘POSTv cv. &COMP p SACT UNIT_TYPE SSNAP
                      (srelabel (proto_server P resp 3)) cv * SOCKETS_EV s0 []’
   >- (xapp_spec sproto_server_spec >> xsimpl >> metis_tac[]) >>

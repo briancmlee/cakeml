@@ -1,9 +1,9 @@
 (*
-  asyncProtoProg: the server skeleton and the generic protocol handler in
-  CakeML, in M3's program (extending asyncM4SockServer, whose sreadable
+  protoProg: the server skeleton and the generic protocol handler in
+  CakeML, in M3's program (extending echoSockServer, whose sreadable
   it reuses).  design/32 §2.4, phase 4.
 
-  The skeleton mirrors asyncProtoSockModel's sserver_with_unfold:
+  The skeleton mirrors protoSockModel's sserver_with_unfold:
 
      fun sserver_with h lfd =
        Async.bind (sreadable lfd) (fn u =>
@@ -17,7 +17,7 @@
   The handler is higher-order in the protocol: parse is the CakeML parser
   (a function from a char list to a presult, whose constructors the
   translator names Pcomplete, Pincomplete, Pinvalid) and respond computes
-  a response's characters.  The code mirrors asyncProtoSockModel's
+  a response's characters.  The code mirrors protoSockModel's
   sproto_handler_unfold:
 
      fun proto_handler parse respond fd buf =
@@ -42,18 +42,18 @@
 
      fun proto_main parse respond u = run_i ([3], proto_server parse respond 3);
 *)
-Theory asyncProtoProg
+Theory protoProg
 Ancestors
-  asyncCore asyncLevel1 asyncChoose asyncServer asyncCfActModel
-  asyncCfActProg asyncM4Approx asyncM3World asyncM3Prog asyncM3Loop
-  asyncM4Relabel asyncM4RelabelDist asyncM4SockModel asyncM4SockApprox
-  asyncM4SockServer asyncProto ml_translator mlstring std_prelude ListProg
+  asyncCore asyncLevel1 asyncChoose echoServer libModel
+  libProg libApprox loopPollWorld loopPollProg loopPoll
+  relabel relabelDist echoSockModel libSockApprox
+  echoSockServer protoInterface ml_translator mlstring std_prelude ListProg
 Libs
   preamble basis ml_translatorLib cfTacticsLib ml_progLib basisFunctionsLib
 
-val _ = translation_extends "asyncM4SockServer"
+val _ = translation_extends "echoSockServer"
 
-val _ = register_type “:'a asyncProto$presult”;
+val _ = register_type “:'a protoInterface$presult”;
 
 Quote add_cakeml:
   fun sserver_with h lfd =

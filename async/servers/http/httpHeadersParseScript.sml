@@ -1,5 +1,5 @@
 (*
-  An incremental parser for HttpSpecHeaders' requests (header-tolerant),
+  An incremental parser for HttpHeadersSpec' requests (header-tolerant),
   proved against the variant's printer.  Internal: not part of any spec.
 
      parse_hrequest s = HComplete r rest   s starts with a complete valid
@@ -8,7 +8,7 @@
                       | HInvalid           s cannot
 
   Request line:  "GET " path " HTTP/1.0\r\n" or " HTTP/1.1\r\n"  (the path
-  split as in asyncHttpParse), then header lines "name: value\r\n" up to a
+  split as in httpGetParse), then header lines "name: value\r\n" up to a
   blank line "\r\n" (parse_headers).
 
   Main facts:
@@ -17,9 +17,9 @@
    - parse_all_hrequests: parse_all_h of printed requests followed by a rest
                        that does not start with a request is the requests
 *)
-Theory asyncHttpParseH
+Theory httpHeadersParse
 Ancestors
-  HttpSpec HttpSpecHeaders asyncHttpParse list rich_list
+  HttpGetSpec HttpHeadersSpec httpGetParse list rich_list
 Libs
   preamble
 

@@ -1,5 +1,5 @@
 (*
-  asyncProto: the framed request protocol interface (design/32 §2.1).
+  protoInterface: the framed request protocol interface (design/32 §2.1).
 
   A protocol is a validity predicate, a printer and a parser for requests
   of some type 'r.  proto_ok states the four facts the server pipelines
@@ -12,13 +12,13 @@
      proto_all_*             all complete requests at the front of a buffer
 
   The generic spec vocabulary (proto_safe, proto_live, proto_spec) has
-  exactly the shapes of HttpSpec's, HttpSpecHeaders' and HttpSpecBodies'
+  exactly the shapes of HttpGetSpec's, HttpHeadersSpec' and HttpSpec'
   statements; each is an instance by an equality lemma
   (../http-proto-inst).  No trusted file is changed.
 *)
-Theory asyncProto
+Theory protoInterface
 Ancestors
-  EchoSpec HttpSpec
+  EchoSpec HttpGetSpec
 Libs
   preamble
 
@@ -216,7 +216,7 @@ Proof
 QED
 
 (* ------------------------------------------------------------------------
-   The generic spec vocabulary (the shapes of HttpSpec's statements; not
+   The generic spec vocabulary (the shapes of HttpGetSpec's statements; not
    trusted: each trusted spec is an instance by an equality lemma)
    ------------------------------------------------------------------------ *)
 

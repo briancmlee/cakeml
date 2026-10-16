@@ -1,11 +1,11 @@
 (*
-  asyncProtoSockModel: the server skeleton and the generic protocol
-  handler in the socket vocabulary (model), as asyncM4SockModel does for
+  protoSockModel: the server skeleton and the generic protocol
+  handler in the socket vocabulary (model), as echoSockModel does for
   the echo server.
 
   srelabel (server_with h lfd) and srelabel (proto_handler P resp (fd, buf))
-  unfold (by asyncM4RelabelDist) to library computations over socket
-  actions, which is what the CakeML code of asyncProtoProg mirrors:
+  unfold (by relabelDist) to library computations over socket
+  actions, which is what the CakeML code of protoProg mirrors:
     - the skeleton waits for the listener, accepts, and runs each new
       connection's handler beside the rest of the server
       (sserver_with_unfold, for any handler);
@@ -14,12 +14,12 @@
       to its buffer as characters (sproto_handler_unfold, for every
       protocol).
 *)
-Theory asyncProtoSockModel
+Theory protoSockModel
 Ancestors
   pair list rich_list arithmetic option pred_set string words
-  asyncCore asyncLevel1 asyncLevel2 asyncServer asyncM3World
-  asyncM4Relabel asyncM4RelabelDist asyncM4SockModel asyncServerWith
-  asyncProto asyncProtoServer
+  asyncCore asyncLevel1 asyncLevel2 echoServer loopPollWorld
+  relabel relabelDist echoSockModel skeleton
+  protoInterface protoServer
 Libs
   BasicProvers wordsLib
 
@@ -29,9 +29,9 @@ Libs
 Theorem sserver_with_unfold:
   srelabel (server_with h lfd) =
     bind (sreadable lfd) (λu.
-    bind (emit (asyncM3World$Accept (n2w lfd))) (λr.
+    bind (emit (loopPollWorld$Accept (n2w lfd))) (λr.
       case r of
-        asyncM3World$Accepted (SOME c) =>
+        loopPollWorld$Accepted (SOME c) =>
           map (λp. ()) (both (srelabel (h (w2n c))) (srelabel (server_with h lfd)))
       | _ => srelabel (server_with h lfd)))
 Proof
@@ -56,11 +56,11 @@ Theorem sproto_handler_unfold:
   srelabel (proto_handler P resp (fd, buf)) =
     case P.parse buf of
       PComplete req rest =>
-        bind (emit (asyncM3World$Write (n2w fd) (MAP (n2w o ORD) (resp req))))
+        bind (emit (loopPollWorld$Write (n2w fd) (MAP (n2w o ORD) (resp req))))
              (λw. srelabel (proto_handler P resp (fd, rest)))
     | PIncomplete =>
         bind (sreadable fd) (λu.
-        bind (emit (asyncM3World$Read (n2w fd) bufsz)) (λr.
+        bind (emit (loopPollWorld$Read (n2w fd) bufsz)) (λr.
           case r of
             Got (SOME bs) =>
               if bs = [] then return ()

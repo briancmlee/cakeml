@@ -1,14 +1,14 @@
 (*
-  asyncProtoH: the header-tolerant parser (asyncHttpParseH) against HttpSpecHeaders, as an instance of the generic protocol interface
-  (asyncProto, design/32 phase 1).
+  httpHeadersProto: the header-tolerant parser (httpHeadersParse) against HttpHeadersSpec, as an instance of the generic protocol interface
+  (protoInterface, design/32 phase 1).
 
   P_h packages the parser; proto_ok_h discharges P1-P4 from the
-  parser's existing theorems (parse_hprint, parse_hcomplete, parse_hinvalid); http_spec_h_proto
+  parser's existing theorems (parse_hprint, parse_hcomplete, parse_hinvalid); http_headers_spec_proto
   states the trusted spec as proto_spec, by unfolding.
 *)
-Theory asyncProtoH
+Theory httpHeadersProto
 Ancestors
-  asyncProto HttpSpecHeaders asyncHttpParseH asyncHttpParseHExt
+  protoInterface HttpHeadersSpec httpHeadersParse httpHeadersParseExt
 Libs
   preamble
 
@@ -44,10 +44,10 @@ Proof
 QED
 
 (* MAIN: the trusted spec is the generic one, for this protocol *)
-Theorem http_spec_h_proto:
-  http_spec_h lfd files prog ⇔ proto_spec P_h (print_response o handle files o hpath) lfd prog
+Theorem http_headers_spec_proto:
+  http_headers_spec lfd files prog ⇔ proto_spec P_h (print_response o handle files o hpath) lfd prog
 Proof
-  simp[http_spec_h_def, http_safe_h_def, http_live_h_def, hrequests_def, hresponses_def, no_full_hrequest_def,
+  simp[http_headers_spec_def, http_headers_safe_def, http_headers_live_def, hrequests_def, hresponses_def, no_full_hrequest_def,
        proto_spec_def, proto_safe_def, proto_live_def, preqs_def, presps_def,
        no_full_def, P_h_def]
 QED

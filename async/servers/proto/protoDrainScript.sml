@@ -1,6 +1,6 @@
 (*
   The generic handler answers every complete request it receives, as a
-  fact about the state machine (asyncProtoMachine) given four facts about
+  fact about the state machine (protoMachine) given four facts about
   its environment: asyncHttpDrainB for every protocol with proto_ok
   (design/32 phase 3).
 
@@ -15,12 +15,12 @@
   then within (|D| + 2)(K + 3) rounds the handler has written the
   responses to all K requests.  These are design/34's henv facts.
 *)
-Theory asyncProtoDrain
+Theory protoDrain
 Ancestors
   pair list rich_list arithmetic option pred_set string
-  asyncCore asyncLevel1 asyncChoose asyncLoop asyncTranscript asyncServer
-  asyncServerSafety asyncCfActModel asyncProgress asyncProto asyncProtoServer
-  asyncProtoMachine
+  asyncCore asyncLevel1 asyncChoose asyncLoop asyncTranscript echoServer
+  echoServerSafety libModel echoProgress protoInterface protoServer
+  protoMachine
 Libs
   BasicProvers
 
@@ -56,7 +56,7 @@ Overload Wj = “λP resp fd g j. written fd (trans (pcomp P resp fd (PA "")) (T
    ------------------------------------------------------------------------ *)
 
 (* ------------------------------------------------------------------------
-   Parsing facts: asyncProto's, generic
+   Parsing facts: protoInterface's, generic
    ------------------------------------------------------------------------ *)
 
 (* Two prefixes of the same list: the shorter is a prefix of the longer *)

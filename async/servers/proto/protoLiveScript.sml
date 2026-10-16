@@ -1,22 +1,22 @@
 (*
-  asyncProtoLive: liveness of the generic server, for every protocol
+  protoLive: liveness of the generic server, for every protocol
   (design/32 §2.9, phase 3b), carried by the library (design/34).
 
   - proto_handler_live: the generic handler meets the library's
-    per-handler obligation handler_live (asyncServerWithLive), with
+    per-handler obligation handler_live (skeletonLive), with
     out D = the responses to D's complete requests and the round bound
     B D = (|D| + 2)(K + 3).  It is proto_env_live, with henv unfolded.
   - proto_live_rounds: proto_live for the loop's trace, from the library
     theorem server_with_live.  Nothing about sockets or the loop is
     re-proved here.
 *)
-Theory asyncProtoLive
+Theory protoLive
 Ancestors
   pair list rich_list arithmetic option pred_set llist words string
-  asyncCore asyncLevel1 asyncTranscript asyncServer asyncProgress
-  ffiSpikeSocketFFI EchoSpec HttpSpec asyncM3World asyncM4GRounds asyncM4GTrans
-  asyncServerWith asyncSWProgress asyncServerWithLive
-  asyncProto asyncProtoServer asyncProtoEnvLive
+  asyncCore asyncLevel1 asyncTranscript echoServer echoProgress
+  socketWorld EchoSpec HttpGetSpec loopPollWorld loopRounds loopRoundsTrans
+  skeleton skeletonProgress skeletonLive
+  protoInterface protoServer protoEnvLive
 Libs
   preamble
 

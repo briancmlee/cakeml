@@ -9,12 +9,12 @@
   What is trusted, in order:
    1. CakeML's source semantics (semantics_prog) and its I/O events
       (ffi$io_event): imported from CakeML.
-   2. The socket world (ffiSpikeSocketFFI, imported): listeners,
+   2. The socket world (socketWorld, imported): listeners,
       connections, a schedule of future arrivals, and the byte-level FFI
       functions «sock_poll», «sock_accept», «sock_read», «sock_write».
       (Trust base: the C implementation of these four FFI calls behaves
       like this model.)
-   3. The fairness assumption on schedules, sched_wf (ffiSpikeSocketFair,
+   3. The fairness assumption on schedules, sched_wf (socketFair,
       imported): the world never drops an arrival.
    4. Below: the sockets-only FFI oracle, the per-connection projections
       of raw I/O events, the data a client sends, and the statement.
@@ -26,7 +26,7 @@
 *)
 Theory EchoSpec
 Ancestors
-  semantics ffi llist ml_prog ffiSpikeSocketFFI ffiSpikeSocketFair
+  semantics ffi llist ml_prog socketWorld socketFair
 Libs
   preamble
 

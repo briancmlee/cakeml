@@ -6,9 +6,9 @@
 > - `quiet/ffi/`: `ffiAgreeUpto`, FFI states that answer the same along a
 >   run (generic CakeML semantics), used by both bridges to QuietSpec;
 > - `quiet/echo/`: the shipped blocking echo (layer 8) is quiet:
->   **`echo_l_quiet`** (asyncEchoQuiet);
+>   **`echo_blocking_quiet`** (echoQuiet);
 > - `servers/level2-proto/`: `server_with2` (the Level 2 accept/fork
->   skeleton, lifted from #53's `asyncHttpServer2H`) and `asyncProtoV2`
+>   skeleton, lifted from #53's `asyncHttpServer2H`) and `proto2`
 >   (`proto_server_v2`, erasing to layer 10's `server_v` / `proto_handler_v`);
 > - `programs/http-level2/`: the Level 2 protocol server in CakeML
 >   (`asyncOC*`, ending in `sproto_server2_spec`);
@@ -18,9 +18,9 @@
 > - `servers/proto-stable/`: the generic protocol server is stable after the
 >   last arrival (cf-actions' `proto_stable`);
 > - `programs/http-quiet/`: the HTTP-bodies program on that loop
->   (`http_q_spec`) and the headline, unconditional:
->   **`http_q_quiet : ⊢ http_quiet_b 3w demo_files (SNOC (main_call «main») http_q_prog)`**
->   (asyncOCQuietFinal).
+>   (`http_blocking_spec`) and the headline, unconditional:
+>   **`http_blocking_quiet : ⊢ http_quiet 3w demo_files (SNOC (main_call «main») http_blocking_prog)`**
+>   (httpQuietHeadline).
 >
 > Paths in §1–§5 refer to the spike layout; the table in §6 gives the
 > series paths.
@@ -51,12 +51,12 @@ special case, and no live-list bookkeeping.
 |---|---|---|---|
 | Level 2 model: `comp2`, `bind2`, `both2`, `map2`, `wait_on`, `emit2`, `fix2`, `erase`, `quiet`, `wf2` | model/level2 (layer 3) | ~1,300 | unchanged |
 | no busy-waiting: `blocked`, `no_busy_waiting` | model/sched (asyncSched2) | 228 | unchanged |
-| echo server at Level 2 (`server2`, `wf2_server2`) | servers/echo/asyncServer2 | 194 | unchanged |
+| echo server at Level 2 (`server2`, `wf2_server2`) | servers/echo/echoServer2 | 194 | unchanged |
 | HTTP (headers) at Level 2 (`server_with2`, `http_server2_h`, `wf2_http_server2_h`) | servers/http-quiet (#53) | 230 | unchanged; `server_with2` is generic |
-| Level 2 CakeML library: `Pending2 es k`, `STEPA2`, specs of return2, poll2, interest, wait_on, never2, emit2, skip2, bind2 | loop/blocking-l2 (asyncL2BlkProg/Spec/Model) | 695 | extended (§2.1) |
+| Level 2 CakeML library: `Pending2 es k`, `STEPA2`, specs of return2, poll2, interest, wait_on, never2, emit2, skip2, bind2 | loop/blocking-l2 (loopBlock2Prog/Spec/Model) | 695 | extended (§2.1) |
 | blocking loop over a generic world, `brun_two_outcomes` | loop/blocking-l2 (Loop, Stuck) | 940 | the template for the socket loop |
-| select-set loop over sockets: `lbgrounds` (any `sel` with `sel_covers`), two outcomes, transfer of safety/liveness | asyncM4BlkSelWorld (#46), asyncHttpBlkTransfer (#56) | 760 | unchanged; the select set becomes the declared interest |
-| relabelling the interest to socket words (`secho`, `shttp`) | asyncM4LiveEcho, asyncHttpLiveSel | ~120 | the same shape |
+| select-set loop over sockets: `lbgrounds` (any `sel` with `sel_covers`), two outcomes, transfer of safety/liveness | loopSelectSet (#46), asyncHttpBlkTransfer (#56) | 760 | unchanged; the select set becomes the declared interest |
+| relabelling the interest to socket words (`secho`, `shttp`) | echoBlockingSet, asyncHttpLiveSel | ~120 | the same shape |
 | server specs in the socket vocabulary (depth-indexed) | programs/echo, programs/http(-h) | ~900 | the template for the Level 2 ones |
 
 ## 2. What is new
@@ -65,10 +65,10 @@ special case, and no live-list bookkeeping.
 - `both2` / `map2` specs. The declared interest of `both2` is the union of
   what the *waiting* sides declare (`waiting_on`). The CakeML value carries
   both residuals' event lists, so the spec is the Level 1 `both_spec` plus
-  the union, tracked through `STEPA2`. Template: `asyncCfActBoth` +
-  `asyncCfActBothModel` (238 lines). **Est. 350 lines.**
+  the union, tracked through `STEPA2`. Template: `libBoth` +
+  `libBothModel` (238 lines). **Est. 350 lines.**
 - Recursion: depth-indexed `STEPA2d` / `COMP2d`, the limit lemma, and the
-  depth-n specs of poll2/bind2/both2. Template: `asyncM4Approx` (422
+  depth-n specs of poll2/bind2/both2. Template: `libApprox` (422
   lines). The interest is one more component, equal at every depth.
   **Est. 500 lines.** The limit lemma is where the interest must be shown
   to stabilise per round. It does: at a fixed history it is a function of
@@ -86,7 +86,7 @@ special case, and no live-list bookkeeping.
     nothing.
   - **Est. 900 lines** (all three servers).
 - Model side: relabelling distributes over the Level 2 combinators
-  (`relabel2_bind2`, `relabel2_both2`, …; template `asyncM4RelabelDist`,
+  (`relabel2_bind2`, `relabel2_both2`, …; template `relabelDist`,
   163 lines). The bodies server at Level 2 (as #53 did for headers).
   **Est. 450 lines.**
 
@@ -108,14 +108,14 @@ special case, and no live-list bookkeeping.
   v1 model never removes one). So `step_q`'s select set satisfies `sel_ok`
   by construction. The proof obligation is one invariant of the loop:
   every fd in the interest is the listener or was accepted.
-- **Est. 500 lines.** Template: asyncM4LiveLoop (653 lines), with the
+- **Est. 500 lines.** Template: echoBlockingProg (653 lines), with the
   live-list lemmas dropped.
 
 ### 2.4 The whole programs, in QuietSpec's world
 - A bridge `select_ffi = ssel_ffi`: QuietSpec's select model is #27/#46's
   `ffi_sock_select`. Est. 50 lines.
 - `main` and the two-outcome semantics per program. Template:
-  asyncM4LiveMain (203 lines). **Est. 250 lines per program.**
+  echoBlockingMain (203 lines). **Est. 250 lines per program.**
 
 ### 2.5 Quiescence: the new mathematics
 QuietSpec's extra clause: if `arrivals_finite sk`, the run ends asleep.
@@ -141,7 +141,7 @@ QuietSpec's extra clause: if `arrivals_finite sk`, the run ends asleep.
      `hmachine_live` / `asyncHttpDrainB`, with k = 3–4.
   3. **Liveness for the finite trace:** what arrived was answered before
      the final select. This follows from the existing liveness
-     (`echo_live_rounds`, `http_live_b_rounds`) and the two-outcome
+     (`echo_live_rounds`, `http_live_rounds`) and the two-outcome
      transfer, restricted to the finite prefix.
 - **The hardest lemma: progress ⇒ stability.** It combines the measure
   (a sum over the connections the server waits on) with the per-handler
@@ -179,7 +179,7 @@ and need not be redone.
 ## 4. Does `with_store` (KV) compose?
 
 **Corrected (the user approved the pure `with_store δ s0 m`:
-stacked-pr-continuation, `http-kv/asyncWithStore`).**
+stacked-pr-continuation, `http-kv/withStore`).**
 
 `with_store` answers the inner computation's `Kv` queries itself, from a
 store carried in the history. It passes only `Sock` actions out, and its
@@ -250,7 +250,7 @@ nothing else in §2 changes. **Est. +250 lines** on top of §3's total, for
 
 The plan above has been carried out, with no remaining hypothesis: the
 server's stability after the last arrival (PROTO_STABLE) is cf-actions'
-`proto_stable`, and the headline `http_q_quiet` is unconditional.
+`proto_stable`, and the headline `http_blocking_quiet` is unconditional.
 
 **The root cause of both spins.** The blocking loops chose their select
 set from the transcript:
@@ -273,19 +273,19 @@ live-list bookkeeping.
 | step | result | where |
 |---|---|---|
 | library | `both2_specI`, `map2_specI`, depth-indexed recursion; event lists in any order (EVSET) | cakeml/level2 (layer 5), programs/http-level2 |
-| server model | `proto_server_v2`, `erase_proto_server_v2` (exactly cf-actions' `server_v`/`proto_handler_v`), `wf2_*` | servers/level2-proto/asyncProtoV2 |
-| server in CakeML | `sproto_server2_spec` | programs/http-level2/asyncOCProtoSpec |
-| loop | `run_q_two_outcomes` (#46's rounds, `lbgrounds (qsel c)`) | loop/select-interest/asyncOCRun |
-| program | `http_q_spec`: both outcomes safe; live when sched_wf | programs/http-quiet/asyncOCSemB |
-| sleeping | `qsel_sleeps` (generic), `hb_sleeps` | loop/select-interest/asyncOCSleeps, programs/http-quiet/asyncOCQuietB |
-| QuietSpec bridge | `proto_acc`: the server waits only on the listener and accepted fds; `trace_good_q` | loop/select-interest/asyncOCAcc, asyncOCTrace |
-| stability | `proto_stable` (any `proto_ok P`), hence PROTO_STABLE P_b resp_b | servers/proto-stable/asyncProtoStable |
-| headline | `http_q_quiet: ⊢ http_quiet_b 3w demo_files (SNOC (main_call «main») http_q_prog)` | programs/http-quiet/asyncOCQuietFinal |
+| server model | `proto_server_v2`, `erase_proto_server_v2` (exactly cf-actions' `server_v`/`proto_handler_v`), `wf2_*` | servers/level2-proto/proto2 |
+| server in CakeML | `sproto_server2_spec` | programs/http-level2/proto2SockSpec |
+| loop | `run_q_two_outcomes` (#46's rounds, `lbgrounds (qsel c)`) | loop/select-interest/loopInterestRun |
+| program | `http_blocking_spec`: both outcomes safe; live when sched_wf | programs/http-quiet/httpBlockingSemantics |
+| sleeping | `qsel_sleeps` (generic), `hb_sleeps` | loop/select-interest/loopInterestSleeps, programs/http-quiet/httpQuietStable |
+| QuietSpec bridge | `proto_acc`: the server waits only on the listener and accepted fds; `trace_good_q` | loop/select-interest/loopInterestAcc, loopInterestTrace |
+| stability | `proto_stable` (any `proto_ok P`), hence PROTO_STABLE P_b resp_b | servers/proto-stable/protoStable |
+| headline | `http_blocking_quiet: ⊢ http_quiet 3w demo_files (SNOC (main_call «main») http_blocking_prog)` | programs/http-quiet/httpQuietHeadline |
 
 **Honest scope:**
 - Everything is generic in the protocol (P, resp); HTTP bodies is the
   instance proved. KV needs the `Now` event of §4 and is not done.
-- The spec is layer 1's HttpSpecBodies, with tchar and H-CHARS (both
+- The spec is layer 1's HttpSpec, with tchar and H-CHARS (both
   user-approved).
 - The shipped blocking *echo* is proved quiet separately, without option C
-  (`echo_l_quiet`, #77).
+  (`echo_blocking_quiet`, #77).

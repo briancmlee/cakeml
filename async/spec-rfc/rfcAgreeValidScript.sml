@@ -1,14 +1,14 @@
 (*
   rfcAgreeValid: the agreement theorems of rfcAgree for EVERY valid request
-  of HttpSpecBodies, with no extra hypothesis.  Since HttpSpecBodies'
+  of HttpSpec, with no extra hypothesis.  Since HttpSpec'
   RFC character sets (uri_char for paths, field_char for header values),
   every valid request has the characters the RFC allows (valid_rfc_chars),
   so "our subset frames like real HTTP" holds without side conditions.
 *)
 Theory rfcAgreeValid
 Ancestors
-  rfc9112Framing rfcAgree HttpSpecBodiesTchar HttpSpecBodies HttpSpecHeaders
-  HttpSpec
+  rfc9112Framing rfcAgree HttpSpecRfcNames HttpSpec HttpHeadersSpec
+  HttpGetSpec
 Libs
   preamble
 

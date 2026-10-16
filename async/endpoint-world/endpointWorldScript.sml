@@ -26,6 +26,10 @@
      or send on it reports ECONNREFUSED, and clears it; after that it
      reads as EOF and sends fail with EPIPE.  It keeps its fd until the
      program closes it (design/36 §4.1);
+   - a connect can also fail at once with NO SOCKET (as L0's EMFILE or a
+     transient error, honestL0World's l0_connect): which connects do is a
+     world choice (nosock, keyed by the connect's number nconnects).  No
+     channel is created, so a client must handle a failed connect;
    - shutdown: the program closes its sending side (half-close);
    - backpressure, as a PARAMETER: the acceptance policy `takes` says how
      many of the bytes offered to channel j it accepts, given how many are
@@ -84,6 +88,8 @@ Datatype:
             ; takes : num -> num -> num -> num
                         (* bytes channel j accepts of n offered, b in flight *)
             ; calls : mlstring list       (* the calls the world supports *)
+            ; nosock : num -> bool        (* connect i gets no socket *)
+            ; nconnects : num             (* connects so far *)
             ; env : num -> call list -> ep_arrival list
                         (* the arrivals of tick n, given the calls so far *)
             ; clock : num                 (* ticks so far *)
@@ -180,12 +186,17 @@ Definition ep_accept_def:
         | SOME (f, w') => SOME (SOME f, w' with listening := AFUPDKEY l (K (a, q)) w'.listening)
 End
 
+(* A connect: no socket if the world says so (or no fd is free); else a
+   new Connecting channel *)
 Definition ep_connect_def:
   ep_connect a w =
-    case ep_alloc (w with chans := w.chans ++ [new_chan (SOME a) Connecting])
-                  (LENGTH w.chans) of
-    | NONE => (NONE, w)
-    | SOME (f, w') => (SOME f, w')
+    let w0 = w with nconnects := w.nconnects + 1 in
+    if w.nosock w.nconnects then (NONE, w0)
+    else
+      case ep_alloc (w0 with chans := w.chans ++ [new_chan (SOME a) Connecting])
+                    (LENGTH w.chans) of
+      | NONE => (NONE, w0)
+      | SOME (f, w') => (SOME f, w')
 End
 
 Definition ep_read_def:
@@ -257,7 +268,8 @@ End
    (l0_result): a code (0: OK, 1: EAGAIN, 3: EINPROGRESS, 4: ECONNREFUSED,
    6: EPIPE, 10: EMFILE), an 8-byte value, and 4 bytes of errno (0 here:
    the model does not fix the raw errno).  A connect is always pending
-   (code 3, with the fd) or finds no free fd (code 10). *)
+   (code 3, with the fd) or gets no socket (code 10: no free fd, or the
+   world's nosock; the model does not tell these apart). *)
 
 Definition l0_result_def:
   l0_result (code:num) v = n2w code :: n2w8 v ++ [0w; 0w; 0w; 0w] : word8 list

@@ -17,7 +17,7 @@
 Theory asyncProto2Model
 Ancestors
   llist alist words ffi ffiSpikeSocketFFI ffiSpikeSocketFair asyncCore
-  asyncM3World asyncM4GRounds asyncM4GTrans asyncM4Loop asyncM4SockInv
+  asyncM3World asyncM4GRounds asyncM4GTrans asyncM4Loop asyncM4SockInv asyncM4SockModel
   asyncRunOkGen EchoSpec EchoSpec2 HttpSpec socketV2FFI socketV2Fair
   asyncHLFair asyncHLModel asyncHLSimWorld asyncHLSimTick asyncHLSimOps
   asyncHLSimRun asyncHLEpisodes asyncHLSimEvents asyncHLSimTrace
@@ -191,10 +191,12 @@ Proof
   qabbrev_tac ‘TT = trans (proto_server P resp lfdn)
                       (MAP sfs (ghist ifds (srelabel (proto_server P resp lfdn)) s0 n))’ >>
   simp[] >>
-  ‘MAP (CHR o w2n) (bytes (FLAT (read (w2n c) TT))) = FLAT (read (w2n c) TT)’
-    by simp[bytes_def, MAP_MAP_o, combinTheory.o_DEF, ORD_BOUND] >>
   simp[presps_def, bytes_def, bytes_prefix] >>
-  irule prefix_FLAT >> fs[]
+  irule prefix_FLAT >>
+  ‘MAP (CHR o w2n) (MAP ((n2w : num -> word8) o ORD) (FLAT (read (w2n c) TT))) =
+   FLAT (read (w2n c) TT)’
+    by simp[MAP_MAP_o, combinTheory.o_DEF, ORD_BOUND, CHR_ORD, MAP_ID] >>
+  pop_assum SUBST1_TAC >> first_assum ACCEPT_TAC
 QED
 
 (* MAIN: safety, per episode *)
@@ -205,20 +207,25 @@ Theorem proto2_safe:
   proto_safe2 P resp (gtrace2 (proto_server P resp lfdn) lfdn s2)
 Proof
   rw[proto_safe2_def] >>
-  qabbrev_tac ‘m = proto_server P resp lfdn’ >>
-  ‘uses_ok lfdn m ∧ srv_eof_last m’
-    by simp[Abbr ‘m’, uses_ok_def, proto_server_uses_accepted, proto_server_eof_last] >>
-  ‘∀i. Rg2 m lfdn s2 i ≠ []’ by simp[Rg2_nonempty] >>
+  ‘uses_ok lfdn (proto_server P resp lfdn) ∧ srv_eof_last (proto_server P resp lfdn)’
+    by simp[uses_ok_def, proto_server_uses_accepted, proto_server_eof_last] >>
+  ‘∀i. Rg2 (proto_server P resp lfdn) lfdn s2 i ≠ []’ by simp[Rg2_nonempty] >>
   drule_all LPREFIX_rounds_between >> strip_tac >>
   reverse (Cases_on ‘j < LENGTH (accepted_fds evs)’) >- simp[ep_written_def] >>
-  ‘LENGTH (accepted_fds evs) ≤ LENGTH (accepted_fds (FLAT (GENLIST (Rg2 m lfdn s2) (SUC n))))’
+  ‘LENGTH (accepted_fds evs) ≤
+   LENGTH (accepted_fds (FLAT (GENLIST (Rg2 (proto_server P resp lfdn) lfdn s2) (SUC n))))’
     by (qpat_x_assum ‘evs ≼ _’ mp_tac >> rw[IS_PREFIX_APPEND] >>
         simp[accepted_fds_APPEND]) >>
-  drule_all accepted_bound_gen >> disch_then (qspec_then ‘SUC n’ assume_tac) >>
+  ‘LENGTH (accepted_fds (FLAT (GENLIST (Rg2 (proto_server P resp lfdn) lfdn s2) (SUC n)))) <
+   dimword (:64) − 1’ by metis_tac[accepted_bound_gen] >>
   ‘j < dimword (:64) − 1’ by fs[] >>
-  qspecl_then [‘j’, ‘n’] mp_tac (Q.GENL [‘j’, ‘n’] ep_rounds_gen) >>
-  qspecl_then [‘j’, ‘SUC n’] mp_tac (Q.GENL [‘j’, ‘n’] ep_rounds_gen) >>
-  simp[] >> rpt strip_tac >>
+  ‘∀k. ep_read j (FLAT (GENLIST (Rg2 (proto_server P resp lfdn) lfdn s2) k)) =
+         bytes_read_from (hdl (n2w lfdn) j)
+           (FLAT (GENLIST (Rg1 (proto_server P resp lfdn) lfdn s2) k)) ∧
+       ep_written j (FLAT (GENLIST (Rg2 (proto_server P resp lfdn) lfdn s2) k)) =
+         bytes_written_to (hdl (n2w lfdn) j)
+           (FLAT (GENLIST (Rg1 (proto_server P resp lfdn) lfdn s2) k))’
+    by metis_tac[ep_rounds_gen] >>
   ‘(v1of (n2w lfdn) s2).listeners = [(n2w lfdn, [])] ∧ (v1of (n2w lfdn) s2).conns = []’
     by simp[v1of_def] >>
   qspecl_then [‘P’, ‘v1of (n2w lfdn) s2’, ‘lfdn’, ‘resp’, ‘hdl (n2w lfdn) j’, ‘n’,
@@ -227,18 +234,20 @@ Proof
   impl_tac >- simp[] >> strip_tac >>
   (* the chain *)
   irule IS_PREFIX_TRANS >>
-  qexists_tac ‘ep_written j (FLAT (GENLIST (Rg2 m lfdn s2) (SUC n)))’ >>
-  conj_tac >- (irule ep_written_mono >> first_assum ACCEPT_TAC) >>
-  qpat_x_assum ‘ep_written j _ = _’ SUBST1_TAC >>
-  irule IS_PREFIX_TRANS >> first_assum (irule_at Any) >>
+  qexists_tac ‘ep_written j (FLAT (GENLIST (Rg2 (proto_server P resp lfdn) lfdn s2) (SUC n)))’ >>
+  reverse conj_tac >- metis_tac[ep_written_mono] >>
+  irule IS_PREFIX_TRANS >>
+  qexists_tac ‘presps resp (proto_all P (MAP (CHR o w2n)
+                 (ep_read j (FLAT (GENLIST (Rg2 (proto_server P resp lfdn) lfdn s2) n)))))’ >>
+  reverse conj_tac >- metis_tac[] >>
   irule presps_prefix >>
   ‘proto_all P (MAP (CHR o w2n) (ep_read j evs)) = rs’
     by (irule read_requests_parse >> simp[chars_of_bytes]) >>
   pop_assum (SUBST1_TAC o SYM) >>
   irule proto_all_prefix >> simp[] >>
-  irule prefix_MAP >>
-  qpat_x_assum ‘ep_read j (FLAT (GENLIST _ n)) = _’ (SUBST1_TAC o SYM) >>
-  irule ep_read_mono >> first_assum ACCEPT_TAC
+  qpat_x_assum ‘ep_read j evs = _’ (fn th => REWRITE_TAC[GSYM MAP_APPEND, GSYM th]) >>
+  qpat_x_assum ‘∀k. _’ (qspec_then ‘n’ (fn th => REWRITE_TAC[GSYM (CONJUNCT1 th)])) >>
+  irule prefix_MAP >> irule ep_read_mono >> first_assum ACCEPT_TAC
 QED
 
 (* MAIN: liveness, per client *)
@@ -249,9 +258,8 @@ Theorem proto2_live:
   proto_live2 P resp s2 (gtrace2 (proto_server P resp lfdn) lfdn s2)
 Proof
   rw[proto_live2_def] >>
-  qabbrev_tac ‘m = proto_server P resp lfdn’ >>
-  ‘uses_ok lfdn m ∧ srv_eof_last m’
-    by simp[Abbr ‘m’, uses_ok_def, proto_server_uses_accepted, proto_server_eof_last] >>
+  ‘uses_ok lfdn (proto_server P resp lfdn) ∧ srv_eof_last (proto_server P resp lfdn)’
+    by simp[uses_ok_def, proto_server_uses_accepted, proto_server_eof_last] >>
   Cases_on ‘rs = []’
   >- (qexists_tac ‘[]’ >> simp[LPREFIX_def, from_toList, presps_def, bytes_def] >>
       CASE_TAC) >>
@@ -267,28 +275,26 @@ Proof
         rename1 ‘MEM y (arrivals2_upto _ _)’ >> Cases_on ‘y’ >> gvs[] >>
         Cases_on ‘n' = j’ >> gvs[] >> res_tac) >>
   ‘sent2_upto j n s2 = sent_upto (hdl (n2w lfdn) j) n (v1of (n2w lfdn) s2)’
-    by (irule sent2_rn >> simp[]) >>
-  ‘sched_wf (v1of (n2w lfdn) s2)’ by (irule v1of_sched_wf >> fs[]) >>
-  qspecl_then [‘P’, ‘v1of (n2w lfdn) s2’, ‘lfdn’, ‘resp’] mp_tac
-    (Q.GENL [‘P’, ‘s0’, ‘lfdn’, ‘resp’] proto_live_rounds) >>
-  impl_tac >- simp[v1of_def] >>
-  simp[proto_live_def] >>
-  disch_then (qspecl_then [‘hdl (n2w lfdn) j’, ‘n’, ‘rs’] mp_tac) >>
+    by metis_tac[sent2_rn] >>
+  ‘sched_wf (v1of (n2w lfdn) s2)’ by metis_tac[v1of_sched_wf] >>
+  ‘(v1of (n2w lfdn) s2).listeners = [(n2w lfdn, [])] ∧ (v1of (n2w lfdn) s2).conns = []’
+    by simp[v1of_def] >>
+  ‘proto_live P resp (v1of (n2w lfdn) s2)
+     (LFLATTEN (LGENLIST (λi. fromList (Rg1 (proto_server P resp lfdn) lfdn s2 i)) NONE))’
+    by (irule proto_live_rounds >> rpt conj_tac >> TRY (first_assum ACCEPT_TAC) >> fs[]) >>
+  pop_assum (qspecl_then [‘hdl (n2w lfdn) j’, ‘n’, ‘rs’] mp_tac o REWRITE_RULE [proto_live_def]) >>
   impl_tac >- fs[] >> strip_tac >>
-  ‘∀i. Rg1 m lfdn s2 i ≠ []’ by simp[grounds_events_alt] >>
-  qpat_x_assum ‘LPREFIX _ _’ mp_tac >>
-  simp[Abbr ‘m’] >> strip_tac >>
-  qmatch_asmsub_abbrev_tac ‘LPREFIX (fromList evs) (LFLATTEN (LGENLIST (λi. fromList (f i)) NONE))’ >>
-  ‘∀i. f i ≠ []’ by simp[Abbr ‘f’, grounds_events_alt] >>
+  ‘∀i. Rg1 (proto_server P resp lfdn) lfdn s2 i ≠ []’ by simp[grounds_events_alt] >>
   drule_all LPREFIX_rounds_between >> strip_tac >>
   qexists_tac ‘FLAT (GENLIST (Rg2 (proto_server P resp lfdn) lfdn s2) (SUC n'))’ >>
   simp[rounds_LPREFIX] >>
-  qspecl_then [‘j’, ‘SUC n'’] mp_tac
-    (Q.GENL [‘j’, ‘n’] (Q.INST [‘m’ |-> ‘proto_server P resp lfdn’] ep_rounds_gen)) >>
-  impl_tac >- simp[uses_ok_def, proto_server_uses_accepted, proto_server_eof_last] >>
-  strip_tac >> simp[] >>
+  ‘ep_written j (FLAT (GENLIST (Rg2 (proto_server P resp lfdn) lfdn s2) (SUC n'))) =
+   bytes_written_to (hdl (n2w lfdn) j)
+     (FLAT (GENLIST (Rg1 (proto_server P resp lfdn) lfdn s2) (SUC n')))’
+    by metis_tac[ep_rounds_gen] >>
+  pop_assum SUBST1_TAC >>
   irule IS_PREFIX_TRANS >> first_assum (irule_at Any) >>
-  simp[Abbr ‘f’] >> irule bytes_written_to_mono >> first_assum ACCEPT_TAC
+  irule bytes_written_to_mono >> first_assum ACCEPT_TAC
 QED
 
 (* MAIN: the model result, for every protocol *)

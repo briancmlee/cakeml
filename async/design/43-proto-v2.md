@@ -29,6 +29,15 @@ The spec side is `asyncProto2`: `proto_safe2`, `proto_live2` and
 `proto_closes2 = echo_closes2`, with `proto_spec2`, together with
 `http_spec_b2 ⇔ proto_spec2 P_b (print_response o bhandle files)`.
 
+## Status
+
+Milestones 1 and 2 are proved (`async/proto-v2-sim`):
+- `proto_server_eof_last` and `gen_sock_eof_last`;
+- `hrun_sim_gen`, `hrun_ok_gen` and `hrun_events_gen`;
+- `ep_rounds_gen` and `gen_closes2`;
+- `proto_rounds_safe`, `proto2_safe`, `proto2_live` and **`proto2_model`**;
+- `http_spec_b2_proto` (the approved spec is the generic one for `P_b`).
+
 ## Milestones (one PR each)
 
 1. **Generic simulation.** `hrun_sim_gen` and `sock_eof_last_gen`, then

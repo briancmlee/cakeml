@@ -1,0 +1,16 @@
+# Quiescence (option C, design/33 §2.5 (c)) for the generic protocol server
+# proto_server P resp, any proto_ok P: what each action needs (asyncSWActs,
+# asyncProtoActs), that the server reacts to what it waits for
+# (asyncProtoReact), a measure every action shrinks after the last arrival
+# (asyncProtoMeasure), and stability (asyncProtoStable.proto_stable).
+INCLUDES = ../../model/core ../../model/level2 ../../model/sched \
+           ../../servers/echo ../../servers/closed-loop ../../servers/relabel \
+           ../../servers/http ../../servers/http-quiet ../../option-c-loop \
+           ../../spec ../../world/sockets ../../world/clock ../../world/composed \
+           ../../cakeml/library ../../loop/polling \
+           ../../programs/echo ../../programs/echo-live ../../programs/echo-blocking \
+           ../../loop/blocking ../../cakeml/approx ../../quiet/ffi ../../quiet/echo \
+           ../http-proto ../library-liveness ../option-c-proto $(CAKEMLDIR)/semantics
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

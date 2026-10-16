@@ -185,6 +185,19 @@ Proof
   rw[l0_accept_def, AllCaseEqs()] >> simp[upd_lchan_def]
 QED
 
+Theorem qof_lt:
+  l0wf w ∧ MEM j (qof w l) ⇒ j < LENGTH w.chans
+Proof
+  rw[qof_def] >>
+  Cases_on ‘FILTER (λ(l', p, q). l' = l) w.listeners’ >> gvs[] >>
+  PairCases_on ‘h’ >> gvs[] >> rename1 ‘(l', p, q) :: _’ >>
+  ‘MEM (l', p, q) w.listeners’
+    by (‘MEM (l', p, q) (FILTER (λ(l', p, q). l' = l) w.listeners)’ by simp[] >>
+        fs[MEM_FILTER]) >>
+  gvs[l0wf_def, used_chans_def, EVERY_MEM, MEM_FLAT, MEM_MAP, PULL_EXISTS] >>
+  first_x_assum irule >> disj2_tac >> qexists_tac ‘(l', p, q)’ >> simp[]
+QED
+
 (* L1's accept on the listener l *)
 Theorem sys_accept_queue:
   winv w ∧ sys_accept l w = SOME (out, w', ev) ⇒
@@ -192,7 +205,7 @@ Theorem sys_accept_queue:
       ∃j q'. qof w l ++ t = j :: q' ∧ qof w' l = q' ∧
              ((∃k. l0_res_of out = Ok k ∧ ALOOKUP w'.open_fds (n2w k) = SOME j) ∨
               ((∀k. l0_res_of out ≠ Ok k) ∧
-               (j < LENGTH w'.chans ⇒ (EL j w'.chans).broken)))
+               j < LENGTH w'.chans ∧ (EL j w'.chans).broken))
 Proof
   rw[sys_accept_def] >> drule l0_do_cases >> strip_tac >> gvs[] >>
   drule qof_call_accept >> simp[] >> strip_tac >> gvs[] >>
@@ -202,7 +215,13 @@ Proof
   drule_all l0_accept_res >> strip_tac >>
   ‘l0_res_of (enc_res r) = r’ by (irule l0_res_of_enc >> simp[]) >>
   drule accept_chans_len >> strip_tac >>
+  ‘l0wf (l0_tick «sys_accept» w)’ by gvs[winv_def, l0wf_tick] >>
   drule accept_queue >> strip_tac >> qexists_tac ‘t’ >> gvs[] >>
+  ‘j < LENGTH (l0_tick «sys_accept» w).chans’
+    by (‘MEM j (qof (l0_tick «sys_accept» w) l)’
+          by (qpat_x_assum ‘qof (l0_tick _ _) _ = _’ SUBST1_TAC >>
+              qpat_x_assum ‘_ :: _ = _’ (SUBST1_TAC o SYM) >> simp[]) >>
+        metis_tac[qof_lt]) >>
   disj2_tac >> qexists_tac ‘j’ >> gvs[] >>
   TRY (qexists_tac ‘w2n k’ >> simp[] >> NO_TAC)
 QED
@@ -383,4 +402,87 @@ Proof
       drule_at (Pos last) wmono_accept >> gvs[l0_rely_def] >> strip_tac >>
       metis_tac[wmono_trans, wmono_tick])
   >> drule wmono_recv >> metis_tac[wmono_trans, wmono_tick]
+QED
+
+(* A queued channel is resolved: accepted under an fd the log names, or
+   broken *)
+Definition resolved_def:
+  resolved w log j ⇔
+    (∃g. MEM (FConn g) log ∧ ALOOKUP w.open_fds g = SOME j) ∨
+    (j < LENGTH w.chans ∧ (EL j w.chans).broken)
+End
+
+Theorem resolved_mono:
+  resolved w log j ∧ wmono w w' ∧ (∀x. MEM x log ⇒ MEM x log') ⇒ resolved w' log' j
+Proof
+  rw[resolved_def, wmono_def] >> metis_tac[LESS_LESS_EQ_TRANS]
+QED
+
+(* The queue after a step that only appended, then the rest of the fetch *)
+Theorem queue_app:
+  qof w1 l = qof w l ++ t1 ∧ wmono w1 w' ∧
+  k ≤ LENGTH t2 + LENGTH (qof w1 l) ∧ qw = DROP k (qof w1 l ++ t2) ∧
+  (∀j. MEM j (TAKE k (qof w1 l ++ t2)) ⇒ resolved w' log j) ⇒
+  ∃t k. k ≤ LENGTH t + LENGTH (qof w l) ∧ qw = DROP k (qof w l ++ t) ∧
+        ∀j. MEM j (TAKE k (qof w l ++ t)) ⇒ resolved w' (lg ++ log) j
+Proof
+  rw[] >> qexistsl_tac [‘t1 ++ t2’, ‘k’] >> gvs[] >> rw[] >>
+  irule resolved_mono >> qexistsl_tac [‘log’, ‘w'’] >> simp[]
+QED
+
+(* The queue after a step that popped its head j (resolved by then) *)
+Theorem queue_pop:
+  qof w l ++ t1 = j :: qof w1 l ∧ resolved w1 lg j ∧ wmono w1 w' ∧
+  k ≤ LENGTH t2 + LENGTH (qof w1 l) ∧ qw = DROP k (qof w1 l ++ t2) ∧
+  (∀j. MEM j (TAKE k (qof w1 l ++ t2)) ⇒ resolved w' log j) ⇒
+  ∃t k. k ≤ LENGTH t + LENGTH (qof w l) ∧ qw = DROP k (qof w l ++ t) ∧
+        ∀j. MEM j (TAKE k (qof w l ++ t)) ⇒ resolved w' (lg ++ log) j
+Proof
+  rw[] >> qexistsl_tac [‘t1 ++ t2’, ‘SUC k’] >>
+  ‘qof w l ++ (t1 ++ t2) = j :: (qof w1 l ++ t2)’
+    by metis_tac[APPEND_ASSOC, APPEND] >>
+  simp[] >> rw[] >>
+  TRY (irule resolved_mono >> qexistsl_tac [‘lg’, ‘w1’] >> simp[] >> NO_TAC) >>
+  TRY (irule resolved_mono >> qexistsl_tac [‘log’, ‘w'’] >> simp[] >> NO_TAC) >>
+  ‘LENGTH (qof w l ++ t1) = SUC (LENGTH (qof w1 l))’ by metis_tac[LENGTH] >>
+  gvs[]
+QED
+
+(* The fetch: the listener's queue loses a prefix of (the old queue plus
+   arrivals), each popped channel accepted (FConn in the log) or broken *)
+Theorem pf_fetch_queue:
+  ∀fs w ps w' ps' log evs.
+    pf_fetch lfd hw fs (w, ps) = SOME ((w', ps'), log, evs) ∧ winv w ⇒
+    wmono w w' ∧
+    ∃t k. k ≤ LENGTH t + LENGTH (qof w lfd) ∧ qof w' lfd = DROP k (qof w lfd ++ t) ∧
+          ∀j. MEM j (TAKE k (qof w lfd ++ t)) ⇒ resolved w' log j
+Proof
+  Induct >- (simp[pf_fetch_def] >> rpt strip_tac >> qexistsl_tac [‘[]’, ‘0’] >> simp[]) >>
+  rpt gen_tac >> rename1 ‘g :: fs’ >> simp[Once pf_fetch_def] >>
+  IF_CASES_TAC >- (strip_tac >> first_x_assum drule_all >> simp[]) >>
+  IF_CASES_TAC
+  >- (simp[AllCaseEqs(), PULL_EXISTS] >> rpt gen_tac >> strip_tac >>
+      pairarg_tac >> gvs[] >>
+      qpat_x_assum ‘option_CASE (pf_fetch _ _ _ _) _ _ = _’
+        (strip_assume_tac o SIMP_RULE (srw_ss()) [AllCaseEqs()]) >> gvs[] >>
+      ‘winv w1 ∧ wmono w w1’ by metis_tac[sys_winv, sys_wmono] >>
+      first_x_assum drule_all >> strip_tac >>
+      ‘wmono w w'’ by metis_tac[wmono_trans] >> simp[] >>
+      drule_all sys_accept_queue >> strip_tac
+      >- (irule queue_app >> metis_tac[])
+      >- (irule queue_pop >> gvs[] >>
+          qexistsl_tac [‘j’, ‘k’, ‘t'’, ‘t’, ‘w1’] >> gvs[] >>
+          simp[resolved_def] >> disj1_tac >> qexists_tac ‘n2w k'’ >> gvs[])
+      >> irule queue_pop >> gvs[] >>
+      qexistsl_tac [‘j’, ‘k’, ‘t'’, ‘t’, ‘w1’] >> gvs[] >>
+      simp[resolved_def])
+  >> simp[AllCaseEqs(), PULL_EXISTS] >> rpt gen_tac >> strip_tac >>
+  pairarg_tac >> gvs[] >>
+  qpat_x_assum ‘option_CASE (pf_fetch _ _ _ _) _ _ = _’
+    (strip_assume_tac o SIMP_RULE (srw_ss()) [AllCaseEqs()]) >> gvs[] >>
+  ‘winv w1 ∧ wmono w w1’ by metis_tac[sys_winv, sys_wmono] >>
+  first_x_assum drule_all >> strip_tac >>
+  ‘wmono w w'’ by metis_tac[wmono_trans] >> simp[] >>
+  drule (el 3 (CONJUNCTS sys_qof)) >> disch_then (qspec_then ‘lfd’ strip_assume_tac) >>
+  irule queue_app >> metis_tac[]
 QED

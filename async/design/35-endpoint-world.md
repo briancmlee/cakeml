@@ -273,6 +273,33 @@ Items 1–4 were decided on 2026-10-16:
      answers an error (our choice, documented with the statement);
    - a bite: a client that treats refusal as success fails its spec;
    - a check that the v1 and v2 instance proofs are unaffected.
+
+   **Implemented** (branch `spike/refused-connect`), with design/36
+   §4.1's encoding:
+   - `cstatus` gains `Failed`. `Refused` means the error has not been
+     reported yet; `Failed` means it has.
+   - `«sock_connect»` answers the 13-byte L0 header: code 3 with the fd,
+     or 10 (EMFILE). In this world a connect is always pending.
+   - `«sock_read»` on a `Refused` channel returns status 3 with code 4
+     (ECONNREFUSED) and moves it to `Failed`. After that it reads as EOF.
+   - `«sock_send»` answers the L0 header: 0 with the count, 1 (EAGAIN)
+     when nothing is accepted, 4 while the error is pending, and 6 (EPIPE)
+     when shut or `Failed`. This fixes design/36's M2 and M3.
+   - Poll and `«sock_writable»` report refused channels readable and
+     writable.
+   - `«sock_write»`, the full write of v1/v2, is unchanged and
+     model-only. A full write on a refused channel is still a misuse.
+   - `client_guar`: if the server refuses, the client is told so and
+     closes. Once told, it reads no EOF. `refusal_bite` shows that a
+     client which reads on through the refusal to the EOF fails the
+     guarantee.
+   - `proxy_guar`: a refused backend makes the proxy close the client's
+     episode.
+   - The v1/v2 instance proofs needed only that a world whose channels
+     are all up has no pending error (`core_conn_err`).
+   - M1 and M4 (the fd limit, time-varying acceptance) are fixed in
+     honest-ffi's L0 world (`async/honest-l0`), not here; agreed with
+     honest-ffi.
 3. **[SUPERSEDED by design/36 (pending review)]** The full-write
    `«sock_write»`, and full-write misuse under backpressure, are not
    hard-coded further. Design/36 has an honest, layered FFI: L0 honest

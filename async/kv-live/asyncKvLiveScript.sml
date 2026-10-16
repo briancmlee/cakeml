@@ -17,7 +17,7 @@ Ancestors
   HttpSpec HttpSpecBodies asyncHttpParseB
   asyncServerV asyncServerVProgress asyncServerVLive asyncServerVLiveA
   asyncServerVLiveP asyncServerVKv asyncProto asyncProtoV asyncProtoB
-  asyncKvLiveStore asyncProtoMachineV
+  asyncKvLiveStore asyncProtoMachineV asyncKvModel HttpKvSpec llist
 Libs
   preamble
 
@@ -176,12 +176,16 @@ Proof
     by metis_tac[MAP_FST_trans] >>
   ‘∀i. i < LENGTH g ⇒
        new_actions (log_of m1) (TAKE i g) = new_actions (log_of m2) (TAKE i g)’
-    by (rw[new_actions_def, log_of_def] >>
-        ‘FRONT (TAKE i g) = TAKE (i − 1) g’
-          by (Cases_on ‘i’ >> fs[] >>
-              ‘TAKE (SUC n) g = TAKE n g ++ [EL n g]’ by simp[TAKE_SUC_EL] >>
+    by (rpt strip_tac >> Cases_on ‘i’
+        >- (qpat_x_assum ‘∀j. _ ⇒ (m1 _).actions = _’ (qspec_then ‘0’ mp_tac) >>
+            simp[new_actions_def, log_of_def]) >>
+        ‘FRONT (TAKE (SUC n) g) = TAKE n g’
+          by (‘TAKE (SUC n) g = TAKE n g ++ [EL n g]’ by simp[TAKE_SUC_EL] >>
               simp[FRONT_APPEND]) >>
-        simp[]) >>
+        ‘(m1 (TAKE (SUC n) g)).actions = (m2 (TAKE (SUC n) g)).actions ∧
+         (m1 (TAKE n g)).actions = (m2 (TAKE n g)).actions’ by simp[] >>
+        ‘g ≠ []’ by (strip_tac >> fs[]) >>
+        simp[new_actions_def, log_of_def]) >>
   simp[prompt_def]
 QED
 
@@ -216,7 +220,8 @@ Theorem kv_handler_live:
   (∀fd. qfull sockV P_b (λreq. SOME (fd, req)) kfin fd B) ⇒
   handler_live_vp sockV (λfd. kv_handler (fd, "")) kv_goal B
 Proof
-  rw[handler_live_vp_def] >> first_x_assum (qspec_then ‘fd’ mp_tac) >> rw[qfull_def] >>
+  rw[handler_live_vp_def] >>
+  qpat_x_assum ‘∀fd. qfull _ _ _ _ _ _’ (qspec_then ‘fd’ mp_tac) >> rw[qfull_def] >>
   ‘∀j. j ≤ LENGTH g ⇒
        trans (kv_handler (fd, "")) (TAKE j g) = trans (kvq fd (fd, "")) (TAKE j g)’
     by (rpt strip_tac >> irule kv_proto_agree >> simp[]) >>
@@ -235,4 +240,23 @@ Proof
   qexists_tac ‘MAP THE (TAKE (LENGTH (proto_all P_b D))
                  (kanswers sockV (trans (kvq fd (fd, "")) (TAKE j g))))’ >>
   simp[] >> fs[resps_kv]
+QED
+
+(* ------------------------------------------------------------------------
+   5. KV liveness
+   ------------------------------------------------------------------------ *)
+
+(* MAIN: the KV server is live (HttpKvSpec's kv_live) on the event loop's
+   trace, given that the query handler answers all complete requests
+   (qfull, at every fd: cf-actions' proto_handler_live_va_full) *)
+Theorem kv_live_rounds_qfull:
+  (∀fd. qfull sockV P_b (λreq. SOME (fd, req)) kfin fd B) ∧
+  s0.listeners = [(n2w lfdn, [])] ∧ s0.conns = [] ∧ lfdn < dimword (:64) ∧
+  sched_wf s0 ⇒
+  kv_live s0
+    (LFLATTEN (LGENLIST (λi. fromList (grounds_events (EI lfdn)
+       (srelabel (kv_server lfdn)) s0 i)) NONE))
+Proof
+  rw[kv_server_def, kv_inner_def] >> irule kv_live_from_goal >>
+  simp[hokv_kv] >> qexists_tac ‘B’ >> simp[kv_handler_live]
 QED

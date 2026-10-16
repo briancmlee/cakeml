@@ -5,19 +5,19 @@
      sent_upto c n s0 = (bytes the program read from c) ++ c's unread data
      c's outgoing     = (bytes the program wrote to c)
   where "read" / "written" are over the performed (action, response) pairs
-  gperf (asyncM4GTrans).  Before c exists, nothing has been sent on it,
+  gperf (loopRoundsTrans).  Before c exists, nothing has been sent on it,
   read from it or written to it.
 
-  This uses that every arrival of the run is effective (asyncM4Sched,
+  This uses that every arrival of the run is effective (echoLiveSched,
   from sched_wf), that the socket operations only move data from a
   connection's incoming buffer to the program, and that a connection
   starts empty.
 *)
-Theory asyncM4Account
+Theory echoLiveAccount
 Ancestors
   pair list rich_list arithmetic option llist alist
-  ffiSpikeSocketFFI ffiSpikeSocketFair EchoSpec asyncM3World asyncM4GRounds
-  asyncM4GTrans asyncM4Sched
+  socketWorld socketFair EchoSpec loopPollWorld loopRounds
+  loopRoundsTrans echoLiveSched
 Libs
   preamble
 

@@ -9,14 +9,14 @@
   echo_rounds_written_read), which gives EchoSpec's liveness for accepted
   connections (accepted_live).
 *)
-Theory asyncM4Drain
+Theory echoLiveDrain
 Ancestors
   pair list rich_list arithmetic option pred_set llist alist words
-  asyncCore asyncLevel1 asyncTranscript asyncServer asyncServerSafety
-  asyncProgress ffiSpikeSocketFFI ffiSpikeSocketFair EchoSpec asyncM3World
-  asyncM4GRounds asyncM4Relabel asyncM4RelabelDist asyncM4SockModel
-  asyncM4SockInv asyncM4GTrans asyncM4Loop asyncM4EchoRunOk asyncM4EchoSafe
-  asyncM4Sched asyncM4Account asyncM4LiveProg asyncM4LiveWorld asyncM4ReadSoon
+  asyncCore asyncLevel1 asyncTranscript echoServer echoServerSafety
+  echoProgress socketWorld socketFair EchoSpec loopPollWorld
+  loopRounds relabel relabelDist echoSockModel
+  loopSockInv loopRoundsTrans loopPollDyn echoRunOk echoSafe
+  echoLiveSched echoLiveAccount echoLiveProg echoLiveWorld echoLiveReadSoon
 Libs
   preamble
 

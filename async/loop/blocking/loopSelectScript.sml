@@ -12,12 +12,12 @@
         in (add_accepted fds rs, Async.poll c (rdy, 0, rs)) end
       fun run_b st = run_b (step_b st)
 
-  This is asyncM4Loop's step_i with the wait inserted when the computation
-  has nothing to do.  The world (asyncM4BlkWorld) and the trace
-  (asyncM4BlkTrace) are modelled round by round by bgrounds and
+  This is loopPollDyn's step_i with the wait inserted when the computation
+  has nothing to do.  The world (loopSelectWorld) and the trace
+  (loopSelectTrace) are modelled round by round by bgrounds and
   bround_events.
 
-  The FFI: the socket part of ffiSpikeSocketFFI plus «sock_select»
+  The FFI: the socket part of socketWorld plus «sock_select»
   (ffi_sock_select): with the fds as config and an empty buffer, it lets
   rounds pass (sock_wait) until a poll of the fds would return something,
   or diverges (FFIdiverge) if that never happens.  Since the part has one
@@ -30,22 +30,22 @@
   - run_b_stuck_spec: if it blocks forever in round n, it ends in an FFI
     divergence of «sock_select», after the events of the first n rounds;
   - run_b_two_outcomes: one of the two happens.
-  With asyncM4BlkTrace, the trace is safe and live whenever the polling
+  With loopSelectTrace, the trace is safe and live whenever the polling
   loop's is.
 *)
-Theory asyncM4BlkLoop
+Theory loopSelect
 Ancestors
-  asyncCore asyncLevel1 asyncChoose asyncCfActModel asyncCfActProg
-  asyncCfReactWorld asyncM3World asyncM3Prog asyncM3Loop asyncM4GRounds
-  asyncM4Loop asyncM4SockServer asyncM4BlkWorld asyncM4BlkTrace
-  ffiSpikeSocketFFI ffiSpikeSocketProg ffiSpikeSocketProof
-  ffiSpikeSocketDiv ffiSpikeSocketFair ffiSpikeSocketSelect cfDiv
+  asyncCore asyncLevel1 asyncChoose libModel libProg
+  libReactWorld loopPollWorld loopPollProg loopPoll loopRounds
+  loopPollDyn echoSockServer loopSelectWorld loopSelectTrace
+  socketWorld socketProg socketProof
+  socketDiv socketFair socketSelect cfDiv
   ml_translator mlstring Marshalling std_prelude llist misc
 Libs
   preamble basis cfDivLib cfTacticsLib ml_progLib basisFunctionsLib
   ml_translatorLib
 
-val _ = translation_extends "asyncM4SockServer"
+val _ = translation_extends "echoSockServer"
 
 (* ------------------------------------------------------------------------
    The FFI: the socket calls and select
@@ -165,7 +165,7 @@ Theorem Socket_poll_spec_sel:
               SSEL (tick s) (evs ++ [poll_event fds s]))
 Proof
   strip_tac
-  \\ xcf_with_def (fetch "ffiSpikeSocketProg" "Socket_poll_v_def")
+  \\ xcf_with_def (fetch "socketProg" "Socket_poll_v_def")
   \\ xlet_auto >- xsimpl
   \\ xlet_auto >- xsimpl
   \\ xlet_auto >- xsimpl
@@ -213,7 +213,7 @@ Theorem Socket_accept_spec_sel:
               SSEL s' (evs ++ [act_event (Accept l) (Accepted r)]))
 Proof
   strip_tac
-  \\ xcf_with_def (fetch "ffiSpikeSocketProg" "Socket_accept_v_def")
+  \\ xcf_with_def (fetch "socketProg" "Socket_accept_v_def")
   \\ xlet_auto >- xsimpl
   \\ xlet_auto >- xsimpl
   \\ xlet_auto >- xsimpl
@@ -254,7 +254,7 @@ Theorem Socket_read_spec_sel:
 Proof
   strip_tac
   \\ ‘sread_out n r = read_bytes n r’ by simp [sread_out_def, read_bytes_def]
-  \\ xcf_with_def (fetch "ffiSpikeSocketProg" "Socket_read_v_def")
+  \\ xcf_with_def (fetch "socketProg" "Socket_read_v_def")
   \\ xlet_auto >- xsimpl
   \\ xlet_auto >- xsimpl
   \\ xlet_auto >- xsimpl
@@ -292,7 +292,7 @@ Theorem Socket_write_spec_sel:
               SSEL s' (evs ++ [act_event (Write c bs) Wrote]))
 Proof
   strip_tac
-  \\ xcf_with_def (fetch "ffiSpikeSocketProg" "Socket_write_v_def")
+  \\ xcf_with_def (fetch "socketProg" "Socket_write_v_def")
   \\ xlet_auto >- xsimpl
   \\ xlet_auto >- xsimpl
   \\ xlet_auto >- xsimpl
@@ -324,7 +324,7 @@ Theorem do_act_spec_sel:
 Proof
   Cases_on ‘a’ >>
   rw[sock_do_def, OPTION_MAP_EQ_SOME, pairTheory.EXISTS_PROD] >>
-  gvs[SACT_def] >> xcf_with_def (fetch "asyncM3Loop" "do_act_v_def") >> xmatch
+  gvs[SACT_def] >> xcf_with_def (fetch "loopPoll" "do_act_v_def") >> xmatch
   >- (rename1 ‘sock_accept l s = SOME (ra, s')’ >>
       ‘app p Socket_accept_v [lv] (SSEL s evs)
          (POSTv v. &OPTION_TYPE NUM (OPTION_MAP w2n ra) v *
@@ -361,7 +361,7 @@ Theorem perform_spec_sel:
     app (p:'ffi ffi_proj) perform_v [av] (SSEL s evs)
       (POSTv v. &LIST_TYPE SRESP rs v * SSEL s' (evs ++ evs1))
 Proof
-  Induct >> rpt strip_tac >> xcf_with_def (fetch "asyncM3Loop" "perform_v_def") >>
+  Induct >> rpt strip_tac >> xcf_with_def (fetch "loopPoll" "perform_v_def") >>
   gvs[LIST_TYPE_def, sock_acts_def, AllCaseEqs()] >> xmatch
   >- (xcon >> xsimpl >> simp[LIST_TYPE_def])
   >- (qmatch_asmsub_rename_tac ‘sock_do s h = SOME (r1, s1)’ >>
@@ -444,7 +444,7 @@ Proof
   simp[poll_event_def, spoll_event_def]
 QED
 
-(* MAIN: a round with actions to perform: as step_i (asyncM4Loop) *)
+(* MAIN: a round with actions to perform: as step_i (loopPollDyn) *)
 Theorem step_b_spec:
   COMP p SACT A (SNAPSHOT SREADY SRESP) m cv ∧
   LIST_TYPE NUM (MAP w2n fds) fdsv ∧ (m []).actions ≠ [] ∧

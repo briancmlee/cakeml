@@ -2,9 +2,9 @@
   The runnable echo server: the verified program plus a main declaration,
   exported for the CakeML release compiler.
 
-  The program is spike/m4-safety's (asyncM4SockServer): the basis, the
-  Socket module (ffiSpikeSocketProg), the Async library (asyncM3Prog),
-  M4's event loop with a growing interest list (asyncM4Loop: add_accepted,
+  The program is spike/m4-safety's (echoSockServer): the basis, the
+  Socket module (socketProg), the Async library (loopPollProg),
+  M4's event loop with a growing interest list (loopPollDyn: add_accepted,
   step_i, run_i) and the echo server in the socket vocabulary (handler,
   server).  The only new declaration is main:
 
@@ -20,13 +20,13 @@
   echo_server.sexp in the S-expression format of the CakeML release v3479
   (sexpV3479Lib); the release compiler adds its own copy of the basis.
 *)
-Theory asyncEchoMain
+Theory echoMain
 Ancestors
-  asyncM4SockServer basisProg ffiSpikeDivMain
+  echoSockServer basisProg divMain
 Libs
   preamble basis ml_progLib basisFunctionsLib sexpV3479Lib
 
-val _ = translation_extends "asyncM4SockServer"
+val _ = translation_extends "echoSockServer"
 
 Quote add_cakeml:
   fun main u = run_i ([3], server 3);

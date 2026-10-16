@@ -1,7 +1,7 @@
 (*
   The blocking loop with a select set (world, trace, echo properties).
 
-  asyncM4BlkWorld's loop selects on the whole interest list.  An fd that
+  loopSelectWorld's loop selects on the whole interest list.  An fd that
   stays ready forever (a closed connection: EOF) then makes select return
   at once, every round: the loop spins.  Here the loop selects on a
   smaller set,  sel h  (h: the history so far), and polls the whole
@@ -16,20 +16,20 @@
 
   then the polling rounds select lets pass (nothing in sel h ready) are
   irrelevant to c (asyncSched2's `irrelevant`), and same_for_step drops
-  them, as in asyncM4BlkWorld.  (asyncM4BlkWorld is the case of an empty
+  them, as in loopSelectWorld.  (loopSelectWorld is the case of an empty
   ready set, i.e. sel h = the interest list, interest K UNIV.)
 
-  MAIN (as asyncM4BlkWorld / asyncM4BlkTrace, for lbgrounds):
+  MAIN (as loopSelectWorld / loopSelectTrace, for lbgrounds):
   - lbgrounds_inv, lbgrounds_same_actions, lbgrounds_stuck_quiet;
   - lbround_unwaited, lstuck_unwaited;
   - lblocking_echo: the two outcomes, with echo_safe / echo_live
     transferred from the polling loop.
 *)
-Theory asyncM4BlkSelWorld
+Theory loopSelectSet
 Ancestors
-  asyncCore asyncLevel1 asyncLevel2 asyncSched2 asyncCfActModel
-  asyncM3World asyncM4GRounds asyncM4Loop asyncM4BlkWorld asyncM4BlkTrace
-  ffiSpikeSocketFFI ffiSpikeSocketFair ffiSpikeSocketSelect EchoSpec
+  asyncCore asyncLevel1 asyncLevel2 asyncSched2 libModel
+  loopPollWorld loopRounds loopPollDyn loopSelectWorld loopSelectTrace
+  socketWorld socketFair socketSelect EchoSpec
   ffi llist
 Libs
   preamble
@@ -354,7 +354,7 @@ Proof
 QED
 
 (* ------------------------------------------------------------------------
-   Finite prefixes (as in asyncM4BlkTrace)
+   Finite prefixes (as in loopSelectTrace)
    ------------------------------------------------------------------------ *)
 
 Theorem LFLATTEN_fromList_GENLIST[local]:
@@ -469,7 +469,7 @@ Proof
       qexists_tac ‘FLAT (GENLIST (grounds_events (interest fds0) c.run s0) N)’ >>
       conj_tac >- simp[rounds_LPREFIX] >>
       metis_tac[unwaited_prefix])
-  >- (irule echo_live_unwaited >> first_x_assum (irule_at Any) >>
+  >- (irule echo_blocking_unwaited >> first_x_assum (irule_at Any) >>
       rpt strip_tac >>
       drule_at Any LPREFIX_rounds >> simp[grounds_events_NIL] >>
       strip_tac >> rename1 ‘evs2 ≼ FLAT (GENLIST _ N2)’ >>
@@ -499,7 +499,7 @@ Proof
       qexists_tac ‘FLAT (GENLIST (grounds_events (interest fds0) c.run s0) N)’ >>
       conj_tac >- simp[rounds_LPREFIX] >>
       metis_tac[unwaited_prefix])
-  >- (irule echo_live_unwaited >> first_x_assum (irule_at Any) >>
+  >- (irule echo_blocking_unwaited >> first_x_assum (irule_at Any) >>
       rpt strip_tac >>
       drule_at Any LPREFIX_rounds >> simp[grounds_events_NIL] >>
       strip_tac >> rename1 ‘evs2 ≼ FLAT (GENLIST _ N2)’ >>

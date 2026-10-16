@@ -5,31 +5,31 @@
       fun main u = run_b ([3], server 3)
 
   The world: ssel_ffi sk, the socket model's four calls plus «sock_select»
-  (asyncM4BlkLoop's ffi_sock_select), on the world sk.  This is
+  (loopSelect's ffi_sock_select), on the world sk.  This is
   EchoSpec's socket_ffi with one more call; EchoSpec itself is untouched.
 
   MAIN:
-  - echo_blocking_semantics: the program either diverges with the
+  - echo_select_semantics: the program either diverges with the
     blocking loop's trace block_io, or ends in an FFI divergence of
     «sock_select» after the finite trace of its first n rounds, having
     done everything the polling loop would ever do;
-  - echo_blocking_spec: in both cases the trace is EchoSpec's echo_safe
+  - echo_select_spec: in both cases the trace is EchoSpec's echo_safe
     (unconditionally: echo_comp_safe on spike/m4-safety covers the polling
     trace), and echo_live whenever the polling loop's trace is.
 *)
-Theory asyncM4BlkMain
+Theory echoSelectMain
 Ancestors
-  asyncCore asyncLevel1 asyncChoose asyncServer asyncCfActModel
-  asyncCfActProg asyncM3World asyncM3Loop asyncM4GRounds asyncM4Loop
-  asyncM4SockModel asyncM4SockServer asyncM4EchoRunOk asyncM4EchoSafe
-  asyncM4BlkWorld
-  asyncM4BlkTrace asyncM4BlkEcho asyncM4BlkLoop EchoSpec
-  ffiSpikeSocketFFI ffiSpikeSocketWorld ffiSpikeDivMain
+  asyncCore asyncLevel1 asyncChoose echoServer libModel
+  libProg loopPollWorld loopPoll loopRounds loopPollDyn
+  echoSockModel echoSockServer echoRunOk echoSafe
+  loopSelectWorld
+  loopSelectTrace echoSelectIdle loopSelect EchoSpec
+  socketWorld composedWorld divMain
   ml_translator ml_prog cfMain cfDiv cfStore llist
 Libs
   preamble basis cfDivLib cfTacticsLib ml_progLib basisFunctionsLib
 
-val _ = translation_extends "asyncM4BlkLoop"
+val _ = translation_extends "loopSelect"
 
 (* The computation the program runs *)
 Overload echo_m = “srelabel (server 3)”
@@ -235,8 +235,8 @@ val decs_tm = List.nth (decls_args, 2);
 val env2_tm = List.nth (decls_args, 3);
 val st2_tm = List.nth (decls_args, 4);
 
-val echo_b_prog_def = new_definition ("echo_b_prog_def",
-  mk_eq (mk_var ("echo_b_prog", type_of decs_tm), decs_tm));
+val echo_select_prog_def = new_definition ("echo_select_prog_def",
+  mk_eq (mk_var ("echo_select_prog", type_of decs_tm), decs_tm));
 
 val lookup_main = let
   val g = “nsLookup (^env2_tm).v (Short «main») = SOME main_v”
@@ -250,10 +250,10 @@ val st2_ffi = prove (“(^st2_tm).ffi = ssel_ffi sk”, EVAL_TAC);
    - blocks forever in a select on the interest fds of round n, after
      the trace of its first n rounds, in which case the polling loop
      would never have performed another action after that point. *)
-Theorem echo_blocking_semantics:
+Theorem echo_select_semantics:
   sk.listeners = [(3w, [])] ∧ sk.conns = [] ⇒
   (∃io. semantics_dec_list (init_state (ssel_ffi sk)) init_env
-          (SNOC (main_call «main») echo_b_prog) (Diverge io) ∧
+          (SNOC (main_call «main») echo_select_prog) (Diverge io) ∧
         (∀n. bgrounds [3w] echo_m sk n ≠ NONE) ∧
         io = block_io [3w] echo_m sk) ∨
   (∃n kept N s.
@@ -261,14 +261,14 @@ Theorem echo_blocking_semantics:
      new_actions (log_of echo_m) kept = [] ∧
      sock_wait (interest [3w] kept) s = NONE ∧
      semantics_dec_list (init_state (ssel_ffi sk)) init_env
-       (SNOC (main_call «main») echo_b_prog)
+       (SNOC (main_call «main») echo_select_prog)
        (Terminate (FFI_outcome (Final_event (ExtCall «sock_select»)
                                   (fds_bytes (interest [3w] kept)) []
                                   FFI_diverged))
                   (FLAT (GENLIST (bround_events [3w] echo_m sk) n))))
 Proof
   strip_tac >>
-  assume_tac (REWRITE_RULE [GSYM echo_b_prog_def] Decls_th) >>
+  assume_tac (REWRITE_RULE [GSYM echo_select_prog_def] Decls_th) >>
   assume_tac st2_ffi >>
   drule ssel_init_heap >> strip_tac >>
   Cases_on ‘∀n. bgrounds [3w] echo_m sk n ≠ NONE’
@@ -318,14 +318,14 @@ QED
    whenever the polling loop's is; or it blocks forever in select after a
    finite trace that is echo_safe, and echo_live whenever the polling
    loop's is. *)
-Theorem echo_blocking_spec:
+Theorem echo_select_spec:
   sk.listeners = [(3w, [])] ∧ sk.conns = [] ⇒
   (∃io. semantics_dec_list (init_state (ssel_ffi sk)) init_env
-          (SNOC (main_call «main») echo_b_prog) (Diverge io) ∧
+          (SNOC (main_call «main») echo_select_prog) (Diverge io) ∧
         echo_safe io ∧
         (echo_live sk (poll_io [3w] echo_m sk) ⇒ echo_live sk io)) ∨
   (∃c io. semantics_dec_list (init_state (ssel_ffi sk)) init_env
-            (SNOC (main_call «main») echo_b_prog)
+            (SNOC (main_call «main») echo_select_prog)
             (Terminate (FFI_outcome (Final_event (ExtCall «sock_select») c []
                                        FFI_diverged)) io) ∧
           echo_safe (fromList io) ∧
@@ -334,7 +334,7 @@ Proof
   strip_tac >>
   ‘echo_safe (poll_io [3w] echo_m sk)’ by (irule echo_comp_safe >> simp[]) >>
   ‘wf echo_m ∧ idle_quiet echo_m’ by simp[wf_echo, idle_quiet_echo] >>
-  drule_all echo_blocking_semantics >> strip_tac
+  drule_all echo_select_semantics >> strip_tac
   >- (disj1_tac >> qexists_tac ‘io’ >> simp[] >>
       drule_all blocking_echo_div >> simp[])
   >- (disj2_tac >>

@@ -2,9 +2,9 @@
   The echo server in the socket vocabulary (model).
 
   M3's event loop runs computations over the socket actions and responses
-  of asyncM3World (sact: Accept l | Read c n | Write c bs; sresp:
+  of loopPollWorld (sact: Accept l | Read c n | Write c bs; sresp:
   Accepted (fd option) | Got (bytes option) | Wrote; ready sets of
-  word64 fds).  The model's echo server (asyncServer) speaks the model's
+  word64 fds).  The model's echo server (echoServer) speaks the model's
   own vocabulary.  The translation (design/15-m4-server.md §3.2):
 
      sfa: model action  -> socket action      (fds by n2w, strings as bytes,
@@ -13,15 +13,15 @@
      sfs: socket snapshot -> model snapshot   (ready fd c gives Readable (w2n c))
 
   The socket-vocabulary server is  relabel sfa sfs (server lfd).  By
-  asyncM4RelabelDist it unfolds to a library computation over socket
+  relabelDist it unfolds to a library computation over socket
   actions (shandler_unfold, sserver_unfold), which is what the CakeML
-  code of asyncM4SockServer mirrors.
+  code of echoSockServer mirrors.
 *)
-Theory asyncM4SockModel
+Theory echoSockModel
 Ancestors
   pair list rich_list arithmetic option pred_set string words
-  asyncCore asyncLevel1 asyncLevel2 asyncServer asyncM3World
-  asyncM4Relabel asyncM4RelabelDist
+  asyncCore asyncLevel1 asyncLevel2 echoServer loopPollWorld
+  relabel relabelDist
 Libs
   BasicProvers wordsLib
 
@@ -31,14 +31,14 @@ Definition bufsz_def:
 End
 
 Definition sfa_def:
-  sfa (asyncServer$Accept l) = asyncM3World$Accept (n2w l) ∧
-  sfa (asyncServer$Read fd) = asyncM3World$Read (n2w fd) bufsz ∧
-  sfa (asyncServer$Write fd d) = asyncM3World$Write (n2w fd) (MAP (n2w o ORD) d)
+  sfa (echoServer$Accept l) = loopPollWorld$Accept (n2w l) ∧
+  sfa (echoServer$Read fd) = loopPollWorld$Read (n2w fd) bufsz ∧
+  sfa (echoServer$Write fd d) = loopPollWorld$Write (n2w fd) (MAP (n2w o ORD) d)
 End
 
 Definition sfr_def:
-  sfr (asyncM3World$Accepted (SOME c)) = asyncServer$Accepted (w2n c) ∧
-  sfr (asyncM3World$Accepted NONE) = NoConn ∧
+  sfr (loopPollWorld$Accepted (SOME c)) = echoServer$Accepted (w2n c) ∧
+  sfr (loopPollWorld$Accepted NONE) = NoConn ∧
   sfr (Got NONE) = WouldBlock ∧
   sfr (Got (SOME bs)) =
     (if bs = [] then Eof else Data (MAP (CHR o w2n) (bs : word8 list))) ∧
@@ -82,11 +82,11 @@ QED
 Theorem shandler_unfold:
   srelabel (handler fd) =
     bind (sreadable fd) (λu.
-    bind (emit (asyncM3World$Read (n2w fd) bufsz)) (λr.
+    bind (emit (loopPollWorld$Read (n2w fd) bufsz)) (λr.
       case r of
         Got (SOME bs) =>
           if bs = [] then return ()
-          else bind (emit (asyncM3World$Write (n2w fd) bs))
+          else bind (emit (loopPollWorld$Write (n2w fd) bs))
                     (λw. srelabel (handler fd))
       | _ => srelabel (handler fd)))
 Proof
@@ -108,9 +108,9 @@ QED
 Theorem sserver_unfold:
   srelabel (server lfd) =
     bind (sreadable lfd) (λu.
-    bind (emit (asyncM3World$Accept (n2w lfd))) (λr.
+    bind (emit (loopPollWorld$Accept (n2w lfd))) (λr.
       case r of
-        asyncM3World$Accepted (SOME c) =>
+        loopPollWorld$Accepted (SOME c) =>
           map (λp. ()) (both (srelabel (handler (w2n c))) (srelabel (server lfd)))
       | _ => srelabel (server lfd)))
 Proof

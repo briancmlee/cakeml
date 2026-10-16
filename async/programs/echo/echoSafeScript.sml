@@ -20,12 +20,12 @@
   history of the first n rounds, whose last round has its writes but not
   yet its reads' responses.
 *)
-Theory asyncM4EchoSafe
+Theory echoSafe
 Ancestors
-  words asyncCore asyncLevel1 asyncLevel2 asyncTranscript asyncServer
-  asyncServerSafety asyncM4ServerUses asyncM4Relabel asyncM4RelabelDist
-  ffiSpikeSocketFFI asyncM3World asyncM4GRounds asyncM4SockInv
-  asyncM4SockModel asyncM4GTrans asyncM4EchoRunOk EchoSpec llist
+  words asyncCore asyncLevel1 asyncLevel2 asyncTranscript echoServer
+  echoServerSafety echoServerUses relabel relabelDist
+  socketWorld loopPollWorld loopRounds loopSockInv
+  echoSockModel loopRoundsTrans echoRunOk EchoSpec llist
 Libs
   preamble
 

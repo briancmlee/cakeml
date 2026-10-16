@@ -2,21 +2,21 @@
   The core of liveness, at the socket level: the echo server reads an
   accepted connection with unread data within four rounds (read_soon_s),
   and accepts within three rounds while connections are pending
-  (accept_soon_s, in asyncM4AcceptSoon).
+  (accept_soon_s, in echoLiveAcceptSoon).
 
-  The argument is the model's (asyncLiveness), transported to the event
+  The argument is the model's (echoClosedLive), transported to the event
   loop's run in the socket world: if c is not read, its data stays unread,
-  so c is reported readable (it is in the interest list, asyncM4Loop), and
+  so c is reported readable (it is in the interest list, loopPollDyn), and
   by the program-level progress theorem (handler_progress, via
   server_handler_view) the server reads it; contradiction.
 *)
-Theory asyncM4ReadSoon
+Theory echoLiveReadSoon
 Ancestors
   pair list rich_list arithmetic option pred_set llist alist words
-  asyncCore asyncLevel1 asyncTranscript asyncServer asyncServerSafety
-  asyncProgress ffiSpikeSocketFFI asyncM3World asyncM4GRounds asyncM4Relabel
-  asyncM4RelabelDist asyncM4SockModel asyncM4SockInv asyncM4GTrans asyncM4Loop
-  asyncM4EchoRunOk asyncM4Sched asyncM4LiveProg asyncM4LiveWorld
+  asyncCore asyncLevel1 asyncTranscript echoServer echoServerSafety
+  echoProgress socketWorld loopPollWorld loopRounds relabel
+  relabelDist echoSockModel loopSockInv loopRoundsTrans loopPollDyn
+  echoRunOk echoLiveSched echoLiveProg echoLiveWorld
 Libs
   preamble
 
@@ -114,7 +114,7 @@ QED
    ------------------------------------------------------------------------ *)
 
 (* The program of EchoSpec: the listener lfdn, polled with every connection
-   handed out (asyncM4Loop) *)
+   handed out (loopPollDyn) *)
 Overload EI = “λlfdn. interest [n2w lfdn : word64]”
 Overload EM = “λlfdn. srelabel (server lfdn)”
 

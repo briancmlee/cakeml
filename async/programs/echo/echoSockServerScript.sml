@@ -20,23 +20,23 @@
          | _ => server lfd));
 
   This is the code of asyncM4ServerProg (spike/m4-server) with the
-  socket actions and responses of asyncM3Loop in place of the model's.
+  socket actions and responses of loopPoll in place of the model's.
   It implements  relabel sfa sfs (handler fd)  and
-  relabel sfa sfs (server lfd)  (asyncM4SockModel): the model's handler
+  relabel sfa sfs (server lfd)  (echoSockModel): the model's handler
   and server, translated to the socket vocabulary.  The proofs are those
   of asyncM4ServerSpec: induction on the depth, with the guarded bind at
   the outer bind, then the limit lemma.
 *)
-Theory asyncM4SockServer
+Theory echoSockServer
 Ancestors
-  asyncCore asyncLevel1 asyncChoose asyncServer asyncCfActModel
-  asyncCfActProg asyncM4Approx asyncM3World asyncM3Prog asyncM3Loop
-  asyncM4Relabel asyncM4RelabelDist asyncM4SockModel asyncM4SockApprox
+  asyncCore asyncLevel1 asyncChoose echoServer libModel
+  libProg libApprox loopPollWorld loopPollProg loopPoll
+  relabel relabelDist echoSockModel libSockApprox
   ml_translator mlstring std_prelude
 Libs
   preamble basis ml_translatorLib cfTacticsLib ml_progLib basisFunctionsLib
 
-val _ = translation_extends "asyncM4SockApprox"
+val _ = translation_extends "libSockApprox"
 
 Quote add_cakeml:
   fun has_fd fd l =
@@ -67,7 +67,7 @@ Quote add_cakeml:
 End
 
 (* The relations: socket actions and responses, snapshots whose ready set
-   is a list of fds (asyncM3Loop) *)
+   is a list of fds (loopPoll) *)
 Overload SSNAP = “SNAPSHOT SREADY SRESP”
 
 val eq_num_v_thm =

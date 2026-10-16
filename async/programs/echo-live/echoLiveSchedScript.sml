@@ -3,7 +3,7 @@
 
   EchoSpec states liveness against the schedule of the initial world:
   sent_upto c n sk is the data the client of c sends in the first n steps
-  of the schedule.  The event loop (asyncM4Loop, grounds) lets exactly one
+  of the schedule.  The event loop (loopPollDyn, grounds) lets exactly one
   step of the schedule arrive per round, in its poll; the socket operations
   in between never touch the schedule.  So:
 
@@ -15,10 +15,10 @@
      throughout the run (by the socket worker's sched_wf_preserved), so
      every arrival delivered in the run is effective (arrival_ok).
 *)
-Theory asyncM4Sched
+Theory echoLiveSched
 Ancestors
   pair list rich_list arithmetic option llist alist
-  ffiSpikeSocketFFI ffiSpikeSocketFair EchoSpec asyncM3World asyncM4GRounds
+  socketWorld socketFair EchoSpec loopPollWorld loopRounds
 Libs
   preamble
 

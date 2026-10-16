@@ -1,7 +1,7 @@
 (*
   The world of the blocking echo loop, and why blocking is sound.
 
-  The polling loop (asyncM4Loop, step_i) performs the computation's
+  The polling loop (loopPollDyn, step_i) performs the computation's
   actions and then polls the interest fds, every round.  The blocking loop
   does the same while there are actions to perform.  When there are none,
   it first waits (a blocking `select` on the interest fds) until a poll
@@ -37,11 +37,11 @@
   No liveness assumption is needed: blocking forever is one of the two
   outcomes, and it is harmless.
 *)
-Theory asyncM4BlkWorld
+Theory loopSelectWorld
 Ancestors
-  asyncCore asyncLevel1 asyncLevel2 asyncSched2 asyncCfActModel
-  asyncM3World asyncM4GRounds asyncM4Loop ffiSpikeSocketFFI
-  ffiSpikeSocketFair ffiSpikeSocketSelect
+  asyncCore asyncLevel1 asyncLevel2 asyncSched2 libModel
+  loopPollWorld loopRounds loopPollDyn socketWorld
+  socketFair socketSelect
 Libs
   preamble
 

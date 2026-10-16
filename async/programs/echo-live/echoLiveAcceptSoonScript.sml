@@ -4,18 +4,18 @@
   connection, and hence every connection of the world, is eventually
   handed out to the server (queue_progress, conn_accepted).
 
-  As for reads (asyncM4ReadSoon): the listener is always in the interest
+  As for reads (echoLiveReadSoon): the listener is always in the interest
   list, a non-empty queue makes it readable, and the program-level
   progress theorem server_accept_progress makes the server accept.  Each
-  accept moves a pending connection one place forward (asyncM4Queue).
+  accept moves a pending connection one place forward (echoLiveQueue).
 *)
-Theory asyncM4AcceptSoon
+Theory echoLiveAcceptSoon
 Ancestors
   pair list rich_list arithmetic option pred_set llist alist words
-  asyncCore asyncLevel1 asyncTranscript asyncServer asyncServerSafety
-  asyncProgress ffiSpikeSocketFFI asyncM3World asyncM4GRounds asyncM4Relabel
-  asyncM4RelabelDist asyncM4SockModel asyncM4SockInv asyncM4GTrans asyncM4Loop
-  asyncM4EchoRunOk asyncM4Sched asyncM4LiveProg asyncM4ReadSoon asyncM4Queue
+  asyncCore asyncLevel1 asyncTranscript echoServer echoServerSafety
+  echoProgress socketWorld loopPollWorld loopRounds relabel
+  relabelDist echoSockModel loopSockInv loopRoundsTrans loopPollDyn
+  echoRunOk echoLiveSched echoLiveProg echoLiveReadSoon echoLiveQueue
 Libs
   preamble
 
@@ -46,7 +46,7 @@ Proof
        by (qspecl_then [‘log_of (server lfd)’, ‘TAKE (i + d) h’, ‘EL (i + d) h’] mp_tac
              (Q.GENL [‘acts’, ‘h’, ‘s’] new_actions_prefix)
            >> simp[log_of_def, wf_SNOC_actions, wf_server])
-  >> gvs[naccepts_def, asyncProgressTheory.count_def, FILTER_APPEND_DISTRIB] >> CCONTR_TAC
+  >> gvs[naccepts_def, echoProgressTheory.count_def, FILTER_APPEND_DISTRIB] >> CCONTR_TAC
   >> ‘FILTER (λa. a = Accept lfd)
         (new_actions (log_of (server lfd)) (TAKE (i + d) h ++ [EL (i + d) h])) = []’
        by simp[FILTER_EQ_NIL, EVERY_MEM]
@@ -68,7 +68,7 @@ Theorem accept_soon_s:
   (∀j. n < j ∧ j ≤ n + 2 ⇒
        is_ready (gstate (EI lfdn) (EM lfdn) s0 j) (n2w lfdn)) ⇒
   ∃i. 1 ≤ i ∧ i ≤ 2 ∧
-      MEM (asyncM3World$Accept (n2w lfdn)) (SA lfdn (EI lfdn) s0 (n + i))
+      MEM (loopPollWorld$Accept (n2w lfdn)) (SA lfdn (EI lfdn) s0 (n + i))
 Proof
   rpt strip_tac
   >> ‘grun_ok (EI lfdn) (EM lfdn) s0’ by (irule echo_grun_ok >> simp[])

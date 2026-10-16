@@ -7,11 +7,11 @@
    - grounds_eof: once a read of c has returned end-of-file, c's peer has
      closed and c has nothing left to read, from then on.
 *)
-Theory asyncM4LiveWorld
+Theory echoLiveWorld
 Ancestors
   pair list rich_list arithmetic option llist alist
-  ffiSpikeSocketFFI ffiSpikeSocketFair asyncM3World asyncM4GRounds
-  asyncM4GTrans asyncM4Sched
+  socketWorld socketFair loopPollWorld loopRounds
+  loopRoundsTrans echoLiveSched
 Libs
   preamble
 

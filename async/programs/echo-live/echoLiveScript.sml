@@ -2,7 +2,7 @@
   Liveness of the echo server's I/O, against EchoSpec's echo_live.
 
   The event loop's I/O is the stream of its rounds' events (run_i_spec,
-  asyncM4Loop):
+  loopPollDyn):
      io = LFLATTEN (LGENLIST (λi. fromList (grounds_events (EI lfdn) (EM lfdn) s0 i)) NONE)
   For every connection c and every n, the data c's client sends in the
   first n steps of the schedule is eventually echoed on c:
@@ -11,12 +11,12 @@
    - otherwise c is eventually handed out to the server (conn_accepted),
      after which everything sent so far is written back (accepted_live).
 *)
-Theory asyncM4EchoLive
+Theory echoLive
 Ancestors
   pair list rich_list arithmetic option llist alist words
-  ffiSpikeSocketFFI ffiSpikeSocketFair EchoSpec asyncM3World asyncM4GRounds
-  asyncM4SockInv asyncM4GTrans asyncM4EchoRunOk asyncM4Sched asyncM4Account
-  asyncM4ReadSoon asyncM4Drain asyncM4Queue asyncM4AcceptSoon
+  socketWorld socketFair EchoSpec loopPollWorld loopRounds
+  loopSockInv loopRoundsTrans echoRunOk echoLiveSched echoLiveAccount
+  echoLiveReadSoon echoLiveDrain echoLiveQueue echoLiveAcceptSoon
 Libs
   preamble
 

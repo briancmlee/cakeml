@@ -4,7 +4,7 @@
   echo_safe and echo_live).
 
   The computation run by the loop is  srelabel (server lfdn)  (the
-  model's server, in the socket vocabulary; asyncM4SockModel).  For any
+  model's server, in the socket vocabulary; echoSockModel).  For any
   interest function ifds and any initial world with exactly one listener
   n2w lfdn (nothing pending) and no connections:
 
@@ -17,16 +17,16 @@
      performed pairs (gperf) and round n's actions.
 
   The proof is an induction on rounds with the socket-world invariant
-  sinv (asyncM4SockInv): the model's server_uses_accepted
-  (asyncM4ServerUses) says every action is allowed by the fds handed out
+  sinv (loopSockInv): the model's server_uses_accepted
+  (echoServerUses) says every action is allowed by the fds handed out
   so far, and sock_acts_ok says allowed actions succeed.
 *)
-Theory asyncM4EchoRunOk
+Theory echoRunOk
 Ancestors
-  words asyncCore asyncLevel1 asyncLevel2 asyncTranscript asyncServer
-  asyncServerSafety asyncM4ServerUses asyncM4Relabel asyncM4RelabelDist
-  ffiSpikeSocketFFI asyncM3World asyncM4GRounds asyncM4SockInv
-  asyncM4SockModel asyncM4GTrans
+  words asyncCore asyncLevel1 asyncLevel2 asyncTranscript echoServer
+  echoServerSafety echoServerUses relabel relabelDist
+  socketWorld loopPollWorld loopRounds loopSockInv
+  echoSockModel loopRoundsTrans
 Libs
   preamble
 

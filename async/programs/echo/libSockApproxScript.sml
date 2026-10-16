@@ -1,25 +1,25 @@
 (*
-  The depth-indexed specs of asyncM4Approx, replayed for the library as it
-  is declared in the socket program (module Async of asyncM3Prog), plus
+  The depth-indexed specs of libApprox, replayed for the library as it
+  is declared in the socket program (module Async of loopPollProg), plus
   both and map, declared here in the same program.
 
-  As in asyncM3Prog: one CakeML program needs the Socket module, the
+  As in loopPollProg: one CakeML program needs the Socket module, the
   library and the server, and the library was built on a separate
   translation chain.  The step datatype has the same constructor stamps in
-  both chains (asyncM3Prog's step_stamps_agree), so STEPA/COMP and
-  asyncM4Approx's STEPAd/COMPd are reused unchanged; only the CF proofs
+  both chains (loopPollProg's step_stamps_agree), so STEPA/COMP and
+  libApprox's STEPAd/COMPd are reused unchanged; only the CF proofs
   for the new closures are replayed, with the same proofs (names prefixed
   by Async_ / async_).
 *)
-Theory asyncM4SockApprox
+Theory libSockApprox
 Ancestors
-  asyncCore asyncLevel1 asyncChoose asyncCfActModel asyncCfActBothModel
-  asyncCfActProg asyncCfActSpec asyncM4Approx asyncM3Prog asyncM3Loop asyncM4Loop
+  asyncCore asyncLevel1 asyncChoose libModel libBothModel
+  libProg libSpec libApprox loopPollProg loopPoll loopPollDyn
   ml_translator ListProg
 Libs
   preamble basis ml_translatorLib cfTacticsLib ml_progLib basisFunctionsLib
 
-val _ = translation_extends "asyncM4Loop"
+val _ = translation_extends "loopPollDyn"
 
 Quote add_cakeml:
   fun async_both c1 c2 =
@@ -59,7 +59,7 @@ Proof
   rpt strip_tac >>
   qpat_x_assum ‘COMPd _ _ _ _ _ _ _’
     (strip_assume_tac o REWRITE_RULE[COMPd_def, POLL_RESULT_def]) >>
-  gvs[] >> xcf_with_def (fetch "asyncM3Prog" "Async_poll_v_def") >>
+  gvs[] >> xcf_with_def (fetch "loopPollProg" "Async_poll_v_def") >>
   qpat_x_assum ‘STEPAd _ _ _ _ _ _ _’ mp_tac >> simp[STEPAd_def] >> rw[]
   >- (xmatch >> xmatch >> xcons >>
       simp[COMPd_def, POLL_RESULT_def, suspended_finished_one, STEPAd_Done] >>
@@ -73,7 +73,7 @@ Theorem Async_skip_spec_d:
   app (p:'ffi ffi_proj) Async_skip_v [kv; sv] emp
     (POSTv v. &STEPAd p ACT RES (SNAPSHOT READY R) n (skipping k g) v)
 Proof
-  rpt strip_tac >> xcf_with_def (fetch "asyncM3Prog" "Async_skip_v_def") >>
+  rpt strip_tac >> xcf_with_def (fetch "loopPollProg" "Async_skip_v_def") >>
   qpat_x_assum ‘STEPAd _ _ _ _ _ _ sv’ mp_tac >>
   Cases_on ‘n’ >> simp[STEPAd_def] >> strip_tac >> gvs[] >>
   TRY (xmatch >> xvar >> xsimpl >> simp[skipping_finished] >> metis_tac[] >>
@@ -113,7 +113,7 @@ Theorem Async_bind_Done_spec_d:
 Proof
   rw[STEPAd_Done] >> rename1 ‘finished As x’ >>
   gvs[finished_def] >>
-  xcf_with_def (fetch "asyncM3Prog" "Async_bind_v_def") >> xmatch >> xmatch >>
+  xcf_with_def (fetch "loopPollProg" "Async_bind_v_def") >> xmatch >> xmatch >>
   xlet ‘POSTv r. &COMPd p ACT B (SNAPSHOT READY R) n (g x) r’
   >- (first_x_assum drule >> rw[returns_def] >> xapp) >>
   gvs[COMPd_def, POLL_RESULT_def] >> xmatch >>
@@ -153,10 +153,10 @@ Proof
   qpat_x_assum ‘STEPAd _ _ _ _ _ m sv’ mp_tac >>
   simp[Once STEPAd_def] >> rw[]
   >- (irule Async_bind_Done_spec_d >> simp[STEPAd_Done] >> metis_tac[])
-  >- (xcf_with_def (fetch "asyncM3Prog" "Async_bind_v_def") >> xmatch >> xmatch >> xfun ‘k2’ >> xcons >>
+  >- (xcf_with_def (fetch "loopPollProg" "Async_bind_v_def") >> xmatch >> xmatch >> xfun ‘k2’ >> xcons >>
       simp[COMPd_def, POLL_RESULT_def, bind_NIL_running, STEPAd_def])
   >- (irule Async_bind_Done_spec_d >> simp[STEPAd_Done] >> metis_tac[])
-  >- (xcf_with_def (fetch "asyncM3Prog" "Async_bind_v_def") >> xmatch >> xmatch >> xfun ‘k2’ >> xcons >>
+  >- (xcf_with_def (fetch "loopPollProg" "Async_bind_v_def") >> xmatch >> xmatch >> xfun ‘k2’ >> xcons >>
       simp[COMPd_def, POLL_RESULT_def, bind_NIL_running, STEPAd_def,
            suspended_bind] >>
       rpt strip_tac >> simp[returns_def] >>
@@ -185,7 +185,7 @@ Proof
   qpat_x_assum ‘COMPd _ _ _ _ _ m mv’
     (strip_assume_tac o REWRITE_RULE[COMPd_def, POLL_RESULT_def]) >>
   gvs[STEPAd_def, finished_def] >>
-  xcf_with_def (fetch "asyncM3Prog" "Async_bind_v_def") >> xmatch >> xmatch >> xfun ‘k2’ >> xcons >>
+  xcf_with_def (fetch "loopPollProg" "Async_bind_v_def") >> xmatch >> xmatch >> xfun ‘k2’ >> xcons >>
   simp[COMPd_def, POLL_RESULT_def, bind_NIL_running, STEPAd_def]
 QED
 
@@ -206,7 +206,7 @@ Proof
   qpat_x_assum ‘COMPd _ _ _ _ _ m mv’
     (strip_assume_tac o REWRITE_RULE[COMPd_def, POLL_RESULT_def]) >>
   gvs[STEPAd_def, finished_def] >>
-  xcf_with_def (fetch "asyncM3Prog" "Async_bind_v_def") >> xmatch >> xmatch >> xfun ‘k2’ >> xcons >>
+  xcf_with_def (fetch "loopPollProg" "Async_bind_v_def") >> xmatch >> xmatch >> xfun ‘k2’ >> xcons >>
   simp[COMPd_def, POLL_RESULT_def, bind_NIL_running, STEPAd_def,
        suspended_bind] >>
   rpt strip_tac >> simp[returns_def] >>

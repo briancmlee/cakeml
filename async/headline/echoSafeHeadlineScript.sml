@@ -2,21 +2,21 @@
   The safety half of EchoSpec for the verified echo program, in EchoSpec's
   own form.
 
-  The program is echo_prog of asyncEchoMain (spike/runnable): the basis,
+  The program is echo_prog of echoMain (spike/runnable): the basis,
   the Socket module, the Async library, M4's dynamic-interest event loop
   and the socket-vocabulary echo server, then main () =
   run_i ([3], server 3).  Its divergence and safety in the sockets-only
-  world are echo_semantics_prog (asyncEchoSemantics, spike/machine-code).
+  world are echo_semantics_prog (echoSemantics, spike/machine-code).
   What is added here:
    - EchoSpec's oracle socket_ffi is that sockets-only world
      (socket_ffi_socket_only_ffi);
    - EchoSpec's server_world gives the initial world shape the theorem
      needs (one listener 3w, nothing pending, no connections).
 *)
-Theory asyncM4EchoSpecSafe
+Theory echoSafeHeadline
 Ancestors
-  EchoSpec ffiSpikeSocketFFI ffiSpikeSocketWorld ffiSpikeSocketDiv
-  asyncEchoMain asyncEchoSemantics
+  EchoSpec socketWorld composedWorld socketDiv
+  echoMain echoSemantics
 Libs
   preamble
 

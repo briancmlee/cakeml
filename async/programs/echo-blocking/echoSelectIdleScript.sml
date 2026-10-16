@@ -2,21 +2,21 @@
   The echo server ignores idle snapshots: idle_quiet for the computation
   the loop runs, srelabel (server lfd), discharged from the model.
 
-  The model proves the Level 2 echo server quiet (asyncServer2:
+  The model proves the Level 2 echo server quiet (echoServer2:
   wf2_server2), and that it erases to the Level 1 server the loop runs
   (erase_server2).  `quiet` is about snapshots with none of the declared
   events ready; an idle snapshot has nothing ready at all, so it is
   ignored whatever the interest.  Relabelling into the socket vocabulary
   (sfs = snap_map sfe sfr) maps idle snapshots to idle snapshots.
 
-  MAIN: idle_quiet_echo; and blocking_echo_server, asyncM4BlkTrace's
+  MAIN: idle_quiet_echo; and blocking_echo_server, loopSelectTrace's
   two-outcome theorem for the echo server, with no hypothesis left.
 *)
-Theory asyncM4BlkEcho
+Theory echoSelectIdle
 Ancestors
-  asyncCore asyncLevel1 asyncLevel2 asyncServer asyncServer2
-  asyncM4Relabel asyncM4RelabelDist asyncM4SockModel asyncM4BlkWorld
-  asyncM4BlkTrace EchoSpec
+  asyncCore asyncLevel1 asyncLevel2 echoServer echoServer2
+  relabel relabelDist echoSockModel loopSelectWorld
+  loopSelectTrace EchoSpec
 Libs
   preamble
 

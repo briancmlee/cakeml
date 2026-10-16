@@ -9,8 +9,8 @@
             Async.poll c (rdy, 0, rs)) end
       fun run_l st = run_l (step_l st)
 
-  As asyncM4BlkLoop's step_b, with one more component: the live list
-  (asyncM4LiveEcho's lstep: an accept adds the new connection, a read
+  As loopSelect's step_b, with one more component: the live list
+  (echoBlockingSet's lstep: an accept adds the new connection, a read
   that returns EOF removes one occurrence of its fd).  select waits on the
   live list instead of the whole interest list; the poll still polls the
   whole interest list.
@@ -23,20 +23,20 @@
   - run_l_spec / run_l_stuck_spec / run_l_two_outcomes: as run_b's, for
     the select set sel h = live_of l0 (trans m h).
 *)
-Theory asyncM4LiveLoop
+Theory echoBlockingProg
 Ancestors
-  asyncCore asyncLevel1 asyncChoose asyncTranscript asyncCfActModel
-  asyncCfActProg asyncCfReactWorld asyncM3World asyncM3Prog asyncM3Loop
-  asyncM4GRounds asyncM4Loop asyncM4SockServer asyncM4BlkWorld
-  asyncM4BlkTrace asyncM4BlkLoop asyncM4BlkSelWorld asyncM4LiveEcho
-  ffiSpikeSocketFFI ffiSpikeSocketProg ffiSpikeSocketProof
-  ffiSpikeSocketDiv ffiSpikeSocketFair ffiSpikeSocketSelect cfDiv
+  asyncCore asyncLevel1 asyncChoose asyncTranscript libModel
+  libProg libReactWorld loopPollWorld loopPollProg loopPoll
+  loopRounds loopPollDyn echoSockServer loopSelectWorld
+  loopSelectTrace loopSelect loopSelectSet echoBlockingSet
+  socketWorld socketProg socketProof
+  socketDiv socketFair socketSelect cfDiv
   ml_translator mlstring Marshalling std_prelude llist misc
 Libs
   preamble basis cfDivLib cfTacticsLib ml_progLib basisFunctionsLib
   ml_translatorLib
 
-val _ = translation_extends "asyncM4BlkLoop"
+val _ = translation_extends "loopSelect"
 
 (* ------------------------------------------------------------------------
    The live list over the transcript, round by round

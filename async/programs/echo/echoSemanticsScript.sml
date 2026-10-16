@@ -9,22 +9,22 @@
   asyncM3Example's m3_semantics, with
    - main_spec: main () runs run_i on ([3], server 3) (run_i_spec with
      sserver_spec; no misuse by echo_grun_ok);
-   - the world: socket_only_ffi s0 (ffiSpikeSocketDiv), the socket FFI part
+   - the world: socket_only_ffi s0 (socketDiv), the socket FFI part
      alone, from a state with listener 3w, no pending connections and no
      connections (EchoSpec's server_world shape).
 *)
-Theory asyncEchoSemantics
+Theory echoSemantics
 Ancestors
-  asyncCore asyncLevel1 asyncCfActModel asyncCfActProg asyncM3World
-  asyncM3Prog asyncM3Loop asyncM4GRounds asyncM4Loop asyncM4SockModel
-  asyncM4SockApprox asyncM4SockServer asyncM4EchoRunOk asyncM4EchoSafe
-  asyncEchoMain ffiSpikeSocketFFI ffiSpikeSocketProof ffiSpikeSocketDiv
-  ffiSpikeDivMain EchoSpec cfDiv ml_translator ml_prog std_prelude llist
+  asyncCore asyncLevel1 libModel libProg loopPollWorld
+  loopPollProg loopPoll loopRounds loopPollDyn echoSockModel
+  libSockApprox echoSockServer echoRunOk echoSafe
+  echoMain socketWorld socketProof socketDiv
+  divMain EchoSpec cfDiv ml_translator ml_prog std_prelude llist
 
 Libs
   preamble basis cfDivLib cfTacticsLib ml_progLib basisFunctionsLib
 
-val _ = translation_extends "asyncEchoMain"
+val _ = translation_extends "echoMain"
 
 (* The echo server's run against the socket world s0: round i polls
    listener 3w and every connection accepted so far *)

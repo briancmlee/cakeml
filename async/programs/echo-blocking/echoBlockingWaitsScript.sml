@@ -1,7 +1,7 @@
 (*
   What the echo server waits for, in terms of its transcript (model).
 
-  The Level 2 server (asyncServer2) declares the events it waits for.
+  The Level 2 server (echoServer2) declares the events it waits for.
   Here: they are all on the listener, or on a connection that has been
   accepted more often than a read on it has returned EOF.  (A handler
   finishes exactly when its read returns EOF, and then declares nothing.)
@@ -17,10 +17,10 @@
     Readable lfd, or Readable fd with eofs fd < accs fd.
   No assumption on the history (in particular, no freshness of fds).
 *)
-Theory asyncM4LiveServer
+Theory echoBlockingWaits
 Ancestors
   asyncCore asyncLevel1 asyncLevel2 asyncLoop2 asyncChoose asyncTranscript
-  asyncServer asyncServer2 asyncServerSafety
+  echoServer echoServer2 echoServerSafety
 Libs
   preamble
 

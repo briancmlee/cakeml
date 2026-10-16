@@ -1,17 +1,17 @@
 (*
   EchoSpec, in full, for the verified echo program.
 
-  The program is echo_prog (asyncEchoMain): main () = run_i ([3], server 3),
+  The program is echo_prog (echoMain): main () = run_i ([3], server 3),
   M4's dynamic-interest event loop running the socket-vocabulary echo
   server on listener 3w.  In the sockets-only world its I/O is the
-  server's run, echo_trace s0 (echo_semantics_prog, asyncEchoSemantics),
+  server's run, echo_trace s0 (echo_semantics_prog, echoSemantics),
   which is safe (echo_prog_safe's ingredients) and live
-  (echo_live_rounds, asyncM4EchoLive).
+  (echo_live_rounds, echoLive).
 *)
-Theory asyncM4EchoSpec
+Theory echoHeadline
 Ancestors
-  EchoSpec ffiSpikeSocketFFI asyncEchoMain asyncEchoSemantics
-  asyncM4EchoSpecSafe asyncM4ReadSoon asyncM4EchoLive
+  EchoSpec socketWorld echoMain echoSemantics
+  echoSafeHeadline echoLiveReadSoon echoLive
 Libs
   preamble
 

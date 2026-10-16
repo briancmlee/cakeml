@@ -13,16 +13,16 @@
     server's declared interest);
   - sel_covers_echo: the live fds after the server's transcript cover
     everything it waits for, so the loop may select on them
-    (asyncM4BlkSelWorld).
-  This uses asyncM4LiveServer's server_live, with the transcripts related
-  by asyncM4Relabel's trans_relabel.  No assumption on the history.
+    (loopSelectSet).
+  This uses echoBlockingWaits's server_live, with the transcripts related
+  by relabel's trans_relabel.  No assumption on the history.
 *)
-Theory asyncM4LiveEcho
+Theory echoBlockingSet
 Ancestors
-  asyncCore asyncLevel1 asyncLevel2 asyncTranscript asyncServer
-  asyncServer2 asyncM4Relabel asyncM4RelabelDist asyncM4SockModel
-  asyncM3World asyncM4LiveServer asyncM4BlkSelWorld asyncM4BlkEcho
-  asyncM4BlkWorld
+  asyncCore asyncLevel1 asyncLevel2 asyncTranscript echoServer
+  echoServer2 relabel relabelDist echoSockModel
+  loopPollWorld echoBlockingWaits loopSelectSet echoSelectIdle
+  loopSelectWorld
 Libs
   preamble
 

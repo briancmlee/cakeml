@@ -8,11 +8,11 @@
      no more connections than before, until it is handed out; each accept
      of the listener in a round moves it one place forward.
 *)
-Theory asyncM4Queue
+Theory echoLiveQueue
 Ancestors
   pair list rich_list arithmetic option llist alist
-  ffiSpikeSocketFFI ffiSpikeSocketFair asyncM3World asyncM4GRounds
-  asyncM4SockInv asyncM4GTrans asyncM4Sched
+  socketWorld socketFair loopPollWorld loopRounds
+  loopSockInv loopRoundsTrans echoLiveSched
 Libs
   preamble
 

@@ -2,7 +2,7 @@
   The I/O trace of the blocking echo loop, and why the echo server's
   safety and liveness carry over to it from the polling loop.
 
-  Round n of the blocking loop (asyncM4BlkWorld's bgrounds) produces:
+  Round n of the blocking loop (loopSelectWorld's bgrounds) produces:
   - when there are actions: the socket calls performing them, then the
     poll -- exactly the polling loop's round;
   - when there are none: a select on the interest fds, then the poll.
@@ -24,11 +24,11 @@
     anything more).
   - blocking_echo: the two together.
 *)
-Theory asyncM4BlkTrace
+Theory loopSelectTrace
 Ancestors
-  asyncCore asyncLevel1 asyncLevel2 asyncSched2 asyncCfActModel
-  asyncM3World asyncM4GRounds asyncM4Loop asyncM4BlkWorld
-  ffiSpikeSocketFFI ffiSpikeSocketFair ffiSpikeSocketSelect EchoSpec
+  asyncCore asyncLevel1 asyncLevel2 asyncSched2 libModel
+  loopPollWorld loopRounds loopPollDyn loopSelectWorld
+  socketWorld socketFair socketSelect EchoSpec
   ffi llist
 Libs
   preamble
@@ -186,7 +186,7 @@ QED
 
 (* ------------------------------------------------------------------------
    Finite prefixes of the round-by-round traces
-   (as in asyncM4GTrans on spike/m4-safety)
+   (as in loopRoundsTrans on spike/m4-safety)
    ------------------------------------------------------------------------ *)
 
 Theorem LFLATTEN_fromList_GENLIST[local]:
@@ -304,7 +304,7 @@ QED
 
 (* Liveness carries over to a trace that reaches every prefix of the
    other, without the waiting events *)
-Theorem echo_live_unwaited:
+Theorem echo_blocking_unwaited:
   echo_live sk io2 ∧
   (∀evs2. LPREFIX (fromList evs2) io2 ⇒
           ∃evs. LPREFIX (fromList evs) io1 ∧ unwaited evs2 ≼ unwaited evs) ⇒
@@ -368,7 +368,7 @@ Proof
       qexists_tac ‘FLAT (GENLIST (grounds_events (interest fds0) m s0) N)’ >>
       conj_tac >- simp[rounds_LPREFIX] >>
       metis_tac[unwaited_prefix])
-  >- (irule echo_live_unwaited >> first_x_assum (irule_at Any) >>
+  >- (irule echo_blocking_unwaited >> first_x_assum (irule_at Any) >>
       rpt strip_tac >>
       drule_at Any LPREFIX_rounds >> simp[grounds_events_NIL] >>
       strip_tac >> rename1 ‘evs2 ≼ FLAT (GENLIST _ N2)’ >>
@@ -400,7 +400,7 @@ Proof
       qexists_tac ‘FLAT (GENLIST (grounds_events (interest fds0) m s0) N)’ >>
       conj_tac >- simp[rounds_LPREFIX] >>
       metis_tac[unwaited_prefix])
-  >- (irule echo_live_unwaited >> first_x_assum (irule_at Any) >>
+  >- (irule echo_blocking_unwaited >> first_x_assum (irule_at Any) >>
       rpt strip_tac >>
       drule_at Any LPREFIX_rounds >> simp[grounds_events_NIL] >>
       strip_tac >> rename1 ‘evs2 ≼ FLAT (GENLIST _ N2)’ >>

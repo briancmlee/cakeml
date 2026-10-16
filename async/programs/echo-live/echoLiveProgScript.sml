@@ -1,24 +1,24 @@
 (*
   The model server's view of the event loop's run, for liveness.
 
-  The event loop runs srelabel (server lfdn) (asyncM4SockModel) in the
+  The event loop runs srelabel (server lfdn) (echoSockModel) in the
   socket world; the model server itself sees the history
      G n = MAP sfs (ghist ifds (srelabel (server lfdn)) s0 n).
-  The program-level progress theorems (asyncProgress) need two facts about
+  The program-level progress theorems (echoProgress) need two facts about
   G, proved here:
    - prompt_ghist: the world answers every action in the next snapshot;
    - ready_ghist: snapshot j reports fd ready exactly when some polled
      socket fd c with w2n c = fd is ready after round j; with the growing
-     interest list (asyncM4Loop), every connection handed out so far, and
+     interest list (loopPollDyn), every connection handed out so far, and
      the listener, are polled (interest_accepted).
 *)
-Theory asyncM4LiveProg
+Theory echoLiveProg
 Ancestors
   pair list rich_list arithmetic option pred_set llist alist words
-  asyncCore asyncLevel1 asyncTranscript asyncServer asyncServerSafety
-  asyncProgress ffiSpikeSocketFFI asyncM3World asyncM4GRounds asyncM4Relabel
-  asyncM4RelabelDist asyncM4SockModel asyncM4SockInv asyncM4GTrans asyncM4Loop
-  asyncM4Sched
+  asyncCore asyncLevel1 asyncTranscript echoServer echoServerSafety
+  echoProgress socketWorld loopPollWorld loopRounds relabel
+  relabelDist echoSockModel loopSockInv loopRoundsTrans loopPollDyn
+  echoLiveSched
 Libs
   preamble
 

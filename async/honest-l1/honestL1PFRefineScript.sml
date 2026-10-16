@@ -664,3 +664,122 @@ Proof
        >> simp[update_client_def])
 QED
 
+
+Theorem arrs_APPEND:
+  ∀l1 cm k l2.
+    arrs lfd (cm, k) (l1 ++ l2) =
+      let (as1, (cm1, k1)) = arrs lfd (cm, k) l1;
+          (as2, ck2) = arrs lfd (cm1, k1) l2 in (as1 ++ as2, ck2)
+Proof
+  Induct >> simp[arrs_def] >- (rw[] >> pairarg_tac >> simp[]) >>
+  Cases >> rw[arrs_def] >> rpt (pairarg_tac >> gvs[])
+QED
+
+Theorem arrs_suffix:
+  ∀l cm k as cm' k'. arrs lfd (cm, k) l = (as, (cm', k')) ⇒ ∃new. cm' = new ++ cm
+Proof
+  Induct >> simp[arrs_def] >> Cases >> rw[arrs_def] >> pairarg_tac >> gvs[] >>
+  first_x_assum drule >> rw[] >> metis_tac[APPEND, APPEND_ASSOC, CONS_APPEND]
+QED
+
+Theorem l0_do_rely:
+  l0_rely w ∧ l0_do n conf alen w = SOME (out, w', ev) ⇒ l0_rely w'
+Proof
+  rw[] >> imp_res_tac l0_do_env >> irule l0_rely_ch >> qexists_tac ‘w’ >> simp[]
+QED
+
+Theorem FOLDL_APP:
+  ∀l1 e. FOLDL f e (l1 ++ l2) = FOLDL f (FOLDL f e l1) l2
+Proof
+  Induct >> simp[]
+QED
+
+Theorem FOLDL_deliver2_alloc[simp]:
+  ∀as s. (FOLDL deliver2 s as).alloc = s.alloc ∧
+         LENGTH s.clients ≤ LENGTH (FOLDL deliver2 s as).clients
+Proof
+  Induct >> simp[] >> rpt gen_tac >>
+  first_x_assum (qspec_then ‘deliver2 s h’ strip_assume_tac) >>
+  ‘LENGTH s.clients ≤ LENGTH (deliver2 s h).clients’
+    by (Cases_on ‘h’ >> rw[deliver2_def, update_client_def]) >> simp[]
+QED
+
+val fetch_tail_tac =
+  rename1 ‘pf_fetch _ _ fs (w1, ps1) = SOME ((w2, ps2), log2, evs2)’ >>
+  Cases_on ‘arrs lfd (cm, LENGTH s.clients) fl’ >> rename1 ‘_ = (as1, ck1)’ >>
+  PairCases_on ‘ck1’ >>
+  Cases_on ‘arrs lfd (ck10, ck11) log2’ >> rename1 ‘_ = (as2, ck2)’ >>
+  PairCases_on ‘ck2’ >>
+  qpat_x_assum ‘arrs _ _ (_ ++ _) = _’ mp_tac >> simp[arrs_APPEND] >> strip_tac >>
+  rpt BasicProvers.VAR_EQ_TAC >>
+  qpat_assum ‘arrs _ (ck10, ck11) _ = _’ (strip_assume_tac o MATCH_MP arrs_suffix) >>
+  rpt BasicProvers.VAR_EQ_TAC >>
+  ‘∀g. MEM (g, LENGTH s.clients) ck10 ⇒
+       ∀used. ¬MEM g used ⇒ s.alloc (LENGTH s.clients) used = g’
+    by (rw[] >> qpat_assum ‘∀f j. _’ irule >> simp[]);
+
+Theorem fetch_rel:
+  ∀fs w ps cm s w' ps' log evs as cm' k'.
+    pf_fetch lfd hw fs (w, ps) = SOME ((w', ps'), log, evs) ∧
+    arrs lfd (cm, LENGTH s.clients) log = (as, (cm', k')) ∧
+    pv_rel lfd cm ps s ∧ pown lfd ps ∧ l0own lfd w ps ∧ l0_rely w ∧ fds_lt w ∧
+    (∀f. MEM f fs ⇒ f = lfd ∨ MEM f (MAP SND ps.b.tbl)) ∧
+    (∀f j. MEM (f, j) cm' ∧ LENGTH s.clients ≤ j ⇒
+           ∀used. ¬MEM f used ⇒ s.alloc j used = f) ⇒
+    pv_rel lfd cm' ps' (FOLDL deliver2 s as) ∧ pown lfd ps' ∧ l0own lfd w' ps' ∧
+    l0_rely w' ∧ fds_lt w' ∧ k' = LENGTH (FOLDL deliver2 s as).clients ∧
+    ps'.b.tbl = ps.b.tbl ∧ ps'.b.nxt = ps.b.nxt ∧ ps'.b.closing = ps.b.closing
+Proof
+  Induct >- simp[pf_fetch_def, arrs_def] >>
+  rpt gen_tac >> rename1 ‘pf_fetch _ _ (f :: fs)’ >> strip_tac >>
+  qpat_x_assum ‘pf_fetch _ _ _ _ = _’ mp_tac >>
+  simp[Once pf_fetch_def] >>
+  IF_CASES_TAC >- (strip_tac >> first_x_assum irule >> simp[] >> metis_tac[]) >>
+  IF_CASES_TAC
+  >- (qpat_x_assum ‘f = lfd’ SUBST_ALL_TAC >>
+      Cases_on ‘sys_accept lfd w’ >> simp[] >> rename1 ‘_ = SOME x’ >>
+      PairCases_on ‘x’ >> rename1 ‘sys_accept _ _ = SOME (out, w1, ev)’ >> simp[] >>
+      pairarg_tac >> simp[] >> rename1 ‘_ = (ps1, fl)’ >>
+      Cases_on ‘pf_fetch lfd hw fs (w1, ps1)’ >> simp[] >> rename1 ‘_ = SOME y’ >>
+      PairCases_on ‘y’ >> simp[] >> strip_tac >> gvs[] >>
+      fetch_tail_tac >>
+      ‘l0_rely w1’
+        by (qpat_assum ‘sys_accept _ _ = _’ (assume_tac o REWRITE_RULE [sys_accept_def]) >>
+            drule_all l0_do_rely >> simp[]) >>
+      ‘fds_lt w1’ by (drule_all sys_accept_fds_lt >> simp[]) >>
+      drule_all fetch_accept_rel >> strip_tac >>
+  first_x_assum (qspecl_then [‘w1’, ‘ps1’, ‘ck10’, ‘FOLDL deliver2 s as1’,
+                                   ‘w2’, ‘ps2’, ‘log2’, ‘evs2’, ‘as2’, ‘new ++ ck10’, ‘ck21’] mp_tac) >>
+      impl_tac
+      >- (rpt conj_tac >> TRY (first_assum ACCEPT_TAC) >> TRY (gvs[] >> NO_TAC)
+          >> FIRST [rw[] >> qpat_assum ‘∀f j. _’ irule >> simp[] >>
+                  irule LESS_EQ_TRANS >>
+                  qexists_tac ‘LENGTH (FOLDL deliver2 s as1).clients’ >> simp[],
+                  rw[] >> gvs[] >> metis_tac[]]) >>
+      strip_tac >> gvs[FOLDL_APP]) >>
+  Cases_on ‘sys_recv f pf_chunk w’ >> simp[] >> rename1 ‘_ = SOME x’ >>
+  PairCases_on ‘x’ >> rename1 ‘sys_recv _ _ _ = SOME (out, w1, ev)’ >> simp[] >>
+  pairarg_tac >> simp[] >> rename1 ‘_ = (ps1, fl)’ >>
+  Cases_on ‘pf_fetch lfd hw fs (w1, ps1)’ >> simp[] >> rename1 ‘_ = SOME y’ >>
+  PairCases_on ‘y’ >> simp[] >> strip_tac >> gvs[] >>
+  fetch_tail_tac >>
+  ‘l0_rely w1’
+    by (qpat_assum ‘sys_recv _ _ _ = _’ (assume_tac o REWRITE_RULE [sys_recv_def]) >>
+        drule_all l0_do_rely >> simp[]) >>
+  ‘l0_used w1 = l0_used w ∧ w1.fd_limit = w.fd_limit’
+    by (qpat_assum ‘sys_recv _ _ _ = _’ (assume_tac o REWRITE_RULE [sys_recv_def]) >>
+        imp_res_tac l0_do_env >> drule l0_do_used >> simp[]) >>
+  ‘fds_lt w1’ by gvs[fds_lt_def] >>
+  ‘MEM f (MAP SND ps.b.tbl)’
+    by (qpat_x_assum ‘∀f'. f' = f ∨ _ ⇒ _’ (qspec_then ‘f’ mp_tac) >> simp[]) >>
+  drule_all fetch_recv_rel >> strip_tac >>
+  first_x_assum (qspecl_then [‘w1’, ‘ps1’, ‘ck10’, ‘FOLDL deliver2 s as1’,
+                               ‘w2’, ‘ps2’, ‘log2’, ‘evs2’, ‘as2’, ‘new ++ ck10’, ‘ck21’] mp_tac) >>
+  impl_tac
+  >- (rpt conj_tac >> TRY (first_assum ACCEPT_TAC) >> TRY (gvs[] >> NO_TAC)
+      >> FIRST [rw[] >> qpat_assum ‘∀f j. _’ irule >> simp[] >>
+                  irule LESS_EQ_TRANS >>
+                  qexists_tac ‘LENGTH (FOLDL deliver2 s as1).clients’ >> simp[],
+                  rw[] >> gvs[] >> metis_tac[]]) >>
+  strip_tac >> gvs[FOLDL_APP]
+QED

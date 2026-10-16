@@ -1,10 +1,10 @@
 # L0 platform probes: Darwin 25.6.0 arm64
 
-## P1 partial send / EAGAIN: client never reads
+## P1 partial send / EAGAIN: a client that never reads
 accepted before refusal: 539996 bytes in 9 sends; partial counts: [15708]
 last send: EAGAIN(errno 35, value 0)
 poll IN|OUT while full: -
-after the client reads 1 MiB: poll OUT ; send: OK 65536
+after the client reads up to 1 MiB: poll OUT ; send: OK 65536
 
 ## P2 reset by the peer (SO_LINGER 0): recv / poll / send sequence
 poll: IN|HUP
@@ -29,26 +29,28 @@ send 2: EPIPE(errno 32, value 0)
 send 3: EPIPE(errno 32, value 0)
 recv: ECONNRESET(errno 54, value 0)
 
-## P5 out of fds (EMFILE): accept result, listener readiness, recovery
+## P5 out of fds (EMFILE): accept, listener readiness, the clients' fate
 accepts: ['OK 4', 'OK 5', 'EMFILE(errno 24, value 0)', 'EMFILE(errno 24, value 0)']
 listener poll after EMFILE: -
 after one close, accept: EAGAIN(errno 35, value 0)
-client 0: error 54 Connection reset by peer
+client 0: ('err', 54)
 client 1: still connected (no data)
-client 2: error 54 Connection reset by peer
-client 3: error 54 Connection reset by peer
+client 2: ('err', 54)
+client 3: ('err', 54)
 
 ## P6 server closes with unread input: does the client get the response?
 server send: OK 10
 server close (unread input remains): OK 0
-client recv: error 54 Connection reset by peer
+client recv: b'response-1'
 -- the same with the input drained first --
 client recv: b'response-1'
 
-## P7 short reads: data arriving between two recvs, no poll in between
+## P7 arrivals between calls: data after an EAGAIN, no poll in between
 recv 1: b'aaaa'  recv 2 (no poll in between): b'bbbb'
-recv after empty: EAGAIN(errno 35, value 0)
-then data arrives, recv again (no poll): b'cccc'
+recv when empty: EAGAIN(errno 35, value 0)
+then data arrives; recv again (no poll): b'cccc'
+a 2-byte recv of 4 bytes: -
+recv(2) of 4 available: b'dd'  then: b'dd'
 
 ## P8 a pending connection reset before accept
 listener poll: IN
@@ -56,17 +58,29 @@ accept: OK 4
   then recv on it: ECONNRESET(errno 54, value 0) ; poll: IN|HUP
 accept again: EAGAIN(errno 35, value 0)
 
-## P9 HUP: both directions shut; peer FIN only
+## P9 HUP: peer FIN only; both directions shut
 peer FIN only: poll IN|HUP
 our shutdown: OK 0
 both shut: poll IN|HUP
 send after our shutdown: EPIPE(errno 32, value 0)
 peer closed too: poll IN|HUP
 
-## P10 misc: NVAL, EBADF, port in use, unknown errno
+## P10 misc: NVAL, EBADF, wrong kinds of fd, port in use
 poll a closed fd 40: NVAL
 recv on fd 40: EBADF(errno 9, value 0)
 send on the listener: ENOTCONN(errno 57, value 0)
 accept on fd 0 (not a socket): EINVAL(errno 22, value 0)
 listen on the same port again: EADDRINUSE(errno 48, value 3)
-child fds: [0, 1, 2, 3]
+close fd 40: EBADF(errno 9, value 0)
+
+# Conformance (l0check: is each run a behaviour of the L0 world?)
+P1_partial_send              conforms
+P2_reset                     conforms
+P3_reset_unread              conforms
+P4_send_then_reset           conforms
+P5_emfile                    conforms
+P6_rst_on_close              conforms
+P7_arrivals_between_calls    conforms
+P8_aborted_pending           conforms
+P9_hup                       conforms
+P10_misc                     conforms

@@ -2212,6 +2212,14 @@ Definition nores_def:
   nores (ps : l1p) (w : l0world) ⇔ ∀f. ufds ps f ⇒ ¬MEM f w.reserved
 End
 
+Theorem nores_mono2:
+  nores ps w ∧ (∀g. MEM g w'.reserved ⇒ MEM g w.reserved) ∧
+  (∀f. ufds ps' f ⇒ ufds ps f ∨ ¬MEM f w'.reserved) ⇒
+  nores ps' w'
+Proof
+  rw[nores_def] >> metis_tac[]
+QED
+
 Theorem nores_mono:
   nores ps w ∧ (∀g. MEM g w'.reserved ⇒ MEM g w.reserved) ∧ (∀f. ufds ps' f ⇒ ufds ps f) ⇒
   nores ps' w'
@@ -2419,7 +2427,8 @@ Theorem l1_reap_keys:
   ∀fs w st w' st' evs.
     l1_reap fs (w, st) = SOME ((w', st'), evs) ⇒
     (∀f. MEM f (MAP FST st'.outbox) ⇒ MEM f (MAP FST st.outbox)) ∧
-    (∀g. MEM g w'.reserved ⇒ MEM g w.reserved)
+    (∀g. MEM g w'.reserved ⇒ MEM g w.reserved) ∧
+    st'.tbl = st.tbl ∧ (∀f. MEM f st'.closing ⇒ MEM f st.closing)
 Proof
   Induct >> simp[l1_reap_def] >> rpt gen_tac >> IF_CASES_TAC >> strip_tac
   >- (gvs[AllCaseEqs(), l1_close_def] >> first_x_assum drule >> strip_tac >>
@@ -2444,4 +2453,175 @@ Proof
       drule_all sys_close_open_back >> strip_tac >>
       first_x_assum irule >> simp[] >> metis_tac[])
   >> first_x_assum drule >> disch_then irule >> simp[] >> metis_tac[]
+QED
+
+Theorem l1_flush_b:
+  ∀fs w st w' st' evs.
+    l1_flush fs (w, st) = SOME ((w', st'), evs) ⇒ st'.tbl = st.tbl ∧ st'.closing = st.closing
+Proof
+  Induct >> simp[l1_flush_def] >> rpt gen_tac >> rw[] >>
+  TRY (first_x_assum drule >> simp[] >> NO_TAC) >>
+  gvs[AllCaseEqs()] >> first_x_assum drule >>
+  simp[after_send_def, set_outbox_def] >> every_case_tac >> simp[]
+QED
+
+Theorem CARD_set_sub:
+  (∀g. MEM g l ⇒ MEM g l') ⇒ CARD (set l) ≤ CARD (set l')
+Proof
+  strip_tac >> irule CARD_SUBSET >> simp[SUBSET_DEF]
+QED
+
+(* MAIN (G2): a round makes no retried call, and its accept (if any) does
+   not fail, given room for one more fd at its start *)
+Theorem pround_ok:
+  pround lfd hw hs (w, ps) acts = SOME (snap, (w', ps'), log, evs) ∧
+  kinv p lfd sched w1 a cm D E w ∧ winv w ∧ sched_wf2 (sk_of p lfd sched w1) ∧
+  pv_rel lfd cm0 ps s ∧ pown lfd ps ∧ l0own lfd w ps ∧ chown ps w ∧ eown E ps w ∧
+  noob lfd ps.b ∧ nores ps w ∧ CARD (set (l0_used w)) < w.fd_limit ⇒
+  EVERY (ok_ev lfd) evs ∧ nores ps' w'
+Proof
+  simp[pround_def, AllCaseEqs()] >> strip_tac >> PairCases_on ‘ws1’ >>
+  gvs[pf_tail_def, AllCaseEqs()] >>
+  rename1 ‘pacts _ _ _ = SOME (rs, aevs, wa, pa)’ >>
+  mp_tac (Q.SPECL [‘acts’, ‘w’, ‘ps’, ‘s’, ‘rs’, ‘aevs’, ‘wa’, ‘pa’] pacts_kinv) >>
+  impl_tac >- simp[] >> strip_tac >>
+  mp_tac (Q.SPECL [‘acts’, ‘w’, ‘ps’, ‘s’, ‘rs’, ‘aevs’, ‘wa’, ‘pa’] pacts_ok) >>
+  impl_tac >- simp[] >> strip_tac >>
+  drule_all pacts_noob >> strip_tac >>
+  drule_all pacts_hacts >> strip_tac >>
+  ‘l0_rely w ∧ fds_lt w’ by gvs[winv_def] >>
+  drule_all pacts_l0 >> strip_tac >>
+  rename1 ‘l1_polls _ wa = SOME (rv, wb, pevs)’ >>
+  qmatch_asmsub_abbrev_tac ‘l1_polls (poll_chunks fes) wa’ >>
+  ‘∀c. MEM c (poll_chunks fes) ⇒ EVERY (λ(f, e). e < 256) c’
+    by (qspec_then ‘fes’ mp_tac
+          (ISPEC “λ(f:word64, e:num). e < 256” (Q.GEN ‘P’ poll_chunks_ok)) >>
+        impl_tac >- simp[Abbr ‘fes’, pf_poll_set_lt] >>
+        simp[EVERY_MEM] >> metis_tac[]) >>
+  drule_all l1_polls_kinv >> strip_tac >>
+  drule_all l1_polls_ok >> strip_tac >>
+  rename1 ‘l1_flush _ (wb, pa.b) = SOME ((wc, bc), fevs)’ >>
+  drule_all l1_flush_kinv >> strip_tac >>
+  ‘∀f. MEM f (MAP FST pa.b.outbox) ⇒ ¬MEM f wb.reserved’
+    by (fs[nores_def, ufds_def] >> metis_tac[]) >>
+  drule_all l1_flush_ok >> strip_tac >>
+  drule l1_flush_b >> strip_tac >>
+  rename1 ‘pf_fetch _ _ _ _ = SOME ((wd, pd), log, gevs)’ >>
+  qmatch_asmsub_abbrev_tac ‘pf_fetch _ _ fs _’ >>
+  ‘∀g. MEM g fs ⇒ g = lfd ∨ ∃c. ALOOKUP wa.open_fds g = SOME c’
+    by (rw[Abbr ‘fs’, MEM_FILTER] >> fs[Abbr ‘fes’] >> drule in_fds_poll_set >>
+        strip_tac >> gvs[] >> fs[chown_def] >> metis_tac[]) >>
+  ‘∀g. MEM g fs ∧ g ≠ lfd ⇒ ∃c. ALOOKUP wc.open_fds g = SOME c’ by metis_tac[] >>
+  ‘∀g. MEM g fs ⇒ rdy lfd wc g’
+    by (rw[] >> ‘MEM g (readable_fds rv)’ by fs[Abbr ‘fs’, MEM_FILTER] >> metis_tac[]) >>
+  ‘CARD (set (l0_used wc)) < wc.fd_limit’
+    by (‘CARD (set (l0_used wa)) ≤ CARD (set (l0_used w))’ by (irule CARD_set_sub >> simp[]) >>
+        gvs[]) >>
+  ‘EVERY (ok_ev lfd) gevs’
+    by (irule pf_fetch_ok >> simp[] >> metis_tac[]) >>
+  (* the reap *)
+  ‘eown E (pa with b := bc) wc’ by (fs[eown_def] >> metis_tac[]) >>
+  ‘eused (pa with b := bc) wc’
+    by (simp[eused_def] >> rpt strip_tac
+        >- (‘MEM f (MAP SND pa.b.tbl)’ by (fs[pown_def] >> metis_tac[]) >>
+            ‘∃c. ALOOKUP wa.open_fds f = SOME c’ by fs[chown_def] >>
+            gvs[] >> metis_tac[used_open_fds])
+        >> gvs[l0own_def]) >>
+  ‘∀g. MEM g fs ∧ g ≠ lfd ⇒ ∃c. ALOOKUP wc.open_fds g = SOME c’ by metis_tac[] >>
+  drule_all kinv_fetch >> strip_tac >>
+  drule_all pf_fetch_acq >> strip_tac >>
+  drule pf_fetch_b >> strip_tac >>
+  drule pf_fetch_reserved >> strip_tac >>
+  rename1 ‘l1_reap _ (wd, _) = SOME ((we, be), cevs)’ >>
+  ‘¬MEM lfd pd.b.closing’ by gvs[pown_def, ALL_DISTINCT_APPEND] >>
+  ‘∀f c. MEM f (hup_step (hup_fds rv) (outbox_of pa.b) log pd).b.closing ∧
+         ALOOKUP wd.open_fds f = SOME c ⇒ (λj. E j ∨ MEM (Eof2 j) as) c’
+    by (simp_tac std_ss [hup_step_fields] >> fs[eown_def] >> metis_tac[]) >>
+  mp_tac (Q.SPECL [‘pd.b.closing’, ‘wd’,
+                   ‘(hup_step (hup_fds rv) (outbox_of pa.b) log pd).b’, ‘we’, ‘be’, ‘cevs’]
+          (Q.INST [‘E’ |-> ‘λj. E j ∨ MEM (Eof2 j) as’, ‘a’ |-> ‘a'’, ‘cm’ |-> ‘cm'’,
+                   ‘D’ |-> ‘λj. D j ++ data_of j as’] l1_reap_ok)) >>
+  impl_tac >- (simp[] >> gvs[] >> metis_tac[]) >> strip_tac >>
+  drule l1_reap_keys >> strip_tac >>
+  simp[] >>
+  (* L1's fds after the round *)
+  irule nores_mono2 >> qexistsl_tac [‘pa’, ‘wa’] >> simp[] >>
+  ‘∀g. MEM g we.reserved ⇒ MEM g wa.reserved’ by metis_tac[] >> simp[] >>
+  rw[ufds_def]
+  >- (disj1_tac >> disj1_tac >>
+      ‘MEM f (MAP FST (hup_step (hup_fds rv) (outbox_of pa.b) log pd).b.outbox)’ by metis_tac[] >>
+      drule (cj 3 hup_step_outbox) >> gvs[])
+  >- gvs[]
+  >- (‘MEM f pd.b.closing’ by metis_tac[hup_step_fields] >> gvs[])
+  >> qpat_x_assum ‘∀f. MEM f pd.acq ⇒ _’ (qspec_then ‘f’ mp_tac) >> gvs[] >>
+  strip_tac >> simp[] >> disj2_tac >> strip_tac >>
+  ‘MEM f wc.reserved’ by metis_tac[] >> gvs[l0_used_def]
+QED
+
+(* ------------------------------------------------------------------------
+   The run: with room for one more fd at each round's start (a bound on
+   the connections open at once, not on all connections), no call of the
+   run is retried and no accept fails
+   ------------------------------------------------------------------------ *)
+
+Definition fds_room_def:
+  fds_room lfd hw ifds m w1 ⇔
+    ∀n. CARD (set (l0_used (rworld lfd hw ifds m w1 n))) < w1.fd_limit
+End
+
+Theorem run_ok_ev:
+  simple_v2 p lfd sched w1 ∧ (∀h. ¬w1.ch.emfile_drops h) ∧ sched_wf2 (sk_of p lfd sched w1) ∧
+  winv w1 ∧ w1.listeners = [(lfd, p, [])] ∧ w1.chans = [] ∧ w1.open_fds = [] ∧
+  run_ok lfd hw ifds m w1 ∧ (∀n. SND (pcm lfd hw ifds m w1 n) + 1 < dimword (:64)) ∧
+  fds_room lfd hw ifds m w1 ⇒
+  ∀k. nores (rstate lfd hw ifds m w1 k) (rworld lfd hw ifds m w1 k) ∧
+      EVERY (ok_ev lfd) (rrev lfd hw ifds m w1 k)
+Proof
+  strip_tac >>
+  ‘MEM lfd (l0_used w1)’ by simp[l0_used_def] >>
+  ‘∀k. rinv p lfd sched w1 hw ifds m k’ by metis_tac[rinv_run] >>
+  ‘∀k. noob lfd (rstate lfd hw ifds m w1 k).b’ by metis_tac[noob_run] >>
+  ‘∀k. (rworld lfd hw ifds m w1 k).fd_limit = w1.fd_limit’
+    by (gen_tac >>
+        qpat_assum ‘∀k. rinv _ _ _ _ _ _ _ k’
+          (qspec_then ‘k’ (strip_assume_tac o
+                            SIMP_RULE std_ss [rinv_def, kinv_def, simple_v2_def, simple0_def])) >>
+        fs[simple_v2_def, simple0_def]) >>
+  ‘∀k. nores (rstate lfd hw ifds m w1 k) (rworld lfd hw ifds m w1 k) ⇒
+       EVERY (ok_ev lfd) (rrev lfd hw ifds m w1 k) ∧
+       nores (rstate lfd hw ifds m w1 (SUC k)) (rworld lfd hw ifds m w1 (SUC k))’
+    by (rpt strip_tac >>
+        drule_all round_facts >> disch_then (qspec_then ‘k’ strip_assume_tac) >>
+        drule prun_round' >> disch_then (qspecl_then [‘ARB’, ‘k’] strip_assume_tac) >>
+        qpat_assum ‘∀k. rinv _ _ _ _ _ _ _ k’ (qspec_then ‘k’ mp_tac) >>
+        simp_tac std_ss [rinv_def] >> strip_tac >>
+        drule_then drule pround_ok >> simp[] >>
+        disch_then (qspecl_then [‘s’, ‘cm’] mp_tac) >> simp[] >>
+        fs[fds_room_def]) >>
+  ‘∀k. nores (rstate lfd hw ifds m w1 k) (rworld lfd hw ifds m w1 k)’
+    by (Induct >- simp[nores_def, ufds_def, rstate_def, prun_0, pinit_def, l1init_def] >>
+        metis_tac[]) >>
+  metis_tac[]
+QED
+
+Theorem revs_ok:
+  run_ok lfd hw ifds m w1 ∧ (∀k. EVERY (ok_ev lfd) (rrev lfd hw ifds m w1 k)) ⇒
+  ∀n. EVERY (ok_ev lfd) (revs lfd hw ifds m w1 n)
+Proof
+  strip_tac >> Induct >- simp[revs_def, prun_0] >>
+  drule prun_round' >> disch_then (qspecl_then [‘ARB’, ‘n’] strip_assume_tac) >> simp[]
+QED
+
+(* So [F1] holds in simple worlds, and accepts do not fail *)
+Theorem simple_F1:
+  run_ok lfd hw ifds m w1 ∧ (∀k. EVERY (ok_ev lfd) (rrev lfd hw ifds m w1 k)) ⇒
+  F1 lfd hw ifds m w1 ∧ ¬accepts_fail lfd hw ifds m w1
+Proof
+  strip_tac >> drule_all revs_ok >> strip_tac >> conj_tac
+  >- (rw[F1_def, call_ok_at_def] >> first_x_assum (qspec_then ‘i’ strip_assume_tac) >>
+      qexists_tac ‘i'’ >> fs[call_at_def] >> conj_tac >- metis_tac[] >>
+      qexists_tac ‘n’ >> simp[] >>
+      first_x_assum (qspec_then ‘n’ mp_tac) >> simp[EVERY_EL, ok_ev_def])
+  >> rw[accepts_fail_def] >> qexists_tac ‘0’ >> rpt strip_tac >>
+  first_x_assum (qspec_then ‘n’ mp_tac) >> simp[EVERY_EL, ok_ev_def] >> metis_tac[]
 QED

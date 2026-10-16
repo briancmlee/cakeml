@@ -915,3 +915,98 @@ Proof
   drule_all l1do_write_l0 >> drule l1do_write_tbl >> rw[] >>
   gvs[fds_lt_def, l0own_def] >> metis_tac[]
 QED
+
+Theorem pacts_l0:
+  ∀acts w ps s rs evs w' ps'.
+    pacts lfd (w, ps) acts = SOME (rs, evs, (w', ps')) ∧
+    l0_rely w ∧ fds_lt w ∧ l0own lfd w ps ∧ pv_rel lfd cm ps s ∧ pown lfd ps ⇒
+    l0_rely w' ∧ fds_lt w' ∧ l0own lfd w' ps'
+Proof
+  Induct >> simp[pacts_def] >> rpt gen_tac >> strip_tac >> gvs[AllCaseEqs()] >>
+  rename1 ‘pdo _ _ _ = SOME (r1, ws1, evs1)’ >> PairCases_on ‘ws1’ >>
+  drule_all pdo_l0 >> strip_tac >> drule_all pdo_hdo >> strip_tac >>
+  first_x_assum irule >> metis_tac[]
+QED
+
+(* ------------------------------------------------------------------------
+   The snapshot: the handle layer's ready handles are L1's
+   ------------------------------------------------------------------------ *)
+
+Theorem in_fds_poll_set:
+  MEM f (in_fds (pf_poll_set lfd hw ps hs)) ⇒
+  f = lfd ∨ MEM f (MAP SND ps.b.tbl)
+Proof
+  simp[in_fds_def, pf_poll_set_def, MEM_MAP, MEM_FILTER, EXISTS_PROD, MEM_FLAT] >>
+  rw[] >> gvs[MEM_MAP, EXISTS_PROD] >>
+  Cases_on ‘ALOOKUP ps.b.tbl h’ >> gvs[]
+  >- (Cases_on ‘h = lfd ∧ wants_input lfd hw ps lfd’ >> gvs[]) >>
+  rename1 ‘ALOOKUP _ h = SOME g’ >>
+  Cases_on ‘wants_input lfd hw ps g’ >> Cases_on ‘outbox_of ps.b g = []’ >> gvs[] >>
+  imp_res_tac ALOOKUP_MEM >> metis_tac[]
+QED
+
+Theorem pv_rel_future[simp]:
+  pv_rel lfd cm ps (s with future := x) ⇔ pv_rel lfd cm ps s
+Proof
+  simp[pv_rel_def]
+QED
+
+Theorem FOLDL_deliver2_future:
+  ∀as s. FOLDL deliver2 (s with future := x) as = (FOLDL deliver2 s as) with future := x
+Proof
+  Induct >> simp[] >> rpt gen_tac >>
+  ‘deliver2 (s with future := x) h = (deliver2 s h) with future := x’
+    by (Cases_on ‘h’ >> rw[deliver2_def, update_client_def]) >>
+  simp[]
+QED
+
+Theorem filter_cong:
+  ∀l. (∀x. MEM x l ⇒ (P x ⇔ Q x)) ⇒ FILTER P l = FILTER Q l
+Proof
+  Induct >> rw[] >> gvs[]
+QED
+
+Theorem is_ready2_lfd:
+  pv_rel lfd cm ps s ∧ pown lfd ps ⇒ (is_ready2 s lfd ⇔ ps.acq ≠ [])
+Proof
+  strip_tac >>
+  ‘ALOOKUP s.open_fds lfd = NONE’
+    by (gvs[pv_rel_def, pown_def, ALOOKUP_NONE] >> metis_tac[]) >>
+  gvs[is_ready2_def, client_of_def, pv_rel_def]
+QED
+
+Theorem is_ready2_tbl:
+  pv_rel lfd cm ps s ∧ pown lfd ps ∧ ALOOKUP ps.b.tbl h = SOME f ⇒
+  (is_ready2 s f ⇔ inb_of ps f ≠ [] ∨ MEM f ps.eof)
+Proof
+  strip_tac >> drule_all pv_rel_tbl >> strip_tac >>
+  ‘f ≠ lfd’ by (gvs[pown_def] >> metis_tac[ALOOKUP_SOME_MEM_SND]) >>
+  ‘ALOOKUP s.listening f = NONE’ by gvs[pv_rel_def] >>
+  simp[is_ready2_def]
+QED
+
+Theorem hpoll_fds_mem:
+  MEM h hs ⇒
+  (ALOOKUP hz.tbl h = SOME f ⇒ MEM f (hpoll_fds lfd hz hs)) ∧
+  (ALOOKUP hz.tbl lfd = NONE ∧ h = lfd ⇒ MEM lfd (hpoll_fds lfd hz hs))
+Proof
+  rw[hpoll_fds_def, MEM_FLAT, MEM_MAP, PULL_EXISTS] >>
+  qexists_tac ‘h’ >> simp[]
+QED
+
+Theorem ready_eq:
+  pv_rel lfd cm ps s ∧ pown lfd ps ⇒
+  hready lfd (hs_of ps) (FILTER (is_ready2 s) (hpoll_fds lfd (hs_of ps) hs)) hs =
+  pf_ready lfd ps hs
+Proof
+  strip_tac >> simp[hready_def, pf_ready_def, hs_of_def] >>
+  irule filter_cong >> rpt strip_tac >>
+  Cases_on ‘ALOOKUP ps.b.tbl x’ >> simp[MEM_FILTER]
+  >- (Cases_on ‘x = lfd’ >> simp[] >>
+      drule_all is_ready2_lfd >> simp[] >> strip_tac >>
+      simp[hpoll_fds_def, MEM_FLAT, MEM_MAP, PULL_EXISTS] >>
+      eq_tac >> rw[] >> qexists_tac ‘lfd’ >> gvs[]) >>
+  drule_all is_ready2_tbl >> simp[] >> strip_tac >>
+  simp[hpoll_fds_def, MEM_FLAT, MEM_MAP, PULL_EXISTS] >>
+  eq_tac >> rw[] >> gvs[] >> qexists_tac ‘x’ >> simp[]
+QED

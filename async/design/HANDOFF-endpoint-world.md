@@ -26,7 +26,11 @@ Write-up and decisions for review: `35-endpoint-world.md`.
 - Buffer closure (PR #79, `spike/buffer-closure`): `relay_safety`,
   `echo_relay_closed`, `http_relay_closed` (`endpointBufferHttp`) and
   `kv_relay_closed` (`endpointBufferKv`, over a `relay_run`) are proved.
-- Queue: refused-connect changes (encoding from design/36) →
+- Refused connects (`spike/refused-connect`): design/36 §4.1 implemented
+  in `endpointWorld` (`Refused`/`Failed`, `ep_conn_err`, `l0_result`),
+  client/proxy clauses and `refusal_bite` in `endpointClients`; M2/M3
+  fixed here, M1/M4 in honest-ffi's `async/honest-l0`.
+- Queue: HTTP on v2 (`spike/http-v2`, spec first) →
   `v1_instance_disc` (non-saturation hypothesis: ≤M connects, M+3 < 2^64)
   on `spike/v1-disc` → disciplined echo sym_equiv → http_b → kv.
 - `endpointV2Sim`'s relation `v2rel` (core + al_rel of the futures) is the

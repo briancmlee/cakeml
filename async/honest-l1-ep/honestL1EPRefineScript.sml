@@ -1595,3 +1595,61 @@ Proof
         qpat_x_assum ‘∀h f. ALOOKUP es.ctbl h = SOME f ⇒ k ≠ _’ drule >> simp[]) >>
   simp[]
 QED
+
+Theorem ALL_DISTINCT_MAP_FILTER_gen:
+  ∀l. ALL_DISTINCT (MAP f l) ⇒ ALL_DISTINCT (MAP f (FILTER P l))
+Proof
+  Induct >> rw[] >> gvs[MEM_MAP, MEM_FILTER] >> metis_tac[]
+QED
+
+Theorem MEM_MAP_FILTER_IMP:
+  MEM e (MAP f (FILTER P l)) ⇒ MEM e (MAP f l)
+Proof
+  rw[MEM_MAP, MEM_FILTER] >> metis_tac[]
+QED
+
+(* Settling and promotion keep the relation, L1's invariant and the
+   handle state *)
+Theorem ev_settle:
+  ev_rel lfd a cm es w ∧ eown lfd es ∧
+  es5.p = es.p ∧ es5.ctbl = es.ctbl ∧ es5.settling = es.settling ∧ es5.early = [] ∧
+  (∀f. MEM f (MAP SND es.ctbl) ∧ cstat_of es f ≠ CPending ⇒ cstat_of es5 f = cstat_of es f) ⇒
+  ev_rel lfd a cm (promote es5) (FOLDL ep_deliver w (settles cm es es5)) ∧
+  eown lfd (promote es5) ∧
+  (∀hs. ehs_rel hs es ⇒ ehs_rel hs (promote es5))
+Proof
+  strip_tac >> drule_all settle_world >>
+  disch_then (qspec_then ‘es5’ mp_tac) >> simp[] >> strip_tac >>
+  qabbrev_tac ‘w' = FOLDL ep_deliver w (settles cm es es5)’ >>
+  ‘ALL_DISTINCT (MAP FST es.p.b.tbl ++ MAP FST es.ctbl)’ by gvs[eown_def] >>
+  ‘ALL_DISTINCT (MAP FST es5.p.b.tbl ++ MAP FST es5.ctbl)’ by gvs[] >>
+  rpt conj_tac
+  >- cheat
+  >- (qpat_x_assum ‘eown _ _’ mp_tac >>
+      simp[eown_def, pown_def, promote_def, inb_of_def] >> strip_tac >>
+      gvs[ALL_DISTINCT_APPEND, MEM_FILTER] >> rpt conj_tac >>
+      TRY (irule ALL_DISTINCT_MAP_FILTER_gen >> simp[] >> NO_TAC) >>
+      TRY (strip_tac >> imp_res_tac MEM_MAP_FILTER_IMP >> gvs[] >> NO_TAC) >>
+      rpt strip_tac >> imp_res_tac MEM_MAP_FILTER_IMP >> gvs[] >>
+      TRY (qpat_x_assum ‘ALOOKUP (_ ++ _) _ = _’ mp_tac >> simp[ALOOKUP_APPEND] >>
+           CASE_TAC >> strip_tac >> gvs[]
+           >- (first_x_assum drule >> simp[]) >>
+           imp_res_tac ALOOKUP_FILTER_IMP >> gvs[] >>
+           qpat_x_assum ‘∀h f. ALOOKUP es.ctbl h = SOME f ⇒ (∃i. _) ∧ _’ drule >> simp[] >> NO_TAC) >>
+      TRY (imp_res_tac ALOOKUP_FILTER_IMP >> gvs[] >>
+           qpat_x_assum ‘∀h f. ALOOKUP es.ctbl h = SOME f ⇒ (∃i. _) ∧ _’ drule >> simp[] >> NO_TAC) >>
+      TRY (gvs[MEM_MAP, MEM_FILTER, EXISTS_PROD] >> NO_TAC) >>
+      TRY (gvs[MEM_MAP, MEM_FILTER, EXISTS_PROD] >>
+           ‘ALOOKUP es.ctbl e = SOME p_2 ∧ ALOOKUP es.ctbl e = SOME p_2'’
+             by (conj_tac >> irule ALOOKUP_ALL_DISTINCT_MEM >> simp[]) >> gvs[] >> NO_TAC) >>
+      imp_res_tac ALOOKUP_FILTER_IMP >> gvs[cstat_of_def] >>
+      TRY (qpat_x_assum ‘ALOOKUP (_ ++ _) _ = _’
+             (strip_assume_tac o SIMP_RULE (srw_ss()) [ALOOKUP_APPEND, AllCaseEqs()]) >>
+           imp_res_tac ALOOKUP_FILTER_IMP >> res_tac >> fs[] >> NO_TAC) >>
+      Cases_on ‘ALOOKUP es5.cst f’ >> gvs[ALOOKUP_FILTER_NONE] >>
+      ‘ALOOKUP (FILTER (λ(f, c). c ≠ CUp) es5.cst) f = SOME x’
+        by (irule ALOOKUP_FILTER_SOME >> fs[]) >> gvs[])
+  >> rw[ehs_rel_def] >> TRY (simp[promote_def] >> NO_TAC) >>
+  qpat_x_assum ‘ALL_DISTINCT (MAP FST es5.p.b.tbl ++ _)’ (assume_tac o MATCH_MP promote_lookup) >>
+  gvs[]
+QED

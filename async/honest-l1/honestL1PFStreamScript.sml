@@ -363,3 +363,161 @@ Proof
   drule_all pdo_fl >> strip_tac >> drule_all pdo_f >> strip_tac >>
   first_x_assum drule_all >> simp[]
 QED
+
+Theorem l1_polls_fl:
+  ∀chs w rv w' evs. l1_polls chs w = SOME (rv, w', evs) ∧ winv w ∧ fl w f R ⇒ fl w' f R
+Proof
+  Induct >> simp[l1_polls_def] >> rpt gen_tac >> strip_tac >>
+  gvs[AllCaseEqs()] >>
+  ‘winv w1 ∧ fl w1 f R’ by metis_tac[sys_fl, sys_winv] >>
+  first_x_assum drule_all >> simp[]
+QED
+
+Theorem l1_flush_fl:
+  ∀fs w st w' st' evs. l1_flush fs (w, st) = SOME ((w', st'), evs) ∧ winv w ∧ fl w f R ⇒
+                       fl w' f R
+Proof
+  Induct >> simp[l1_flush_def] >> rpt gen_tac >> strip_tac >>
+  qpat_x_assum ‘(if _ then _ else _) = _’ mp_tac >> IF_CASES_TAC >> strip_tac
+  >- (first_x_assum drule_all >> simp[]) >>
+  gvs[AllCaseEqs()] >> rename1 ‘sys_send _ _ _ = SOME (out, w1, ev)’ >>
+  ‘winv w1 ∧ fl w1 f R’ by metis_tac[sys_fl, sys_winv] >>
+  first_x_assum drule_all >> simp[]
+QED
+
+Theorem l1_reap_fl:
+  ∀fs w st w' st' evs. l1_reap fs (w, st) = SOME ((w', st'), evs) ∧ winv w ∧ fl w f R ∧
+                       ¬MEM f fs ⇒ fl w' f R
+Proof
+  Induct >> simp[l1_reap_def] >> rpt gen_tac >> strip_tac >> gvs[] >>
+  qpat_x_assum ‘(if _ then _ else _) = _’ mp_tac >> IF_CASES_TAC >> strip_tac
+  >- (gvs[AllCaseEqs()] >> Cases_on ‘ws’ >>
+      ‘winv q ∧ fl q f R’ by metis_tac[l1_close_fl, l1_close_winv] >>
+      first_x_assum drule_all >> simp[])
+  >> first_x_assum drule_all >> simp[]
+QED
+
+(* The bytes a fetch log fetched on f, in order; and whether it ended f's
+   episode (EOF or a reset) *)
+Definition fdata_def:
+  fdata f log =
+    FLAT (MAP (λx. case x of FData g bs => if g = f then bs else [] | _ => []) log)
+End
+
+Definition fend_def:
+  fend f log ⇔ EXISTS (λx. x = FEof f ∨ x = FReset f) log
+End
+
+Theorem fdata_simps[simp]:
+  fdata f [] = [] ∧
+  fdata f (FData g bs :: l) = (if g = f then bs else []) ++ fdata f l ∧
+  fdata f (FConn g :: l) = fdata f l ∧
+  fdata f (FEof g :: l) = fdata f l ∧
+  fdata f (FReset g :: l) = fdata f l ∧
+  (fend f [] ⇔ F) ∧
+  (fend f (FData g bs :: l) ⇔ fend f l) ∧
+  (fend f (FConn g :: l) ⇔ fend f l) ∧
+  (fend f (FEof g :: l) ⇔ g = f ∨ fend f l) ∧
+  (fend f (FReset g :: l) ⇔ g = f ∨ fend f l)
+Proof
+  rw[fdata_def, fend_def] >> metis_tac[]
+QED
+
+Theorem fdata_append[simp]:
+  fdata f (l1 ++ l2) = fdata f l1 ++ fdata f l2 ∧
+  (fend f (l1 ++ l2) ⇔ fend f l1 ∨ fend f l2)
+Proof
+  simp[fdata_def, fend_def]
+QED
+
+Theorem prefix_cancel[simp]:
+  ∀d. d ++ a ≼ d ++ b ⇔ a ≼ b
+Proof
+  Induct >> simp[]
+QED
+
+Theorem prefix_app:
+  R ≼ d ⇒ R ≼ d ++ x
+Proof
+  rw[IS_PREFIX_APPEND] >> simp[]
+QED
+
+Theorem fl_used:
+  fl w f R ⇒ MEM f (l0_used w)
+Proof
+  rw[fl_def, front_def, flushed_def, l0_chan_of_def, AllCaseEqs(), l0_used_def] >>
+  imp_res_tac ALOOKUP_MEM >> simp[MEM_MAP, EXISTS_PROD] >> metis_tac[]
+QED
+
+(* One recv on f in the fetch: the episode ends, or nothing changes, or a
+   prefix of R (or all of it) is logged as data *)
+Theorem fetch_step_f:
+  winv w ∧ fl w f R ∧ fkeep lfd h f ps ∧ sys_recv f pf_chunk w = SOME (out, w1, ev) ∧
+  (case l0_res_of out of
+   | Ok k =>
+       if 0 < k then (set_inb f (TAKE k (DROP 13 out)) ps, [FData f (TAKE k (DROP 13 out))])
+       else (ps with eof := f :: ps.eof, [FEof f])
+   | Fail e _ =>
+       if l1_transient e then (ps, []) else (ps with eof := f :: ps.eof, [FReset f])) =
+  (ps1, lg) ⇒
+  winv w1 ∧
+  (fend f lg ∨ (lg = [] ∧ ps1 = ps ∧ fl w1 f R) ∨
+   ∃d. lg = [FData f d] ∧ fkeep lfd h f ps1 ∧ (R ≼ d ∨ ∃R'. R = d ++ R' ∧ fl w1 f R'))
+Proof
+  strip_tac >> ‘winv w1’ by metis_tac[sys_winv] >> simp[] >>
+  ‘0 < pf_chunk ∧ pf_chunk < 256 ** 8’ by EVAL_TAC >>
+  drule_all sys_recv_fl >> strip_tac
+  >- (Cases_on ‘l0_res_of out’ >> gvs[] >>
+      TRY (rename1 ‘Ok n’ >> Cases_on ‘0 < n’) >> gvs[AllCaseEqs()] >> rw[] >> gvs[])
+  >> gvs[] >> qpat_x_assum ‘fkeep _ _ _ _’ mp_tac >> simp[fkeep_def]
+QED
+
+(* The fetch, seen from f's kernel inbox: R (at the front) is fetched in
+   order, or the episode ends *)
+Theorem pf_fetch_stream:
+  ∀fs w ps w' ps' log evs R.
+    pf_fetch lfd hw fs (w, ps) = SOME ((w', ps'), log, evs) ∧ winv w ∧ fl w f R ∧
+    fkeep lfd h f ps ⇒
+    fend f log ∨ R ≼ fdata f log ∨
+    ∃R'. R = fdata f log ++ R' ∧ fl w' f R' ∧ fkeep lfd h f ps'
+Proof
+  Induct >- (simp[pf_fetch_def] >> rw[] >> simp[]) >>
+  rpt gen_tac >> rename1 ‘g :: fs’ >> strip_tac >>
+  ‘¬MEM f ps.eof ∧ f ≠ lfd ∧ ¬MEM f ps.acq’
+    by (qpat_x_assum ‘fkeep _ _ _ _’ mp_tac >> simp[fkeep_def]) >>
+  qpat_x_assum ‘pf_fetch _ _ _ _ = _’ mp_tac >> simp[Once pf_fetch_def] >>
+  IF_CASES_TAC >- (strip_tac >> first_x_assum drule_all >> simp[]) >>
+  IF_CASES_TAC
+  >- ((* accept on the listener *)
+      ‘g ≠ f’ by (strip_tac >> fs[]) >>
+      simp[AllCaseEqs(), PULL_EXISTS] >> rpt gen_tac >> strip_tac >>
+      pairarg_tac >> fs[AllCaseEqs()] >> rveq >>
+      ‘winv w1 ∧ fl w1 f R’ by metis_tac[sys_fl, sys_winv] >>
+      gvs[AllCaseEqs()] >>
+      first_x_assum drule >> disch_then (qspec_then ‘R’ mp_tac) >> impl_tac >>
+      TRY (simp[] >> NO_TAC) >>
+      TRY (rpt conj_tac >> TRY (first_assum ACCEPT_TAC) >>
+           ‘¬MEM (n2w k) (l0_used w)’
+             by (irule sys_accept_fresh >> gvs[winv_def] >> metis_tac[]) >>
+           ‘n2w k ≠ f’ by metis_tac[fl_used] >>
+           qpat_x_assum ‘fkeep _ _ _ _’ mp_tac >> simp[fkeep_def] >> NO_TAC) >>
+      simp[])
+  >> Cases_on ‘g = f’
+  >- ((* recv on f *)
+      gvs[] >> simp[AllCaseEqs(), PULL_EXISTS] >> rpt gen_tac >> strip_tac >>
+      pairarg_tac >> gvs[CaseEq "option", CaseEq "prod"] >>
+      drule_all fetch_step_f >> strip_tac >> gvs[] >>
+      TRY (first_x_assum drule >> disch_then (qspec_then ‘R’ mp_tac) >> simp[] >> NO_TAC) >>
+      TRY (simp[prefix_app] >> NO_TAC) >>
+      first_x_assum drule >> disch_then (qspec_then ‘R'’ mp_tac) >> simp[] >>
+      strip_tac >> simp[])
+  >> (* recv on another fd *)
+  simp[AllCaseEqs(), PULL_EXISTS] >> rpt gen_tac >> strip_tac >>
+  pairarg_tac >> fs[AllCaseEqs()] >> rveq >>
+  ‘winv w1 ∧ fl w1 f R’ by metis_tac[sys_fl, sys_winv] >>
+  gvs[AllCaseEqs()] >>
+  first_x_assum drule >> disch_then (qspec_then ‘R’ mp_tac) >> impl_tac >>
+  TRY (rpt conj_tac >> TRY (first_assum ACCEPT_TAC) >>
+       qpat_x_assum ‘fkeep _ _ _ _’ mp_tac >> simp[fkeep_def] >> NO_TAC) >>
+  simp[]
+QED

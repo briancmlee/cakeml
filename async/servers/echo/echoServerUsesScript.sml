@@ -17,10 +17,10 @@
   and stays one) is the remaining, world-side part; see
   design/15-m4-server.md.
 *)
-Theory asyncM4ServerUses
+Theory echoServerUses
 Ancestors
   pair list rich_list arithmetic option asyncCore asyncLevel1 asyncLevel2
-  asyncTranscript asyncServer asyncServerSafety
+  asyncTranscript echoServer echoServerSafety
 Libs
   BasicProvers
 

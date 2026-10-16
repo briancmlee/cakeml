@@ -4,14 +4,14 @@
   is quiet.  So M2's no-busy-waiting theorem applies: a scheduler running it
   may block in select until the listener or some connection is readable
   (or a response is due), with exactly the same behaviour as one that
-  polls every round.  The safety property (asyncServerSafety) is about the
+  polls every round.  The safety property (echoServerSafety) is about the
   erased server, so it holds for this one too.
 *)
-Theory asyncServer2
+Theory echoServer2
 Ancestors
   pair list rich_list arithmetic option pred_set string
   asyncCore asyncLevel1 asyncLoop asyncLevel2 asyncLoop2 asyncSched asyncSched2
-  asyncServer
+  echoServer
 Libs
   BasicProvers
 

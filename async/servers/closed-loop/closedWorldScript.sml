@@ -2,7 +2,7 @@
   A model-level world of sockets, and the closed loop: a program and the
   world running together.
 
-  The world mirrors the socket model of async/ffi-spike/ffiSpikeSocketFFI
+  The world mirrors the socket model of async/ffi-spike/socketWorld
   (branch spike/socket-model), so that the two layers line up for M4:
    - listening fds, each with a queue of pending connections;
    - connections, each an abstract byte stream: data that has arrived but
@@ -22,10 +22,10 @@
   step of the schedule arrives) and the next snapshot reports the ready
   fds.  This is the order of the socket model's sock_poll.
 *)
-Theory asyncWorld
+Theory closedWorld
 Ancestors
   pair list rich_list arithmetic option pred_set string alist llist
-  asyncCore asyncLevel1 asyncTranscript asyncServer
+  asyncCore asyncLevel1 asyncTranscript echoServer
 Libs
   BasicProvers
 

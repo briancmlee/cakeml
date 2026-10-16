@@ -15,13 +15,13 @@
   every action in the next snapshot, a read returns all available data, a
   write always completes, and arrivals are delivered when scheduled.  So
   no further assumption is needed.  The proof combines the program-level
-  progress theorems (asyncProgress) with how the world evolves.
+  progress theorems (echoProgress) with how the world evolves.
 *)
-Theory asyncLiveness
+Theory echoClosedLive
 Ancestors
   pair list rich_list arithmetic option pred_set string alist llist
-  asyncCore asyncLevel1 asyncTranscript asyncServer asyncServerSafety
-  asyncWorld asyncClosedLoop asyncProgress
+  asyncCore asyncLevel1 asyncTranscript echoServer echoServerSafety
+  closedWorld echoClosedLoop echoProgress
 Libs
   BasicProvers
 
@@ -947,7 +947,7 @@ QED
    ------------------------------------------------------------------------ *)
 
 (* An arrival is effective: the world does not drop it.  This mirrors the
-   socket model's arrival_ok (spike/socket-model, ffiSpikeSocketFair), whose
+   socket model's arrival_ok (spike/socket-model, socketFair), whose
    sched_wf asks it of every arrival of the schedule. *)
 Definition arrival_ok_def:
   (arrival_ok w (Connect l c) ⇔

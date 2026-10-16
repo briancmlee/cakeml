@@ -1,16 +1,16 @@
 (*
-  Progress of the generic server  server_with hf lfd  (asyncServerWith), for
+  Progress of the generic server  server_with hf lfd  (skeleton), for
   any handler hf that is well-formed, settled and only touches its own fd
-  (hok).  This is asyncProgress's server part (server_handler_view,
+  (hok).  This is echoProgress's server part (server_handler_view,
   server_accept_progress), with the echo handler replaced by hf; the proofs
-  are those of asyncProgress, with handler_echoes replaced by hok.  The HTTP
+  are those of echoProgress, with handler_echoes replaced by hok.  The HTTP
   server is the instance hf = λfd. http_handler files (fd, "").
 *)
-Theory asyncSWProgress
+Theory skeletonProgress
 Ancestors
   pair list rich_list arithmetic option pred_set string
-  asyncCore asyncLevel1 asyncLoop asyncTranscript asyncServer asyncServerSafety
-  asyncProgress asyncServerWith
+  asyncCore asyncLevel1 asyncLoop asyncTranscript echoServer echoServerSafety
+  echoProgress skeleton
 Libs
   BasicProvers
 

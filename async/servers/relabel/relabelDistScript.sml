@@ -1,18 +1,18 @@
 (*
   Relabelling distributes over the library's combinators (model).
 
-  relabel fa fs m (asyncM4Relabel) runs m in another vocabulary.  When the
+  relabel fa fs m (relabel) runs m in another vocabulary.  When the
   snapshot translation fs is pointwise on the responses (snap_map: the
   ready set by fe, each response by fr), relabelling commutes with return,
   wait, map, bind and both, and turns emit a into
   map fr (emit (fa a)).  So the relabelled echo server is again a library
   computation, written in the socket vocabulary, which is what the CakeML
-  code in that vocabulary implements (asyncM4SockServer).
+  code in that vocabulary implements (echoSockServer).
 *)
-Theory asyncM4RelabelDist
+Theory relabelDist
 Ancestors
   pair list rich_list arithmetic option asyncCore asyncLevel1 asyncLevel2
-  asyncTranscript asyncM4Relabel
+  asyncTranscript relabel
 Libs
   BasicProvers
 

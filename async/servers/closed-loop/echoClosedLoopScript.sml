@@ -5,10 +5,10 @@
   prefix of the data that has arrived on it: nothing is written that was
   not sent on that connection, and nothing out of order.
 *)
-Theory asyncClosedLoop
+Theory echoClosedLoop
 Ancestors
   pair list rich_list arithmetic option pred_set string alist llist
-  asyncCore asyncLevel1 asyncTranscript asyncServer asyncServerSafety asyncWorld
+  asyncCore asyncLevel1 asyncTranscript echoServer echoServerSafety closedWorld
 Libs
   BasicProvers
 

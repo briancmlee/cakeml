@@ -1,6 +1,6 @@
 (*
   The echo server's accept/fork skeleton, for any per-connection handler.
-  Additive: asyncServer's definitions are unchanged; the echo server is the
+  Additive: echoServer's definitions are unchanged; the echo server is the
   instance  server_with handler  (server_with_handler).
 
      server_with h lfd = wait until lfd is readable;
@@ -8,7 +8,7 @@
                          on Accepted fd: both (h fd) (server_with h lfd)
                          otherwise:      server_with h lfd
 
-  Main result (server_with_isolates, the generic form of asyncServerSafety's
+  Main result (server_with_isolates, the generic form of echoServerSafety's
   server_echoes): if each handler h fd only reads and writes its own fd,
   and the connections the world hands out are distinct, then on every
   connection fd the server's reads and writes on fd are exactly those of
@@ -16,11 +16,11 @@
   touches connections it has accepted.  Per-connection properties of h
   therefore transfer to the whole server.
 *)
-Theory asyncServerWith
+Theory skeleton
 Ancestors
   pair list rich_list arithmetic option pred_set string
-  asyncCore asyncLevel1 asyncLoop asyncLevel2 asyncTranscript asyncServer
-  asyncServerSafety
+  asyncCore asyncLevel1 asyncLoop asyncLevel2 asyncTranscript echoServer
+  echoServerSafety
 Libs
   BasicProvers
 

@@ -1,5 +1,5 @@
 (*
-  An incremental parser for HttpSpec's request subset, proved against the
+  An incremental parser for HttpGetSpec's request subset, proved against the
   spec's printer.  Internal: it is not part of the trusted spec.
 
      parse_request s = Complete r rest   s starts with a complete valid
@@ -19,9 +19,9 @@
    - parse_all_requests: parse_all of printed requests followed by a rest
                        that does not start with a request is the requests
 *)
-Theory asyncHttpParse
+Theory httpGetParse
 Ancestors
-  HttpSpec list rich_list
+  HttpGetSpec list rich_list
 Libs
   preamble
 

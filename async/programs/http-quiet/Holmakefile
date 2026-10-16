@@ -1,0 +1,35 @@
+# Generated from the review-series layout (see REVIEW-SERIES-PLAN.md).
+INCLUDES = ../../cakeml/approx \
+           ../../cakeml/library \
+           ../../loop/blocking \
+           ../../loop/polling \
+           ../../loop/select-interest \
+           ../../model/core \
+           ../../model/level2 \
+           ../../model/sched \
+           ../echo \
+           ../echo-blocking \
+           ../echo-live \
+           ../http-level2 \
+           ../http-pb \
+           ../proto \
+           ../../quiet/echo \
+           ../../quiet/ffi \
+           ../../servers/closed-loop \
+           ../../servers/echo \
+           ../../servers/http \
+           ../../servers/level2-proto \
+           ../../servers/library-liveness \
+           ../../servers/proto \
+           ../../servers/proto-inst \
+           ../../servers/proto-stable \
+           ../../servers/relabel \
+           ../../servers/skeleton \
+           ../../spec \
+           ../../world/clock \
+           ../../world/composed \
+           ../../world/sockets \
+           $(CAKEMLDIR)/semantics
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

@@ -37,12 +37,12 @@ Ancestors
   asyncCore asyncLevel1 asyncChoose asyncServer asyncCfActModel
   asyncCfActProg asyncM4Approx asyncM3World asyncM3Prog asyncM3Loop
   asyncM4Relabel asyncM4RelabelDist asyncM4SockModel asyncM4SockApprox
-  asyncM4SockServer HttpSpec asyncHttpParse asyncHttpImplProg
+  asyncM4SockServer asyncHLProg HttpSpec asyncHttpParse asyncHttpImplProg
   ml_translator mlstring std_prelude ListProg
 Libs
   preamble basis ml_translatorLib cfTacticsLib ml_progLib basisFunctionsLib
 
-val _ = translation_extends "asyncM4SockServer"
+val _ = translation_extends "asyncHLProg"
 
 val _ = register_type “:HttpSpec$request”;
 val _ = register_type “:asyncHttpParse$parse_result”;

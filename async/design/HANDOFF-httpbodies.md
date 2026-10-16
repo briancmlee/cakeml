@@ -59,3 +59,5 @@ See 28 §6.
 - Running time is invisible to the proofs. A double recursive call made
   the parsers exponential, and only the runnable demo revealed it. Worth
   checking `FST (f x) … SND (f x)` patterns in any translated code.
+
+- 2026-10-16: H-CHARS (04be60754, RFC character sets for paths and field values) approved by the user.

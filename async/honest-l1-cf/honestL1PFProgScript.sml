@@ -37,11 +37,11 @@ val _ = register_type “:l1p”;
 
 (* The configuration string of a call, and the bytes of a result *)
 Definition bytes_to_str_def:
-  bytes_to_str (bs : word8 list) = implode (MAP (CHR o w2n) bs)
+  bytes_to_str (bs : word8 list) = implode (MAP (λw. CHR (w2n w)) bs)
 End
 
 Definition str_to_bytes_def:
-  str_to_bytes s = MAP (n2w o ORD) (explode s) : word8 list
+  str_to_bytes s = MAP (λc. n2w (ORD c)) (explode s) : word8 list
 End
 
 Theorem str_to_bytes_bytes_to_str:
@@ -85,6 +85,23 @@ val r = tr w82n_def;
 val r = tr n2w8_def;
 val r = tr fd_bytes_def;
 val r = tr dec_res_def;
+
+Theorem w82n_side_8[local]:
+  LENGTH l = 8 ⇒ w82n_side l
+Proof
+  rw[listTheory.LENGTH_EQ_NUM_compute] >> simp[fetch "-" "w82n_side_def"]
+QED
+
+(* The decoder is total: it reads the 8 value bytes only of a full header *)
+Theorem dec_res_side[local]:
+  dec_res_side v
+Proof
+  rw[fetch "-" "dec_res_side_def", mllistTheory.take_def] >>
+  TRY (Cases_on ‘v’ >> fs[] >> NO_TAC) >>
+  irule w82n_side_8 >> Cases_on ‘v’ >> fs[listTheory.LENGTH_TAKE]
+QED
+
+val _ = update_precondition dec_res_side;
 val r = tr l0_res_of_def;
 
 (* byte_revents, with word_bit as arithmetic *)
@@ -124,3 +141,240 @@ val r = tr wants_input_def;
 val r = tr pf_poll_set_def;
 val r = tr in_fds_def;
 val r = tr pf_ready_def;
+
+(* ------------------------------------------------------------------------
+   The model's world functions, split at their L0 calls
+
+   Each world function of honestL1PFModel is a pure decision (which call,
+   if any) and a pure update from the call's result; the CakeML code makes
+   the call in between (honestL1PFCode).  The lemmas pdo_split etc. show
+   the split is the model.
+   ------------------------------------------------------------------------ *)
+
+(* Accept: the oldest queued fd under the next handle *)
+Definition pacc_def:
+  pacc lfd ps =
+    case ps.acq of
+    | [] => NONE
+    | f :: q =>
+        SOME (l1hdl lfd ps.b.nxt,
+              ps with <| b := ps.b with <| tbl := (l1hdl lfd ps.b.nxt, f) :: ps.b.tbl;
+                                           nxt := ps.b.nxt + 1 |>;
+                         acq := q |>)
+End
+
+(* Read: an answer, or an auto-close of f first *)
+Datatype:
+  rstep = RkGot (word8 list option) l1p | RkClose word64 l1p
+End
+
+Definition pread_step_def:
+  pread_step ps h n =
+    case ALOOKUP ps.b.tbl h of
+    | NONE => RkGot (SOME []) ps
+    | SOME f =>
+        if inb_of ps f ≠ [] then
+          RkGot (SOME (TAKE n (inb_of ps f))) (set_inb f (DROP n (inb_of ps f)) ps)
+        else if MEM f ps.eof then
+          let ps0 = ps with <| b := ps.b with tbl := ADELKEY h ps.b.tbl;
+                               eof := FILTER ($≠ f) ps.eof |> in
+            if outbox_of ps.b f = [] ∨ MEM f ps.b.gone then RkClose f ps0
+            else RkGot (SOME []) (ps0 with b := ps0.b with closing := f :: ps0.b.closing)
+        else RkGot NONE ps
+End
+
+Definition pclose_upd_def:
+  pclose_upd f ps0 = ps0 with b := forget f ps0.b
+End
+
+(* Write: done, or one send of bs on f *)
+Datatype:
+  wstep = WkDone l1p | WkSend word64
+End
+
+Definition pwrite_step_def:
+  pwrite_step ps h bs =
+    case ALOOKUP ps.b.tbl h of
+    | NONE => WkDone ps
+    | SOME f =>
+        if MEM f ps.b.gone then WkDone ps
+        else if outbox_of ps.b f ≠ [] then
+          WkDone (ps with b := set_outbox f (outbox_of ps.b f ++ bs) ps.b)
+        else WkSend f
+End
+
+Definition psend_upd_def:
+  psend_upd f bs out ps =
+    ps with b := after_send f (l0_res_of out) (set_outbox f bs ps.b)
+End
+
+(* The fetch's updates *)
+Definition fetch_acc_upd_def:
+  fetch_acc_upd ps out =
+    case l0_res_of out of
+    | Ok k => ps with acq := ps.acq ++ [n2w k]
+    | Fail e _ => ps with b := ps.b with exhausted := (e = E_MFILE ∨ e = E_NFILE)
+End
+
+Definition fetch_recv_upd_def:
+  fetch_recv_upd f ps out =
+    case l0_res_of out of
+    | Ok k => if 0 < k then set_inb f (TAKE k (DROP 13 out)) ps
+              else ps with eof := f :: ps.eof
+    | Fail e _ => if l1_transient e then ps else ps with eof := f :: ps.eof
+End
+
+(* An fd the flush skips, and the reap closes *)
+Definition quiet_fd_def:
+  quiet_fd st f ⇔ outbox_of st f = [] ∨ MEM f st.gone
+End
+
+Definition l1p_b_def:
+  l1p_b ps = ps.b
+End
+
+Definition set_b_def:
+  set_b ps b = ps with b := b
+End
+
+Definition closing_of_def:
+  closing_of ps = ps.b.closing
+End
+
+Definition filter_in_def:
+  filter_in ins fs = FILTER (λf:word64. MEM f ins) fs
+End
+
+Definition map_w64_def:
+  map_w64 (l : num list) = MAP (λn. n2w n) l : word64 list
+End
+
+Definition map_num_def:
+  map_num (l : word64 list) = MAP (λw. w2n w) l
+End
+
+val _ = register_type “:rstep”;
+val _ = register_type “:wstep”;
+
+val r = tr bytes_to_str_def;
+
+Theorem bytes_to_str_side[local]:
+  bytes_to_str_side bs
+Proof
+  simp[fetch "-" "bytes_to_str_side_def", EVERY_MEM] >> rpt strip_tac >>
+  assume_tac (INST_TYPE [alpha |-> “:8”] wordsTheory.w2n_lt) >> fs[]
+QED
+
+val _ = update_precondition bytes_to_str_side;
+val r = tr str_to_bytes_def;
+val r = tr pacc_def;
+val r = tr pread_step_def;
+val r = tr pclose_upd_def;
+val r = tr pwrite_step_def;
+val r = tr psend_upd_def;
+val r = tr fetch_acc_upd_def;
+val r = tr fetch_recv_upd_def;
+val r = tr quiet_fd_def;
+val r = tr l1p_b_def;
+val r = tr set_b_def;
+val r = tr closing_of_def;
+val r = tr filter_in_def;
+val r = tr map_w64_def;
+val r = tr map_num_def;
+
+(* ------------------------------------------------------------------------
+   The code: the calls, and the model's world functions around them
+   ------------------------------------------------------------------------ *)
+
+Quote add_cakeml:
+  fun c_accept l = str_to_bytes (L0.accept (bytes_to_str (fd_bytes l)) 13);
+  fun c_recv f n = str_to_bytes (L0.recv (bytes_to_str (fd_bytes f)) (13 + n));
+  fun c_send f bs = str_to_bytes (L0.send (bytes_to_str (fd_bytes f @ bs)) 13);
+  fun c_close f = str_to_bytes (L0.close (bytes_to_str (fd_bytes f)) 13);
+  fun c_poll fes =
+    str_to_bytes (L0.poll (bytes_to_str (poll_conf fes)) (13 + List.length fes));
+
+  fun pdo lfd ps a =
+    case a of
+      Accept l =>
+        (case pacc lfd ps of
+           None => (ps, Accepted None)
+         | Some p => (case p of (h, ps1) => (ps1, Accepted (Some (Word64.toInt h)))))
+    | Read h n =>
+        (case pread_step ps (Word64.fromInt h) n of
+           Rkgot r ps1 =>
+             (ps1, Got (case r of None => None | Some bs => Some (bytes_to_str bs)))
+         | Rkclose f ps0 =>
+             let val out = c_close f in (pclose_upd f ps0, Got (Some "")) end)
+    | Write h s =>
+        let val bs = str_to_bytes s in
+          case pwrite_step ps (Word64.fromInt h) bs of
+            Wkdone ps1 => (ps1, Wrote)
+          | Wksend f =>
+              let val out = c_send f bs in (psend_upd f bs out ps, Wrote) end
+        end;
+
+  fun pacts lfd ps acts =
+    case acts of
+      [] => (ps, [])
+    | a :: rest =>
+        (case pdo lfd ps a of
+           (ps1, r) => (case pacts lfd ps1 rest of (ps2, rs) => (ps2, r :: rs)));
+
+  fun l1_polls chunks =
+    case chunks of
+      [] => []
+    | fes :: rest =>
+        let val out = c_poll fes
+            val rv = l1_polls rest
+        in poll_revents fes out @ rv end;
+
+  fun l1_flush fs st =
+    case fs of
+      [] => st
+    | f :: rest =>
+        if quiet_fd st f then l1_flush rest st
+        else
+          let val out = c_send f (outbox_of st f) in
+            l1_flush rest (after_send f (l0_res_of out) st)
+          end;
+
+  fun pf_fetch lfd hw fs ps =
+    case fs of
+      [] => ps
+    | f :: rest =>
+        if not (wants_input lfd hw ps f) then pf_fetch lfd hw rest ps
+        else if f = lfd then
+          let val out = c_accept lfd in pf_fetch lfd hw rest (fetch_acc_upd ps out) end
+        else
+          let val out = c_recv f pf_chunk in
+            pf_fetch lfd hw rest (fetch_recv_upd f ps out)
+          end;
+
+  fun l1_reap fs st =
+    case fs of
+      [] => st
+    | f :: rest =>
+        if quiet_fd st f then
+          let val out = c_close f in l1_reap rest (forget f st) end
+        else l1_reap rest st;
+
+  fun pf_tail lfd hw hs ps =
+    let
+      val fes = pf_poll_set lfd hw ps hs
+      val rv = l1_polls (poll_chunks fes)
+      val b2 = l1_flush (writable_fds rv) (l1p_b ps)
+      val ps3 = pf_fetch lfd hw (filter_in (in_fds fes) (readable_fds rv)) (set_b ps b2)
+      val b4 = l1_reap (closing_of ps3) (l1p_b ps3)
+      val ps4 = set_b ps3 b4
+    in (pf_ready lfd ps4 hs, ps4) end;
+
+  fun step_pf st =
+    case st of (lfd, hw, fds, ps, c) =>
+    case c of (acts, s) =>
+    case pacts lfd ps acts of (ps1, rs) =>
+    case pf_tail lfd hw (map_w64 fds) ps1 of (rdy, ps2) =>
+      (lfd, hw, add_accepted fds rs, ps2, Async.poll c (map_num rdy, 0, rs));
+
+  fun run_pf st = run_pf (step_pf st);
+End

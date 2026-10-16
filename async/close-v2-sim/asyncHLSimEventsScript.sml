@@ -10,7 +10,7 @@ Theory asyncHLSimEvents
 Ancestors
   alist words ffi ffiSpikeSocketFFI asyncM3World EchoSpec EchoSpec2
   socketV2FFI socketV2Fair socketV2Proof asyncHLFair asyncHLModel
-  asyncHLSimWorld asyncHLSimOps asyncHLEpisodes asyncM4SockInv asyncHLEof
+  asyncHLSimWorld asyncHLSimOps asyncHLEpisodes asyncM4SockInv asyncHLEof socketV2Events
 Libs
   preamble
 

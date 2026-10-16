@@ -11,7 +11,7 @@ Ancestors
   asyncM3World asyncM4GRounds asyncM4GTrans asyncM4Loop asyncM4SockInv asyncM4EchoRunOk
   asyncHLModel asyncHLSimWorld asyncHLSimOps asyncHLEpisodes asyncHLEof asyncHLSimEvents
   asyncHLSimRun asyncHLSimTrace asyncHLMain endpointSpecForms endpointInstances
-  endpointTrace endpointEcho2 fdDiscipline
+  endpointTrace endpointEcho2 fdDiscipline socketV2Events
 Libs
   preamble
 

@@ -3646,3 +3646,57 @@ Proof
       simp[] >> strip_tac >> qexists_tac ‘k'’ >> simp[Abbr ‘k1’] >> metis_tac[])
   >> res_tac
 QED
+
+Theorem fetched_at_rlog:
+  fetched_at lfd hw ifds m w0 k f ⇔ fetched f (rlog lfd hw ifds m w0 k)
+Proof
+  simp[fetched_at_def, rlog_def]
+QED
+
+Theorem fetched_cases:
+  fetched f log ⇔ fend f log ∨ ∃bs. MEM (FData f bs) log
+Proof
+  simp[fetched_def, fend_def, EXISTS_MEM] >> metis_tac[]
+QED
+
+(* The EOF phase: all of a closed client's data fetched, its EOF follows *)
+Theorem eof_phase:
+  simple_run p lfd sched hw ifds m w1 ∧ F1 lfd hw ifds m w1 ∧ S1 lfd hw ifds m w1 ∧
+  S3 lfd hw ifds m w1 ∧ (∀f. S4 lfd hw ifds m w1 f) ⇒
+  ∀k3 f c h.
+    ALOOKUP (rstate lfd hw ifds m w1 k3).b.tbl h = SOME f ∧
+    ALOOKUP (rworld lfd hw ifds m w1 k3).open_fds f = SOME c ∧
+    c < LENGTH (rworld lfd hw ifds m w1 k3).chans ∧
+    (EL c (rworld lfd hw ifds m w1 k3).chans).peer_eof ∧
+    (EL c (rworld lfd hw ifds m w1 k3).chans).inbox = [] ⇒
+    ∃k. k3 ≤ k ∧ MEM (Eof2 c) (upto (parr lfd hw ifds m w1) k)
+Proof
+  strip_tac >> rpt gen_tac >> strip_tac >>
+  Cases_on ‘MEM (Eof2 c) (upto (parr lfd hw ifds m w1) k3)’ >- metis_tac[LESS_EQ_REFL] >>
+  qpat_assum ‘simple_run _ _ _ _ _ _ _’ (strip_assume_tac o REWRITE_RULE [simple_run_def]) >>
+  ‘MEM lfd (l0_used w1)’ by simp[l0_used_def] >>
+  drule_all rinv_run >> disch_then (qspec_then ‘k3’ mp_tac) >>
+  simp_tac std_ss [rinv_def, eown_def] >> strip_tac >>
+  ‘¬MEM f (rstate lfd hw ifds m w1 k3).eof’ by (strip_tac >> res_tac) >>
+  ‘pend (rworld lfd hw ifds m w1 k3) f’ by simp[pend_def, l0_chan_of_def] >>
+  ‘MEM f (MAP SND (rstate lfd hw ifds m w1 k3).b.tbl)’
+    by (imp_res_tac ALOOKUP_MEM >> simp[MEM_MAP] >> metis_tac[SND]) >>
+  mp_tac (Q.INST [‘w0’ |-> ‘w1’] fetch_progress) >> simp[] >>
+  disch_then (qspecl_then [‘k3’, ‘h’] mp_tac) >> simp[] >> strip_tac >>
+  rename1 ‘fetched_at _ _ _ _ _ k4 f’ >>
+  drule dl_iter >> disch_then (qspecl_then [‘SUC (k4 − k3)’, ‘k3’, ‘f’, ‘c’] mp_tac) >>
+  simp[] >> strip_tac >- (qexists_tac ‘k3 + SUC (k4 − k3)’ >> simp[]) >>
+  ‘k3 + SUC (k4 − k3) = SUC k4’ by simp[] >> fs[] >>
+  ‘rlogs lfd hw ifds m w1 k3 (SUC (k4 − k3)) =
+   rlogs lfd hw ifds m w1 k3 (k4 − k3) ++ rlog lfd hw ifds m w1 k4’
+    by simp[rlogs_snoc] >>
+  fs[fetched_at_rlog, fetched_cases] >>
+  ‘bs ≠ []’ by metis_tac[MEM_APPEND] >>
+  ‘fdata f (rlogs lfd hw ifds m w1 k3 (SUC (k4 − k3))) ≠ []’
+    by (irule fdata_nonnil >> qexists_tac ‘bs’ >> simp[]) >>
+  drule rinv_chan >> disch_then (qspecl_then [‘k3’, ‘c’] mp_tac) >> simp[] >> strip_tac >>
+  ‘k3 ≤ SUC k4’ by simp[] >>
+  drule_all ps_mono >> strip_tac >>
+  drule rinv_chan >> disch_then (qspecl_then [‘SUC k4’, ‘c’] mp_tac) >> simp[] >> strip_tac >>
+  gvs[]
+QED

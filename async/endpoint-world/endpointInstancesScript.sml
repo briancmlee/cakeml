@@ -136,7 +136,7 @@ Proof
   gvs[ep_server_world_def] >>
   simp[early_calls_def, run_calls_def, ep_ffi_def, ep_oracle_def, ep_ffi_fn_def,
        ep_call_def, v1_calls_def, bytes_fds_nil] >>
-  simp[ep_read_def, ep_chan_of_def, ep_tick_open_fds]
+  simp[ep_conn_err_def, ep_read_def, ep_chan_of_def, ep_tick_open_fds]
 QED
 
 (* ------------------------------------------------------------------------

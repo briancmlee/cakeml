@@ -90,16 +90,18 @@ Definition event_opened_def:
         case ev of
         | IO_event (ExtCall n) conf bytes =>
             (let out = MAP SND bytes in
-             if n = «sock_connect» ∧ LENGTH out = 9 ∧ HD out = 1w
-             then SOME (bytes_fd (TL out)) else NONE)
+             if n = «sock_connect» ∧ LENGTH out = 13 ∧ HD out = 3w
+             then SOME (bytes_fd (TAKE 8 (TL out))) else NONE)
         | _ => NONE
 End
 
-(* The bytes a «sock_send» event sent on c: as many as its count *)
+(* The bytes a «sock_send» event sent on c: as many as its count (code 0) *)
 Definition event_sent_def:
   event_sent c (IO_event (ExtCall n) conf bytes) =
-    (if n = «sock_send» ∧ 8 ≤ LENGTH conf ∧ bytes_fd (TAKE 8 conf) = c
-     then TAKE (w82n (MAP SND bytes)) (DROP 8 conf) else []) ∧
+    (let out = MAP SND bytes in
+     if n = «sock_send» ∧ 8 ≤ LENGTH conf ∧ bytes_fd (TAKE 8 conf) = c ∧
+        LENGTH out = 13 ∧ HD out = 0w
+     then TAKE (w82n (TAKE 8 (TL out))) (DROP 8 conf) else []) ∧
   event_sent c _ = []
 End
 

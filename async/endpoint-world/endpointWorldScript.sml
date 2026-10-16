@@ -19,7 +19,11 @@
   frees it for reuse.
   New:
    - connect a: a new channel to address a; whether the peer accepts is
-     the world's choice (accepts), settled at the next tick;
+     the world's choice (accepts), settled at the next tick.  A refused
+     channel has a PENDING ERROR (as the kernel's so_error): the next read
+     or send on it reports ECONNREFUSED, and clears it; after that it
+     reads as EOF and sends fail with EPIPE.  It keeps its fd until the
+     program closes it (design/36 §4.1);
    - shutdown: the program closes its sending side (half-close);
    - backpressure, as a PARAMETER: the acceptance policy `takes` says how
      many of the bytes offered to channel j it accepts, given how many are
@@ -39,7 +43,9 @@ Libs
 (* The model *)
 
 Datatype:
-  cstatus = Connecting | Up | Refused
+  cstatus = Connecting | Up
+          | Refused     (* refused; the error not yet reported *)
+          | Failed      (* refused; the error reported *)
 End
 
 Datatype:
@@ -148,7 +154,7 @@ Definition ep_readable_def:
      | [] => F) ∨
     (case ep_chan_of w fd of
      | SOME j => (EL j w.chans).inbox ≠ [] ∨ (EL j w.chans).peer_eof ∨
-                 (EL j w.chans).status = Refused
+                 (EL j w.chans).status = Refused ∨ (EL j w.chans).status = Failed
      | NONE => F)
 End
 
@@ -156,7 +162,8 @@ Definition ep_writable_def:
   ep_writable w fd ⇔
     case ep_chan_of w fd of
     | SOME j => (EL j w.chans).status = Up ∧ ¬(EL j w.chans).shut ∧
-                0 < w.takes j (EL j w.chans).inflight 1
+                0 < w.takes j (EL j w.chans).inflight 1 ∨
+                (EL j w.chans).status = Refused ∨ (EL j w.chans).status = Failed
     | NONE => F
 End
 
@@ -196,7 +203,7 @@ Definition ep_read_def:
         let c = EL j w.chans in
           if c.inbox ≠ [] then
             SOME (SOME (TAKE n c.inbox), upd_chan j (λc. c with inbox := DROP n c.inbox) w)
-          else if c.peer_eof ∨ c.status = Refused then SOME (SOME [], w)
+          else if c.peer_eof ∨ c.status = Failed then SOME (SOME [], w)
           else SOME (NONE, w)
 End
 
@@ -211,6 +218,23 @@ Definition ep_send_def:
                 then MIN (LENGTH bs) (w.takes j c.inflight (LENGTH bs)) else 0 in
           SOME (k, upd_chan j (λc. c with <| sent := c.sent ++ TAKE k bs;
                                              inflight := c.inflight + k |>) w)
+End
+
+(* A refused channel's pending error, reported (and so cleared) *)
+Definition ep_conn_err_def:
+  ep_conn_err f w =
+    case ep_chan_of w f of
+    | SOME j => if (EL j w.chans).status = Refused
+                then SOME (upd_chan j (λc. c with status := Failed) w) else NONE
+    | NONE => NONE
+End
+
+(* The channel of f can no longer send: shut, or refused (reported) *)
+Definition ep_broken_def:
+  ep_broken f w ⇔
+    case ep_chan_of w f of
+    | SOME j => (EL j w.chans).shut ∨ (EL j w.chans).status = Failed
+    | NONE => F
 End
 
 Definition ep_shutdown_def:
@@ -231,10 +255,21 @@ End
 (*---------------------------------------------------------------------------*)
 (* The FFI calls.  «sock_poll», «sock_accept», «sock_read», «sock_write»,
    «sock_close»: version 1's and 2's encodings («sock_write» is a full
-   write; one that does not fit is a misuse).  New: «sock_send» (partial
-   write; out: the 8-byte count), «sock_writable» (writability; time does
-   not pass), «sock_connect» (conf: the 8-byte address; out: status 1 and
-   the fd, or 0 if no fd is free), «sock_shutdown» (conf: the fd). *)
+   write; one that does not fit is a misuse), except that «sock_read» on a
+   refused channel returns status 3 (error) with the error code in byte 1
+   (4: ECONNREFUSED).  New: «sock_send» (partial write), «sock_writable»
+   (writability; time does not pass), «sock_connect» (conf: the 8-byte
+   address), «sock_shutdown» (conf: the fd).
+   «sock_send» and «sock_connect» answer design/36's 13-byte L0 header
+   (l0_result): a code (0: OK, 1: EAGAIN, 3: EINPROGRESS, 4: ECONNREFUSED,
+   6: EPIPE, 10: EMFILE), an 8-byte value, and 4 bytes of errno (0 here:
+   the model does not fix the raw errno).  A connect is always pending
+   (code 3, with the fd) or finds no free fd (code 10). *)
+
+Definition l0_result_def:
+  l0_result (code:num) v = n2w code :: n2w8 v ++ [0w; 0w; 0w; 0w] : word8 list
+End
+
 
 Definition ep_call_def:
   ep_call n (conf:word8 list) (bytes:word8 list) w =
@@ -256,13 +291,16 @@ Definition ep_call_def:
          | SOME (SOME c, w') => SOME (1w :: fd_bytes c, w')
        else NONE)
     else if n = «sock_connect» then
-      (if LENGTH conf = 8 ∧ LENGTH bytes = 9 then
+      (if LENGTH conf = 8 ∧ LENGTH bytes = 13 then
          case ep_connect (w82n conf) w of
-         | (NONE, w') => SOME (0w :: TL bytes, w')
-         | (SOME c, w') => SOME (1w :: fd_bytes c, w')
+         | (NONE, w') => SOME (l0_result 10 0, w')
+         | (SOME c, w') => SOME (l0_result 3 (w2n c), w')
        else NONE)
     else if n = «sock_read» then
       (if LENGTH conf = 8 ∧ 9 < LENGTH bytes then
+         case ep_conn_err (bytes_fd conf) w of
+         | SOME w' => SOME (3w :: 4w :: DROP 2 bytes, w')
+         | NONE =>
          case ep_read (bytes_fd conf) (LENGTH bytes - 9) w of
          | NONE => NONE
          | SOME (NONE, w') => SOME (1w :: TL bytes, w')
@@ -277,9 +315,16 @@ Definition ep_call_def:
          | NONE => NONE
        else NONE)
     else if n = «sock_send» then
-      (if 8 ≤ LENGTH conf ∧ LENGTH bytes = 8 then
+      (if 8 ≤ LENGTH conf ∧ LENGTH bytes = 13 then
+         case ep_conn_err (bytes_fd (TAKE 8 conf)) w of
+         | SOME w' => SOME (l0_result 4 0, w')
+         | NONE =>
+         if ep_broken (bytes_fd (TAKE 8 conf)) w then SOME (l0_result 6 0, w)
+         else
          case ep_send (bytes_fd (TAKE 8 conf)) (DROP 8 conf) w of
-         | SOME (k, w') => SOME (n2w8 k, w')
+         | SOME (k, w') =>
+             if k = 0 ∧ 8 < LENGTH conf then SOME (l0_result 1 0, w')
+             else SOME (l0_result 0 k, w')
          | NONE => NONE
        else NONE)
     else if n = «sock_shutdown» then

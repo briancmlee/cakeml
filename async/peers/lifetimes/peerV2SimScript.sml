@@ -610,6 +610,7 @@ Proof
   qabbrev_tac ‘w0 = <| listening := [(lfd, 0, [])]; chans := []; open_fds := [];
                        reserved := sk.reserved; alloc := sk.alloc;
                        takes := (λj b n. n); calls := v2_calls;
+                       nosock := (λi. F); nconnects := 0;
                        env := (λn h. MAP (tr lfd 0) (fut_step sk.future n));
                        clock := 0; hist := [] |>’ >>
   ‘v2rel lfd 0 sk w0’

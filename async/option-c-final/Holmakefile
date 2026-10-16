@@ -1,0 +1,5 @@
+# Option C headline: http_q_quiet (unconditional).
+INCLUDES = ../pk/proto-stable ../option-c-loop
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

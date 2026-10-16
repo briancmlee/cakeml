@@ -20,11 +20,21 @@
     POST /echo        200 with the request's body
     POST p (other)    404
 
-  Header lines have their own validity, valid_bheader (the character
-  rules only), so that the spec does not depend on later restrictions of
-  HttpSpecHeaders' valid_header.  Everything else is HttpSpecHeaders': the
-  printer for header lines, the world, the projections, and the shapes of
-  safety, liveness and the statement.
+  Header lines have their own validity, valid_bheader: the name is an
+  RFC 9110 token (tchar characters only), the value has no CR or LF.  So
+  "Content-Length\t: 19" is not a valid header line, and a request
+  containing it is not valid (it does not silently become a bodiless
+  request followed by its body as a second request).  Everything else is
+  HttpSpecHeaders': the printer for header lines, the world, the
+  projections, and the shapes of safety, liveness and the statement.
+
+  Paths are made of RFC 3986 characters (uri_char) and header values of
+  RFC 9110 field characters (field_char), so every valid request is one
+  that an RFC 9112 recipient frames (spec-rfc/: the agreement proof).
+
+  Known limitation: "Expect: 100-continue" is not supported.  Safety
+  forbids interim 1xx responses, so a client that sends it (curl, for
+  large bodies) waits about a second and then sends the body anyway.
 *)
 Theory HttpSpecBodies
 Ancestors
@@ -41,13 +51,55 @@ Datatype:
                               (* method, path, version, headers, body *)
 End
 
-(* Header lines: a non-empty name without colon, space, CR or LF; a value
-   without CR or LF (so a request is unambiguous) *)
-Definition valid_bheader_def:
-  valid_bheader (n, v) ⇔
-    n ≠ [] ∧ EVERY (λc. c ≠ #":" ∧ c ≠ #" " ∧ c ≠ #"\r" ∧ c ≠ #"\n") n ∧
-    EVERY (λc. c ≠ #"\r" ∧ c ≠ #"\n") v
+(* RFC 9110 token characters (tchar): letters, digits, and
+   ! # $ % & ' * + - . ^ _ ` | ~   (^ and ` are CHR 94 and CHR 96) *)
+Definition tchar_def:
+  tchar c ⇔
+    isAlpha c ∨ isDigit c ∨ EXISTS (λd. c = d) "!#$%&'*+-._|~" ∨
+    c = CHR 94 ∨ c = CHR 96
 End
+
+(* RFC 9110 §5.5 field-value characters: VCHAR (%x21-7E), obs-text
+   (%x80-FF), SP and HTAB; no other control characters (no CR, LF, NUL) *)
+Definition field_char_def:
+  field_char c ⇔
+    (33 ≤ ORD c ∧ ORD c ≤ 126) ∨ 128 ≤ ORD c ∨ c = #" " ∨ c = #"\t"
+End
+
+(* RFC 3986 §2 characters of a request target: unreserved, reserved and
+   "%" (no "#", no space, no control characters) *)
+Definition uri_char_def:
+  uri_char c ⇔
+    isAlpha c ∨ isDigit c ∨ EXISTS (λd. c = d) "-._~:/?[]@!$&'()*+,;=%"
+End
+
+(* Header lines: the name is a token (non-empty, tchar only); the value is
+   made of field characters (so, in particular, no CR or LF: a request is
+   unambiguous) *)
+Definition valid_bheader_def:
+  valid_bheader (n, v) ⇔ n ≠ [] ∧ EVERY tchar n ∧ EVERY field_char v
+End
+
+(* Token characters exclude the separators the framing relies on *)
+Theorem tchar_not_sep:
+  tchar c ⇒ c ≠ #":" ∧ c ≠ #" " ∧ c ≠ #"\t" ∧ c ≠ #"\r" ∧ c ≠ #"\n"
+Proof
+  rw[tchar_def] >> fs[stringTheory.isAlpha_def, stringTheory.isLower_def,
+                      stringTheory.isUpper_def, stringTheory.isDigit_def] >>
+  rpt strip_tac >> gvs[]
+QED
+
+(* So a valid header line has the character properties of the earlier
+   definition (name without colon, space, CR or LF) *)
+Theorem valid_bheader_chars:
+  valid_bheader (n, v) ⇒
+  n ≠ [] ∧ EVERY (λc. c ≠ #":" ∧ c ≠ #" " ∧ c ≠ #"\r" ∧ c ≠ #"\n") n ∧
+  EVERY (λc. c ≠ #"\r" ∧ c ≠ #"\n") v
+Proof
+  rw[valid_bheader_def] >> irule EVERY_MONOTONIC
+  >- (qexists_tac ‘tchar’ >> simp[] >> metis_tac[tchar_not_sep])
+  >> qexists_tac ‘field_char’ >> rw[field_char_def] >> rpt strip_tac >> gvs[]
+QED
 
 Definition valid_method_def:
   valid_method m ⇔ m = "GET" ∨ m = "POST"
@@ -74,7 +126,7 @@ End
 
 Definition valid_brequest_def:
   valid_brequest (Req m p ver hs b) ⇔
-    valid_method m ∧ valid_path p ∧ valid_version ver ∧
+    valid_method m ∧ valid_path p ∧ EVERY uri_char p ∧ valid_version ver ∧
     EVERY valid_bheader hs ∧ ¬EXISTS is_te hs ∧ framed hs b
 End
 

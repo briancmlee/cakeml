@@ -1,7 +1,8 @@
 # The headline theorems, stated in the trusted specs' own terms.
 INCLUDES = ../model ../cf-spike ../cf-actions ../cf-reactive ../ffi-spike \
            ../m3-assembly ../m4-server ../m4-common ../spec ../m4-safety \
-           ../runnable ../machine-code ../http-model ../http-impl ../http-safety
+           ../runnable ../machine-code ../http-model ../http-impl ../http-safety \
+           ../socket-v2 ../socket-v2-cf ../close-v2-loop
 ifdef POLY
 HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
 endif

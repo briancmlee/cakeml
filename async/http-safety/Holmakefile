@@ -3,7 +3,8 @@
 # (model, CakeML, CF), the trace bridge to http_safe, and main.
 INCLUDES = ../model ../cf-spike ../cf-actions ../cf-reactive ../ffi-spike \
            ../m3-assembly ../m4-server ../m4-common ../spec ../m4-safety \
-           ../runnable ../machine-code ../http-model ../http-impl
+           ../runnable ../machine-code ../http-model ../http-impl \
+           ../socket-v2 ../socket-v2-cf ../close-v2-loop
 ifdef POLY
 HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
 endif

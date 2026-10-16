@@ -1,0 +1,13 @@
+# Liveness carried by the library (design/34): the generic environment of a
+# handler (henv), the per-handler obligation (handler_live), and the
+# socket-level theorem sw_live; with the HTTP-bodies liveness re-derived
+# from it.
+INCLUDES = ../model ../cf-spike ../cf-actions ../cf-reactive ../ffi-spike \
+           ../m3-assembly ../m4-server ../m4-common ../spec ../m4-safety \
+           ../runnable ../machine-code ../http-model ../http-impl ../http-safety \
+           ../headline ../http-headers ../m4-liveness ../http-liveness ../http-liveness-h \
+           ../http-bodies \
+           ../socket-v2 ../socket-v2-cf ../close-v2-loop
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

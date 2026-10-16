@@ -900,3 +900,118 @@ Proof
        (qspec_then ‘REPLICATE (pf_chunk − LENGTH d) 0w’ assume_tac) >>
   fs[APPEND_ASSOC] >> disj2_tac >> irule kinv_after >> simp[] >> metis_tac[]
 QED
+
+Theorem kinv_E:
+  kinv p lfd sched w1 a cm D E w ∧ c < LENGTH w.chans ∧ c < a ∧ (EL c w.chans).peer_eof ⇒
+  kinv p lfd sched w1 a cm D ((c =+ T) E) w
+Proof
+  rw[kinv_def] >> irule sinv_E >> simp[]
+QED
+
+Theorem kinv_cl:
+  kinv p lfd sched w1 a cm D E w ∧ ALOOKUP w.open_fds g = SOME c ⇒
+  ALOOKUP cm g = SOME c ∧ cl cm g = c ∧ c < a
+Proof
+  rw[kinv_def, sinv_def, lk_def] >> res_tac >> simp[cl_def]
+QED
+
+Theorem used_open_fds:
+  ALOOKUP w.open_fds g = SOME c ⇒ MEM g (l0_used w)
+Proof
+  rw[l0_used_def] >> imp_res_tac ALOOKUP_MEM >> simp[MEM_MAP] >> metis_tac[FST]
+QED
+
+(* The fetch, against the client numbering: the fetched data and EOFs are
+   psk's arrivals of the round *)
+Theorem kinv_fetch:
+  ∀fs w ps w' ps' log evs a cm D E.
+    pf_fetch lfd hw fs (w, ps) = SOME ((w', ps'), log, evs) ∧
+    kinv p lfd sched w1 a cm D E w ∧ winv w ∧
+    (∀g. MEM g fs ∧ g ≠ lfd ⇒ ∃c. ALOOKUP w.open_fds g = SOME c) ⇒
+    ∃as cm' a'.
+      arrs lfd (cm, a) log = (as, (cm', a')) ∧
+      kinv p lfd sched w1 a' cm' (λj. D j ++ data_of j as) (λj. E j ∨ MEM (Eof2 j) as) w' ∧
+      winv w' ∧ (∀g c. ALOOKUP w.open_fds g = SOME c ⇒ ALOOKUP w'.open_fds g = SOME c)
+Proof
+  Induct
+  >- (simp[pf_fetch_def] >> rpt strip_tac >> gvs[arrs_def, data_of_def] >>
+      ‘(λj. E j) = E’ by simp[FUN_EQ_THM] >> simp[ETA_THM]) >>
+  rpt gen_tac >> rename1 ‘g :: fs’ >> simp[Once pf_fetch_def] >>
+  reverse (Cases_on ‘wants_input lfd hw ps g’) >> simp[]
+  >- (strip_tac >> first_x_assum drule >>
+      disch_then (qspecl_then [‘a’, ‘cm’, ‘D’, ‘E’] mp_tac) >>
+      impl_tac >- (simp[] >> metis_tac[]) >> simp[]) >>
+  IF_CASES_TAC
+  >- ((* an accept *)
+      pop_assum SUBST_ALL_TAC >> strip_tac >>
+      qpat_x_assum ‘option_CASE (sys_accept _ _) _ _ = _’ mp_tac >>
+      Cases_on ‘sys_accept lfd w’ >> simp[] >>
+      rename1 ‘sys_accept lfd w = SOME z’ >> PairCases_on ‘z’ >> simp[] >>
+      rename1 ‘sys_accept lfd w = SOME (out, wa, ev)’ >>
+      pairarg_tac >> simp[] >>
+      Cases_on ‘pf_fetch lfd hw fs (wa, ps1)’ >> simp[] >>
+      rename1 ‘pf_fetch lfd hw fs (wa, ps1) = SOME y’ >> PairCases_on ‘y’ >> simp[] >>
+      strip_tac >> rveq >>
+      drule_all (el 4 (CONJUNCTS sys_winv)) >> strip_tac >>
+      drule_all kinv_sys_accept >> strip_tac
+      >- ((* failed: nothing logged *)
+          ‘fl' = []’ by (Cases_on ‘l0_res_of out’ >> fs[]) >> rveq >>
+          first_x_assum (qspecl_then [‘wa’, ‘ps1’, ‘w'’, ‘ps'’, ‘y2’, ‘y3’, ‘a’, ‘cm’, ‘D’, ‘E’]
+                          mp_tac) >>
+          impl_tac >- (simp[] >> metis_tac[]) >> strip_tac >> simp[] >> metis_tac[])
+      >> (* a new connection *)
+      ‘fl' = [FConn (n2w k)]’ by fs[] >> rveq >>
+      first_x_assum (qspecl_then [‘wa’, ‘ps1’, ‘w'’, ‘ps'’, ‘y2’, ‘y3’, ‘a + 1’,
+                                  ‘(n2w k, a) :: cm’, ‘D’, ‘E’] mp_tac) >>
+      impl_tac
+      >- (simp[] >> rpt strip_tac >>
+          ‘∃c. ALOOKUP w.open_fds g = SOME c’ by metis_tac[] >>
+          qexists_tac ‘c’ >> simp[] >> rw[] >> metis_tac[used_open_fds]) >>
+      strip_tac >> simp[arrs_def] >> conj_tac
+      >- (‘(λj. D j ++ data_of j (Connect2 lfd :: as)) = (λj. D j ++ data_of j as) ∧
+           (λj. E j ∨ MEM (Eof2 j) (Connect2 lfd :: as)) = (λj. E j ∨ MEM (Eof2 j) as)’
+            by simp[FUN_EQ_THM, data_of_def] >>
+          simp[]) >>
+      rpt strip_tac >> first_x_assum irule >> simp[] >> rw[] >> metis_tac[used_open_fds])
+  >> (* a recv *)
+  strip_tac >>
+  qpat_x_assum ‘option_CASE (sys_recv _ _ _) _ _ = _’ mp_tac >>
+  Cases_on ‘sys_recv g pf_chunk w’ >> simp[] >>
+  rename1 ‘sys_recv g pf_chunk w = SOME z’ >> PairCases_on ‘z’ >> simp[] >>
+  rename1 ‘sys_recv g pf_chunk w = SOME (out, wa, ev)’ >>
+  pairarg_tac >> simp[] >>
+  Cases_on ‘pf_fetch lfd hw fs (wa, ps1)’ >> simp[] >>
+  rename1 ‘pf_fetch lfd hw fs (wa, ps1) = SOME y’ >> PairCases_on ‘y’ >> simp[] >>
+  strip_tac >> rveq >>
+  drule_all (el 3 (CONJUNCTS sys_winv)) >> strip_tac >>
+  ‘∃c. ALOOKUP w.open_fds g = SOME c’ by metis_tac[] >>
+  drule_all kinv_cl >> strip_tac >>
+  drule_all kinv_sys_recv >> strip_tac
+  >- ((* EOF *)
+      ‘fl' = [FEof g]’ by fs[] >> rveq >>
+      ‘kinv p lfd sched w1 a cm D ((cl cm g =+ T) E) wa’ by (irule kinv_E >> fs[]) >>
+      first_x_assum (qspecl_then [‘wa’, ‘ps1’, ‘w'’, ‘ps'’, ‘y2’, ‘y3’, ‘a’, ‘cm’, ‘D’,
+                                  ‘(cl cm g =+ T) E’] mp_tac) >>
+      impl_tac >- (simp[] >> metis_tac[]) >> strip_tac >>
+      simp[arrs_def] >>
+      ‘(λj. D j ++ data_of j (Eof2 (cl cm g) :: as)) = (λj. D j ++ data_of j as) ∧
+       (λj. E j ∨ j = cl cm g ∨ MEM (Eof2 j) as) =
+       (λj. (cl cm g =+ T) E j ∨ MEM (Eof2 j) as)’
+        by (simp[FUN_EQ_THM, APPLY_UPDATE_THM, data_of_def] >> rw[] >> metis_tac[]) >>
+      asm_rewrite_tac[] >> metis_tac[])
+  >- ((* a retried failure *)
+      ‘fl' = []’ by (Cases_on ‘l0_res_of out’ >> fs[]) >> rveq >>
+      first_x_assum (qspecl_then [‘wa’, ‘ps1’, ‘w'’, ‘ps'’, ‘y2’, ‘y3’, ‘a’, ‘cm’, ‘D’, ‘E’]
+                      mp_tac) >>
+      impl_tac >- (simp[] >> metis_tac[]) >> strip_tac >> simp[] >> metis_tac[])
+  >> (* data *)
+  ‘fl' = [FData g (TAKE k (DROP 13 out))]’ by fs[] >> rveq >>
+  first_x_assum (qspecl_then [‘wa’, ‘ps1’, ‘w'’, ‘ps'’, ‘y2’, ‘y3’, ‘a’, ‘cm’,
+                              ‘(cl cm g =+ D (cl cm g) ++ TAKE k (DROP 13 out)) D’, ‘E’] mp_tac) >>
+  impl_tac >- (simp[] >> metis_tac[]) >> strip_tac >>
+  simp[arrs_def] >>
+  ‘(λj. D j ++ data_of j (Data2 (cl cm g) (TAKE k (DROP 13 out)) :: as)) =
+   (λj. (cl cm g =+ D (cl cm g) ++ TAKE k (DROP 13 out)) D j ++ data_of j as)’
+    by (simp[FUN_EQ_THM, APPLY_UPDATE_THM, data_of_def] >> rw[]) >>
+  asm_rewrite_tac[] >> metis_tac[]
+QED

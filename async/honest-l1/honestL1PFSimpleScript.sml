@@ -3596,3 +3596,53 @@ Proof
   fs[ADD_CLAUSES] >> strip_tac >>
   fs[upto_SUC, rlogs_snoc] >> metis_tac[]
 QED
+
+Theorem pcm_mono:
+  run_ok lfd hw ifds m w1 ∧ k ≤ k' ⇒ SND (pcm lfd hw ifds m w1 k) ≤ SND (pcm lfd hw ifds m w1 k')
+Proof
+  strip_tac >> drule conns_of_upto_parr >> strip_tac >>
+  first_assum (qspec_then ‘k’ (SUBST1_TAC o SYM)) >>
+  first_x_assum (qspec_then ‘k'’ (SUBST1_TAC o SYM)) >>
+  irule conns_of_prefix >> irule upto_prefix >> simp[]
+QED
+
+(* Each client the kernel connected eventually has an fd with a handle, or
+   its EOF fetched *)
+Theorem handle_reached:
+  simple_run p lfd sched hw ifds m w1 ∧ fds_room lfd hw ifds m w1 ∧
+  S1 lfd hw ifds m w1 ∧ S2 lfd hw ifds m w1 ⇒
+  ∀R c. c < LENGTH (rworld lfd hw ifds m w1 R).chans ⇒
+    ∃k. R ≤ k ∧
+        (MEM (Eof2 c) (upto (parr lfd hw ifds m w1) k) ∨
+         ∃f. MEM f (MAP SND (rstate lfd hw ifds m w1 k).b.tbl) ∧
+             ALOOKUP (rworld lfd hw ifds m w1 k).open_fds f = SOME c)
+Proof
+  strip_tac >> rpt gen_tac >> strip_tac >>
+  ‘∃k0. LENGTH (rworld lfd hw ifds m w1 R).chans ≤ SND (pcm lfd hw ifds m w1 k0)’
+    by (irule conns_caught_up >> fs[simple_run_def] >> metis_tac[]) >>
+  ‘run_ok lfd hw ifds m w1’ by fs[simple_run_def] >>
+  ‘c < SND (pcm lfd hw ifds m w1 (R + k0))’
+    by (‘SND (pcm lfd hw ifds m w1 k0) ≤ SND (pcm lfd hw ifds m w1 (R + k0))’
+          by (irule pcm_mono >> simp[]) >> simp[]) >>
+  qabbrev_tac ‘k1 = R + k0’ >>
+  ‘c < LENGTH (rworld lfd hw ifds m w1 k1).chans’
+    by (drule rinv_len >> disch_then (qspec_then ‘k1’ strip_assume_tac) >> simp[]) >>
+  Cases_on ‘MEM (Eof2 c) (upto (parr lfd hw ifds m w1) k1)’
+  >- (qexists_tac ‘k1’ >> simp[Abbr ‘k1’]) >>
+  qpat_assum ‘simple_run _ _ _ _ _ _ _’ (strip_assume_tac o REWRITE_RULE [simple_run_def]) >>
+  drule_all rinv_run >> disch_then (qspec_then ‘k1’ mp_tac) >>
+  simp_tac std_ss [rinv_def, kinv_def, eown_def] >> strip_tac >>
+  ‘(EL c (rworld lfd hw ifds m w1 k1).chans).closed ∨
+   ∃f. ALOOKUP (rworld lfd hw ifds m w1 k1).open_fds f = SOME c’
+    by fs[sinv_def, lk_def] >>
+  drule rinv_chan >> disch_then (qspecl_then [‘k1’, ‘c’] mp_tac) >> simp[] >> strip_tac >>
+  ‘own (rstate lfd hw ifds m w1 k1) (rworld lfd hw ifds m w1 k1)’
+    by (drule_all own_run >> simp[]) >>
+  qpat_x_assum ‘own _ _’ mp_tac >> simp[own_def] >> disch_then drule >> strip_tac
+  >- (qexists_tac ‘k1’ >> simp[Abbr ‘k1’] >> metis_tac[])
+  >- (qpat_x_assum ‘MEM f (_ .acq)’ (strip_assume_tac o REWRITE_RULE [MEM_SPLIT]) >>
+      drule_then (qspecl_then [‘LENGTH l1’, ‘k1’, ‘f’, ‘c’, ‘l1’, ‘l2’] mp_tac)
+        (fifo |> REWRITE_RULE [GSYM AND_IMP_INTRO]) >>
+      simp[] >> strip_tac >> qexists_tac ‘k'’ >> simp[Abbr ‘k1’] >> metis_tac[])
+  >> res_tac
+QED

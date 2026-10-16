@@ -1,6 +1,6 @@
 # 36: An honest, minimal socket FFI, with verified wrappers (AUDIT + DESIGN, for review)
 
-Status: **design only; nothing implemented.** Branch `spike/honest-ffi`
+Status: **design accepted (§9); implementation started (§8 phases, stacked branches).** Branch `spike/honest-ffi`
 (from `spike/endpoint-world`). Statement-only HOL drafts are in
 `async/honest-ffi/` (§10). No existing file, spec or proof is changed.
 
@@ -83,7 +83,7 @@ Status: **design only; nothing implemented.** Branch `spike/honest-ffi`
 **Cost (§8).** About 3–4 weeks of agent time. The bulk is L1's CakeML
 loop with its CF proof, and the regrouping simulation.
 
-**Decisions for the user: §9.**
+**Decisions: §9** (taken 2026-10-16).
 
 ---
 
@@ -766,36 +766,24 @@ Phases 1–2 can ship first only as an **unused** build target, because
 an L0 C without L1 runs no proved program. 4–6 are the core. 7 gives the
 headlines. 8 gives the bites.
 
-## 9. Decisions for you
+## 9. Decisions (user, 2026-10-16)
 
-1. **D1, honesty criterion.** "Every real behaviour is a model behaviour"
-   (over-approximation allowed, never under-approximation), with platform
-   differences as ∀-quantified world choices. Agree?
-2. **D2, setup.** `sys_listen` as one restricted straight-line call made
-   by the program (recommended), or keep a minimal documented constructor
-   contract? Also: check fds 0–2 in the constructor (recommended), or
-   state it as a precondition only?
-3. **D3, time (L6).** Fix it in the model (arrivals before any call;
-   L1's discipline + regrouping prove our programs unaffected), as
-   recommended? Or keep "time only at poll" as a documented abstraction?
-   The latter is cheaper (phase 6 shrinks by about half), but it is a
-   statement the kernel does not satisfy.
-4. **D4, write semantics for L2.** Buffered writes with pausing (L1
-   outboxes, `Wrote` at once; **no server proof changes**; recommended),
-   or a `write_all` computation that L2 waits on? The latter gives
-   natural flow control, but needs a new response timing in the Level-1
-   model and therefore re-proved server liveness.
-5. **D5, v1 programs.** Keep v1 relinked programs, with the honest
-   `clients_below` hypothesis? Or retire the v1 runnables in favour of v2
-   (close + handle layer), keeping `echo_spec` only as the model-level
-   theorem it is today?
-6. **D6, `«sock_write»`.** It stays as an idealised model call for the
-   v1/v2 instance theorems (close-v2's request), and the honest C drops
-   it. OK?
-7. **D7, slow clients under broadcast (chat).** Unbounded outbox, or drop
-   the client at a hard limit (recommended, as real chat servers do)?
-8. **D8, the point on the size/effort curve** (§3.5). (c) is
-   recommended.
+Guiding rule (the user's): **for every L0 decision, do the honest thing,
+even if it is more work.**
+
+| # | decision | status |
+|---|---|---|
+| D1 | Honesty criterion: the model is a sound over-approximation (every real behaviour is a model behaviour; never under-approximate). Platform differences are ∀-quantified world choices | **agreed** |
+| D2 | `sys_listen` is made by the program (straight-line, restricted). The constructor **checks** that fds 0–2 are open, and sets SIGPIPE to ignored | **decided** |
+| D3 | **Time is fixed in the model:** arrivals and state changes may happen before **any** call. L1's round discipline + the regrouping simulation prove our programs unaffected | **decided** |
+| D4 | Buffered outboxes with read pausing (no server proof changes) | taken on the agents' recommendation; **revisable** |
+| D5 | Retire the v1 runnables in favour of v2, and move HTTP onto the v2 handle layer | **pending the user**: planned for, not started |
+| D6 | `«sock_write»` stays model-only (for the v1/v2 instance theorems); the honest C drops it | **agreed** |
+| D7 | Chat: drop a slow client at a hard outbox limit | taken on the agents' recommendation; **revisable** |
+| D8 | Point (c) of §3.5 | **decided** |
+
+§4.1 (the refused/error encoding) is approved with D1/D3, and close-v2
+implements it in the endpoint world.
 
 ## 10. Statement-only HOL drafts (this branch)
 

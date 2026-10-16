@@ -3,7 +3,8 @@
   server_v and any wrapper: the library's third per-handler obligation,
   beside handler_live_v (asyncServerVLive) and handler_live_va
   (asyncServerVLiveA).  Generic in V, Wr and hf; first written for the
-  chat server (moonshot, spike/chat-live), lifted here unchanged.
+  chat server (moonshot, spike/chat-live / spike/chat-timely), lifted
+  here unchanged.
 
   In a request/response server (handler_live_v, handler_live_va) the output
   owed on a connection is a function of the data its client sent.  In a
@@ -174,6 +175,55 @@ Proof
   disch_then (qspecl_then [‘w2n c’, ‘g’, ‘N0 − a’] mp_tac) >>
   impl_tac >- simp[Abbr ‘n1’] >> strip_tac >>
   qexists_tac ‘a + j’ >> simp[] >>
+  (* what the loop wrote to c by round a + j *)
+  qspecl_then [‘lfdn’, ‘Wr (server_v V hf lfdn)’, ‘s0’, ‘c’, ‘a + j’, ‘ifds’] mp_tac
+    (Q.GENL [‘lfdn’, ‘m’, ‘s0’, ‘c’, ‘n’, ‘ifds’] gen_rounds_bytes) >>
+  impl_tac >- simp[] >> strip_tac >> pop_assum kall_tac >> pop_assum SUBST1_TAC >>
+  ONCE_REWRITE_TAC[GSYM written_FILTER] >>
+  first_x_assum (qspec_then ‘j’ mp_tac) >> simp[] >> disch_then kall_tac >>
+  qpat_x_assum ‘∀j. j ≤ LENGTH g ⇒ FILTER (on_fd _) _ = _’ (qspec_then ‘j’ mp_tac) >>
+  simp[] >> disch_then SUBST1_TAC >>
+  simp[bytes_def] >> irule bytes_prefix_mono >> irule prefix_FLAT >> simp[]
+QED
+
+(* The same, with the round: answers given by round N0 are written within
+   B more rounds (for a connection accepted by N0) *)
+Theorem server_v_live_at:
+  wrap_ok (V : ('act, 'k, 'q, 'res) vocab) (Wr : ('act, 'res, unit) vmach -> 'y smach) inner ∧
+  vocab_ok V ∧ hokv V (hf : num -> ('act, 'res, 'z) vmach) ∧
+  handler_push_live V hf out B ∧
+  s0.listeners = [(n2w lfdn, [])] ∧ s0.conns = [] ∧
+  MEM c (wacc (SPg (Wr (server_v V hf lfdn)) ifds s0 n)) ∧ n ≤ N0 ⇒
+  ∃N. N ≤ N0 + B ∧
+      bytes (FLAT (out (conn_answers V Wr inner hf lfdn ifds s0 N0 c))) ≼
+           bytes_written_to c
+             (FLAT (GENLIST (grounds_events ifds (srelabel (Wr (server_v V hf lfdn))) s0)
+                            (SUC N)))
+Proof
+  rpt strip_tac >>
+  ‘uses_ok lfdn (Wr (server_v V hf lfdn))’ by metis_tac[uses_ok_wrap] >>
+  ‘asyncLevel1$wf (server_v V hf lfdn)’ by metis_tac[hokv_wf, wf_server_v] >>
+  ‘MEM c (wacc (SPg (Wr (server_v V hf lfdn)) ifds s0 N0))’
+    by (irule wacc_mono >> qexists_tac ‘n’ >> simp[]) >>
+  (* c's handler's view, B rounds past N0 *)
+  qspecl_then [‘N0’, ‘N0 + B’] mp_tac (Q.GENL [‘n’, ‘N’] view_wrap_ans) >>
+  impl_tac >- simp[] >> strip_tac >>
+  (* c's answers by round N0 are its handler's by its round N0 - a *)
+  ‘conn_answers V Wr inner hf lfdn ifds s0 N0 c =
+   kanswers V (trans (hf (w2n c)) (TAKE (N0 − a) g))’
+    by (simp[conn_answers_def] >>
+        qpat_x_assum ‘∀j. j ≤ LENGTH g ⇒ FILTER (on_fd_v _ _) _ = _’
+          (qspec_then ‘N0 − a’ mp_tac) >>
+        impl_tac >- simp[] >> simp[]) >>
+  (* so the handler writes out of them by some round j *)
+  qpat_x_assum ‘handler_push_live _ _ _ _’
+    (mp_tac o REWRITE_RULE [handler_push_live_def]) >>
+  disch_then (qspecl_then [‘w2n c’, ‘g’, ‘N0 − a’] mp_tac) >>
+  impl_tac >- simp[] >> strip_tac >>
+  qexists_tac ‘a + j’ >>
+  conj_tac >- (qpat_x_assum ‘j ≤ _’ mp_tac >> qpat_x_assum ‘LENGTH g + a = _’ mp_tac >>
+               simp[]) >>
+  simp[] >>
   (* what the loop wrote to c by round a + j *)
   qspecl_then [‘lfdn’, ‘Wr (server_v V hf lfdn)’, ‘s0’, ‘c’, ‘a + j’, ‘ifds’] mp_tac
     (Q.GENL [‘lfdn’, ‘m’, ‘s0’, ‘c’, ‘n’, ‘ifds’] gen_rounds_bytes) >>

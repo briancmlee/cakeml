@@ -222,3 +222,54 @@ Proof
         drule_all (cj 1 (Q.SPEC ‘M + 1’ cfds_fresh)) >> simp[cfds_GENLIST]) >>
   fs[ALL_DISTINCT_GENLIST]
 QED
+
+(* MAIN: renamed back, the version-1 schedule is version 2's *)
+Theorem v1of2_sched:
+  server_world2 lfd sk2 ∧ (∀n. nconn sk2 n ≤ M) ∧
+  LENGTH sk2.reserved + M + 3 < dimword (:64) ⇒
+  rn1_sched [] (v1of2 lfd sk2).sched = sk2.future
+Proof
+  strip_tac >> simp[v1of2_def] >>
+  ‘∀n. LENGTH (ticks2 n sk2).clients ≤ M’
+    by (gen_tac >> fs[server_world2_def] >> drule ticks2_clients >>
+        disch_then (qspec_then ‘n’ SUBST1_TAC) >> fs[]) >>
+  REWRITE_TAC[rn1_sched_def] >> irule LUNFOLD_EQ >>
+  qexists_tac ‘λ(cs, L) ll. ∃n. cs = GENLIST (F2 lfd sk2) (LENGTH (ticks2 n sk2).clients) ∧
+                                L = rn2_sched (F2 lfd sk2) (LENGTH (ticks2 n sk2).clients)
+                                      (ticks2 n sk2).future ∧
+                                ll = (ticks2 n sk2).future’ >>
+  reverse conj_tac >- (simp[] >> qexists_tac ‘0’ >> fs[ticks2_def, server_world2_def]) >>
+  simp[FORALL_PROD] >> rpt gen_tac >> strip_tac >> gvs[] >>
+  qabbrev_tac ‘s = ticks2 n sk2’ >>
+  Cases_on ‘LHD s.future’ >> simp[rn2_sched_LHD]
+  >- (Cases_on ‘s.future’ >> fs[]) >>
+  rename1 ‘LHD s.future = SOME st’ >>
+  ‘step_ok2 s st’
+    by (fs[server_world2_def, sched_wf2_def] >>
+        qpat_x_assum ‘∀n. step_ok2 _ _’ (qspec_then ‘n’ mp_tac) >>
+        fs[Abbr ‘s’, next_step2_def]) >>
+  ‘LENGTH (ticks2 (SUC n) sk2).clients = FST (rn2_step (F2 lfd sk2) (LENGTH s.clients) st)’
+    by (simp[ticks2_SUC', rn2_step_count, Abbr ‘s’] >>
+        simp[tick2_def] >>
+        ‘step_ok2 (ticks2 n sk2 with future := THE (LTL (ticks2 n sk2).future)) st’
+          by fs[step_ok2_with_future] >>
+        drule step_ok2_clients >> simp[]) >>
+  ‘rn1_step (GENLIST (F2 lfd sk2) (LENGTH s.clients))
+     (SND (rn2_step (F2 lfd sk2) (LENGTH s.clients) st)) =
+   (GENLIST (F2 lfd sk2) (FST (rn2_step (F2 lfd sk2) (LENGTH s.clients) st)), st)’
+    by (‘∀i i'. i < M + 1 ∧ i' < M + 1 ∧ F2 lfd sk2 i = F2 lfd sk2 i' ⇒ i = i'’
+          by (mp_tac F2_inj >> impl_tac >- fs[server_world2_def] >> simp[]) >>
+        irule rn1_rn2_step >> reverse conj_tac >- metis_tac[step_ok2_ix] >>
+        qexists_tac ‘M + 1’ >> simp[] >>
+        qpat_x_assum ‘LENGTH (ticks2 (SUC n) sk2).clients = _’ (SUBST1_TAC o SYM) >>
+        qpat_x_assum ‘∀n. LENGTH _ ≤ M’ (qspec_then ‘SUC n’ mp_tac) >> decide_tac) >>
+  simp[] >>
+  ‘∃ll'. s.future = st ::: ll'’ by (Cases_on ‘s.future’ >> fs[]) >>
+  simp[rn2_sched_LTL] >>
+  qexists_tac ‘SUC n’ >>
+  simp[ticks2_SUC', Abbr ‘s’] >> simp[tick2_def] >>
+  simp[deliver2_future] >>
+  mp_tac (Q.INST [‘ll’ |-> ‘st ::: ll'’, ‘fdf’ |-> ‘F2 lfd sk2’,
+                  ‘n’ |-> ‘LENGTH (ticks2 n sk2).clients’] rn2_sched_LTL) >>
+  simp[]
+QED

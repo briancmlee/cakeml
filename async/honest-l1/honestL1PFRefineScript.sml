@@ -18,6 +18,7 @@
 *)
 Theory honestL1PFRefine
 Ancestors
+  honestL0WorldProps
   honestL1PFModel honestL1Model honestL1Steps honestL1Inv honestL0Rely honestL0World honestL0
   asyncHLModel
   socketV2FFI socketV2Events socketV2Fair ffiSpikeSocketFFI asyncM3World asyncCore

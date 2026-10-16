@@ -1,0 +1,5 @@
+calibration: a C busy-polling loop (non-blocking polls) measures 14.7% here
+phases of 30 s each; CPU% = process CPU time / wall time (100% = one core)
+server                  idle-fresh  light-load  idle-after after-invalid  rtt median
+http_quiet                    0.0%        0.1%        0.0%          0.0%       269us
+http_server_pb               21.9%       26.0%       76.8%         89.2%       239us

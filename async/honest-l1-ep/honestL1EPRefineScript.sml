@@ -20,7 +20,7 @@
 *)
 Theory honestL1EPRefine
 Ancestors
-  honestL1EPModel honestL1PFRefine honestL1PFModel honestL1Model honestL1Steps
+  honestL1EPOut honestL1EPModel honestL1PFRefine honestL1PFModel honestL1Model honestL1Steps
   socketV2FFI ffiSpikeSocketFFI Marshalling endpointSpecForms endpointFair
   honestL1Inv honestL0Rely honestL0World honestL0
   endpointHLModel endpointWorld asyncHLModel asyncCore asyncLevel1 asyncM3World
@@ -942,7 +942,7 @@ Proof
   >- (qpat_x_assum ‘f = lfd’ SUBST_ALL_TAC >>
       Cases_on ‘sys_accept lfd w’ >> simp[] >> rename1 ‘_ = SOME x’ >>
       PairCases_on ‘x’ >> rename1 ‘sys_accept _ _ = SOME (out, w1, ev)’ >> simp[] >>
-      pairarg_tac >> simp[] >> rename1 ‘_ = (ps1, fl)’ >>
+      pairarg_tac >> simp[] >> rename1 ‘_ = (ps1, fl1)’ >>
       Cases_on ‘pf_fetch lfd pol fs (w1, ps1)’ >> simp[] >> rename1 ‘_ = SOME y’ >>
       PairCases_on ‘y’ >> simp[] >> strip_tac >> gvs[] >>
       ‘l0_rely w1’
@@ -959,7 +959,7 @@ Proof
       rw[] >> metis_tac[]) >>
   Cases_on ‘sys_recv f pf_chunk w’ >> simp[] >> rename1 ‘_ = SOME x’ >>
   PairCases_on ‘x’ >> rename1 ‘sys_recv _ _ _ = SOME (out, w1, ev)’ >> simp[] >>
-  pairarg_tac >> simp[] >> rename1 ‘_ = (ps1, fl)’ >>
+  pairarg_tac >> simp[] >> rename1 ‘_ = (ps1, fl1)’ >>
   Cases_on ‘pf_fetch lfd pol fs (w1, ps1)’ >> simp[] >> rename1 ‘_ = SOME y’ >>
   PairCases_on ‘y’ >> simp[] >> strip_tac >> gvs[] >>
   ‘l0_rely w1’
@@ -970,7 +970,7 @@ Proof
         imp_res_tac l0_do_env >> drule l0_do_used >> simp[]) >>
   ‘fds_lt w1’ by gvs[honestL0WorldPropsTheory.fds_lt_def] >>
   first_x_assum drule_all >> strip_tac >>
-  ‘fconns fl = [] ∧ ps1.acq = ps.acq’
+  ‘fconns fl1 = [] ∧ ps1.acq = ps.acq’
     by (Cases_on ‘l0_res_of out’ >> gvs[AllCaseEqs(), fconns_def] >> rw[] >> gvs[fconns_def]) >>
   gvs[fconns_APPEND]
 QED
@@ -1556,6 +1556,113 @@ QED
 
 (* A round's actions: the layer's actions, its connects' channels numbered
    in order from the channel count *)
+(* ------------------------------------------------------------------------
+   What the layer's channels were sent (C1(ii)): only a write on an open
+   handle sends, everything (the world takes all), on its fd's channel
+   ------------------------------------------------------------------------ *)
+
+(* The bytes sent on old channels stay, new channels have none *)
+Definition chans_keep_def:
+  chans_keep (w : eworld) (w' : eworld) ⇔
+    LENGTH w.chans ≤ LENGTH w'.chans ∧
+    (∀j. j < LENGTH w.chans ⇒ (EL j w'.chans).sent = (EL j w.chans).sent) ∧
+    (∀j. LENGTH w.chans ≤ j ∧ j < LENGTH w'.chans ⇒ (EL j w'.chans).sent = [])
+End
+
+Theorem chans_keep_refl[simp]:
+  chans_keep w w
+Proof
+  simp[chans_keep_def]
+QED
+
+Theorem chans_keep_trans:
+  chans_keep w1 w2 ∧ chans_keep w2 w3 ⇒ chans_keep w1 w3
+Proof
+  rw[chans_keep_def] >> Cases_on ‘j < LENGTH w2.chans’ >> gvs[NOT_LESS]
+QED
+
+Theorem chans_keep_upd:
+  (∀c. (g c).sent = c.sent) ⇒ chans_keep w (upd_chan j g w)
+Proof
+  rw[chans_keep_def, upd_chan_def, EL_LUPDATE] >> rw[]
+QED
+
+Theorem chans_keep_with[simp]:
+  chans_keep w (w with open_fds := x) ∧ chans_keep w (w with listening := y) ∧
+  chans_keep w (w with nconnects := z) ∧ chans_keep w (w with clock := c)
+Proof
+  simp[chans_keep_def]
+QED
+
+Theorem ep_alloc_keep:
+  ep_alloc w j = SOME (f, w') ⇒ w'.chans = w.chans
+Proof
+  rw[ep_alloc_def] >> simp[]
+QED
+
+Theorem ehdo_keep:
+  ehdo lfd v (w, hs) act = SOME (r, (w', hs')) ∧ (∀h bs. act ≠ EWrite h bs) ⇒
+  chans_keep w w'
+Proof
+  Cases_on ‘act’ >> simp[ehdo_def, AllCaseEqs()] >> rw[] >>
+  gvs[ep_accept_def, ep_connect_def, ep_read_def, ep_close_def, ep_conn_err_def,
+      AllCaseEqs()] >>
+  imp_res_tac ep_alloc_keep >> gvs[] >>
+  TRY (simp[chans_keep_def, EL_APPEND1, EL_APPEND2, new_chan_def] >> rw[] >>
+       ‘j = LENGTH w.chans’ by decide_tac >> simp[EL_APPEND2, new_chan_def] >> NO_TAC) >>
+  simp[chans_keep_def, upd_chan_def, EL_LUPDATE] >> rw[EL_LUPDATE] >> rw[]
+QED
+
+Theorem ALOOKUP_SND_inj:
+  ALL_DISTINCT (MAP SND cm) ∧ ALOOKUP cm f = SOME j ∧ ALOOKUP cm g = SOME j ⇒ f = g
+Proof
+  Induct_on ‘cm’ >> simp[FORALL_PROD] >> rw[] >> gvs[AllCaseEqs()] >>
+  imp_res_tac ALOOKUP_MEM >> gvs[MEM_MAP, EXISTS_PROD] >> metis_tac[]
+QED
+
+Theorem ev_act_sent:
+  ev_rel lfd a cm es w ∧ eown lfd es ∧ ehs_rel hs es ∧
+  ehdo lfd v (w, hs) act = SOME (r, (w', hs')) ⇒
+  LENGTH w.chans ≤ LENGTH w'.chans ∧
+  (∀f j. ALOOKUP cm f = SOME j ⇒
+         (EL j w'.chans).sent = (EL j w.chans).sent ++ ewbytes f es act) ∧
+  (∀j. j < LENGTH w.chans ∧ (∀f. ALOOKUP cm f ≠ SOME j) ⇒
+       (EL j w'.chans).sent = (EL j w.chans).sent) ∧
+  (∀j. LENGTH w.chans ≤ j ∧ j < LENGTH w'.chans ⇒ (EL j w'.chans).sent = [])
+Proof
+  strip_tac >>
+  ‘∀f j. ALOOKUP cm f = SOME j ⇒ j < LENGTH w.chans’
+    by (rpt strip_tac >> imp_res_tac ALOOKUP_MEM >> gvs[ev_rel_def, EVERY_MEM, MEM_MAP] >>
+        metis_tac[SND]) >>
+  reverse (Cases_on ‘∃h bs. act = EWrite h bs’)
+  >- (‘chans_keep w w'’ by (irule ehdo_keep >> metis_tac[]) >>
+      gvs[chans_keep_def] >> Cases_on ‘act’ >> gvs[ewbytes_def] >> metis_tac[]) >>
+  gvs[ewbytes_def] >> Cases_on ‘ALOOKUP es.p.b.tbl h’
+  >- ((* not an open handle: nothing is taken *)
+      ‘chans_keep w w'’
+        by (qpat_x_assum ‘ehdo _ _ _ _ = _’ mp_tac >> simp[ehdo_def] >>
+            ‘ALOOKUP hs.tbl h = ALOOKUP es.ctbl h’ by gvs[ehs_rel_def] >>
+            Cases_on ‘ALOOKUP es.ctbl h’ >> simp[] >> rename1 ‘ALOOKUP es.ctbl h = SOME g’ >>
+            drule_all ev_rel_ctbl >> strip_tac >>
+            simp[chan_status_def, ep_send_def] >>
+            Cases_on ‘cstat_of es g = CRefused’ >> simp[] >> strip_tac >> gvs[] >>
+            irule chans_keep_upd >> simp[]) >>
+      gvs[chans_keep_def] >> metis_tac[]) >>
+  rename1 ‘ALOOKUP es.p.b.tbl h = SOME g’ >>
+  ‘ALOOKUP hs.tbl h = SOME g’ by gvs[ehs_rel_def] >>
+  drule_all ev_rel_tbl >> strip_tac >>
+  ‘w.takes = (λj b n. n)’ by gvs[ev_rel_def] >>
+  ‘w' = upd_chan (cl cm g) (λc. c with <| sent := c.sent ++ bs;
+                                          inflight := c.inflight + LENGTH bs |>) w’
+    by (qpat_x_assum ‘ehdo _ _ _ _ = _’ mp_tac >>
+        simp[ehdo_def, chan_status_def, ep_send_def]) >>
+  ‘ALOOKUP cm g = SOME (cl cm g)’
+    by (gvs[cl_def] >> Cases_on ‘ALOOKUP cm g’ >> gvs[ALOOKUP_NONE]) >>
+  ‘ALL_DISTINCT (MAP SND cm)’ by gvs[ev_rel_def] >>
+  simp[upd_chan_def, EL_LUPDATE] >> rw[] >> gvs[] >>
+  metis_tac[ALOOKUP_SND_inj]
+QED
+
 Theorem ev_acts:
   ∀acts k cm es w hs wl rs evs wl' es'.
     ev_rel lfd a cm es w ∧ eown lfd es ∧ ehs_rel hs es ∧

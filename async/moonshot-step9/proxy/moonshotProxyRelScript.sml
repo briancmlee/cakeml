@@ -842,3 +842,155 @@ Proof
   TRY (qpat_x_assum ‘pok w1 _ _ _ _’ mp_tac >> gvs[] >> NO_TAC) >>
   qexistsl_tac [‘p.fh’, ‘hs’, ‘j’, ‘w’] >> gvs[]
 QED
+
+(* The read of the backend (not reported ready only if it has answered
+   before): refused closes it; otherwise it is Up, data goes to bq, EOF
+   closes it *)
+Theorem prel_read_back:
+  prel lfd st rdy ps w hs ∧ i < LENGTH st.pc ∧ (EL i st.pc).bh = SOME c ∧
+  (EL i st.pc).bo ∧ (¬(EL i st.pc).bup ⇒ c ∈ rdy) ⇒
+  ∃r w1 hs1. ehdo lfd v (w, hs) (ERead c pread) = SOME (r, (w1, hs1)) ∧
+    prel lfd (pupd st [(i, ERead c pread)] [r]) rdy (ps ++ [(ERead c pread, r)]) w1 hs1
+Proof
+  strip_tac >> qabbrev_tac ‘p = EL i st.pc’ >>
+  ‘pok w hs ps rdy p’ by (simp[Abbr ‘p’] >> irule prel_pok >> metis_tac[]) >>
+  ‘c ≠ p.fh’ by (simp[Abbr ‘p’] >> irule prel_pair_distinct >> metis_tac[]) >>
+  ‘p.fh ≠ c’ by (strip_tac >> fs[]) >>
+  ‘∃j. hch w hs c j ∧ ¬(EL j w.chans).shut ∧
+       (p.bup ⇒ (EL j w.chans).status = Up) ∧
+       (EL j w.chans).status ≠ Connecting ∧ (EL j w.chans).status ≠ Failed’
+    by (qpat_x_assum ‘pok _ _ _ _ _’ mp_tac >> simp[pok_def] >> strip_tac >> gvs[] >>
+        qexists_tac ‘j’ >> simp[] >> Cases_on ‘p.bup’ >> gvs[] >>
+        Cases_on ‘(EL j w.chans).status’ >> gvs[]) >>
+  ‘ALL_DISTINCT (MAP SND hs.tbl) ∧ ALL_DISTINCT (MAP SND w.open_fds) ∧
+   ALL_DISTINCT (MAP FST hs.tbl) ∧ ALL_DISTINCT (MAP FST w.open_fds)’ by fs[prel_def] >>
+  ‘∃f. ALOOKUP hs.tbl c = SOME f ∧ ALOOKUP w.open_fds f = SOME j ∧ j < LENGTH w.chans’
+    by fs[hch_def] >>
+  ‘0 < pread ∧ pread < 256 ** 8’ by simp[] >>
+  drule_all ehdo_read >>
+  disch_then (qspecl_then [‘v’, ‘lfd’]
+    (qx_choosel_then [‘r’, ‘w1’, ‘hs1’]
+       (CONJUNCTS_THEN2 assume_tac (CONJUNCTS_THEN2 assume_tac assume_tac)))) >>
+  qexistsl_tac [‘r’, ‘w1’, ‘hs1’] >> simp[] >>
+  ‘MEM c (popen p)’ by simp[popen_def] >>
+  ‘hl_sent p.fh [(ERead c pread, r)] = [] ∧ hl_read p.fh [(ERead c pread, r)] = [] ∧
+   ¬hl_eof p.fh [(ERead c pread, r)] ∧ ¬hl_refused p.fh [(ERead c pread, r)] ∧
+   hl_sent c [(ERead c pread, r)] = []’
+    by (Cases_on ‘r’ >> simp[] >> TRY (rename1 ‘EGot oo’ >> Cases_on ‘oo’) >> simp[] >>
+        gvs[]) >>
+  qpat_x_assum ‘_ ∨ _ ∨ _ ∨ _’ strip_assume_tac
+  >- ((* refused: closed *)
+      ‘pres p (ERead c pread) r = p with bo := F’ by gvs[pres_def] >>
+      ‘wstep c j w hs w1 hs1’
+        by (irule wframe_wstep >> gvs[eh_del_def] >> disj2_tac >> qexists_tac ‘f’ >> simp[]) >>
+      ‘hl_refused c [(ERead c pread, r)] ∧ hl_read c [(ERead c pread, r)] = [] ∧
+       ¬hl_up c [(ERead c pread, r)]’ by gvs[] >>
+      ‘pok w1 hs1 (ps ++ [(ERead c pread, r)]) rdy (p with bo := F)’
+        by (qpat_x_assum ‘pok _ _ _ _ _’ mp_tac >> simp[pok_def] >> strip_tac >> gvs[] >>
+            rpt conj_tac >>
+            TRY (rpt strip_tac >> gvs[MAP_FST_ADELKEY, MEM_FILTER, eh_del_def] >> NO_TAC) >>
+            TRY (strip_tac >>
+                 qpat_x_assum ‘_ ⇒ ∃j. hch w hs p.fh j ∧ _’ mp_tac >> (impl_tac >- simp[]) >>
+                 strip_tac >> rename1 ‘hch w hs p.fh jf’ >> qexists_tac ‘jf’ >>
+                 mp_tac (Q.INST [‘h’ |-> ‘p.fh’, ‘jh’ |-> ‘jf’, ‘h0’ |-> ‘c’, ‘hs1’ |-> ‘eh_del c hs’]
+                           hch_keep_other) >>
+                 (impl_tac >- simp[]) >> strip_tac >> gvs[] >> NO_TAC) >>
+            TRY (rename1 ‘hch w hs p.fh jf’ >> qexists_tac ‘jf’ >>
+                 mp_tac (Q.INST [‘h’ |-> ‘p.fh’, ‘jh’ |-> ‘jf’, ‘h0’ |-> ‘c’, ‘hs1’ |-> ‘eh_del c hs’]
+                           hch_keep_other) >>
+                 (impl_tac >- simp[]) >> strip_tac >> gvs[] >> NO_TAC) >>
+            rpt strip_tac >> gvs[MAP_FST_ADELKEY, MEM_FILTER, eh_del_def]) >>
+      irule prel_step_pair >> rpt conj_tac >>
+      TRY (simp[popen_def] >> rpt strip_tac >> gvs[eh_del_def, MAP_FST_ADELKEY, MEM_FILTER, popen_def] >> NO_TAC) >>
+      TRY (first_assum ACCEPT_TAC >> NO_TAC) >>
+      TRY (qpat_x_assum ‘pok w1 _ _ _ _’ mp_tac >> gvs[] >> NO_TAC) >>
+      TRY (qexistsl_tac [‘c’, ‘hs’, ‘j’, ‘w’] >> gvs[] >> NO_TAC) >>
+      qexistsl_tac [‘hs’, ‘j’, ‘w’] >> gvs[])
+  >- ((* data *)
+      ‘(EL j w.chans).status = Up’
+    by (Cases_on ‘(EL j w.chans).status’ >> gvs[]) >>
+      qabbrev_tac ‘d = TAKE pread (EL j w.chans).inbox’ >>
+      ‘d ≠ []’ by (simp[Abbr ‘d’] >> Cases_on ‘(EL j w.chans).inbox’ >> gvs[]) >>
+      ‘pres p (ERead c pread) r = p with <| bup := T; bq := p.bq ++ d |>’
+        by (gvs[] >> Cases_on ‘d’ >> gvs[pres_def]) >>
+      ‘wstep c j w hs w1 hs1’ by (irule wframe_wstep >> gvs[]) >>
+      ‘hl_read c [(ERead c pread, r)] = d ∧ ¬hl_eof c [(ERead c pread, r)] ∧
+       ¬hl_refused c [(ERead c pread, r)] ∧ hl_up c [(ERead c pread, r)]’
+        by (gvs[] >> Cases_on ‘d’ >> gvs[]) >>
+      ‘(EL j w1.chans).status = Up ∧ ¬(EL j w1.chans).shut ∧ LENGTH w1.chans = LENGTH w.chans’
+        by fs[wframe_def] >>
+      ‘hch w1 hs1 c j’ by (gvs[hch_def] >> fs[wframe_def]) >>
+      ‘pok w1 hs1 (ps ++ [(ERead c pread, r)]) rdy (p with <| bup := T; bq := p.bq ++ d |>)’
+        by (qpat_x_assum ‘pok _ _ _ _ _’ mp_tac >> simp[pok_def] >> strip_tac >> gvs[] >>
+            rpt conj_tac >>
+            TRY (qexists_tac ‘j’ >> simp[] >> NO_TAC) >>
+            TRY (strip_tac >>
+                 qpat_x_assum ‘_ ⇒ ∃j. hch w hs p.fh j ∧ _’ mp_tac >> (impl_tac >- simp[]) >>
+                 strip_tac >> rename1 ‘hch w hs p.fh jf’ >> qexists_tac ‘jf’ >>
+                 mp_tac (Q.INST [‘h’ |-> ‘p.fh’, ‘jh’ |-> ‘jf’, ‘h0’ |-> ‘c’, ‘hs1’ |-> ‘hs’]
+                           hch_keep_other) >>
+                 (impl_tac >- simp[]) >> strip_tac >> gvs[] >> NO_TAC) >>
+            TRY (rename1 ‘hch w hs p.fh jf’ >> qexists_tac ‘jf’ >>
+                 mp_tac (Q.INST [‘h’ |-> ‘p.fh’, ‘jh’ |-> ‘jf’, ‘h0’ |-> ‘c’, ‘hs1’ |-> ‘hs’]
+                           hch_keep_other) >>
+                 (impl_tac >- simp[]) >> strip_tac >> gvs[] >> NO_TAC) >>
+            rpt strip_tac >> gvs[]) >>
+      irule prel_step_pair >> rpt conj_tac >>
+      TRY (simp[popen_def] >> rpt strip_tac >> gvs[eh_del_def, MAP_FST_ADELKEY, MEM_FILTER, popen_def] >> NO_TAC) >>
+      TRY (first_assum ACCEPT_TAC >> NO_TAC) >>
+      TRY (qpat_x_assum ‘pok w1 _ _ _ _’ mp_tac >> gvs[] >> NO_TAC) >>
+      TRY (qexistsl_tac [‘c’, ‘hs’, ‘j’, ‘w’] >> gvs[] >> NO_TAC) >>
+      qexistsl_tac [‘hs’, ‘j’, ‘w’] >> gvs[])
+  >- ((* EOF: closed *)
+      ‘(EL j w.chans).status = Up’
+    by (Cases_on ‘(EL j w.chans).status’ >> gvs[]) >>
+      ‘pres p (ERead c pread) r = p with <| bo := F; bup := T |>’ by gvs[pres_def] >>
+      ‘wstep c j w hs w1 hs1’
+        by (irule wframe_wstep >> gvs[eh_del_def] >> disj2_tac >> qexists_tac ‘f’ >> simp[]) >>
+      ‘hl_eof c [(ERead c pread, r)] ∧ hl_read c [(ERead c pread, r)] = [] ∧
+       hl_up c [(ERead c pread, r)]’ by gvs[] >>
+      ‘pok w1 hs1 (ps ++ [(ERead c pread, r)]) rdy (p with <| bo := F; bup := T |>)’
+        by (qpat_x_assum ‘pok _ _ _ _ _’ mp_tac >> simp[pok_def] >> strip_tac >> gvs[] >>
+            rpt conj_tac >>
+            TRY (rpt strip_tac >> gvs[MAP_FST_ADELKEY, MEM_FILTER, eh_del_def] >> NO_TAC) >>
+            TRY (strip_tac >>
+                 qpat_x_assum ‘_ ⇒ ∃j. hch w hs p.fh j ∧ _’ mp_tac >> (impl_tac >- simp[]) >>
+                 strip_tac >> rename1 ‘hch w hs p.fh jf’ >> qexists_tac ‘jf’ >>
+                 mp_tac (Q.INST [‘h’ |-> ‘p.fh’, ‘jh’ |-> ‘jf’, ‘h0’ |-> ‘c’, ‘hs1’ |-> ‘eh_del c hs’]
+                           hch_keep_other) >>
+                 (impl_tac >- simp[]) >> strip_tac >> gvs[] >> NO_TAC) >>
+            TRY (rename1 ‘hch w hs p.fh jf’ >> qexists_tac ‘jf’ >>
+                 mp_tac (Q.INST [‘h’ |-> ‘p.fh’, ‘jh’ |-> ‘jf’, ‘h0’ |-> ‘c’, ‘hs1’ |-> ‘eh_del c hs’]
+                           hch_keep_other) >>
+                 (impl_tac >- simp[]) >> strip_tac >> gvs[] >> NO_TAC) >>
+            rpt strip_tac >> gvs[MAP_FST_ADELKEY, MEM_FILTER, eh_del_def]) >>
+      irule prel_step_pair >> rpt conj_tac >>
+      TRY (simp[popen_def] >> rpt strip_tac >> gvs[eh_del_def, MAP_FST_ADELKEY, MEM_FILTER, popen_def] >> NO_TAC) >>
+      TRY (first_assum ACCEPT_TAC >> NO_TAC) >>
+      TRY (qpat_x_assum ‘pok w1 _ _ _ _’ mp_tac >> gvs[] >> NO_TAC) >>
+      TRY (qexistsl_tac [‘c’, ‘hs’, ‘j’, ‘w’] >> gvs[] >> NO_TAC) >>
+      qexistsl_tac [‘hs’, ‘j’, ‘w’] >> gvs[])
+  >> (* would-block: it has answered *)
+  ‘(EL j w.chans).status = Up’
+    by (Cases_on ‘(EL j w.chans).status’ >> gvs[]) >>
+  ‘pres p (ERead c pread) r = p with bup := T’ by gvs[pres_def] >>
+  ‘wstep c j w hs w1 hs1’ by (gvs[] >> simp[wstep_def]) >>
+  ‘hl_read c [(ERead c pread, r)] = [] ∧ ¬hl_eof c [(ERead c pread, r)] ∧
+   ¬hl_refused c [(ERead c pread, r)] ∧ hl_up c [(ERead c pread, r)]’ by gvs[] >>
+  ‘pok w1 hs1 (ps ++ [(ERead c pread, r)]) rdy (p with bup := T)’
+    by (qpat_x_assum ‘pok _ _ _ _ _’ mp_tac >> simp[pok_def] >> strip_tac >> gvs[] >>
+        rpt conj_tac >> TRY (qexists_tac ‘j’ >> simp[] >> NO_TAC) >>
+        TRY (strip_tac >>
+             qpat_x_assum ‘_ ⇒ ∃j. hch w hs p.fh j ∧ _’ mp_tac >> (impl_tac >- simp[]) >>
+             strip_tac >> rename1 ‘hch w hs p.fh jf’ >> qexists_tac ‘jf’ >>
+             mp_tac (Q.INST [‘h’ |-> ‘p.fh’, ‘jh’ |-> ‘jf’, ‘h0’ |-> ‘c’, ‘hs1’ |-> ‘hs’]
+                       hch_keep_other) >>
+             (impl_tac >- simp[]) >> strip_tac >> gvs[] >> NO_TAC) >>
+        rpt strip_tac >> gvs[]) >>
+  irule prel_step_pair >> rpt conj_tac >>
+  TRY (simp[popen_def] >> rpt strip_tac >> gvs[eh_del_def, MAP_FST_ADELKEY, MEM_FILTER, popen_def] >> NO_TAC) >>
+  TRY (first_assum ACCEPT_TAC >> NO_TAC) >>
+  TRY (qpat_x_assum ‘pok w1 _ _ _ _’ mp_tac >> gvs[] >> NO_TAC) >>
+  TRY (qexistsl_tac [‘c’, ‘hs’, ‘j’, ‘w’] >> gvs[] >> NO_TAC) >>
+  qexistsl_tac [‘hs’, ‘j’, ‘w’] >> gvs[]
+QED

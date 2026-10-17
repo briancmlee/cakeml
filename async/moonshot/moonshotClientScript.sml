@@ -2477,3 +2477,93 @@ Proof
   Cases_on ‘cC a N rqs lfd lv w0 i n’ >> gvs[ctr_def] >>
   Cases_on ‘c' ∈ crdy (cH a N rqs lfd lv w0 n)’ >> gvs[] >> metis_tac[]
 QED
+
+Theorem run_pend_frame:
+  client_world lfd c w0 ∧ N < cbound ∧ i < N ∧ cC a N rqs lfd lv w0 i n = CPend hd ∧
+  cC a N rqs lfd lv w0 i (SUC n) = CPend hd ⇒
+  ALOOKUP (SND (cS a N rqs lfd lv w0 (SUC n))).tbl hd = ALOOKUP (SND (cS a N rqs lfd lv w0 n)).tbl hd ∧
+  (hstat (cS a N rqs lfd lv w0 n) hd ≠ SOME Connecting ⇒
+   hstat (cS a N rqs lfd lv w0 (SUC n)) hd = hstat (cS a N rqs lfd lv w0 n) hd) ∧
+  (hstat (cS a N rqs lfd lv w0 (SUC n)) hd ≠ SOME Connecting ⇒
+   ¬MEM hd (SND (cS a N rqs lfd lv w0 (SUC n))).settling)
+Proof
+  strip_tac >>
+  qspecl_then [‘w0’, ‘rqs’, ‘n’, ‘lv’, ‘lfd’, ‘i’, ‘c’, ‘a’, ‘N’] mp_tac
+    (Q.GENL [‘w0’, ‘rqs’, ‘n’, ‘lv’, ‘lfd’, ‘i’, ‘c’, ‘a’, ‘N’] cround_trans) >>
+  simp[] >> strip_tac >> fs[]
+QED
+
+Theorem run_ready_leaves:
+  client_world lfd c w0 ∧ N < cbound ∧ i < N ∧ cC a N rqs lfd lv w0 i n = CPend hd ∧
+  hd ∈ crdy (cH a N rqs lfd lv w0 n) ⇒
+  cC a N rqs lfd lv w0 i (SUC n) ≠ CPend hd
+Proof
+  strip_tac >>
+  qspecl_then [‘w0’, ‘rqs’, ‘n’, ‘lv’, ‘lfd’, ‘i’, ‘c’, ‘a’, ‘N’] mp_tac
+    (Q.GENL [‘w0’, ‘rqs’, ‘n’, ‘lv’, ‘lfd’, ‘i’, ‘c’, ‘a’, ‘N’] cround_trans) >>
+  simp[] >> strip_tac >> gvs[ctr_def]
+QED
+
+Theorem run_pend:
+  client_world lfd c w0 ∧ N < cbound ∧ i < N ∧ cC a N rqs lfd lv w0 i n = CPend hd ⇒
+  ∃s f. hstat (cS a N rqs lfd lv w0 n) hd = SOME s ∧
+        ALOOKUP (SND (cS a N rqs lfd lv w0 n)).tbl hd = SOME f ∧
+        chan_status (FST (cS a N rqs lfd lv w0 n)) f = SOME s ∧
+        (s ≠ Connecting ⇒ MEM hd (SND (cS a N rqs lfd lv w0 n)).settling ∨
+                          hd ∈ crdy (cH a N rqs lfd lv w0 n))
+Proof
+  strip_tac >> drule_all run_crel >> disch_then (qspecl_then [‘rqs’, ‘n’, ‘lv’, ‘a’] assume_tac) >>
+  drule_all crel_pend >> strip_tac >> gvs[hstat_pair]
+QED
+
+(* A pending connection does not stay pending (under connect fairness) *)
+Theorem run_pend_leaves:
+  client_world lfd c w0 ∧ N < cbound ∧ i < N ∧
+  conn_fair lfd lv (cifds a N rqs) (cprog a N rqs) w0 ∧ cC a N rqs lfd lv w0 i n = CPend hd ⇒
+  ∃n'. n < n' ∧ cC a N rqs lfd lv w0 i n' ≠ CPend hd
+Proof
+  strip_tac >> CCONTR_TAC >> fs[] >>
+  ‘∀k. n ≤ k ⇒ cC a N rqs lfd lv w0 i k = CPend hd’
+    by (rw[] >> Cases_on ‘k = n’ >> simp[] >>
+        qpat_x_assum ‘∀n'. _’ (qspec_then ‘k’ mp_tac) >> simp[]) >>
+  ‘∀k. n ≤ k ⇒ hd ∉ crdy (cH a N rqs lfd lv w0 k)’
+    by (rpt strip_tac >>
+        ‘cC a N rqs lfd lv w0 i (SUC k) ≠ CPend hd’
+          by (irule run_ready_leaves >> simp[] >> metis_tac[]) >>
+        ‘n ≤ SUC k’ by simp[] >> metis_tac[]) >>
+  ‘∀k. n ≤ k ⇒
+       ALOOKUP (SND (cS a N rqs lfd lv w0 (SUC k))).tbl hd =
+         ALOOKUP (SND (cS a N rqs lfd lv w0 k)).tbl hd ∧
+       (hstat (cS a N rqs lfd lv w0 k) hd ≠ SOME Connecting ⇒
+        hstat (cS a N rqs lfd lv w0 (SUC k)) hd = hstat (cS a N rqs lfd lv w0 k) hd) ∧
+       (hstat (cS a N rqs lfd lv w0 (SUC k)) hd ≠ SOME Connecting ⇒
+        ¬MEM hd (SND (cS a N rqs lfd lv w0 (SUC k))).settling)’
+    by (rpt gen_tac >> strip_tac >> irule run_pend_frame >> simp[] >>
+        ‘n ≤ SUC k’ by simp[] >> metis_tac[]) >>
+  ‘∀d. ALOOKUP (SND (cS a N rqs lfd lv w0 (n + d))).tbl hd =
+       ALOOKUP (SND (cS a N rqs lfd lv w0 n)).tbl hd’
+    by (Induct >> simp[] >> ‘n + SUC d = SUC (n + d)’ by simp[] >>
+        pop_assum SUBST1_TAC >> metis_tac[LESS_EQ_ADD]) >>
+  ‘∀k. n ≤ k ⇒ ∃s f. hstat (cS a N rqs lfd lv w0 k) hd = SOME s ∧
+                     ALOOKUP (SND (cS a N rqs lfd lv w0 k)).tbl hd = SOME f ∧
+                     chan_status (FST (cS a N rqs lfd lv w0 k)) f = SOME s ∧
+                     (s ≠ Connecting ⇒ MEM hd (SND (cS a N rqs lfd lv w0 k)).settling ∨
+                                       hd ∈ crdy (cH a N rqs lfd lv w0 k))’
+    by (rpt strip_tac >> irule run_pend >> simp[] >> metis_tac[]) >>
+  ‘∃k1. n ≤ k1 ∧ hstat (cS a N rqs lfd lv w0 k1) hd ≠ SOME Connecting’
+    by (first_x_assum (qspec_then ‘n’ mp_tac) >> simp[] >> strip_tac >>
+        Cases_on ‘s = Connecting’ >- (
+          qpat_x_assum ‘conn_fair _ _ _ _ _’ mp_tac >> simp[conn_fair_def] >> strip_tac >>
+          qpat_x_assum ‘∀n hd f. _’ (qspecl_then [‘n’, ‘hd’, ‘f’] mp_tac) >> gvs[] >> strip_tac >>
+          qexists_tac ‘n'’ >> simp[] >>
+          ‘ALOOKUP (SND (cS a N rqs lfd lv w0 n')).tbl hd = SOME f’
+            by (qpat_x_assum ‘∀d. ALOOKUP _ _ = _’ (qspec_then ‘n' - n’ mp_tac) >> simp[]) >>
+          simp[hstat_pair]) >>
+        qexists_tac ‘n’ >> simp[]) >>
+  first_assum (qspec_then ‘k1’ mp_tac) >> impl_tac >- simp[] >> strip_tac >>
+  ‘MEM hd (SND (cS a N rqs lfd lv w0 k1)).settling’ by metis_tac[] >>
+  ‘hstat (cS a N rqs lfd lv w0 (SUC k1)) hd = SOME s’ by metis_tac[] >>
+  ‘¬MEM hd (SND (cS a N rqs lfd lv w0 (SUC k1))).settling’ by metis_tac[] >>
+  first_x_assum (qspec_then ‘SUC k1’ mp_tac) >> simp[] >> rpt strip_tac >> gvs[] >>
+  metis_tac[DECIDE “n ≤ k1 ⇒ n ≤ SUC k1”]
+QED

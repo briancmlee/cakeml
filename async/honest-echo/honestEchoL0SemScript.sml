@@ -1,14 +1,16 @@
 (*
   The echo program's whole-program semantics on the honest L0 world (P3):
-  from the startup world w0, listening on the port either fails, and the
-  program terminates after that one event, or succeeds, and the program
-  diverges with that event then the prefetching L1 loop's rounds.
+  from the startup world w0, the program first calls sys_fdok on fds 0, 1
+  and 2 (D33).  If one is closed, it terminates after those three events.
+  Otherwise listening on the port either fails, and the program terminates
+  after four events, or succeeds, and the program diverges with those four
+  events then the prefetching L1 loop's rounds.
 *)
 Theory honestEchoL0Sem
 Ancestors
   ml_translator ml_prog cfMain cfDiv cfStore llist std_prelude
   honestL0 honestL0World honestL0Rely honestL1Model honestL0WorldProps honestL0Part honestL0Proof honestL1PFSpec
-  honestEchoL0Prog honestEchoL0Main ffiSpikeDivMain
+  honestEchoL0Prog honestEchoL0Main ffiSpikeDivMain honestL0Fdok honestL1PFRefine
 Libs
   preamble basis cfDivLib cfTacticsLib ml_progLib basisFunctionsLib
 
@@ -122,46 +124,59 @@ Proof
   gvs[enc_listen_fail_def, listen_fd_def, l0_res_of_def, dec_res_def, AllCaseEqs()]
 QED
 
-(* The listen fails: the program terminates after the one event *)
-Theorem echo_l0_fail_semantics:
+(* sys_fdok always returns *)
+Theorem fdok_SOME:
+  ∃out w1 ev. l0_do «sys_fdok» [f] 1 w = SOME (out, w1, ev)
+Proof
+  simp[fdok_do]
+QED
+
+(* main returns with the events evs: the program terminates with them *)
+Theorem echo_l0_term_semantics[local]:
   l0_rely w0 ∧ w0.hist = [] ∧
-  sys_listen_echo w0 = SOME (out, w1, ev) ∧ listen_fd out = NONE ⇒
+  (∀uv. UNIT_TYPE () uv ⇒
+        app (l0_proj w0) main_v [uv] (L0_EV w0 w0 [])
+          (POSTv v. &UNIT_TYPE () v * L0_EV w0 w1 evs)) ⇒
   semantics_dec_list (init_state (l0_ffi w0)) init_env echo_l0_prog
-    (Terminate Success [ev])
+    (Terminate Success evs)
 Proof
   strip_tac >> assume_tac Decls_th >>
   drule call_main_thm2 >>
   Cases_on ‘l0_proj w0’ >> rename1 ‘l0_proj w0 = (pj1, pj2)’ >>
   assume_tac st2_ffi >> drule l0_init_heap >> simp[] >> strip_tac >>
   disch_then (qspecl_then [‘pj2’, ‘pj1’, ‘h2’, ‘h1’, ‘main_v’, ‘«main»’,
-                           ‘L0_EV w0 w1 [ev]’, ‘L0_EV w0 w0 []’] mp_tac) >>
+                           ‘L0_EV w0 w1 evs’, ‘L0_EV w0 w0 []’] mp_tac) >>
   impl_tac
   >- (gvs[lookup_var_def, lookup_main, FFI_part_hprop_L0_EV] >>
-      irule main_fail_spec >> simp[UNIT_TYPE_def] >> metis_tac[]) >>
+      first_x_assum irule >> simp[UNIT_TYPE_def]) >>
   strip_tac >>
   ‘limited_parts l0_names (pj1,pj2)’ by metis_tac[limited_parts_l0] >>
   qpat_x_assum ‘L0_EV _ _ _ h3’ mp_tac >>
   simp[L0_EV_def, STAR_def, one_def, cond_def, SPLIT_def] >> strip_tac >>
-  ‘FFI_part (l0_enc w0 w1) (l0_next w0) l0_names [ev] ∈ st2heap (pj1,pj2) st3’
+  ‘FFI_part (l0_enc w0 w1) (l0_next w0) l0_names evs ∈ st2heap (pj1,pj2) st3’
     by (gvs[SPLIT3_def, EXTENSION] >> metis_tac[]) >>
   drule_all limited_FFI_part_IN_st2heap_IMP >> strip_tac >>
   gvs[echo_l0_prog_def, main_call_def]
 QED
 
-(* The listen succeeds with a small listener fd: the program diverges with
-   the listen event, then the prefetching L1 loop's rounds *)
+(* The stdio fds are open and the listen succeeds with a small listener
+   fd: the program diverges with the four events, then the prefetching L1
+   loop's rounds *)
 Theorem echo_l0_div_semantics:
   l0_rely w0 ∧ w0.hist = [] ∧
-  sys_listen_echo w0 = SOME (out, w1, ev) ∧ listen_fd out = SOME k ∧ k < 2147483648 ⇒
+  l0_do «sys_fdok» [0w] 1 w0 = SOME (o0, w1, e0) ∧
+  l0_do «sys_fdok» [1w] 1 w1 = SOME (o1, w2, e1) ∧
+  l0_do «sys_fdok» [2w] 1 w2 = SOME (o2, w3, e2) ∧ stdio_all o0 o1 o2 ∧
+  sys_listen_echo w3 = SOME (out, w4, ev) ∧ listen_fd out = SOME k ∧ k < 2147483648 ⇒
   semantics_dec_list (init_state (l0_ffi w0)) init_env echo_l0_prog
-    (Diverge (LCONS ev (echo_l0_run k w1)))
+    (Diverge (LAPPEND (fromList [e0; e1; e2; ev]) (echo_l0_run k w4)))
 Proof
   strip_tac >> assume_tac Decls_th >>
   drule call_main_thm_div >>
   Cases_on ‘l0_proj w0’ >> rename1 ‘l0_proj w0 = (pj1, pj2)’ >>
   assume_tac st2_ffi >> drule l0_init_heap >> simp[] >> strip_tac >>
   disch_then (qspecl_then [‘pj2’, ‘pj1’, ‘h2’, ‘h1’, ‘main_v’, ‘«main»’,
-                           ‘λio. io = LCONS ev (echo_l0_run k w1)’,
+                           ‘λio. io = LAPPEND (fromList [e0; e1; e2; ev]) (echo_l0_run k w4)’,
                            ‘L0_EV w0 w0 []’] mp_tac) >>
   impl_tac
   >- (gvs[lookup_var_def, lookup_main] >>
@@ -180,24 +195,48 @@ Proof
   REWRITE_TAC [echo_l0_prog_eq, prog_syntax_ok_def] >> EVAL_TAC
 QED
 
-(* MAIN (P3 semantics): from a startup world, the program listens; if that
-   fails it terminates after the one event, else it diverges with the
-   listen event then the prefetching L1 loop's rounds, running the echo
-   server on the returned listener fd k *)
+(* MAIN (P3 semantics): from a startup world, the program calls sys_fdok
+   on fds 0, 1 and 2; if one is closed it terminates after the three
+   events.  Else it listens; if that fails it terminates after the four
+   events, else it diverges with the four events then the prefetching L1
+   loop's rounds, running the echo server on the returned listener fd k *)
 Theorem echo_l0_semantics_prog:
   l0_rely w0 ∧ w0.hist = [] ⇒
-  ∃out w1 ev.
-    sys_listen_echo w0 = SOME (out, w1, ev) ∧
-    ((listen_fd out = NONE ∧
-      semantics_prog (init_state (l0_ffi w0)) init_env echo_l0_prog (Terminate Success [ev])) ∨
-     (∃k. listen_fd out = SOME k ∧
+  ∃o0 w1 e0 o1 w2 e1 o2 w3 e2.
+    l0_do «sys_fdok» [0w] 1 w0 = SOME (o0, w1, e0) ∧
+    l0_do «sys_fdok» [1w] 1 w1 = SOME (o1, w2, e1) ∧
+    l0_do «sys_fdok» [2w] 1 w2 = SOME (o2, w3, e2) ∧
+    ((¬stdio_all o0 o1 o2 ∧
+      semantics_prog (init_state (l0_ffi w0)) init_env echo_l0_prog
+        (Terminate Success [e0; e1; e2])) ∨
+     (stdio_all o0 o1 o2 ∧
+      ∃out w4 ev.
+        sys_listen_echo w3 = SOME (out, w4, ev) ∧
+        ((listen_fd out = NONE ∧
           semantics_prog (init_state (l0_ffi w0)) init_env echo_l0_prog
-            (Diverge (LCONS ev (echo_l0_run k w1)))))
+            (Terminate Success [e0; e1; e2; ev])) ∨
+         (∃k. listen_fd out = SOME k ∧
+              semantics_prog (init_state (l0_ffi w0)) init_env echo_l0_prog
+                (Diverge (LAPPEND (fromList [e0; e1; e2; ev]) (echo_l0_run k w4)))))))
 Proof
   strip_tac >>
-  qspec_then ‘w0’ strip_assume_tac (Q.GEN ‘w’ sys_listen_echo_SOME) >>
+  qspecl_then [‘0w’, ‘w0’] strip_assume_tac (Q.GENL [‘f’, ‘w’] fdok_SOME) >>
+  rename1 ‘l0_do _ _ _ w0 = SOME (o0, w1, e0)’ >>
+  qspecl_then [‘1w’, ‘w1’] strip_assume_tac (Q.GENL [‘f’, ‘w’] fdok_SOME) >>
+  rename1 ‘l0_do _ _ _ w1 = SOME (o1, w2, e1)’ >>
+  qspecl_then [‘2w’, ‘w2’] strip_assume_tac (Q.GENL [‘f’, ‘w’] fdok_SOME) >>
+  rename1 ‘l0_do _ _ _ w2 = SOME (o2, w3, e2)’ >>
+  qexistsl [‘o0’, ‘w1’, ‘e0’, ‘o1’, ‘w2’, ‘e1’, ‘o2’, ‘w3’, ‘e2’] >> simp[] >>
   simp[GSYM (MATCH_MP prog_syntax_ok_semantics echo_l0_prog_syntax_ok)] >>
-  Cases_on ‘listen_fd out’ >> simp[]
-  >- (irule echo_l0_fail_semantics >> simp[] >> metis_tac[]) >>
-  irule echo_l0_div_semantics >> simp[] >> metis_tac[listen_fd_small]
+  Cases_on ‘stdio_all o0 o1 o2’ >> simp[]
+  >- (‘l0_rely w3’ by metis_tac[l0_do_rely] >>
+      qspec_then ‘w3’ strip_assume_tac (Q.GEN ‘w’ sys_listen_echo_SOME) >>
+      qexistsl [‘out’, ‘w1'’, ‘ev’] >> simp[] >>
+      Cases_on ‘listen_fd out’ >> simp[]
+      >- (irule echo_l0_term_semantics >> simp[] >> qexists_tac ‘w1'’ >>
+          rpt strip_tac >> irule main_fail_spec >> simp[] >> metis_tac[]) >>
+      irule (SIMP_RULE (srw_ss()) [] echo_l0_div_semantics) >> simp[] >>
+      metis_tac[listen_fd_small]) >>
+  irule echo_l0_term_semantics >> simp[] >> qexists_tac ‘w3’ >>
+  rpt strip_tac >> irule main_stdio_spec >> simp[] >> metis_tac[]
 QED

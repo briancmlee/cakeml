@@ -418,7 +418,14 @@ Proof
   rw[l0_topo_ev_def] >> metis_tac[]
 QED
 
-(* The stop branch's one event, a failed listen, is within the topology *)
+(* The stop branches' events, the sys_fdok checks and a failed listen, are
+   within the topology *)
+Theorem topo_stdio_open:
+  stdio_open pre ⇒ EVERY (l0_topo_ev port) pre
+Proof
+  rw[stdio_open_def] >> simp[l0_topo_ev_def]
+QED
+
 Theorem topo_listen_failed:
   l0_listen_failed ev ⇒ l0_topo_ev port ev
 Proof

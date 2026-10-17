@@ -745,10 +745,10 @@ Theorem plevs_pacts:
   plevs (MAP SND (pacts lfd b hw st rdy)) = FLAT (MAP popen st.pc)
 Proof
   ONCE_REWRITE_TAC [pacts_SND] >> simp[] >>
-  ‘∀p. plevs (pone b hw st.lv (MAP SND st.last) (FLAT (MAP pwrites st.pc)) rdy p) = []’
+  ‘∀p. plevs (pone b hw st.lv (MAP SND st.last) (FLAT (MAP pwrites st.pc)) rdy st.pc p) = []’
     by (gen_tac >> irule plevs_none >>
         assume_tac (Q.INST [‘lvs’ |-> ‘(st : pst).lv’, ‘lw’ |-> ‘MAP SND (st : pst).last’,
-                            ‘nw’ |-> ‘FLAT (MAP pwrites (st : pst).pc)’] pone_noLevel) >>
+                            ‘nw’ |-> ‘FLAT (MAP pwrites (st : pst).pc)’, ‘opc’ |-> ‘(st : pst).pc’] pone_noLevel) >>
         fs[EVERY_MEM]) >>
   ‘∀p. plevs (plevels p) = popen p’
     by (simp[plevels_def] >> gen_tac >> qspec_tac (‘popen p’, ‘l’) >> Induct >> simp[]) >>
@@ -1086,16 +1086,16 @@ QED
 Theorem seltag_pacts:
   i < LENGTH st.pc ⇒
   seltag i (pacts lfd b hw st rdy) =
-  MAP (λx. (i, x)) (pone b hw st.lv (MAP SND st.last) (FLAT (MAP pwrites st.pc)) rdy (EL i st.pc))
+  MAP (λx. (i, x)) (pone b hw st.lv (MAP SND st.last) (FLAT (MAP pwrites st.pc)) rdy st.pc (EL i st.pc))
 Proof
   strip_tac >> simp[pacts_def, pall_pupto, seltag_pupto] >>
   ‘FILTER pnl (plevels (EL i st.pc)) = []’
     by simp[FILTER_EQ_NIL, plevels_def, EVERY_MAP, pnl_def] >>
-  ‘FILTER pnl (pone b hw st.lv (MAP SND st.last) (FLAT (MAP pwrites st.pc)) rdy (EL i st.pc)) =
-   pone b hw st.lv (MAP SND st.last) (FLAT (MAP pwrites st.pc)) rdy (EL i st.pc)’
+  ‘FILTER pnl (pone b hw st.lv (MAP SND st.last) (FLAT (MAP pwrites st.pc)) rdy st.pc (EL i st.pc)) =
+   pone b hw st.lv (MAP SND st.last) (FLAT (MAP pwrites st.pc)) rdy st.pc (EL i st.pc)’
     by (simp[FILTER_EQ_ID] >>
         assume_tac (Q.INST [‘lvs’ |-> ‘(st : pst).lv’, ‘lw’ |-> ‘MAP SND (st : pst).last’,
-                            ‘nw’ |-> ‘FLAT (MAP pwrites (st : pst).pc)’,
+                            ‘nw’ |-> ‘FLAT (MAP pwrites (st : pst).pc)’, ‘opc’ |-> ‘(st : pst).pc’,
                             ‘p’ |-> ‘EL i (st : pst).pc’] pone_noLevel) >>
         fs[EVERY_MEM, pnl_def]) >>
   rw[pnl_def]
@@ -1148,16 +1148,16 @@ Proof
 QED
 
 Theorem fold_pone:
-  p.bh = SOME c ∧ c ≠ p.fh ∧ LENGTH rs = LENGTH (pone b hw lvs lw nw rdy p) ∧
-  wfull (pone b hw lvs lw nw rdy p) rs ⇒
-  (FOLDL presf p (ZIP (pone b hw lvs lw nw rdy p, rs))).bh = p.bh ∧
-  (p.bo ⇒ (FOLDL presf p (ZIP (pone b hw lvs lw nw rdy p, rs))).fq =
-          hl_read p.fh (ZIP (pone b hw lvs lw nw rdy p, rs))) ∧
-  (p.fo ⇒ (FOLDL presf p (ZIP (pone b hw lvs lw nw rdy p, rs))).bq =
-          hl_read c (ZIP (pone b hw lvs lw nw rdy p, rs)))
+  p.bh = SOME c ∧ c ≠ p.fh ∧ LENGTH rs = LENGTH (pone b hw lvs lw nw rdy opc p) ∧
+  wfull (pone b hw lvs lw nw rdy opc p) rs ⇒
+  (FOLDL presf p (ZIP (pone b hw lvs lw nw rdy opc p, rs))).bh = p.bh ∧
+  (p.bo ⇒ (FOLDL presf p (ZIP (pone b hw lvs lw nw rdy opc p, rs))).fq =
+          hl_read p.fh (ZIP (pone b hw lvs lw nw rdy opc p, rs))) ∧
+  (p.fo ⇒ (FOLDL presf p (ZIP (pone b hw lvs lw nw rdy opc p, rs))).bq =
+          hl_read c (ZIP (pone b hw lvs lw nw rdy opc p, rs)))
 Proof
   strip_tac >>
-  ‘pone b hw lvs lw nw rdy p = pwrites p ++ preads hw lvs lw nw rdy p’
+  ‘pone b hw lvs lw nw rdy opc p = pwrites p ++ preads hw lvs lw nw rdy p’
     by simp[pone_def, pconnects_def] >>
   pop_assum (fn th => RULE_ASSUM_TAC (REWRITE_RULE [th]) >> REWRITE_TAC [th]) >>
   qabbrev_tac ‘rs1 = TAKE (LENGTH (pwrites p)) rs’ >>
@@ -1245,7 +1245,7 @@ Proof
   qspecl_then [‘ts’, ‘PS lfd b hw lv W0 n with lv := []’, ‘s.results’] mp_tac
     (Q.GEN ‘i’ pupd_slot |> Q.SPEC ‘i’) >>
   impl_tac >- simp[] >> simp[] >> disch_then (fn th => REWRITE_TAC [th]) >>
-  qabbrev_tac ‘P = pone b hw st'.lv (MAP SND st'.last) (FLAT (MAP pwrites st'.pc)) rdy p0’ >>
+  qabbrev_tac ‘P = pone b hw st'.lv (MAP SND st'.last) (FLAT (MAP pwrites st'.pc)) rdy st'.pc p0’ >>
   ‘seltag i ts = MAP (λx. (i, x)) P’
     by (qunabbrev_tac ‘ts’ >> asm_rewrite_tac [] >>
         ‘i < LENGTH st'.pc’ by simp[] >> drule seltag_pacts >> simp[Abbr ‘P’, Abbr ‘p0’]) >>

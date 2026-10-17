@@ -1325,7 +1325,7 @@ QED
 (* A pair's actions of the round can be taken one after the other *)
 Theorem pone_ok:
   prel lfd st rdy ps w hs ∧ k < LENGTH st.pc ⇒
-  pseq_ok b rdy st k (pone b hw lvs lw nw rdy (EL k st.pc))
+  pseq_ok b rdy st k (pone b hw lvs lw nw rdy opc (EL k st.pc))
 Proof
   strip_tac >>
   ‘pok w hs ps rdy (EL k st.pc)’ by (irule prel_pok >> metis_tac[]) >>
@@ -1333,7 +1333,8 @@ Proof
   Cases_on ‘p.bh’
   >- (‘p.bq = []’ by fs[pok_def] >>
       simp[pone_def, pconnects_def, pwrites_def, preads_def] >>
-      irule pseq_ok_one >> simp[pstep_ok_def]) >>
+      IF_CASES_TAC >- (irule pseq_ok_one >> simp[pstep_ok_def]) >>
+      simp[pseq_ok_def]) >>
   rename1 ‘p.bh = SOME c’ >>
   simp[pone_def, pconnects_def, pwrites_def, preads_def] >>
   rw[] >>
@@ -1393,7 +1394,7 @@ Proof
 QED
 
 Theorem pone_noLevel:
-  EVERY (λx. (∀l. x ≠ ELevel l) ∧ (∀l. x ≠ EAccept l)) (pone b hw lvs lw nw rdy p)
+  EVERY (λx. (∀l. x ≠ ELevel l) ∧ (∀l. x ≠ EAccept l)) (pone b hw lvs lw nw rdy opc p)
 Proof
   rw[pone_def, pconnects_def, pwrites_def, preads_def] >> every_case_tac >> rw[]
 QED
@@ -1459,8 +1460,8 @@ QED
 Theorem pone_connect_shape:
   pok w hs ps rdy p ⇒
   ∀b hw lvs lw nw rdy'.
-  EVERY (λx. ∀a. x ≠ EConnect a) (pone b hw lvs lw nw rdy' p) ∨
-  p.bh = NONE ∧ ∃a. pone b hw lvs lw nw rdy' p = [EConnect a]
+  EVERY (λx. ∀a. x ≠ EConnect a) (pone b hw lvs lw nw rdy' opc p) ∨
+  p.bh = NONE ∧ ∃a. pone b hw lvs lw nw rdy' opc p = [EConnect a]
 Proof
   strip_tac >> rpt gen_tac >>
   rw[pone_def, pconnects_def, pwrites_def, preads_def] >> Cases_on ‘p.bh’ >> fs[pok_def] >>
@@ -1472,30 +1473,30 @@ Theorem prel_pairs:
   (∀j. j < LENGTH pc0 ⇒ EL j st.pc = EL j pc0) ⇒
   ∀m. m ≤ LENGTH pc0 ⇒
     ∃rs w1 hs1.
-      ehacts lfd lv n ix (w, hs) (MAP SND (pupto (pone b hw lvs lw nw rdy) pc0 m)) =
+      ehacts lfd lv n ix (w, hs) (MAP SND (pupto (pone b hw lvs lw nw rdy opc) pc0 m)) =
         SOME (rs, (w1, hs1)) ∧
-      LENGTH rs = LENGTH (pupto (pone b hw lvs lw nw rdy) pc0 m) ∧
-      wfull (MAP SND (pupto (pone b hw lvs lw nw rdy) pc0 m)) rs ∧
-      prel lfd (pupd st (pupto (pone b hw lvs lw nw rdy) pc0 m) rs) rdy
-        (ps ++ ZIP (MAP SND (pupto (pone b hw lvs lw nw rdy) pc0 m), rs)) w1 hs1 ∧
-      LENGTH (pupd st (pupto (pone b hw lvs lw nw rdy) pc0 m) rs).pc = LENGTH st.pc ∧
+      LENGTH rs = LENGTH (pupto (pone b hw lvs lw nw rdy opc) pc0 m) ∧
+      wfull (MAP SND (pupto (pone b hw lvs lw nw rdy opc) pc0 m)) rs ∧
+      prel lfd (pupd st (pupto (pone b hw lvs lw nw rdy opc) pc0 m) rs) rdy
+        (ps ++ ZIP (MAP SND (pupto (pone b hw lvs lw nw rdy opc) pc0 m), rs)) w1 hs1 ∧
+      LENGTH (pupd st (pupto (pone b hw lvs lw nw rdy opc) pc0 m) rs).pc = LENGTH st.pc ∧
       (∀j. m ≤ j ∧ j < LENGTH pc0 ⇒
-           EL j (pupd st (pupto (pone b hw lvs lw nw rdy) pc0 m) rs).pc = EL j pc0) ∧
-      (pupd st (pupto (pone b hw lvs lw nw rdy) pc0 m) rs).lv = st.lv ∧
-      (pupd st (pupto (pone b hw lvs lw nw rdy) pc0 m) rs).last = st.last ∧
-      pkeep st.pc (pupd st (pupto (pone b hw lvs lw nw rdy) pc0 m) rs).pc
+           EL j (pupd st (pupto (pone b hw lvs lw nw rdy opc) pc0 m) rs).pc = EL j pc0) ∧
+      (pupd st (pupto (pone b hw lvs lw nw rdy opc) pc0 m) rs).lv = st.lv ∧
+      (pupd st (pupto (pone b hw lvs lw nw rdy opc) pc0 m) rs).last = st.last ∧
+      pkeep st.pc (pupd st (pupto (pone b hw lvs lw nw rdy opc) pc0 m) rs).pc
 Proof
   strip_tac >> Induct
   >- (simp[pupto_def, ehacts_def, pupd_def, wfull_def]) >>
   strip_tac >> fs[] >>
-  qabbrev_tac ‘F' = pone b hw lvs lw nw rdy’ >>
+  qabbrev_tac ‘F' = pone b hw lvs lw nw rdy opc’ >>
   qabbrev_tac ‘st1 = pupd st (pupto F' pc0 m) rs’ >>
   ‘m < LENGTH st1.pc ∧ EL m st1.pc = EL m pc0’ by simp[] >>
   ‘pseq_ok b rdy st1 m (F' (EL m pc0))’
     by (qpat_x_assum ‘EL m st1.pc = _’ (SUBST1_TAC o SYM) >> qunabbrev_tac ‘F'’ >>
         irule pone_ok >> conj_tac >- simp[] >>
         qexistsl_tac [‘hs1’, ‘lfd’,
-                      ‘ps ++ ZIP (MAP SND (pupto (pone b hw lvs lw nw rdy) pc0 m), rs)’, ‘w1’] >>
+                      ‘ps ++ ZIP (MAP SND (pupto (pone b hw lvs lw nw rdy opc) pc0 m), rs)’, ‘w1’] >>
         first_assum ACCEPT_TAC) >>
   drule_all prel_seq >>
   disch_then (qspecl_then [‘n’, ‘lv’, ‘ix + LENGTH (pupto F' pc0 m)’] strip_assume_tac) >>
@@ -1578,7 +1579,7 @@ Proof
   strip_tac >>
   qabbrev_tac ‘L = pall plevels st'.pc’ >>
   qabbrev_tac ‘Acc = if 2 * LENGTH st'.pc + 2 ≤ cbound then [(0n, EAccept lfd)] else []’ >>
-  qabbrev_tac ‘F' = pone b hw st'.lv (MAP SND st'.last) (FLAT (MAP pwrites st'.pc)) rdy’ >>
+  qabbrev_tac ‘F' = pone b hw st'.lv (MAP SND st'.last) (FLAT (MAP pwrites st'.pc)) rdy st'.pc’ >>
   ‘pacts lfd b hw st' rdy = L ++ Acc ++ pupto F' st'.pc (LENGTH st'.pc)’
     by simp[pacts_def, Abbr ‘L’, Abbr ‘Acc’, Abbr ‘F'’, pall_pupto] >>
   pop_assum SUBST1_TAC >>
@@ -1613,7 +1614,7 @@ Proof
                   ‘ix’ |-> ‘LENGTH (L : (num # eact) list) + LENGTH (Acc : (num # eact) list)’,
                   ‘lvs’ |-> ‘(st' : pst).lv’,
                   ‘lw’ |-> ‘MAP SND (st' : pst).last’,
-                  ‘nw’ |-> ‘FLAT (MAP pwrites (st' : pst).pc)’] prel_pairs) >>
+                  ‘nw’ |-> ‘FLAT (MAP pwrites (st' : pst).pc)’, ‘opc’ |-> ‘(st' : pst).pc’] prel_pairs) >>
   impl_tac >- simp[Abbr ‘st2’, Abbr ‘ps2’] >>
   disch_then (qspec_then ‘LENGTH (st' : pst).pc’ mp_tac) >> simp[] >> strip_tac >>
   qabbrev_tac ‘P = pupto F' st'.pc (LENGTH st'.pc)’ >>

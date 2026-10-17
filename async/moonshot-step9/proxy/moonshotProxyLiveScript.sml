@@ -331,11 +331,21 @@ Proof
   Cases_on ‘FILTER P l’ >> gvs[]
 QED
 
-(* A round in which pair i has no backend, before and after, has a
-   connect that returned no socket *)
+Theorem FIND_first:
+  ∀l i. i < LENGTH l ∧ P (EL i l) ∧ (∀j. j < i ⇒ ¬P (EL j l)) ⇒ FIND P l = SOME (EL i l)
+Proof
+  Induct >> simp[FIND_thm] >> rpt strip_tac >> Cases_on ‘i’ >> fs[] >>
+  ‘¬P h’ by (first_x_assum (qspec_then ‘0’ mp_tac) >> simp[]) >> simp[] >>
+  first_x_assum irule >> simp[] >> rpt strip_tac >>
+  first_x_assum (qspec_then ‘SUC j’ mp_tac) >> simp[]
+QED
+
+(* A round in which pair i has no backend, before and after, and is the
+   oldest such pair (E4), has a connect that returned no socket *)
 Theorem proxy_connect_round:
   proxy_world lfd a W0 ∧ i < LENGTH (PS lfd b hw lv W0 m).pc ∧
   (EL i (PS lfd b hw lv W0 m).pc).bh = NONE ∧
+  (∀j. j < i ⇒ (EL j (PS lfd b hw lv W0 m).pc).bh ≠ NONE) ∧
   (EL i (PS lfd b hw lv W0 (SUC m)).pc).bh = NONE ⇒
   hl_nosock (hl_pairs (pprog lfd b hw) (PH lfd b hw lv W0 m)) <
   hl_nosock (hl_pairs (pprog lfd b hw) (PH lfd b hw lv W0 (SUC m)))
@@ -365,6 +375,15 @@ Proof
     by (qunabbrev_tac ‘ts’ >> asm_rewrite_tac [] >>
         ‘i < LENGTH st'.pc’ by simp[] >> drule seltag_pacts >> disch_then (fn th => REWRITE_TAC [th]) >>
         ‘EL i st'.pc = p0’ by simp[Abbr ‘p0’] >> asm_rewrite_tac [] >>
+        ‘FIND (λq. q.bh = NONE) st'.pc = SOME p0’
+          by (qpat_x_assum ‘EL i st'.pc = p0’ (SUBST1_TAC o SYM) >> irule FIND_first >>
+              qpat_x_assum ‘st'.pc = _’ SUBST1_TAC >> BETA_TAC >> rpt conj_tac
+              >- (qpat_x_assum ‘Abbrev (p0 = _)’
+                    (SUBST1_TAC o SYM o REWRITE_RULE [markerTheory.Abbrev_def]) >>
+                  first_assum ACCEPT_TAC)
+              >- first_assum ACCEPT_TAC >>
+              first_assum ACCEPT_TAC) >>
+        qpat_x_assum ‘st'.pc = _’ (fn th => RULE_ASSUM_TAC (REWRITE_RULE [th])) >>
         simp[pone_def, pconnects_def, pwrites_def, preads_def]) >>
   ‘LENGTH (selres i ts rs) = 1’
     by (‘LENGTH (selres i ts rs) = LENGTH (seltag i ts)’ by (irule LENGTH_selres >> simp[]) >>
@@ -381,11 +400,12 @@ Proof
   irule MEM_FILTER_LENGTH >> qexists_tac ‘(EConnect b, EConnected NONE)’ >> simp[]
 QED
 
-(* So, if pair i never gets a backend, connects return no socket without
-   bound *)
-Theorem proxy_connect_forever:
+(* So, if pair i never gets a backend and the older pairs have theirs,
+   connects return no socket without bound *)
+Theorem proxy_connect_forever_oldest:
   proxy_world lfd a W0 ∧ i < LENGTH (PS lfd b hw lv W0 n).pc ∧
-  (∀m. n ≤ m ⇒ (EL i (PS lfd b hw lv W0 m).pc).bh = NONE) ⇒
+  (∀m. n ≤ m ⇒ (EL i (PS lfd b hw lv W0 m).pc).bh = NONE) ∧
+  (∀m j. n ≤ m ∧ j < i ⇒ (EL j (PS lfd b hw lv W0 m).pc).bh ≠ NONE) ⇒
   ∀k. ∃n'. k ≤ hl_nosock (hl_pairs (pprog lfd b hw) (PH lfd b hw lv W0 n'))
 Proof
   strip_tac >>
@@ -400,10 +420,67 @@ Proof
           by (mp_tac (Q.INST [‘m’ |-> ‘n + d’] proxy_connect_round) >>
               impl_tac >- (rpt conj_tac >>
                            FIRST [first_assum ACCEPT_TAC, first_assum (qspec_then ‘d’ ACCEPT_TAC),
-                                  qpat_assum ‘∀m. n ≤ m ⇒ _’ irule >> simp[]]) >>
+                                  qpat_assum ‘∀m. n ≤ m ⇒ _’ irule >> simp[],
+                                  rpt strip_tac >> first_x_assum (qspecl_then [‘n + d’, ‘j’] mp_tac) >>
+                                  simp[]]) >>
               simp[]) >>
         fs[ADD_CLAUSES]) >>
   gen_tac >> qexists_tac ‘n + k’ >> simp[]
+QED
+
+(* A backend, once there, stays *)
+Theorem bh_persist:
+  proxy_world lfd a W0 ∧ j < LENGTH (PS lfd b hw lv W0 m0).pc ∧
+  (EL j (PS lfd b hw lv W0 m0).pc).bh ≠ NONE ∧ m0 ≤ m ⇒
+  (EL j (PS lfd b hw lv W0 m).pc).bh ≠ NONE
+Proof
+  strip_tac >>
+  ‘pkeep (PS lfd b hw lv W0 m0).pc (PS lfd b hw lv W0 m).pc’
+    by (irule pc_mono >> simp[] >> qexists_tac ‘a’ >> simp[]) >>
+  Cases_on ‘(EL j (PS lfd b hw lv W0 m0).pc).bh’ >- fs[] >>
+  drule_all pkeep_EL >> simp[]
+QED
+
+(* E4: if pair i never gets a backend, the oldest pair that never does is
+   from some round the oldest without one, so connects return no socket
+   without bound *)
+Theorem proxy_connect_forever:
+  proxy_world lfd a W0 ∧ i < LENGTH (PS lfd b hw lv W0 n).pc ∧
+  (∀m. n ≤ m ⇒ (EL i (PS lfd b hw lv W0 m).pc).bh = NONE) ⇒
+  ∀k. ∃n'. k ≤ hl_nosock (hl_pairs (pprog lfd b hw) (PH lfd b hw lv W0 n'))
+Proof
+  strip_tac >>
+  ‘∃j. j ≤ i ∧ (∀m. n ≤ m ⇒ (EL j (PS lfd b hw lv W0 m).pc).bh = NONE) ∧
+       ∀j'. j' < j ⇒ ∃m. n ≤ m ∧ (EL j' (PS lfd b hw lv W0 m).pc).bh ≠ NONE’
+    by (qspec_then ‘λj. j ≤ i ∧ ∀m. n ≤ m ⇒ (EL j (PS lfd b hw lv W0 m).pc).bh = NONE’ mp_tac
+          arithmeticTheory.WOP >>
+        impl_tac >- (simp[] >> qexists_tac ‘i’ >> simp[]) >>
+        simp[] >> strip_tac >> qexists_tac ‘n'’ >> simp[] >> rpt strip_tac >>
+        first_x_assum (qspec_then ‘j'’ mp_tac) >> simp[]) >>
+  ‘∀j'. j' ≤ i ⇒ ∀m. n ≤ m ⇒ j' < LENGTH (PS lfd b hw lv W0 m).pc’
+    by (rpt strip_tac >> irule (cj 1 pkeep_EL) >>
+        qexists_tac ‘(PS lfd b hw lv W0 n).pc’ >> simp[] >>
+        irule pc_mono >> simp[] >> qexists_tac ‘a’ >> simp[]) >>
+  ‘∀k. k ≤ j ⇒ ∃N. n ≤ N ∧ ∀m j'. N ≤ m ∧ j' < k ⇒ (EL j' (PS lfd b hw lv W0 m).pc).bh ≠ NONE’
+    by (Induct >- (strip_tac >> qexists_tac ‘n’ >> simp[]) >>
+        strip_tac >> ‘k ≤ j’ by simp[] >>
+        first_x_assum drule >> strip_tac >>
+        ‘∃m0. n ≤ m0 ∧ (EL k (PS lfd b hw lv W0 m0).pc).bh ≠ NONE’
+          by (first_x_assum irule >> simp[]) >>
+        qexists_tac ‘MAX N m0’ >> simp[] >> rpt gen_tac >> strip_tac >>
+        Cases_on ‘j' < k’ >- (qpat_x_assum ‘∀m j'. N ≤ m ∧ _ ⇒ _’ irule >> simp[]) >>
+        ‘j' = k’ by simp[] >> gvs[] >>
+        irule bh_persist >> conj_tac
+        >- (qexists_tac ‘m0’ >> simp[] >>
+            qpat_x_assum ‘∀j'. j' ≤ i ⇒ _’ irule >> simp[]) >>
+        qexists_tac ‘a’ >> first_assum ACCEPT_TAC) >>
+  first_x_assum (qspec_then ‘j’ mp_tac) >> simp[] >> strip_tac >>
+  irule proxy_connect_forever_oldest >> conj_tac
+  >- (qexistsl_tac [‘j’, ‘N’] >> rpt conj_tac
+      >- first_assum ACCEPT_TAC
+      >- (rpt strip_tac >> qpat_x_assum ‘∀m. n ≤ m ⇒ _ = NONE’ irule >> simp[])
+      >> qpat_x_assum ‘∀j'. j' ≤ i ⇒ _’ irule >> simp[]) >>
+  qexists_tac ‘a’ >> first_assum ACCEPT_TAC
 QED
 
 (* ------------------------------------------------------------------------
@@ -480,7 +557,7 @@ Theorem pacts_reads_back:
   MEM (ERead c pread) (MAP SND (pacts lfd b hw st rdy))
 Proof
   strip_tac >>
-  ‘MEM (ERead c pread) (pone b hw st.lv (MAP SND st.last) (FLAT (MAP pwrites st.pc)) rdy (EL i st.pc))’
+  ‘MEM (ERead c pread) (pone b hw st.lv (MAP SND st.last) (FLAT (MAP pwrites st.pc)) rdy st.pc (EL i st.pc))’
     by fs[pone_def, preads_def] >>
   ONCE_REWRITE_TAC [pacts_SND] >> simp[MEM_FLAT, MEM_MAP, PULL_EXISTS] >> metis_tac[EL_MEM]
 QED

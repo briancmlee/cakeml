@@ -3,7 +3,8 @@
   endpoint handle layer, against proxyHLStmts (revision 3).
 
   The proxy accepts fronts on its listener lfd and gives each its own
-  backend, a connect to address b (retried while it gets no socket).
+  backend, a connect to address b (retried while it gets no socket; one
+  connect per round, for the oldest pair still without a backend, E4).
   Pair i holds:
    - fh, fo: the front's handle, and whether it is open;
    - bh, bo, bup: the backend's handle (once connected), whether it is
@@ -12,7 +13,8 @@
    - bq: bytes read from the backend, not yet written to the front.
   Each round: the Level of every open handle; an accept (while handles
   last: two per pair, below cbound); then pair by pair:
-   - a connect, if the pair has no backend;
+   - a connect, if the pair has no backend and is the oldest such pair
+     (E4: one connect per round);
    - the writes of fq and bq (the relay lags one round);
    - the reads, each behind the CREDIT GATE: a handle is read only if its
      partner's Level, answered in the last round, plus the bytes written to
@@ -69,8 +71,12 @@ Definition plevels_def:
   plevels p = MAP ELevel (popen p)
 End
 
+(* E4 (moonshot-live, option (i)): one connect per round, for the OLDEST
+   pair without a backend (the first in opc, the round's pairs), so the
+   socket a connect returns goes to that pair *)
 Definition pconnects_def:
-  pconnects b p = if p.bh = NONE then [EConnect b] else []
+  pconnects b opc p =
+    if p.bh = NONE ∧ FIND (λq. q.bh = NONE) opc = SOME p then [EConnect b] else []
 End
 
 Definition pwrites_def:
@@ -104,7 +110,7 @@ End
 (* Pair p's actions of the round, after the Levels and the accept: its
    connect, its writes, its reads (nw: all the round's writes) *)
 Definition pone_def:
-  pone b hw lvs lw nw rdy p = pconnects b p ++ pwrites p ++ preads hw lvs lw nw rdy p
+  pone b hw lvs lw nw rdy opc p = pconnects b opc p ++ pwrites p ++ preads hw lvs lw nw rdy p
 End
 
 (* Round actions from state st with the ready handles rdy *)
@@ -112,7 +118,7 @@ Definition pacts_def:
   pacts lfd b hw st (rdy : word64 set) =
     pall plevels st.pc ++
     (if 2 * LENGTH st.pc + 2 ≤ cbound then [(0, EAccept lfd)] else []) ++
-    pall (pone b hw st.lv (MAP SND st.last) (FLAT (MAP pwrites st.pc)) rdy) st.pc
+    pall (pone b hw st.lv (MAP SND st.last) (FLAT (MAP pwrites st.pc)) rdy st.pc) st.pc
 End
 
 (* One result r of action x on pair p *)
@@ -221,7 +227,7 @@ Theorem pacts_SND:
   MAP SND (pacts lfd b hw st rdy) =
   FLAT (MAP plevels st.pc) ++
   ((if 2 * LENGTH st.pc + 2 ≤ cbound then [EAccept lfd] else []) ++
-   FLAT (MAP (pone b hw st.lv (MAP SND st.last) (FLAT (MAP pwrites st.pc)) rdy) st.pc))
+   FLAT (MAP (pone b hw st.lv (MAP SND st.last) (FLAT (MAP pwrites st.pc)) rdy st.pc) st.pc))
 Proof
   simp[pacts_def, pall_SND] >> rw[]
 QED
@@ -257,10 +263,10 @@ QED
 
 (* A round writes only its pairs' writes *)
 Theorem wreq_pone:
-  wreq h (pone b hw lvs lw nw rdy p) = wreq h (pwrites p)
+  wreq h (pone b hw lvs lw nw rdy opc p) = wreq h (pwrites p)
 Proof
   simp[pone_def] >>
-  ‘wreq h (pconnects b p) = 0 ∧ wreq h (preads hw lvs lw nw rdy p) = 0’
+  ‘wreq h (pconnects b opc p) = 0 ∧ wreq h (preads hw lvs lw nw rdy p) = 0’
     by (conj_tac >> irule wreq_nowrite >>
         rw[EVERY_MEM, pconnects_def, preads_def, AllCaseEqs()] >> every_case_tac >> gvs[]) >>
   simp[]

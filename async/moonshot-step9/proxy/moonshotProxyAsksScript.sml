@@ -47,7 +47,7 @@ Theorem pacts_reads_front:
 Proof
   strip_tac >>
   ‘MEM (ERead (EL i st.pc).fh pread)
-     (pone b hw st.lv (MAP SND st.last) (FLAT (MAP pwrites st.pc)) rdy (EL i st.pc))’
+     (pone b hw st.lv (MAP SND st.last) (FLAT (MAP pwrites st.pc)) rdy st.pc (EL i st.pc))’
     by fs[pone_def, preads_def] >>
   ONCE_REWRITE_TAC [pacts_SND] >> simp[MEM_FLAT, MEM_MAP, PULL_EXISTS] >> metis_tac[EL_MEM]
 QED
@@ -60,7 +60,7 @@ Theorem pacts_reads_back_gate:
 Proof
   strip_tac >>
   ‘MEM (ERead c pread)
-     (pone b hw st.lv (MAP SND st.last) (FLAT (MAP pwrites st.pc)) rdy (EL i st.pc))’
+     (pone b hw st.lv (MAP SND st.last) (FLAT (MAP pwrites st.pc)) rdy st.pc (EL i st.pc))’
     by fs[pone_def, preads_def] >>
   ONCE_REWRITE_TAC [pacts_SND] >> simp[MEM_FLAT, MEM_MAP, PULL_EXISTS] >> metis_tac[EL_MEM]
 QED

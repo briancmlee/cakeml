@@ -9,13 +9,15 @@
   event that opened its fd (accept or connect), so both kinds share one
   vocabulary (the pos_ names).  pr p = SOME q: front p's backend is q.
 
-  REVISION 9 (DRAFT, for the challenge round, then the user): a new
-  promise proxy_asks_l0, added to the live block of l0_proxy_claim.
-  moonshot-live's proxy_pair_ob needs the proxy to ASK (a recv, or a poll
-  listing the fd for input) on each end of a pair infinitely often, once
-  the OTHER end drains; no rev 8 clause gives that (proxy_live_l0 relays
-  bytes, but says nothing of asking when nothing arrives).  Every other
-  clause is unchanged.
+  REVISION 9 (statements): a new promise proxy_asks_l0, stated as a
+  SEPARATE claim proxy_asks_claim of the same program (same world class
+  l0_proxy_world, same outcome shape, same pairing pr via proxy_safe_l0).
+  The approved l0_proxy_claim is textually unchanged from rev 8, so no
+  user ruling is needed.  moonshot-live's proxy_pair_ob needs the proxy to
+  ASK (a recv, or a poll listing the fd for input) on each end of a pair
+  infinitely often, once the OTHER end drains; no rev 8 clause gives that
+  (proxy_live_l0 relays bytes, but says nothing of asking when nothing
+  arrives).
 
   REVISION 7 (user rulings):
    - the buffering bound is EXACT, proxy_bnd hw = hw + pf_chunk + pread
@@ -292,6 +294,15 @@ End
    - A-asks-P: the proxy reads the ready backend iff ¬bup ∨ pgate fh,
      with the gate on the FRONT's outbox: the same argument with the front
      draining (drains w0 io c).
+   The escape "either episode ended" is not vacuous: pos_ended needs a
+   close of the fd, or its reissue, which L0 does only after a close; the
+   world never closes a program's fd (D23 marks it timed out, it does not
+   close it).  So only the proxy itself can end an episode, and closing
+   early is what closes_ob ([R3], owed jointly with the close promises
+   above) pins down: the proxy closes a pair only after EOF, break or
+   refusal on it, i.e. a frozen channel.  Until [R3] the program issues no
+   close at all, so pos_ended never holds of it and the claim is proved
+   without that escape.
    Hypotheses used: the live block's (F1_io, F2, accepts_below), and
    connect settling as proxy_pairs_l0 already uses it (conn_fair clause 1;
    on l0sys, D41's F1_connect_sys) *)
@@ -348,6 +359,18 @@ Definition l0_proxy_claim_def:
            ∃io pr. beh = Diverge io ∧ proxy_safe_l0 K hw a b pr io ∧
                    (F1_io io ∧ F2 w0 ∧ accepts_below io ⇒
                     proxy_live_l0 K pr w0 io ∧ proxy_pairs_l0 K pr io ∧
-                    proxy_asks_l0 K pr w0 io ∧
                     (accepts_lt (2 ** 62) io ⇒ conn_live_l0 w0 io)))
+End
+
+(* Revision 9: a separate claim of the same program, with the same world
+   class and outcome shape as l0_proxy_claim; proxy_safe_l0 ties pr to the
+   same pairing.  l0_proxy_claim itself is unchanged. *)
+Definition proxy_asks_claim_def:
+  proxy_asks_claim K hw a b prog ⇔
+    ∀w0. l0_proxy_world w0 ⇒
+      ∃beh. semantics_prog (init_state (l0_ffi w0)) init_env prog beh ∧
+          (stdio_closed beh ∨ proxy_listen_failed beh ∨
+           ∃io pr. beh = Diverge io ∧ proxy_safe_l0 K hw a b pr io ∧
+                   (F1_io io ∧ F2 w0 ∧ accepts_below io ⇒
+                    proxy_asks_l0 K pr w0 io))
 End

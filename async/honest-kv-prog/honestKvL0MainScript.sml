@@ -27,6 +27,12 @@ Proof
   metis_tac[REWRITE_RULE [uses_ok_def] kv_server_uses_ok]
 QED
 
+Theorem kv_port_conf_len:
+  LENGTH kv_port_conf = 2
+Proof
+  EVAL_TAC
+QED
+
 Theorem kv_main_stdio_spec:
   UNIT_TYPE () uv ∧
   l0_do «sys_fdok» [0w] 1 w = SOME (o0, w1, e0) ∧
@@ -67,7 +73,11 @@ Proof
   assume_tac (fetch "honestKvL0Prog" "kv_port_conf_v_thm") >>
   assume_tac (fetch "honestKvL0Prog" "kv_hw_v_thm") >>
   xapp_spec l1_main_div_spec >>
-  simp[wf_relabel, wf_kv_server, kv_pt_ok] >>
-  rpt strip_tac >- (xapp_spec gkv_server_spec >> simp[]) >>
-  metis_tac[]
+  qexistsl [‘emp’, ‘w4’, ‘w0’, ‘w’, ‘srelabel (kv_server k)’, ‘k’, ‘kv_hw’,
+            ‘ev’, ‘e2’, ‘e1’, ‘e0’] >>
+  simp[wf_relabel, wf_kv_server, kv_pt_ok] >> rpt conj_tac >>
+  FIRST [
+    rpt strip_tac >> xapp_spec gkv_server_spec >> simp[] >> NO_TAC,
+    qexistsl [‘kv_port_conf’, ‘out’] >> simp[] >> NO_TAC,
+    xsimpl >> NO_TAC]
 QED

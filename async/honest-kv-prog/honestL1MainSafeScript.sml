@@ -14,6 +14,9 @@ Ancestors
   honestL1PFConn honestL1PFConnRun honestL1PFSpec honestL0Outcome honestL0Fdok
   honestEchoL0Spec honestEchoL0Inv honestEchoL0Run honestEchoL0Stdio honestEchoL0Safe
   honestHttpKvL0Spec honestKvL0Run honestL1MainProg honestL1MainWorld
+  asyncHLModel honestL1Steps honestL1PFInv honestL1Inv asyncM3World asyncCore asyncLevel1
+  asyncTranscript asyncServer asyncServerSafety asyncM4GTrans honestL1PFProg
+  honestEchoL0Trace honestEchoL0Events honestEchoL0Model honestEchoL0Round honestEchoL0Out
 Libs
   preamble
 
@@ -270,7 +273,7 @@ Theorem main_topology:
        (LFLATTEN (LGENLIST (λi. fromList (pround_evs lfd hw ifds m (w4, pinit) i)) NONE)))
 Proof
   strip_tac >> REWRITE_TAC [l0_topology_def] >> match_mp_tac every_prefix_LNTH >>
-  REWRITE_TAC [fromList_def, LAPPEND] >>
+  REWRITE_TAC [llistTheory.fromList_def, llistTheory.LAPPEND] >>
   rpt (match_mp_tac every_LCONS >> conj_tac
        >- metis_tac[fdok_topo, listen_topo_at]) >>
   ‘∀evs. LPREFIX (fromList evs)
@@ -293,11 +296,9 @@ Proof
   PairCases_on ‘x’ >> PairCases_on ‘y’ >> rw[precedes_l0_def] >>
   Cases_on ‘evs1’ >> gvs[]
   >- (qexists_tac ‘[]’ >> simp[]) >>
-  rename1 ‘e :: t1 ≼ e :: t’ >> qexists_tac ‘t1’ >> gvs[] >>
-  ‘l0_sent x0 (e :: t1) = l0_sent x0 t1 ∧ l0_read x0 (e :: t1) = l0_read x0 t1’
-    by (irule l0_views_inert >> simp[]) >>
-  ‘l0_sent y0 (e :: t1) = l0_sent y0 t1 ∧ l0_read y0 (e :: t1) = l0_read y0 t1’
-    by (irule l0_views_inert >> simp[]) >>
+  rename1 ‘t1 ≼ t’ >> qexists_tac ‘t1’ >>
+  ‘∀j. l0_sent j (e :: t1) = l0_sent j t1 ∧ l0_read j (e :: t1) = l0_read j t1’
+    by (gen_tac >> irule l0_views_inert >> simp[]) >>
   gvs[]
 QED
 
@@ -305,12 +306,15 @@ Theorem kv_safe_l0_inert:
   l0_event_accepted e = NONE ∧ l0_event_closed e = NONE ∧ kv_safe_l0 io ⇒
   kv_safe_l0 (LCONS e io)
 Proof
-  rw[kv_safe_l0_def] >> gvs[LPREFIX_LCONS] >> Cases_on ‘evs’ >> gvs[]
-  >- (first_x_assum (qspecl_then [‘[]’, ‘rss’, ‘rests’] mp_tac) >> simp[]) >>
-  rename1 ‘LPREFIX (fromList t) io’ >>
+  rw[kv_safe_l0_def] >> Cases_on ‘evs’ >> gvs[LPREFIX_LCONS]
+  >- (first_x_assum (qspecl_then [‘[]’, ‘rss’, ‘rests’] mp_tac) >>
+      impl_tac >- fs[] >> simp[]) >>
   ‘∀j. l0_sent j (e :: t) = l0_sent j t ∧ l0_read j (e :: t) = l0_read j t’
     by (gen_tac >> irule l0_views_inert >> simp[]) >>
-  first_x_assum (qspecl_then [‘t’, ‘rss’, ‘rests’] mp_tac) >> simp[] >>
-  strip_tac >> qexists_tac ‘order’ >> simp[] >> rpt strip_tac >>
-  first_x_assum irule >> simp[] >> irule precedes_l0_inert >> metis_tac[]
+  gvs[] >>
+  first_x_assum (qspecl_then [‘t’, ‘rss’, ‘rests’] mp_tac) >>
+  impl_tac >- fs[] >> strip_tac >>
+  qexists_tac ‘order’ >> simp[] >> rpt strip_tac >>
+  qpat_x_assum ‘∀x y. _ ⇒ earlier _ _ _’ irule >> simp[] >>
+  irule precedes_l0_inert >> metis_tac[]
 QED

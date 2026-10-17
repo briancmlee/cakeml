@@ -9,7 +9,7 @@
 Theory honestKvL0Claim
 Ancestors
   llist ffi honestL0 honestL0World honestL0WorldProps honestL0Rely
-  honestL0Outcome honestL0Fdok honestEchoL0Spec honestEchoL0Stdio honestEchoL0Safe
+  honestL0Outcome honestL0Fdok honestEchoL0Spec honestEchoL0Inv honestEchoL0Stdio honestEchoL0Safe
   honestHttpKvL0Spec honestKvL0Run asyncKvModel
   honestL1MainProg honestL1MainSpec honestL1MainWorld honestL1MainSafe
   honestKvL0Prog honestKvL0Main honestKvL0Sem honestKvL0Safe
@@ -64,13 +64,14 @@ Proof
         by (first_x_assum irule >> metis_tac[]) >>
       imp_res_tac fdok_inert >>
       rpt (irule kv_safe_l0_inert >> ASM_REWRITE_TAC[]))
-  >- (‘8081 = w22n kv_port_conf’ by simp[kv_port] >> pop_assum SUBST1_TAC >>
-      irule main_topology >> metis_tac[])
-  >- (first_assum ACCEPT_TAC) >>
+  >- (‘l0_topology (w22n kv_port_conf) (LAPPEND (fromList [e0; e1; e2; ev]) (kv_l0_run k w4))’
+        by (irule main_topology >> metis_tac[]) >>
+      fs[kv_port]) >>
   simp[no_close_stdio_EVERY] >>
   ‘∀evs. LPREFIX (fromList evs) (kv_l0_run k w4) ⇒ EVERY ev_nostdio evs’
-    by (irule run_nostdio_at >>
-        simp[kv_pt_ok, uses_ok_writes_accepted, kv_server_uses_ok] >> metis_tac[]) >>
+    by (match_mp_tac (Q.INST [‘w0’ |-> ‘w3’, ‘conf’ |-> ‘kv_port_conf’] run_nostdio_at) >>
+        simp[kv_pt_ok, kv_writes_accepted] >>
+        rpt conj_tac >> first_assum ACCEPT_TAC) >>
   imp_res_tac fdok_nostdio >> imp_res_tac listen_nostdio_at >>
   rpt (match_mp_tac nostdio_LCONS >> conj_tac >- first_assum ACCEPT_TAC) >>
   first_assum ACCEPT_TAC
@@ -81,16 +82,17 @@ Theorem kv_l0_safe:
   kv_l0_claim 8081 kv_l0_prog
 Proof
   irule kv_l0_claim_of_run >> rpt strip_tac >>
-  ‘k < 2147483648’ by (irule l1_listen_fd_small >> metis_tac[]) >>
-  imp_res_tac listen_inert_at >>
-  irule kv_safe_l0_inert >> ASM_REWRITE_TAC[] >>
-  irule kv_run_safe_live >> rpt conj_tac >>
-  FIRST [
-    simp[] >> NO_TAC,
-    irule ri_base_at >> metis_tac[] >> NO_TAC,
-    irule kv_prounds_total >> metis_tac[] >> NO_TAC,
-    metis_tac[listen_rely_at] >> NO_TAC,
-    metis_tac[listen_used_at] >> NO_TAC,
-    gvs[sys_listen_at_def] >>
-    metis_tac[l0_do_fds_lt, EVAL “«sys_listen» = «sys_connect»”] >> NO_TAC]
+  ‘k < 2147483648’ by (drule_all l1_listen_fd_small >> simp[]) >>
+  drule listen_inert_at >> strip_tac >>
+  match_mp_tac kv_safe_l0_inert >> ASM_REWRITE_TAC[] >>
+  ‘l0_rely w1’ by (drule_all listen_rely_at >> simp[]) >>
+  ‘MEM (n2w k) (l0_used w1)’ by (drule_all listen_used_at >> simp[]) >>
+  ‘fds_lt w1’
+    by (qpat_x_assum ‘sys_listen_at _ _ = _’ mp_tac >> simp[sys_listen_at_def] >> strip_tac >>
+        drule l0_do_fds_lt >> simp[]) >>
+  ‘ri (n2w k) (srelabel (kv_server k)) ([], (w1, pinit), [])’
+    by (match_mp_tac (Q.INST [‘w0’ |-> ‘w’, ‘conf’ |-> ‘kv_port_conf’] ri_base_at) >>
+        rpt conj_tac >> first_assum ACCEPT_TAC) >>
+  drule_all kv_prounds_total >> strip_tac >>
+  match_mp_tac kv_run_safe_live >> simp[]
 QED

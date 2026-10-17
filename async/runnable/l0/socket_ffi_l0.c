@@ -65,8 +65,8 @@
   than 0 and infinity.
 
   sys_fdok (D33, design/50 (c2)): a[0] = 1 if fd c[0] is open, 0 if not.
-  [P fcntl]: F_GETFD fails (EBADF) exactly when the fd is not an open file
-  descriptor.  The programs call it on 0, 1 and 2 first and stop if any is
+  [P fcntl] ERRORS: EBADF exactly when the fd is not an open file
+  descriptor (F_GETFD cannot block, so no EINTR).  The programs call it on 0, 1 and 2 first and stop if any is
   closed, so the check is in the verified program, not here.
 
   STARTUP CONTRACT (the constructor, before cml_main): SIGPIPE is ignored

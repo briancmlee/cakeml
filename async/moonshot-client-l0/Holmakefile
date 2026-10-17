@@ -1,0 +1,12 @@
+# Moonshot step 12, C1's last step (close-v2): l0_client_claim for the
+# client binary, from e1-driver's semantics (e1ClientSem) and the shared
+# E1 trace layer (e1-trace).  Its own directory: e1-trace includes
+# moonshot-glue, so the claim cannot live in moonshot-glue.
+INCLUDES = ../e1-trace ../e1-driver ../moonshot-glue ../moonshot ../honest-l1-ep ../honest-l1-cf ../honest-l0-cf \
+           ../honest-l1 ../l0sys-bridges ../l0sys ../endpoint-hl ../endpoint-world ../honest-l0 ../honest-ffi \
+           ../ffi-spike ../model ../cf-actions ../m3-assembly ../socket-v2 ../close-v2-loop ../m4-safety \
+           ../m4-common ../m4-server ../cf-spike ../cf-reactive ../spec \
+           $(CAKEMLDIR)/characteristic $(CAKEMLDIR)/semantics/alt_semantics/proofs $(CAKEMLDIR)/translator
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

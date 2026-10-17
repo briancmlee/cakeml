@@ -1,0 +1,6 @@
+# CakeML for the honest L0 FFI (design/36): the world as an FFI part, the
+# sys_* wrappers and their CF specs.
+INCLUDES = ../honest-ffi ../ffi-spike ../honest-l0 ../honest-l1 ../m4-safety ../m4-common ../m4-server ../m3-assembly ../model ../cf-spike ../cf-actions ../cf-reactive ../spec $(CAKEMLDIR)/characteristic
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

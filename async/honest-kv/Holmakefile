@@ -1,0 +1,15 @@
+# HTTP and KV on the honest L0 world (P4, design/46): the transfer of the
+# version-2 safety theorems to the raw L0 trace, and the claims of the
+# HTTP and KV programs.
+INCLUDES = ../model ../cf-spike ../cf-actions ../cf-reactive ../ffi-spike \
+           ../m3-assembly ../m4-server ../m4-common ../spec ../m4-safety \
+           ../runnable ../machine-code ../m4-echospec ../m4-liveness \
+           ../m4-echospec-live ../socket-v2 ../socket-v2-cf ../close-v2-loop \
+           ../close-v2-sim ../http-model ../http-impl ../http-safety \
+           ../headline ../http-headers ../http-liveness ../http-liveness-h \
+           ../http-bodies ../library-liveness ../http-proto ../http-proto-inst \
+           ../proto-v2-sim ../http-kv ../kv-live ../kv-v2 \
+           ../honest-l0 ../honest-ffi ../honest-l1
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

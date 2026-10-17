@@ -382,7 +382,8 @@ Proof
   Cases_on ‘x’ >> Cases_on ‘r’ >> gvs[] >> every_case_tac >> gvs[]
 QED
 
-(* A read in a round's actions is a pair's, behind its partner's gate *)
+(* A read in a round's actions is a pair's, behind its partner's gate
+   (the backend's: once it has answered, D39) *)
 Theorem pupd_lv0:
   ALOOKUP (pupd (st with lv := []) xs rs).lv x = SOME l ⇒
   MEM (ELevel x, ELvl l) (ZIP (MAP SND xs, rs))
@@ -394,7 +395,8 @@ Theorem pacts_read:
   MEM (ERead h k) (MAP SND (pacts lfd b hw st rdy)) ⇒
   ∃i c. i < LENGTH st.pc ∧ (EL i st.pc).bh = SOME c ∧
         (h = (EL i st.pc).fh ∧ pgate hw st.lv (MAP SND st.last) (FLAT (MAP pwrites st.pc)) c ∨
-         h = c ∧ pgate hw st.lv (MAP SND st.last) (FLAT (MAP pwrites st.pc)) (EL i st.pc).fh)
+         h = c ∧ (¬(EL i st.pc).bup ∨
+                  pgate hw st.lv (MAP SND st.last) (FLAT (MAP pwrites st.pc)) (EL i st.pc).fh))
 Proof
   ONCE_REWRITE_TAC [pacts_SND] >> simp[MEM_FLAT, MEM_MAP, PULL_EXISTS] >>
   rw[] >> gvs[plevels_def, MEM_MAP] >>
@@ -482,6 +484,7 @@ Theorem gate_state:
   (i < LENGTH st.pc ⇒ (EL i st.pc).fh = hd ∧
                       ((EL i st.pc).bh = NONE ∨ (EL i st.pc).bh = SOME c)) ∧
   c ≠ hd ∧ MEM (ERead x k) (MAP SND (pacts lfd b hw st rdy)) ∧
+  (x = c ⇒ ∀i0. i0 < LENGTH st.pc ∧ (EL i0 st.pc).bh = SOME c ⇒ (EL i0 st.pc).bup) ∧
   (x = hd ∧ y = c ∨ x = c ∧ y = hd) ⇒
   pgate hw st.lv (MAP SND st.last) (FLAT (MAP pwrites st.pc)) y
 Proof
@@ -491,11 +494,23 @@ Proof
   qpat_x_assum ‘i < _ ⇒ _’ kall_tac >> rpt BasicProvers.VAR_EQ_TAC >> fs[] >> rfs[]
 QED
 
+(* Backend c has answered a read: its slot knows *)
+Theorem PS_bup:
+  proxy_world lfd a W0 ∧ i < LENGTH (PS lfd b hw lv W0 n).pc ∧
+  (EL i (PS lfd b hw lv W0 n).pc).bh = SOME c ∧
+  hl_up c (hl_pairs (pprog lfd b hw) (PH lfd b hw lv W0 n)) ⇒
+  (EL i (PS lfd b hw lv W0 n).pc).bup
+Proof
+  strip_tac >> drule PS_prel_n >> disch_then (assume_tac o SPEC_ALL) >>
+  drule_all prel_pok >> simp[pok_def]
+QED
+
 (* The gate, both ways: a read of h (one side of pair hd–c) in round n
    follows the Level of its partner g answered in round n − 1 *)
 Theorem proxy_gate:
   proxy_world lfd a W0 ∧ ppair lfd b hw lv W0 hd = SOME c ∧
   MEM (ERead h k) (new_actions (log_of (pprog lfd b hw)) (PH lfd b hw lv W0 n)) ∧
+  (h = c ⇒ hl_up c (hl_pairs (pprog lfd b hw) (PH lfd b hw lv W0 n))) ∧
   (h = hd ∧ g = c ∨ h = c ∧ g = hd) ⇒
   0 < n ∧
   ∃l. MEM (ELevel g, ELvl l) (hl_round (pprog lfd b hw) (PH lfd b hw lv W0 n) (n − 1)) ∧
@@ -509,6 +524,10 @@ Proof
   >- (‘PS lfd b hw lv W0 0 = pinit lfd b hw’ by simp[ehhist_def, ehrounds_def, pstate_def] >>
       fs[pinit_def] >> drule pacts_read >> simp[]) >>
   rename1 ‘SUC m’ >> REWRITE_TAC [prim_recTheory.LESS_0, SUC_SUB1] >>
+  ‘h = c ⇒ ∀i0. i0 < LENGTH (PS lfd b hw lv W0 (SUC m)).pc ∧
+                (EL i0 (PS lfd b hw lv W0 (SUC m)).pc).bh = SOME c ⇒
+                (EL i0 (PS lfd b hw lv W0 (SUC m)).pc).bup’
+    by (rpt strip_tac >> irule PS_bup >> gvs[] >> qexists_tac ‘a’ >> first_assum ACCEPT_TAC) >>
   drule_all pslot >> strip_tac >> first_x_assum (qspec_then ‘SUC m’ strip_assume_tac) >>
   qspecl_then [‘lfd’, ‘b’, ‘hw’, ‘lv’, ‘W0’, ‘m’] strip_assume_tac
     (Q.GENL [‘lfd’, ‘b’, ‘hw’, ‘lv’, ‘W0’, ‘n’] PS_SUC_fields) >>
@@ -547,15 +566,17 @@ Theorem proxy_gate_front:
             wreq c (new_actions (log_of (pprog lfd b hw)) (PH lfd b hw lv W0 n)) ≤ hw
 Proof
   strip_tac >> rpt gen_tac >> strip_tac >> mp_tac (Q.INST [‘h’ |-> ‘hd’, ‘g’ |-> ‘c’] (SPEC_ALL proxy_gate)) >>
+  ‘c ≠ hd’ by (drule_all pslot >> simp[]) >>
   impl_tac >- (rpt conj_tac >> TRY (first_assum ACCEPT_TAC) >> simp[]) >>
   disch_then ACCEPT_TAC
 QED
 
-(* MAIN (the credit gate, backend read) *)
+(* MAIN (the credit gate, backend read, once it has answered: D39) *)
 Theorem proxy_gate_back:
   proxy_world lfd a W0 ⇒
   ∀n hd c k. ppair lfd b hw lv W0 hd = SOME c ∧
-             MEM (ERead c k) (new_actions (log_of (pprog lfd b hw)) (PH lfd b hw lv W0 n)) ⇒
+             MEM (ERead c k) (new_actions (log_of (pprog lfd b hw)) (PH lfd b hw lv W0 n)) ∧
+             hl_up c (hl_pairs (pprog lfd b hw) (PH lfd b hw lv W0 n)) ⇒
     0 < n ∧
     ∃l. MEM (ELevel hd, ELvl l) (hl_round (pprog lfd b hw) (PH lfd b hw lv W0 n) (n − 1)) ∧
         l + wreq hd (new_actions (log_of (pprog lfd b hw)) (PH lfd b hw lv W0 (n − 1))) +
@@ -1378,9 +1399,10 @@ Theorem proxy_guar_hl_of_live:
   proxy_world lfd a W0 ∧
   (conn_fair lfd lv (pifds lfd b hw) (pprog lfd b hw) W0 ⇒
    ∀n hd. MEM hd (hl_acc_handles (hl_pairs (pprog lfd b hw) (PH lfd b hw lv W0 n))) ⇒
-          ∃n' c. ppair lfd b hw lv W0 hd = SOME c ∧
-                 (ever_up lfd lv (pifds lfd b hw) (pprog lfd b hw) W0 n' c ∨
-                  hl_refused c (hl_pairs (pprog lfd b hw) (PH lfd b hw lv W0 n')))) ⇒
+          (∃n' c. ppair lfd b hw lv W0 hd = SOME c ∧
+                  (ever_up lfd lv (pifds lfd b hw) (pprog lfd b hw) W0 n' c ∨
+                   hl_refused c (hl_pairs (pprog lfd b hw) (PH lfd b hw lv W0 n')))) ∨
+          ∀k. ∃n'. k ≤ hl_nosock (hl_pairs (pprog lfd b hw) (PH lfd b hw lv W0 n'))) ⇒
   proxy_guar_hl b hw lfd lv (pifds lfd b hw) (pprog lfd b hw) W0
 Proof
   strip_tac >> simp[proxy_guar_hl_def] >> qexists_tac ‘ppair lfd b hw lv W0’ >>

@@ -1,0 +1,10 @@
+# Moonshot step 9: the proxy's raw-L0 statements (l0_proxy_claim, proxy_asks_claim).
+# TEMPORARY COPY: honest-l1b holds only honestL1BStmts (same blob as spike/echo-live-pol,
+# PRE-D40 accepts_below < 2^64 − 1). Replace with the D40 version (L3-00 2e531c7f6: < 2^64 − 3)
+# once spike/l3-quiet is resynced; only the liveness hypothesis uses the number.
+INCLUDES = ../../honest-l1b ../../honest-l1 ../../honest-echo ../../honest-l0-cf ../../honest-l0 \
+           ../../honest-ffi ../../ffi-spike ../../model ../../cf-actions ../../m3-assembly \
+           ../../socket-v2 ../../close-v2-loop
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

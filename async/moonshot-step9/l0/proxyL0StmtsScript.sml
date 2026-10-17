@@ -9,6 +9,20 @@
   event that opened its fd (accept or connect), so both kinds share one
   vocabulary (the pos_ names).  pr p = SOME q: front p's backend is q.
 
+  REVISION 10 (statements; e1-driver request, orchestrator option (a)):
+  both claims assume the two ports are below 65536 (a < 65536 ∧ b < 65536),
+  the TCP port range (RFC 793: ports are 16-bit).
+
+  REVISION 9 (statements): a new promise proxy_asks_l0, stated as a
+  SEPARATE claim proxy_asks_claim of the same program (same world class
+  l0_proxy_world, same outcome shape, same pairing pr via proxy_safe_l0).
+  The approved l0_proxy_claim is textually unchanged from rev 8, so no
+  user ruling is needed.  moonshot-live's proxy_pair_ob needs the proxy to
+  ASK (a recv, or a poll listing the fd for input) on each end of a pair
+  infinitely often, once the OTHER end drains; no rev 8 clause gives that
+  (proxy_live_l0 relays bytes, but says nothing of asking when nothing
+  arrives).
+
   REVISION 7 (user rulings):
    - the buffering bound is EXACT, proxy_bnd hw = hw + pf_chunk + pread
      (was hw + 3·pf_chunk), and it holds unless the receiving side has
@@ -221,6 +235,95 @@ Definition proxy_pairs_l0_def:
       ∀k. ∃evs'. LPREFIX (fromList evs') io ∧ k ≤ LENGTH (FILTER l0_nosock evs')
 End
 
+(* Revision 9.  The proxy ASKS on fd f at event ev: a recv on f, or a poll
+   listing f for input (bit 0 of its events, read back by pe_fe as in
+   out_poll).  This is l0sysFair.asks_in on the program's own trace *)
+Definition in_ask_def:
+  in_ask f ev ⇔
+    (∃conf bs. ev = IO_event (ExtCall «sys_recv») conf bs ∧ LENGTH conf = 8 ∧
+               bytes_fd conf = f) ∨
+    (∃conf bs. ev = IO_event (ExtCall «sys_poll») conf bs ∧
+               ∃e. MEM (f, e) (MAP pe_fe (pollfd_entries (DROP 16 (MAP FST bs)))) ∧ ODD e)
+End
+
+(* Infinitely often *)
+Definition asks_io_def:
+  asks_io f (io : io_event llist) ⇔ ∀i. ∃i' ev. i ≤ i' ∧ LNTH i' io = SOME ev ∧ in_ask f ev
+End
+
+(* Channel c is frozen on some prefix: its peer's EOF has arrived, or it is
+   broken or closed (moonshot-live's `ended`, on the L0 world) *)
+Definition chan_frozen_def:
+  chan_frozen w0 io c ⇔
+    ∃evs w. LPREFIX (fromList evs) io ∧ world_at w0 evs = SOME w ∧ c < LENGTH w.chans ∧
+            ((EL c w.chans).peer_eof ∨ (EL c w.chans).broken ∨ (EL c w.chans).closed)
+End
+
+(* Episode p ends on some prefix (its fd is closed, or reopened) *)
+Definition pos_ended_def:
+  pos_ended p io ⇔ ∃evs. LPREFIX (fromList evs) io ∧ p < LENGTH evs ∧ ¬pos_open p evs
+End
+
+(* Revision 9: per pair (p, q), front on channel c (fd f), backend on c′
+   (fd g): once the backend's channel drains, the proxy asks on the front
+   infinitely often (P-asks-A); once the front's channel drains, it asks on
+   the backend infinitely often (A-asks-P).  Excused by an observed excuse
+   on either fd (D16, D23), either channel frozen, or either episode ended.
+   This is the WEAKEST form proxy_pair_ob uses: its two asks clauses, with
+   its escape L = X ∨ ended (1, ja) ∨ ended (1, jb) read on the L0 trace
+   (pos_excuse ↦ timed_out_sys / hard_fail / kern_broke, in X; chan_frozen
+   and pos_ended ↦ ended).  Nothing about what is read: proxy_live_l0 has
+   that.
+
+   Why it holds (D39; honest L1 with pol_never):
+   - L1 polls fd f for input in every round in which f's handle is in the
+     program's interest set, its inbox is empty and L1 has not seen EOF on
+     it (pf_poll_set, wants_input); one poll per round (D20), and the
+     proxy runs rounds forever.  The proxy's interest set holds the front
+     while it is open (fo) and the backend while it is open (bo) (pifds,
+     popen); fo / bo fall only on EOF or refusal, i.e. a frozen channel.
+   - So asking on f fails only if f's inbox stays non-empty, i.e. the proxy
+     stops reading f.  L1's inbox holds at most pf_chunk bytes and each
+     read takes up to pread (pf_chunk = 16 · pread), so it suffices that
+     the proxy reads the ready f in infinitely many rounds.
+   - P-asks-A: the proxy reads the ready front iff bup ∧ pgate fh (D39).
+     bup: the backend comes up, by the pairing liveness now proved at the
+     handle layer (moonshotProxyLive.proxy_pair_live, f4937d0ee on
+     spike/moonshot-proxy), or is refused (a frozen channel), and bup is
+     never lost.  pgate fh: the backend's outbox is at most hw.  While the
+     gate is shut the proxy reads nothing from the front, so nothing new
+     goes to the backend; then the backend drains (drains w0 io c′), so
+     with [F2] its sends take bytes and its outbox falls to hw; otherwise
+     no send takes bytes for K rounds, which is D23's pos_timed_out q.
+   - A-asks-P: the proxy reads the ready backend iff ¬bup ∨ pgate fh,
+     with the gate on the FRONT's outbox: the same argument with the front
+     draining (drains w0 io c).
+   The escape "either episode ended" is not vacuous: pos_ended needs a
+   close of the fd, or its reissue, which L0 does only after a close; the
+   world never closes a program's fd (D23 marks it timed out, it does not
+   close it).  So only the proxy itself can end an episode, and closing
+   early is what closes_ob ([R3], owed jointly with the close promises
+   above) pins down: the proxy closes a pair only after EOF, break or
+   refusal on it, i.e. a frozen channel.  Until [R3] the program issues no
+   close at all, so pos_ended never holds of it and the claim is proved
+   without that escape.
+   Hypotheses used: the live block's (F1_io, F2, accepts_below), and
+   connect settling as proxy_pairs_l0 already uses it (conn_fair clause 1;
+   on l0sys, D41's F1_connect_sys) *)
+Definition proxy_asks_l0_def:
+  proxy_asks_l0 K pr w0 io ⇔
+    ∀evs p q c c' w f g.
+      LPREFIX (fromList evs) io ∧ is_front p evs ∧ pr p = SOME q ∧
+      pos_open p evs ∧ pos_open q evs ∧ pos_fd p evs = SOME f ∧ pos_fd q evs = SOME g ∧
+      world_at w0 evs = SOME w ∧ l0_chan_of w f = SOME c ∧ l0_chan_of w g = SOME c' ⇒
+      let L = (pos_excuse K p io ∨ pos_excuse K q io ∨ chan_frozen w0 io c ∨
+               chan_frozen w0 io c' ∨ pos_ended p io ∨ pos_ended q io) in
+        (* P-asks-A: the backend drains ⇒ ask on the front *)
+        (drains w0 io c' ⇒ L ∨ asks_io f io) ∧
+        (* A-asks-P: the front drains ⇒ ask on the backend *)
+        (drains w0 io c ⇒ L ∨ asks_io g io)
+End
+
 (* Fewer than N accepts on every prefix.  The proxy accepts while it holds
    fewer than cbound / 2 = 2^62 pairs (2 · pairs + 2 ≤ cbound), and its pairs
    never end until closing lands ([R3]); so new connections are owed only
@@ -254,6 +357,7 @@ End
    proxy's Level threshold (prog is the proxy built with it) *)
 Definition l0_proxy_claim_def:
   l0_proxy_claim K hw a b prog ⇔
+    a < 65536 ∧ b < 65536 ⇒
     ∀w0. l0_proxy_world w0 ⇒
       ∃beh. semantics_prog (init_state (l0_ffi w0)) init_env prog beh ∧
           (stdio_closed beh ∨ proxy_listen_failed beh ∨
@@ -261,4 +365,18 @@ Definition l0_proxy_claim_def:
                    (F1_io io ∧ F2 w0 ∧ accepts_below io ⇒
                     proxy_live_l0 K pr w0 io ∧ proxy_pairs_l0 K pr io ∧
                     (accepts_lt (2 ** 62) io ⇒ conn_live_l0 w0 io)))
+End
+
+(* Revision 9: a separate claim of the same program, with the same world
+   class and outcome shape as l0_proxy_claim; proxy_safe_l0 ties pr to the
+   same pairing.  l0_proxy_claim itself is unchanged. *)
+Definition proxy_asks_claim_def:
+  proxy_asks_claim K hw a b prog ⇔
+    a < 65536 ∧ b < 65536 ⇒
+    ∀w0. l0_proxy_world w0 ⇒
+      ∃beh. semantics_prog (init_state (l0_ffi w0)) init_env prog beh ∧
+          (stdio_closed beh ∨ proxy_listen_failed beh ∨
+           ∃io pr. beh = Diverge io ∧ proxy_safe_l0 K hw a b pr io ∧
+                   (F1_io io ∧ F2 w0 ∧ accepts_below io ⇒
+                    proxy_asks_l0 K pr w0 io))
 End

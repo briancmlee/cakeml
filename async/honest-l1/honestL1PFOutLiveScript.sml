@@ -8,7 +8,7 @@
 Theory honestL1PFOutLive
 Ancestors
   honestL1PFDead honestL1PFFlushLive honestL1PFFlush honestL1PFOut honestL0WorldProps
-  honestL1PFConnRun honestL1PFConn honestL1PFLive honestL1PFRound honestL1PFRefine honestL1PFInv
+  honestL1PFConnRun honestL1PFConn honestL1PFClient honestL1PFLive honestL1PFRound honestL1PFRefine honestL1PFInv
   honestL1PFModel honestL1Steps honestL1Inv honestL1Props honestL1Model honestL0WorldInv
   honestL0Rely honestL0World honestL0 socketV2FFI asyncHLModel asyncCore Marshalling
 Libs
@@ -1068,4 +1068,442 @@ Proof
   TRY (qpat_x_assum ‘∀f. MEM f _.acq ⇒ _’ drule >> strip_tac >> metis_tac[] >> NO_TAC) >>
   qpat_x_assum ‘∀f. MEM f (MAP SND _) ∨ _ ⇒ _’ (qspec_then ‘f’ mp_tac) >>
   simp[] >> strip_tac >> gvs[acct_def] >> metis_tac[]
+QED
+
+(* ------------------------------------------------------------------------
+   The start of the run: qfresh and nshut from a world with fresh channels
+   ------------------------------------------------------------------------ *)
+
+(* No channel has anything sent or is shut (a program's start: there are
+   no channels yet) *)
+Definition fresh_chans_def:
+  fresh_chans w ⇔ ∀j. j < LENGTH w.chans ⇒ (EL j w.chans).sent = [] ∧ ¬(EL j w.chans).shut
+End
+
+Theorem fresh_chans_nil:
+  w.chans = [] ⇒ fresh_chans w
+Proof
+  simp[fresh_chans_def]
+QED
+
+Theorem fresh_chans_upd:
+  fresh_chans w ∧ (∀c. (g c).sent = c.sent ∧ ((g c).shut ⇔ c.shut)) ⇒
+  fresh_chans (upd_lchan j g w)
+Proof
+  rw[fresh_chans_def, upd_lchan_def, EL_LUPDATE] >> rw[] >> gvs[]
+QED
+
+Theorem fresh_chans_deliver:
+  fresh_chans w ⇒ fresh_chans (l0_deliver w a)
+Proof
+  strip_tac >> Cases_on ‘a’ >> rw[l0_deliver_def] >> every_case_tac >> gvs[] >>
+  TRY (irule fresh_chans_upd >> rw[break_lchan_def] >> NO_TAC) >>
+  gvs[fresh_chans_def] >> rw[] >>
+  Cases_on ‘j < LENGTH w.chans’ >> gvs[EL_APPEND1, EL_APPEND2] >>
+  ‘j = LENGTH w.chans’ by simp[] >> gvs[EL_APPEND2, fresh_lchan_def]
+QED
+
+Theorem fresh_chans_tick:
+  fresh_chans w ⇒ fresh_chans (l0_tick nm w)
+Proof
+  simp[l0_tick_def] >>
+  ‘∀as w. fresh_chans w ⇒ fresh_chans (FOLDL l0_deliver w as)’
+    by (Induct >> simp[] >> metis_tac[fresh_chans_deliver]) >>
+  rpt strip_tac >> first_x_assum irule >> gvs[fresh_chans_def]
+QED
+
+(* The program's listen keeps the channels fresh *)
+Theorem fresh_chans_listen:
+  l0_do «sys_listen» conf alen w = SOME (out, w', ev) ∧ fresh_chans w ⇒ fresh_chans w'
+Proof
+  strip_tac >> drule l0_do_cases >> strip_tac >> gvs[] >>
+  qpat_x_assum ‘l0_call _ _ _ _ = _’ mp_tac >> simp[l0_call_def, AllCaseEqs()] >>
+  strip_tac >> gvs[l0_listen_def, AllCaseEqs()] >>
+  drule fresh_chans_tick >> disch_then (qspec_then ‘«sys_listen»’ mp_tac) >>
+  simp[fresh_chans_def]
+QED
+
+(* At the run's start: queued connections have nothing sent, and no used
+   channel is shut *)
+Theorem fresh_chans_start:
+  fresh_chans w ∧ l0wf w ⇒ qfresh w ∧ nshut w
+Proof
+  rw[fresh_chans_def, qfresh_def, nshut_def, csent_def, l0wf_def, EVERY_MEM] >>
+  gvs[used_chans_def, MEM_FLAT, MEM_MAP, PULL_EXISTS] >> metis_tac[SND]
+QED
+
+(* ------------------------------------------------------------------------
+   After L1 closes f: nothing on f until it is accepted again
+   ------------------------------------------------------------------------ *)
+
+(* A call on fd g's event is on g only *)
+Theorem sys_ev_fd:
+  l0_rely w ⇒
+  (sys_recv g k w = SOME (out, w', ev) ⇒ ∀nm f. ev_on nm f ev ⇒ f = g) ∧
+  (sys_accept g w = SOME (out, w', ev) ⇒ ∀nm f. ev_on nm f ev ⇒ f = g) ∧
+  (sys_close g w = SOME (out, w', ev) ⇒ ∀nm f. ev_on nm f ev ⇒ f = g) ∧
+  (sys_send g bs w = SOME (out, w', ev) ⇒ ∀nm f. ev_on nm f ev ⇒ f = g)
+Proof
+  strip_tac >> rpt conj_tac >> rpt strip_tac >>
+  gvs[sys_recv_def, sys_accept_def, sys_close_def, sys_send_def] >>
+  drule_all ev_do >> strip_tac >> gvs[] >>
+  TRY (‘LENGTH (fd_bytes g) = 8’ by simp[] >>
+       gvs[call_fds_def, TAKE_APPEND1, TAKE_LENGTH_ID_rwt] >> NO_TAC) >>
+  gvs[call_fds_def]
+QED
+
+(* No event in evs is on f *)
+Definition ev_off_def:
+  ev_off f evs ⇔ ∀nm ev. MEM ev evs ⇒ ¬ev_on nm f ev
+End
+
+Theorem ev_off_simps[simp]:
+  (ev_off f [] ⇔ T) ∧ (ev_off f (xs ++ ys) ⇔ ev_off f xs ∧ ev_off f ys)
+Proof
+  simp[ev_off_def] >> metis_tac[]
+QED
+
+Theorem ev_off_cons:
+  ev_off f (ev :: evs) ⇔ (∀nm. ¬ev_on nm f ev) ∧ ev_off f evs
+Proof
+  simp[ev_off_def] >> metis_tac[]
+QED
+
+Theorem pdo_off:
+  pdo lfd (w, ps) a = SOME (r, (w', ps'), evs) ∧ winv w ∧ ¬MEM f (MAP SND ps.b.tbl) ⇒
+  ev_off f evs
+Proof
+  strip_tac >> ‘l0_rely w’ by fs[winv_def] >>
+  ‘∀h g. ALOOKUP ps.b.tbl h = SOME g ⇒ g ≠ f’
+    by (rpt strip_tac >> gvs[] >> imp_res_tac ALOOKUP_MEM >> gvs[MEM_MAP] >>
+        metis_tac[SND]) >>
+  Cases_on ‘a’ >> gvs[pdo_def, AllCaseEqs()] >>
+  TRY (PairCases_on ‘z’) >> gvs[] >>
+  rpt (qpat_x_assum ‘l1do _ _ _ = _’ mp_tac) >> rpt (qpat_x_assum ‘l1_close _ _ = _’ mp_tac) >>
+  simp[l1do_def, l1_close_def, AllCaseEqs()] >> rw[] >> gvs[ev_off_cons] >>
+  rpt strip_tac >> res_tac >> metis_tac[sys_ev_fd]
+QED
+
+Theorem pdo_off_state:
+  pdo lfd (w, ps) a = SOME (r, (w', ps'), evs) ∧
+  ¬MEM f (MAP SND ps.b.tbl) ∧ ¬MEM f ps.acq ⇒
+  ¬MEM f (MAP SND ps'.b.tbl) ∧ ¬MEM f ps'.acq ∧
+  (MEM f ps'.b.closing ⇔ MEM f ps.b.closing) ∧
+  outbox_of ps'.b f = outbox_of ps.b f ∧ (MEM f ps'.b.gone ⇔ MEM f ps.b.gone)
+Proof
+  strip_tac >>
+  ‘∀h g. ALOOKUP ps.b.tbl h = SOME g ⇒ g ≠ f’
+    by (rpt strip_tac >> gvs[] >> imp_res_tac ALOOKUP_MEM >> gvs[MEM_MAP] >>
+        metis_tac[SND]) >>
+  Cases_on ‘a’ >> gvs[pdo_def, AllCaseEqs()] >>
+  TRY (PairCases_on ‘z’) >> gvs[] >>
+  rpt (qpat_x_assum ‘l1do _ _ _ = _’ mp_tac) >> rpt (qpat_x_assum ‘l1_close _ _ = _’ mp_tac) >>
+  simp[l1do_def, l1_close_def, AllCaseEqs()] >> rw[] >> res_tac >>
+  gvs[forget_keys, MEM_FILTER, outbox_of_set_outbox, outbox_of_after_send_other, set_inb_def] >>
+  TRY (‘f' ≠ f’ by (strip_tac >> gvs[])) >> gvs[] >>
+  imp_res_tac MEM_SND_ADELKEY_sub >> gvs[] >>
+  simp[outbox_of_after_send_other, outbox_of_set_outbox] >>
+  gvs[MEM_MAP, ADELKEY_def, MEM_FILTER] >> metis_tac[]
+QED
+
+Theorem pacts_off:
+  ∀acts w ps rs evs w' ps'.
+    pacts lfd (w, ps) acts = SOME (rs, evs, (w', ps')) ∧ winv w ∧
+    ¬MEM f (MAP SND ps.b.tbl) ∧ ¬MEM f ps.acq ⇒
+    ev_off f evs ∧ ¬MEM f (MAP SND ps'.b.tbl) ∧ ¬MEM f ps'.acq ∧
+    (¬MEM f ps.b.closing ⇒ ¬MEM f ps'.b.closing) ∧
+    outbox_of ps'.b f = outbox_of ps.b f ∧ (MEM f ps'.b.gone ⇔ MEM f ps.b.gone)
+Proof
+  Induct >> simp[pacts_def] >> rpt gen_tac >> strip_tac >> gvs[AllCaseEqs()] >>
+  PairCases_on ‘ws1’ >>
+  drule_all pdo_off >> strip_tac >>
+  drule_all pdo_off_state >> strip_tac >>
+  ‘winv ws10’ by metis_tac[pdo_winv] >>
+  first_x_assum drule_all >> simp[]
+QED
+
+(* Every key of the outbox list has a non-empty outbox *)
+Definition oinv_def:
+  oinv (b : l1st) ⇔ ∀g. MEM g (MAP FST b.outbox) ⇒ outbox_of b g ≠ []
+End
+
+Theorem oinv_set_outbox:
+  oinv b ⇒ oinv (set_outbox f bs b)
+Proof
+  rw[oinv_def, set_outbox_def] >> gvs[MEM_MAP] >> TRY (PairCases_on ‘y’) >>
+  gvs[MEM_ADELKEY, outbox_of_def, ALOOKUP_ADELKEY] >> rw[] >>
+  first_x_assum (qspec_then ‘y0’ mp_tac) >> simp[MEM_MAP, EXISTS_PROD, outbox_of_def] >>
+  metis_tac[]
+QED
+
+Theorem oinv_fields[simp]:
+  (oinv (b with gone := x) ⇔ oinv b) ∧ (oinv (b with closing := c) ⇔ oinv b) ∧
+  (oinv (b with rdy := r) ⇔ oinv b) ∧ (oinv (b with exhausted := e) ⇔ oinv b)
+Proof
+  simp[oinv_def, outbox_of_def]
+QED
+
+Theorem oinv_after_send:
+  oinv b ⇒ oinv (after_send g r b)
+Proof
+  rw[after_send_def] >> every_case_tac >> rw[] >> irule oinv_set_outbox >> simp[]
+QED
+
+Theorem oinv_forget:
+  oinv b ⇒ oinv (forget g b)
+Proof
+  rw[forget_def] >> irule oinv_set_outbox >> simp[]
+QED
+
+Theorem pdo_oinv:
+  pdo lfd (w, ps) a = SOME (r, (w', ps'), evs) ∧ oinv ps.b ⇒ oinv ps'.b
+Proof
+  Cases_on ‘a’ >> simp[pdo_def] >> rw[AllCaseEqs()] >> gvs[set_inb_def] >>
+  TRY (PairCases_on ‘z’) >> gvs[] >>
+  rpt (qpat_x_assum ‘l1do _ _ _ = _’ mp_tac) >> rpt (qpat_x_assum ‘l1_close _ _ = _’ mp_tac) >>
+  simp[l1do_def, l1_close_def, AllCaseEqs()] >> rw[] >> gvs[] >>
+  TRY (irule oinv_forget >> gvs[oinv_def, outbox_of_def] >> NO_TAC) >>
+  TRY (irule oinv_after_send >> irule oinv_set_outbox >> simp[] >> NO_TAC) >>
+  TRY (irule oinv_set_outbox >> simp[] >> NO_TAC) >>
+  gvs[oinv_def, outbox_of_def]
+QED
+
+Theorem pacts_oinv:
+  ∀acts w ps rs evs w' ps'.
+    pacts lfd (w, ps) acts = SOME (rs, evs, (w', ps')) ∧ oinv ps.b ⇒ oinv ps'.b
+Proof
+  Induct >> simp[pacts_def] >> rw[AllCaseEqs()] >> PairCases_on ‘ws1’ >>
+  metis_tac[pdo_oinv]
+QED
+
+Theorem l1_flush_oinv:
+  ∀fs w b w' b' evs. l1_flush fs (w, b) = SOME ((w', b'), evs) ∧ oinv b ⇒ oinv b'
+Proof
+  Induct >> simp[l1_flush_def] >> rw[AllCaseEqs()] >> metis_tac[oinv_after_send]
+QED
+
+Theorem l1_reap_oinv:
+  ∀fs w b w' b' evs. l1_reap fs (w, b) = SOME ((w', b'), evs) ∧ oinv b ⇒ oinv b'
+Proof
+  Induct >> simp[l1_reap_def] >> rw[AllCaseEqs()] >> TRY (Cases_on ‘ws’) >>
+  gvs[l1_close_def, AllCaseEqs()] >> metis_tac[oinv_forget]
+QED
+
+Theorem stall_step_oinv:
+  oinv ps.b ⇒ oinv (stall_step hfs ob log ps).b
+Proof
+  simp[stall_step_drops] >> qspec_tac (‘stall_drops hfs ob log ps’, ‘dl’) >>
+  qspec_tac (‘ps.b’, ‘b’) >> Induct_on ‘dl’ >> simp[] >> rpt strip_tac >>
+  first_x_assum irule >> simp[drop_out_def] >> irule oinv_set_outbox >> simp[]
+QED
+
+Theorem pround_oinv:
+  pround lfd pol hs (w, ps) acts = SOME (snap, (w', ps'), log, evs) ∧ oinv ps.b ⇒
+  oinv ps'.b
+Proof
+  simp[pround_def, AllCaseEqs()] >> strip_tac >> PairCases_on ‘ws1’ >>
+  gvs[pf_tail_def, AllCaseEqs()] >>
+  drule_all pacts_oinv >> strip_tac >>
+  drule_all l1_flush_oinv >> strip_tac >>
+  drule pf_fetch_b >> strip_tac >> gvs[] >>
+  drule l1_reap_oinv >> disch_then irule >> irule stall_step_oinv >> simp[]
+QED
+
+Theorem run_oinv:
+  run_ok lfd pol ifds m w0 ⇒ ∀k. oinv (rstate lfd pol ifds m w0 k).b
+Proof
+  strip_tac >> Induct
+  >- simp[rstate_def, prun_0, pinit_def, oinv_def, l1init_def] >>
+  drule prun_round' >> disch_then (qspecl_then [‘ARB’, ‘k’] strip_assume_tac) >>
+  drule_all pround_oinv >> simp[]
+QED
+
+Theorem pf_poll_set_keys:
+  MEM (g, e) (pf_poll_set lfd pol ps hs) ⇒
+  g = lfd ∨ MEM g (MAP SND ps.b.tbl) ∨ MEM g (MAP FST ps.b.outbox)
+Proof
+  rw[pf_poll_set_def, MEM_FLAT, MEM_MAP, MEM_FILTER, EXISTS_PROD] >>
+  gvs[AllCaseEqs()] >> every_case_tac >> gvs[] >>
+  imp_res_tac ALOOKUP_MEM >> metis_tac[SND, FST]
+QED
+
+Theorem l1_flush_off:
+  ∀fs w b w' b' evs.
+    l1_flush fs (w, b) = SOME ((w', b'), evs) ∧ winv w ∧ outbox_of b f = [] ⇒
+    ev_off f evs ∧ outbox_of b' f = []
+Proof
+  Induct >> simp[l1_flush_def] >> rpt gen_tac >> strip_tac >>
+  qpat_x_assum ‘(if _ then _ else _) = _’ mp_tac >> IF_CASES_TAC >> strip_tac
+  >- (first_x_assum drule_all >> simp[]) >>
+  gvs[AllCaseEqs()] >>
+  ‘h ≠ f’ by (strip_tac >> gvs[]) >>
+  ‘winv w''’ by metis_tac[sys_winv] >>
+  ‘l0_rely w’ by fs[winv_def] >>
+  simp[ev_off_cons, GSYM CONJ_ASSOC] >>
+  conj_tac >- (rpt strip_tac >> drule sys_ev_fd >> strip_tac >>
+               res_tac >> gvs[]) >>
+  first_x_assum irule >>
+  qexistsl [‘after_send h (l0_res_of out) b’, ‘w''’, ‘w'’] >>
+  simp[outbox_of_after_send_other]
+QED
+
+Theorem pf_fetch_off:
+  ∀fs w ps w' ps' log evs.
+    pf_fetch lfd pol fs (w, ps) = SOME ((w', ps'), log, evs) ∧ winv w ∧
+    ¬MEM f fs ∧ f ≠ lfd ⇒ ev_off f evs
+Proof
+  Induct >> simp[pf_fetch_def] >> rpt gen_tac >> rw[AllCaseEqs()] >>
+  TRY (pairarg_tac >> gvs[AllCaseEqs()]) >>
+  TRY (first_x_assum drule_all >> simp[] >> NO_TAC) >>
+  ‘l0_rely w’ by fs[winv_def] >>
+  ‘winv w1’ by (TRY (drule_all (cj 3 sys_winv) >> simp[] >> NO_TAC) >>
+                drule_all (cj 4 sys_winv) >> simp[]) >>
+  simp[ev_off_cons] >>
+  (conj_tac >- metis_tac[sys_ev_fd]) >>
+  first_x_assum drule_all >> simp[]
+QED
+
+Theorem l1_reap_off:
+  ∀fs w b w' b' evs.
+    l1_reap fs (w, b) = SOME ((w', b'), evs) ∧ winv w ∧ ¬MEM f fs ⇒ ev_off f evs
+Proof
+  Induct >> simp[l1_reap_def] >> rpt gen_tac >> strip_tac >>
+  qpat_x_assum ‘(if _ then _ else _) = _’ mp_tac >> IF_CASES_TAC >> strip_tac
+  >- (gvs[AllCaseEqs()] >> Cases_on ‘ws’ >> gvs[l1_close_def, AllCaseEqs()] >>
+      ‘winv q’ by metis_tac[sys_winv] >> ‘l0_rely w’ by fs[winv_def] >>
+      simp[ev_off_cons] >>
+      (conj_tac >- (rpt strip_tac >> drule sys_ev_fd >> strip_tac >>
+                    res_tac >> gvs[])) >>
+      first_x_assum drule_all >> simp[])
+  >> first_x_assum drule_all >> simp[]
+QED
+
+Theorem l1_reap_quiet:
+  ∀fs w b w' b' evs.
+    l1_reap fs (w, b) = SOME ((w', b'), evs) ∧ ¬MEM f fs ∧ ¬MEM f b.closing ⇒
+    ¬MEM f b'.closing ∧ outbox_of b' f = outbox_of b f
+Proof
+  Induct >> simp[l1_reap_def] >> rpt gen_tac >> strip_tac >>
+  qpat_x_assum ‘(if _ then _ else _) = _’ mp_tac >> IF_CASES_TAC >> strip_tac
+  >- (gvs[AllCaseEqs()] >> Cases_on ‘ws’ >> gvs[l1_close_def, AllCaseEqs()] >>
+      first_x_assum drule >>
+      simp[forget_def, set_outbox_def, MEM_FILTER, outbox_of_def, ALOOKUP_ADELKEY])
+  >> first_x_assum drule >> simp[]
+QED
+
+(* f is closed as far as L1 knows: no handle, not pre-accepted, not
+   closing, nothing to send *)
+Definition cquiet_def:
+  cquiet f (ps : l1p) ⇔
+    ¬MEM f (MAP SND ps.b.tbl) ∧ ¬MEM f ps.acq ∧ ¬MEM f ps.b.closing ∧ outbox_of ps.b f = []
+End
+
+Theorem log_conns_FConn:
+  MEM f (log_conns l) ⇔ MEM (FConn f) l
+Proof
+  simp[log_conns_def, MEM_FLAT, MEM_MAP, PULL_EXISTS] >> eq_tac >> rw[]
+  >- (every_case_tac >> gvs[])
+  >> qexists_tac ‘FConn f’ >> simp[]
+QED
+
+Theorem tail_quiet:
+  pf_tail lfd pol hs (w, ps) = SOME (rdy, (w', ps'), log, evs) ∧ winv w ∧
+  psmall lfd ps ∧ oinv ps.b ∧ f ≠ lfd ∧ cquiet f ps ∧ dinv f c sb w ∧
+  ¬MEM (FConn f) log ⇒
+  cquiet f ps' ∧ dinv f c sb w' ∧ ev_off f evs
+Proof
+  simp[pf_tail_def, AllCaseEqs()] >> strip_tac >> gvs[cquiet_def] >>
+  qabbrev_tac ‘fes = pf_poll_set lfd pol ps hs’ >>
+  ‘EVERY (λ(g, e). small g ∧ e < 4) fes’
+    by (simp[Abbr ‘fes’] >> irule pf_poll_set_small >> simp[]) >>
+  ‘l0_rely w’ by fs[winv_def] >>
+  ‘ev_off f pevs’
+    by (simp[ev_off_def] >> rpt strip_tac >>
+        ‘ev_name ev = ExtCall «sys_poll»’
+          by (drule l1_polls_names >> simp[EVERY_MEM]) >>
+        ‘nm = «sys_poll»’ by (Cases_on ‘ev’ >> gvs[ev_on_def, ev_name_def]) >> gvs[] >>
+        ‘MEM f (MAP FST fes)’
+          by (qspecl_then [‘[fes]’, ‘w’, ‘rv’, ‘w1’, ‘pevs’] mp_tac l1_polls_fds >>
+              simp[] >> metis_tac[]) >>
+        gvs[MEM_MAP] >> rename1 ‘MEM y fes’ >> PairCases_on ‘y’ >> gvs[Abbr ‘fes’] >>
+        drule pf_poll_set_keys >> strip_tac >> gvs[oinv_def, MEM_MAP] >>
+        metis_tac[]) >>
+  ‘winv w1 ∧ dinv f c sb w1’ by metis_tac[l1_polls_winv, l1_polls_dinv] >>
+  drule_all l1_flush_off >> strip_tac >>
+  drule l1_flush_fields >> strip_tac >>
+  ‘winv w2 ∧ dinv f c sb w2’ by metis_tac[l1_flush_winv, l1_flush_dinv] >>
+  ‘¬MEM f (FILTER (λf. MEM f (in_fds fes)) (readable_fds rv))’
+    by (simp[MEM_FILTER] >> disj1_tac >> strip_tac >> gvs[Abbr ‘fes’] >>
+        drule in_fds_poll_set >> simp[]) >>
+  drule_all pf_fetch_off >> strip_tac >>
+  drule pf_fetch_b >> strip_tac >>
+  drule_all pf_fetch_lfd >> strip_tac >>
+  ‘winv w3 ∧ dinv f c sb w3’ by metis_tac[pf_fetch_winv, pf_fetch_dinv] >>
+  qabbrev_tac ‘ps3 = stall_step (pf_held ps3') (outbox_of ps.b) log ps3'’ >>
+  ‘ps3.b.tbl = b2.tbl ∧ ps3.b.closing = b2.closing ∧ ps3.acq = ps3'.acq ∧
+   outbox_of ps3.b f = []’
+    by (simp[Abbr ‘ps3’, stall_step_drops, FOLDL_drop_out] >>
+        simp[stall_step_def] >> rw[]) >>
+  ‘¬MEM f ps3.b.closing ∧ ¬MEM f ps3'.b.closing’ by gvs[] >>
+  drule_all l1_reap_off >> strip_tac >>
+  drule_all l1_reap_quiet >> strip_tac >>
+  drule l1_reap_tbl >> strip_tac >>
+  drule_all l1_reap_dinv >> strip_tac >>
+  gvs[log_conns_FConn]
+QED
+
+Theorem pacts_dinv:
+  ∀acts w ps rs evs w' ps'.
+    pacts lfd (w, ps) acts = SOME (rs, evs, (w', ps')) ∧ winv w ∧
+    dinv f c sb w ∧ ¬MEM f (MAP SND ps.b.tbl) ∧ ¬MEM f ps.acq ⇒
+    dinv f c sb w'
+Proof
+  Induct >> simp[pacts_def] >> rpt gen_tac >> strip_tac >> gvs[AllCaseEqs()] >>
+  PairCases_on ‘ws1’ >>
+  drule_all pdo_dinv >> strip_tac >>
+  drule_all pdo_off_state >> strip_tac >>
+  ‘winv ws10’ by metis_tac[pdo_winv] >>
+  first_x_assum drule_all >> simp[]
+QED
+
+Theorem pround_quiet:
+  pround lfd pol hs (w, ps) acts = SOME (snap, (w', ps'), log, evs) ∧ winv w ∧
+  psmall lfd ps ∧ oinv ps.b ∧ f ≠ lfd ∧ cquiet f ps ∧ dinv f c sb w ∧
+  ¬MEM (FConn f) log ⇒
+  cquiet f ps' ∧ dinv f c sb w' ∧ ev_off f evs
+Proof
+  simp[pround_def, AllCaseEqs()] >> strip_tac >> PairCases_on ‘ws1’ >> gvs[] >>
+  ‘¬MEM f (MAP SND ps.b.tbl) ∧ ¬MEM f ps.acq’ by fs[cquiet_def] >>
+  drule_all pacts_off >> strip_tac >>
+  drule_all pacts_dinv >> strip_tac >>
+  ‘winv ws10 ∧ psmall lfd ws11 ∧ oinv ws11.b’
+    by metis_tac[pacts_winv, pacts_psmall, pacts_oinv] >>
+  ‘cquiet f ws11’ by gvs[cquiet_def] >>
+  drule_all tail_quiet >> simp[]
+QED
+
+(* For async-spike: after a closed f (cquiet), until it is re-accepted, no
+   event of any kind mentions f and its channel is left as it is *)
+Theorem run_closed_quiet:
+  oassm lfd pol ifds m w0 ∧ f ≠ lfd ∧ cquiet f (rstate lfd pol ifds m w0 k0) ∧
+  dinv f c sb (rworld lfd pol ifds m w0 k0) ⇒
+  ∀k. k0 ≤ k ∧ (∀i. k0 ≤ i ∧ i < k ⇒ ¬MEM (FConn f) (rlog lfd pol ifds m w0 i)) ⇒
+      cquiet f (rstate lfd pol ifds m w0 k) ∧ dinv f c sb (rworld lfd pol ifds m w0 k) ∧
+      ∀i nm ev. k0 ≤ i ∧ i < k ∧ MEM ev (rrev lfd pol ifds m w0 i) ⇒ ¬ev_on nm f ev
+Proof
+  strip_tac >> fs[oassm_def] >> Induct
+  >- (rpt strip_tac >> gvs[]) >>
+  strip_tac >> Cases_on ‘k0 = SUC k’ >- (gvs[] >> rpt strip_tac >> gvs[]) >>
+  ‘k0 ≤ k’ by simp[] >>
+  ‘cquiet f (rstate lfd pol ifds m w0 k) ∧ dinv f c sb (rworld lfd pol ifds m w0 k) ∧
+   ∀i nm ev. k0 ≤ i ∧ i < k ∧ MEM ev (rrev lfd pol ifds m w0 i) ⇒ ¬ev_on nm f ev’
+    by (first_x_assum irule >> simp[]) >>
+  drule prun_round' >> disch_then (qspecl_then [‘ARB’, ‘k’] strip_assume_tac) >>
+  drule pround_quiet >>
+  disch_then (qspecl_then [‘sb’, ‘f’, ‘c’] mp_tac) >>
+  impl_tac
+  >- (simp[] >> metis_tac[winv_run, psmall_run, run_oinv, LESS_EQ_REFL]) >>
+  strip_tac >> simp[] >> rpt strip_tac >>
+  Cases_on ‘i = k’ >- gvs[ev_off_def] >>
+  first_x_assum (qspecl_then [‘i’, ‘nm’, ‘ev’] mp_tac) >> simp[]
 QED

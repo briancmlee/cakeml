@@ -3,7 +3,7 @@
   lazy L1): every fd it holds stays below 2^31 (the C's limit), every poll
   stays within 4096 fds, and so its run is total, given what the handle
   layer's own hrun_ok asks of the server (well-formed actions, an Accept
-  only on the listener, no handle overflow).  A prerequisite of R1-live
+  only on the listener; D25′: no handle bound).  A prerequisite of R1-live
   (design/36 §6).
 *)
 Theory honestL1PFInv
@@ -58,13 +58,12 @@ Proof
 QED
 
 Theorem pdo_ok:
-  l0_rely w ∧ psmall lfd ps ∧ pact_ok lfd a ∧ ps.b.nxt + naccepts [a] < dimword (:64) ⇒
+  l0_rely w ∧ psmall lfd ps ∧ pact_ok lfd a ⇒
   ∃r w' ps' evs. pdo lfd (w, ps) a = SOME (r, (w', ps'), evs) ∧ l0_rely w' ∧
                  psmall lfd ps' ∧ ps'.b.nxt ≤ ps.b.nxt + naccepts [a]
 Proof
   Cases_on ‘a’ >> rw[pact_ok_def, act_ok_def] >> simp[pdo_def]
-  >- (‘∀x : word64. l1hdln (w2n x) ps.b.nxt < dimword (:64)’ by fs[l1hdln_lt] >>
-      Cases_on ‘ps.acq’ >> gvs[psmall_def, small_fds_def])
+  >- (IF_CASES_TAC >> simp[] >> Cases_on ‘ps.acq’ >> gvs[psmall_def, small_fds_def])
   >- (rename1 ‘ALOOKUP ps.b.tbl h’ >>
       Cases_on ‘ALOOKUP ps.b.tbl h’ >> simp[] >>
       rename1 ‘ALOOKUP _ h = SOME f’ >>
@@ -83,15 +82,13 @@ QED
 
 Theorem pacts_ok:
   ∀acts w ps.
-    l0_rely w ∧ psmall lfd ps ∧ EVERY (pact_ok lfd) acts ∧
-    ps.b.nxt + naccepts acts < dimword (:64) ⇒
+    l0_rely w ∧ psmall lfd ps ∧ EVERY (pact_ok lfd) acts ⇒
     ∃rs evs w' ps'. pacts lfd (w, ps) acts = SOME (rs, evs, (w', ps')) ∧
                     l0_rely w' ∧ psmall lfd ps' ∧ ps'.b.nxt ≤ ps.b.nxt + naccepts acts
 Proof
   Induct >> simp[pacts_def] >> rpt gen_tac >> strip_tac >>
   ‘naccepts (h :: acts) = naccepts [h] + naccepts acts’
     by (Cases_on ‘h’ >> simp[]) >>
-  ‘ps.b.nxt + naccepts [h] < dimword (:64)’ by gvs[] >>
   drule_all pdo_ok >> strip_tac >> simp[] >>
   first_x_assum (qspecl_then [‘w'’, ‘ps'’] mp_tac) >> impl_tac >- gvs[] >>
   strip_tac >> simp[]
@@ -173,8 +170,7 @@ Proof
 QED
 
 Theorem pround_ok:
-  l0_rely w ∧ psmall lfd ps ∧ EVERY (pact_ok lfd) acts ∧
-  ps.b.nxt + naccepts acts < dimword (:64) ⇒
+  l0_rely w ∧ psmall lfd ps ∧ EVERY (pact_ok lfd) acts ⇒
   ∃snap w' ps' log evs. pround lfd pol hs (w, ps) acts = SOME (snap, (w', ps'), log, evs) ∧
                         l0_rely w' ∧ psmall lfd ps' ∧ ps'.b.nxt ≤ ps.b.nxt + naccepts acts
 Proof
@@ -183,12 +179,12 @@ Proof
   drule_all pf_tail_ok >> disch_then (qspecl_then [‘pol’, ‘hs’] strip_assume_tac) >> simp[]
 QED
 
-(* What R1-live assumes of the server, as the handle layer's hrun_ok *)
+(* What R1-live assumes of the server, as the handle layer's hrun_ok.
+   D25′: no room conjunct; a round never fails for lack of room *)
 Definition pl2_ok_def:
   pl2_ok lfd pol ifds m ws0 ⇔
     ∀n h ws evs logs. prounds lfd pol ifds m ws0 n = SOME (h, ws, evs, logs) ⇒
-      EVERY (pact_ok lfd) (new_actions (log_of m) h) ∧
-      (SND ws).b.nxt + naccepts (new_actions (log_of m) h) < dimword (:64)
+      EVERY (pact_ok lfd) (new_actions (log_of m) h)
 End
 
 Theorem prounds_ok:
@@ -200,8 +196,6 @@ Proof
   gvs[] >> simp[prounds_def] >>
   qpat_x_assum ‘pl2_ok _ _ _ _ _’ (mp_tac o REWRITE_RULE [pl2_ok_def]) >>
   disch_then drule >> simp[] >> strip_tac >>
-  ‘ps.b.nxt + naccepts (new_actions (log_of m) h) < dimword (:64)’
-    by gvs[] >>
   drule_all pround_ok >>
   disch_then (qspecl_then [‘pol’, ‘ifds h’] strip_assume_tac) >> simp[]
 QED
@@ -238,4 +232,104 @@ Theorem pacts_psmall:
 Proof
   Induct >> simp[pacts_def] >> rpt gen_tac >> strip_tac >> gvs[AllCaseEqs()] >>
   PairCases_on ‘ws1’ >> metis_tac[pdo_psmall]
+QED
+
+(* D25′: L1 takes a handle only while one is left, and prefetches a
+   connection only when it can give it a handle, so the next handle plus
+   the queue of accepted fds stays within the 2^64 − 1 handles: the next
+   handle is a word64, and a queued fd always gets one *)
+Definition proom_def:
+  proom ps ⇔ ps.b.nxt + LENGTH ps.acq < dimword (:64)
+End
+
+Theorem proom_init:
+  proom pinit
+Proof
+  simp[proom_def, pinit_def, l1init_def]
+QED
+
+Theorem proom_room:
+  proom ps ∧ ps.acq ≠ [] ⇒ l1hdln (w2n (lfd : word64)) ps.b.nxt < dimword (:64)
+Proof
+  rw[proom_def, l1hdln_lt] >> Cases_on ‘ps.acq’ >> gvs[]
+QED
+
+Theorem pdo_proom:
+  pdo lfd (w, ps) a = SOME (r, (w', ps'), evs) ∧ proom ps ⇒ proom ps'
+Proof
+  Cases_on ‘a’ >> simp[pdo_def] >> rw[AllCaseEqs()] >> gvs[] >>
+  TRY (PairCases_on ‘z’) >> gvs[] >>
+  rpt (qpat_x_assum ‘l1do _ _ _ = _’ mp_tac) >> rpt (qpat_x_assum ‘l1_close _ _ = _’ mp_tac) >>
+  simp[l1do_def, l1_close_def, AllCaseEqs()] >> rw[] >>
+  gvs[proom_def, set_inb_def, forget_def, set_outbox_def] >>
+  rw[after_send_def] >> every_case_tac >> simp[set_outbox_def]
+QED
+
+Theorem pacts_proom:
+  ∀acts w ps rs evs w' ps'.
+    pacts lfd (w, ps) acts = SOME (rs, evs, (w', ps')) ∧ proom ps ⇒ proom ps'
+Proof
+  Induct >> simp[pacts_def] >> rpt gen_tac >> strip_tac >> gvs[AllCaseEqs()] >>
+  PairCases_on ‘ws1’ >> metis_tac[pdo_proom]
+QED
+
+Theorem pf_fetch_proom:
+  ∀fs w ps w' ps' log evs.
+    pf_fetch lfd pol fs (w, ps) = SOME ((w', ps'), log, evs) ∧ proom ps ⇒ proom ps'
+Proof
+  Induct >- simp[pf_fetch_def] >>
+  rpt gen_tac >> simp[Once pf_fetch_def] >> IF_CASES_TAC
+  >- (strip_tac >> first_x_assum irule >> metis_tac[]) >>
+  IF_CASES_TAC
+  >- (simp[AllCaseEqs()] >> strip_tac >> pairarg_tac >> gvs[AllCaseEqs()] >>
+      first_x_assum drule >> disch_then irule >>
+      gvs[wants_input_def, l1hdln_lt] >>
+      Cases_on ‘l0_res_of out’ >> gvs[proom_def] >> rw[] >> gvs[proom_def]) >>
+  simp[AllCaseEqs()] >> strip_tac >> pairarg_tac >> gvs[AllCaseEqs()] >>
+  first_x_assum drule >> disch_then irule >>
+  Cases_on ‘l0_res_of out’ >> gvs[proom_def] >> rw[] >> gvs[proom_def, set_inb_def]
+QED
+
+Theorem l1_flush_nxt:
+  ∀fs w b w' b' evs. l1_flush fs (w, b) = SOME ((w', b'), evs) ⇒ b'.nxt = b.nxt
+Proof
+  Induct >- simp[l1_flush_def] >> rpt gen_tac >>
+  simp[Once l1_flush_def] >> IF_CASES_TAC
+  >- (strip_tac >> first_x_assum drule >> simp[]) >>
+  simp[AllCaseEqs()] >> strip_tac >> gvs[] >> first_x_assum drule >>
+  rw[after_send_def] >> every_case_tac >> gvs[set_outbox_def]
+QED
+
+Theorem l1_reap_nxt:
+  ∀fs w b w' b' evs. l1_reap fs (w, b) = SOME ((w', b'), evs) ⇒ b'.nxt = b.nxt
+Proof
+  Induct >- simp[l1_reap_def] >> rpt gen_tac >>
+  simp[Once l1_reap_def] >> IF_CASES_TAC >> simp[AllCaseEqs()] >> strip_tac >>
+  gvs[] >> TRY (PairCases_on ‘ws’) >> first_x_assum drule >>
+  gvs[l1_close_def, AllCaseEqs(), forget_def, set_outbox_def]
+QED
+
+Theorem pf_tail_proom:
+  pf_tail lfd pol hs (w, ps) = SOME (rdy, (w', ps'), log, evs) ∧ proom ps ⇒ proom ps'
+Proof
+  simp[pf_tail_def, AllCaseEqs()] >> strip_tac >> gvs[] >>
+  drule l1_flush_nxt >> strip_tac >>
+  drule l1_reap_nxt >> strip_tac >>
+  ‘proom (ps with b := b2)’ by gvs[proom_def] >>
+  drule_all pf_fetch_proom >> gvs[proom_def]
+QED
+
+Theorem pround_proom:
+  pround lfd pol hs (w, ps) acts = SOME (snap, (w', ps'), log, evs) ∧ proom ps ⇒ proom ps'
+Proof
+  simp[pround_def, AllCaseEqs()] >> strip_tac >> PairCases_on ‘ws1’ >>
+  metis_tac[pacts_proom, pf_tail_proom]
+QED
+
+Theorem prounds_proom:
+  ∀n h w ps evs logs.
+    prounds lfd pol ifds m (w0, ps0) n = SOME (h, (w, ps), evs, logs) ∧ proom ps0 ⇒ proom ps
+Proof
+  Induct >> simp[prounds_def, AllCaseEqs()] >> rpt strip_tac >> gvs[] >>
+  PairCases_on ‘ws’ >> metis_tac[pround_proom]
 QED

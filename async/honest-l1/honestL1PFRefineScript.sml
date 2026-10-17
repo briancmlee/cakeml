@@ -19,7 +19,7 @@
 Theory honestL1PFRefine
 Ancestors
   honestL0WorldProps
-  honestL1PFModel honestL1Model honestL1Steps honestL1Inv honestL0Rely honestL0World honestL0
+  honestL1PFInv honestL1PFModel honestL1Model honestL1Steps honestL1Inv honestL0Rely honestL0World honestL0
   asyncHLModel
   socketV2FFI socketV2Events socketV2Fair ffiSpikeSocketFFI asyncM3World asyncCore
   asyncLevel1 llist alist
@@ -53,13 +53,15 @@ Definition pv_rel_def:
 End
 
 (* L1's own invariant: its fds are distinct, its handles distinct and
-   issued, and only open handles' fds have input *)
+   issued, only open handles' fds have input, and (D25′) every accepted
+   fd it holds can still get a handle *)
 Definition pown_def:
   pown lfd ps ⇔
     ALL_DISTINCT (lfd :: MAP SND ps.b.tbl ++ ps.b.closing ++ ps.acq) ∧
     ALL_DISTINCT (MAP FST ps.b.tbl) ∧
     (∀h f. ALOOKUP ps.b.tbl h = SOME f ⇒ ∃i. i < ps.b.nxt ∧ h = l1hdl lfd i) ∧
-    (∀f. inb_of ps f ≠ [] ∨ MEM f ps.eof ⇒ MEM f (MAP SND ps.b.tbl))
+    (∀f. inb_of ps f ≠ [] ∨ MEM f ps.eof ⇒ MEM f (MAP SND ps.b.tbl)) ∧
+    ps.b.nxt + LENGTH ps.acq < dimword (:64)
 End
 
 (* The handle layer's state is L1's tables *)
@@ -195,9 +197,13 @@ Theorem pdo_accept:
   ∃s' hevs. hdo lfd (s, hs_of ps) (Accept l) = SOME (r, (s', hs_of ps'), hevs) ∧
             pv_rel lfd cm ps' s' ∧ pown lfd ps'
 Proof
-  rw[pdo_def] >> Cases_on ‘ps.acq’ >> gvs[]
-  >- (‘ALOOKUP s.listening l = SOME []’ by gvs[pv_rel_def] >>
-      simp[hdo_def, sock_accept2_def]) >>
+  rw[pdo_def] >>
+  (* D25′: an fd L1 holds can get a handle, so without room there is none *)
+  ‘ps.acq ≠ [] ⇒ l1hdln (w2n l) ps.b.nxt < dimword (:64)’
+    by (Cases_on ‘ps.acq’ >> gvs[pown_def, l1hdln_lt]) >>
+  Cases_on ‘ps.acq’ >> gvs[] >>
+  TRY (‘ALOOKUP s.listening l = SOME []’ by gvs[pv_rel_def] >>
+       simp[hdo_def, sock_accept2_def] >> NO_TAC) >>
   rename1 ‘ps.acq = f :: q’ >>
   ‘LENGTH ps.b.tbl ≤ ps.b.nxt’
     by (irule tbl_length_le >> gvs[pown_def] >> metis_tac[]) >>
@@ -607,7 +613,8 @@ Theorem fetch_accept_rel:
   ps1.inb = ps.inb ∧ ps1.eof = ps.eof
 Proof
   strip_tac >>
-  ‘ps.acq = [] ∧ ps.pause = 0’ by gvs[wants_input_def] >>
+  ‘ps.acq = [] ∧ ps.pause = 0 ∧ ps.b.nxt + 1 < dimword (:64)’
+    by gvs[wants_input_def, l1hdln_lt] >>
   ‘∀g. MEM g (l0_used w) ⇒ MEM g (l0_used w1)’
     by (gvs[sys_accept_def] >> drule l0_do_used >> simp[]) >>
   Cases_on ‘l0_res_of out’ >> gvs[arrs_def]

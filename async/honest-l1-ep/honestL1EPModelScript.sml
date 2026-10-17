@@ -27,6 +27,8 @@
      up (the handle moves to the PF table); an error: refused;
    - the snapshot reports a connect handle ONCE when it has settled (up or
      refused), as the layer's settling list; a refused one stays readable.
+  - ERead at EOF on a PF handle keeps it (PROVISIONAL Q-13(a), point (2);
+    PF's pdo Read auto-closes); only EClose closes it.
   Everything else is honestL1PFModel's (EAccept is its Accept; EGot / EWrote
   translate Got / Wrote, a complete buffered write).
 *)
@@ -106,6 +108,15 @@ Definition conn_transient_def:
   conn_transient out ⇔ case l0_res_of out of Fail e _ => l1_transient e | _ => F
 End
 
+(* PROVISIONAL Q-13(a), point (2): a PF handle at EOF (inbox drained, EOF
+   seen); ERead keeps it, where PF's pdo Read would auto-close it *)
+Definition ep_eof_def:
+  ep_eof es h ⇔
+    case ALOOKUP es.p.b.tbl h of
+    | SOME f => inb_of es.p f = [] ∧ MEM f es.p.eof
+    | NONE => F
+End
+
 Definition edo_def:
   edo lfd pol (w, es) (EAccept l) =
     (OPTION_MAP (λ(r, (w', ps'), evs).
@@ -149,9 +160,12 @@ Definition edo_def:
              (l1_close f (w, es.p.b))
          else SOME (EGot NONE, (w, es), [])
      | NONE =>
-         OPTION_MAP (λ(r, (w', ps'), evs).
-                       ((case r of Got x => EGot x | _ => EGot NONE), (w', es with p := ps'), evs))
-           (pdo lfd (w, es.p) (Read h n))) ∧
+         if 0 < n ∧ n < 256 ** 8 ∧ ep_eof es h then
+           SOME (EGot (SOME []), (w, es), [])   (* PROVISIONAL Q-13(a), point (2) *)
+         else
+           OPTION_MAP (λ(r, (w', ps'), evs).
+                         ((case r of Got x => EGot x | _ => EGot NONE), (w', es with p := ps'), evs))
+             (pdo lfd (w, es.p) (Read h n))) ∧
   edo lfd pol (w, es) (EWrite h bs) =
     (if MEM h es.shq ∨ MEM h es.shut then SOME (EWrote 0, (w, es), [])  (* after EShut *)
      else

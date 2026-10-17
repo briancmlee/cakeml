@@ -858,3 +858,52 @@ Proof
   qexistsl_tac [‘Wrote’, ‘w'’, ‘st'’, ‘s'’, ‘hs'’, ‘evs’, ‘MAP l0_v2_event evs’] >>
   gvs[fds_lt_def] >> metis_tac[]
 QED
+
+(* The poll buffer read back (D20) *)
+Theorem pollfd_entries_FLAT:
+  ∀l. EVERY (λx. LENGTH x = 8) l ⇒ pollfd_entries (FLAT l) = l
+Proof
+  Induct >- simp[Once pollfd_entries_def] >>
+  rw[] >> simp[Once pollfd_entries_def] >>
+  simp[TAKE_APPEND1, DROP_APPEND1, TAKE_LENGTH_ID_rwt, DROP_LENGTH_NIL_rwt]
+QED
+
+Theorem DROP_16_poll_buf[simp]:
+  DROP 16 (poll_buf fes) = FLAT (MAP pfd_bytes fes)
+Proof
+  simp[poll_buf_def, DROP_APPEND]
+QED
+
+Theorem poll_out_entries:
+  EVERY (λ(f, e). small f ∧ e < 4) fes ⇒
+  pollfd_entries (DROP 16 (poll_out w (poll_buf fes))) =
+  MAP (λfe. TAKE 6 (pfd_bytes fe) ++ abi_rev (fd_revents w fe)) fes
+Proof
+  strip_tac >> simp[poll_out_def, pollfd_entries_buf] >>
+  ‘LENGTH (TAKE 3 (DROP 13 (poll_buf fes))) = 3’ by simp[poll_buf_def] >>
+  simp[DROP_APPEND, MAP_MAP_o, o_DEF] >>
+  ‘DROP 16 (enc_res (Ok (LENGTH (FILTER (λe. pfd_revents w (pe_fe e) ≠ 0w)
+             (MAP pfd_bytes fes)))) ++ TAKE 3 (DROP 13 (poll_buf fes))) = []’
+    by simp[DROP_LENGTH_TOO_LONG] >>
+  ‘DROP 3 (TAKE 3 (DROP 13 (poll_buf fes))) = []’ by fs[DROP_LENGTH_TOO_LONG] >>
+  simp[DROP_LENGTH_TOO_LONG] >>
+  ‘EVERY (λx. LENGTH x = 8)
+     (MAP (λx. TAKE 6 (pfd_bytes x) ++ abi_rev (pfd_revents w (pe_fe (pfd_bytes x)))) fes)’
+    by simp[EVERY_MAP, abi_rev_def] >>
+  drule pollfd_entries_FLAT >> simp[] >> strip_tac >>
+  irule MAP_CONG >> simp[FORALL_PROD] >> rw[] >>
+  gvs[EVERY_MEM] >> first_x_assum drule >> simp[] >> strip_tac >>
+  drule_all pe_pfd_bytes >> simp[pfd_revents_def] >> fs[small_def]
+QED
+
+Theorem poll_revents_ok:
+  EVERY (λ(f, e). small f ∧ e < 4) fes ∧ l0_res_of (poll_out w (poll_buf fes)) = Ok k ⇒
+  poll_revents fes (poll_out w (poll_buf fes)) =
+  ZIP (MAP FST fes, MAP (λfe. byte_revents (fd_revents w fe)) fes)
+Proof
+  strip_tac >> simp[poll_revents_def] >> drule poll_out_entries >>
+  disch_then (qspec_then ‘w’ SUBST1_TAC) >> simp[MAP_MAP_o, o_DEF] >>
+  ‘∀fe. DROP 6 (TAKE 6 (pfd_bytes fe) ++ abi_rev (fd_revents w fe)) = abi_rev (fd_revents w fe)’
+    by simp[DROP_APPEND] >> simp[]
+QED
+

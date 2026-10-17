@@ -224,7 +224,7 @@ Theorem csent_do_buf:
   l0_chan_of w' f = SOME c ∧ csent w' c = csent w c ++ ev_sent f ev
 Proof
   strip_tac >>
-  ‘LENGTH out = alen’
+  ‘LENGTH out = LENGTH bs’
     by (gvs[l0_do_buf_def, AllCaseEqs(), winv_def] >> drule_all l0_ffi_fn_length >> simp[]) >>
   drule l0_do_buf_cases >> strip_tac >> gvs[] >>
   qabbrev_tac ‘wt = l0_tick n w’ >>
@@ -236,7 +236,7 @@ Proof
     by (gvs[Abbr ‘wt’, winv_def, l0wf_tick] >> irule l0_rely_ch >> qexists_tac ‘w’ >> simp[]) >>
   drule_at (Pos last) csent_call >> disch_then (qspecl_then [‘f’, ‘c’] mp_tac) >>
   impl_tac >- (fs[] >> metis_tac[]) >>
-  strip_tac >> simp[ev_sent_def, MAP_SND_ZIP_REPLICATE] >> rw[]
+  strip_tac >> simp[ev_sent_def, MAP_ZIP] >> rw[]
 QED
 
 (* ------------------------------------------------------------------------
@@ -286,6 +286,9 @@ Theorem sys_csent:
   l0_chan_of w' f = SOME c ∧ csent w' c = csent w c ∧ ev_sent f ev = []
 Proof
   rpt strip_tac >> gvs[sys_recv_def, sys_accept_def, sys_poll_def, sys_close_def] >>
+  TRY (drule_at (Pos last) csent_do_buf >> disch_then (qspecl_then [‘f’, ‘c’] mp_tac) >>
+       simp[] >> strip_tac >> drule l0_do_buf_cases >> strip_tac >> gvs[ev_sent_def] >>
+       NO_TAC) >>
   drule_at (Pos last) csent_do >> disch_then (qspecl_then [‘f’, ‘c’] mp_tac) >>
   simp[] >> strip_tac >> drule l0_do_cases >> strip_tac >> gvs[ev_sent_def]
 QED
@@ -1083,6 +1086,7 @@ Theorem sys_ev_sent:
   (sys_accept g w = SOME (out, w', ev) ⇒ ∀f. ev_sent f ev = [])
 Proof
   rw[sys_poll_def, sys_recv_def, sys_close_def, sys_accept_def] >>
+  TRY (drule l0_do_buf_cases >> rw[] >> simp[ev_sent_def] >> NO_TAC) >>
   drule l0_do_cases >> rw[] >> simp[ev_sent_def]
 QED
 
@@ -1385,7 +1389,7 @@ Theorem tail_out:
 Proof
   simp[pf_tail_def] >> strip_tac >>
   qabbrev_tac ‘fes = pf_poll_set lfd hw ps hs’ >>
-  Cases_on ‘l1_polls (poll_chunks fes) w’ >> gvs[] >> rename1 ‘_ = SOME x’ >>
+  Cases_on ‘l1_polls [fes] w’ >> gvs[] >> rename1 ‘_ = SOME x’ >>
   PairCases_on ‘x’ >> rename1 ‘l1_polls _ _ = SOME (rv, w1, pevs)’ >> gvs[] >>
   Cases_on ‘l1_flush (writable_fds rv) (w1, ps.b)’ >> gvs[] >> rename1 ‘_ = SOME y’ >>
   PairCases_on ‘y’ >> rename1 ‘l1_flush _ _ = SOME ((w2, b2), fevs)’ >> gvs[] >>
@@ -1904,7 +1908,7 @@ Theorem tail_tk:
 Proof
   simp[pf_tail_def] >> strip_tac >>
   qabbrev_tac ‘fes = pf_poll_set lfd hw ps hs’ >>
-  Cases_on ‘l1_polls (poll_chunks fes) w’ >> gvs[] >> rename1 ‘_ = SOME x’ >>
+  Cases_on ‘l1_polls [fes] w’ >> gvs[] >> rename1 ‘_ = SOME x’ >>
   PairCases_on ‘x’ >> rename1 ‘l1_polls _ _ = SOME (rv, w1, pevs)’ >> gvs[] >>
   Cases_on ‘l1_flush (writable_fds rv) (w1, ps.b)’ >> gvs[] >> rename1 ‘_ = SOME y’ >>
   PairCases_on ‘y’ >> rename1 ‘l1_flush _ _ = SOME ((w2, b2), fevs)’ >> gvs[] >>

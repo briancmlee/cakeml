@@ -17,12 +17,10 @@ What L3 trusts, beside CakeML's semantics:
 holds them (design/36 §4.3: probes, random tests, mutants), and
 `make conformance` runs them in `runnable/l0`.
 
-**Still to come in this layer:**
-- the raw-trace echo spec, `honestEchoL0Spec` (`echo_safe_l0`, approved),
-  and its bites. It waits for `fds_lt` to move from the L1 theory
-  `honestL1Steps` into `honestL0WorldProps` (honest-ffi).
-- the fairness definitions [F1]/[F2] and `hup_spin_bite`, which are on
-  L3-00 for now.
+**Also trusted, in L3-02:** the raw-trace echo spec `honestEchoL0Spec`
+(`kernel/spec/`, approved). It sits one layer later only because it needs
+`fds_lt` from `honestL0WorldProps`. The fairness definitions [F1]/[F2] and
+`hup_spin_bite` are on L3-00 for now.
 
 **Source:** `spike/d20-poll` @e282d1996, verbatim except the renamed
 ancestor (`ffiSpikeSocketFFI` → `socketWorld`, names.tsv). It includes

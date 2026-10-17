@@ -21,7 +21,7 @@
 Theory moonshotClient
 Ancestors
   moonshotClientSpec endpointHLModel endpointWorld HttpSpec HttpSpecBodies
-  asyncLevel1 asyncCore
+  asyncLevel1 asyncCore asyncHLModel socketV2FFI honestL1Steps
 Libs
   preamble
 
@@ -317,7 +317,218 @@ Definition crel_def:
     (∀i hd rest hd'. i < N ∧ EL i st.cs = CUp hd rest ∧ ALOOKUP st.hlc hd' = SOME i ∧
                      hl_sent hd' ps ≠ [] ⇒ hd' = hd) ∧
     (* a refused or ended handle is closed for good *)
+    (∀hd. hl_refused hd ps ∨ hl_eof hd ps ⇒ MEM hd (MAP FST st.hlc)) ∧
     (∀hd. hl_refused hd ps ∨ hl_eof hd ps ⇒ ¬MEM hd (MAP FST hs.tbl)) ∧
     (∀hd. ¬(hl_refused hd ps ∧ hl_eof hd ps)) ∧
     (∀hd. (hl_refused hd ps ∨ hl_eof hd ps) ⇒ ∀i. i < N ⇒ ¬MEM hd (chd (EL i st.cs)))
 End
+
+(* ------------------------------------------------------------------------
+   One connection's actions keep the relation
+   ------------------------------------------------------------------------ *)
+
+(* What an action leaves of the world *)
+Definition wkeep_def:
+  wkeep (w : eworld) w' ⇔
+    w'.listening = w.listening ∧ w'.reserved = w.reserved ∧ w'.alloc = w.alloc ∧
+    w'.takes = w.takes ∧ w'.env = w.env ∧ w'.clock = w.clock ∧ w'.hist = w.hist ∧
+    w'.nosock = w.nosock ∧ w'.calls = w.calls ∧ LENGTH w.chans ≤ LENGTH w'.chans ∧
+    ∀j. j < LENGTH w.chans ⇒ (EL j w'.chans).status = (EL j w.chans).status ∨
+                             (EL j w.chans).status = Refused ∧ (EL j w'.chans).status = Failed
+End
+
+Theorem wkeep_refl[simp]:
+  wkeep w w
+Proof
+  simp[wkeep_def]
+QED
+
+Theorem cupd_one[simp]:
+  cupd rqs st [(k, x)] [r] =
+    st with <| cs := LUPDATE (cres (brequests (rqs k)) (EL k st.cs) x r) k st.cs;
+               nh := st.nh + (if new_hd r = NONE then 0 else 1);
+               hlc := (case new_hd r of SOME hd => [(hd, k)] | NONE => []) ++ st.hlc |>
+Proof
+  simp[cupd_def]
+QED
+
+Theorem chd_LUPDATE:
+  i < LENGTH cs ⇒ (MEM hd (chd (EL i (LUPDATE c k cs))) ⇔
+                   if i = k then MEM hd (chd c) else MEM hd (chd (EL i cs)))
+Proof
+  rw[EL_LUPDATE]
+QED
+
+Theorem hl_one[simp]:
+  hl_sent hd [(x, r)] =
+    (case (x, r) of (EWrite h' bs, EWrote k) => if h' = hd then TAKE k bs else [] | _ => []) ∧
+  hl_read hd [(x, r)] =
+    (case (x, r) of (ERead h' n, EGot (SOME d)) => if h' = hd then d else [] | _ => []) ∧
+  hl_conn_handles [(x, r)] =
+    (case x of EConnect p => (case r of EConnected (SOME h') => [h'] | _ => []) | _ => []) ∧
+  (hl_eof hd [(x, r)] ⇔ ∃n. x = ERead hd n ∧ r = EGot (SOME [])) ∧
+  (hl_refused hd [(x, r)] ⇔ ∃n. x = ERead hd n ∧ r = ERefused)
+Proof
+  simp[hl_sent_def, hl_read_def, hl_conn_handles_def, hl_connects_def, hl_eof_def,
+       hl_refused_def] >>
+  Cases_on ‘x’ >> Cases_on ‘r’ >> simp[] >> TRY (rename1 ‘EConnected oh’ >> Cases_on ‘oh’) >>
+  simp[] >> metis_tac[]
+QED
+
+(* The ready sets matter only for the open handles *)
+Theorem crel_rdyf:
+  crel a N rqs lfd st rdyf ps w hs ∧
+  (∀i hd. i < N ∧ MEM hd (chd (EL i st.cs)) ⇒ (hd ∈ rdyf' i ⇔ hd ∈ rdyf i)) ⇒
+  crel a N rqs lfd st rdyf' ps w hs
+Proof
+  simp[crel_def] >> rpt strip_tac >> fs[] >> TRY (metis_tac[] >> NO_TAC) >>
+  qpat_x_assum ‘∀i hd. i < N ∧ MEM hd _ ⇒ ∃f j. _’ drule_all >> strip_tac >>
+  qexistsl_tac [‘f’, ‘j’] >> simp[] >>
+  qpat_x_assum ‘∀i hd. i < N ∧ MEM hd _ ⇒ (_ ⇔ _)’ drule_all >> simp[]
+QED
+
+(* A connect that got no socket changes nothing the relation sees *)
+Theorem crel_nosock:
+  crel a N rqs lfd st rdyf ps w hs ⇒
+  crel a N rqs lfd st rdyf (ps ++ [(EConnect p, EConnected NONE)]) (w with nconnects := n) hs
+Proof
+  simp[crel_def] >> rpt strip_tac >> fs[] >> metis_tac[]
+QED
+
+Theorem crel_connect:
+  crel a N rqs lfd st rdyf ps w hs ∧ k < N ∧ EL k st.cs = CIdle ∧
+  hs.nxt + 2 < dimword (:64) ∧ N < dimword (:64) ⇒
+  ∃r w1 hs1. ehdo lfd (w, hs) (EConnect a) = SOME (r, (w1, hs1)) ∧
+     crel a N rqs lfd (cupd rqs st [(k, EConnect a)] [r]) ((k =+ ∅) rdyf) (ps ++ [(EConnect a, r)])
+       w1 hs1 ∧
+     wkeep w w1
+Proof
+  strip_tac >> ‘LENGTH st.cs = N’ by fs[crel_def] >> simp[ehdo_connect] >>
+  IF_CASES_TAC
+  >- (simp[cres_def, new_hd_def] >>
+      ‘LUPDATE CIdle k st.cs = st.cs’
+        by (qpat_x_assum ‘EL k st.cs = CIdle’ (SUBST1_TAC o SYM) >> irule LUPDATE_SAME >> simp[]) >>
+      simp[wkeep_def] >>
+      ‘st with <| cs := st.cs; nh := st.nh; hlc := st.hlc |> = st’
+        by simp[theorem "cst_component_equality"] >>
+      simp[] >> irule crel_rdyf >> qexists_tac ‘rdyf’ >>
+      conj_tac >> TRY (irule crel_nosock >> first_assum ACCEPT_TAC >> NO_TAC) >>
+      rw[combinTheory.APPLY_UPDATE_THM] >> gvs[chd_def]) >>
+  ‘hdln (w2n lfd) hs.nxt < 18446744073709551616’
+    by (‘hdln (w2n lfd) hs.nxt ≤ hs.nxt + 1’ by rw[hdln_def] >> fs[]) >>
+  ‘hdln (w2n lfd) hs.nxt < dimword (:64)’ by simp[] >>
+  qpat_assum ‘hdln _ _ < 18446744073709551616’
+    (fn th => simp[th, cres_def, new_hd_def, eh_new_def]) >>
+  qabbrev_tac ‘f = w.alloc (LENGTH w.chans) (ep_used w)’ >>
+  qabbrev_tac ‘hd = hdl lfd hs.nxt’ >>
+  qpat_x_assum ‘crel _ _ _ _ _ _ _ _ _’ (strip_assume_tac o REWRITE_RULE [crel_def]) >>
+  ‘¬MEM f (ep_used w)’ by (fs[alloc_ok_def, Abbr ‘f’]) >>
+  ‘¬MEM f (MAP FST w.open_fds)’ by fs[ep_used_def] >>
+  ‘¬MEM f (MAP SND hs.tbl)’
+    by (qpat_x_assum ‘∀f. MEM f (MAP FST w.open_fds) ⇔ _’ (qspec_then ‘f’ mp_tac) >> simp[]) >>
+  ‘∀k'. k' < hs.nxt ⇒ hdl lfd k' ≠ hd’
+    by (rw[Abbr ‘hd’] >> irule hdl_fresh >> simp[]) >>
+  ‘¬MEM hd (MAP FST st.hlc)’
+    by (strip_tac >> qpat_x_assum ‘∀hd. MEM hd (MAP FST st.hlc) ⇒ ∃k. _’ drule >>
+        strip_tac >> qpat_x_assum ‘∀k'. k' < hs.nxt ⇒ _’ drule >> simp[]) >>
+  ‘∀i. i < N ⇒ ¬MEM hd (chd (EL i st.cs))’
+    by (rpt strip_tac >>
+        qpat_x_assum ‘∀i hd. i < N ∧ MEM hd (chd _) ⇒ _’ drule_all >> strip_tac >>
+        imp_res_tac ALOOKUP_MEM >>
+        ‘MEM hd (MAP FST st.hlc)’
+          by (qpat_x_assum ‘ALOOKUP st.hlc hd = SOME i’ mp_tac >> rpt (pop_assum kall_tac) >>
+              rw[] >> imp_res_tac ALOOKUP_MEM >> fs[MEM_MAP] >> metis_tac[FST]) >>
+        qpat_x_assum ‘¬MEM hd (MAP FST st.hlc)’ mp_tac >>
+        pop_assum (fn th => REWRITE_TAC [th])) >>
+  ‘¬MEM hd (MAP FST hs.tbl)’
+    by (qpat_x_assum ‘∀hd. MEM hd (MAP FST hs.tbl) ⇔ _’ (fn th => REWRITE_TAC [th]) >>
+        qpat_x_assum ‘∀i. i < N ⇒ ¬MEM hd _’ mp_tac >> rpt (pop_assum kall_tac) >>
+        metis_tac[]) >>
+  reverse conj_tac
+  >- (simp[wkeep_def, EL_APPEND1]) >>
+  ‘hl_sent hd ps = []’
+    by (CCONTR_TAC >> qpat_x_assum ‘∀hd. hl_sent hd ps ≠ [] ⇒ _’ drule >>
+        qpat_x_assum ‘¬MEM hd (MAP FST st.hlc)’ mp_tac >> simp[]) >>
+  ‘¬hl_refused hd ps ∧ ¬hl_eof hd ps’
+    by (conj_tac >> strip_tac >>
+        qpat_x_assum ‘∀hd. hl_refused hd ps ∨ hl_eof hd ps ⇒ MEM hd (MAP FST st.hlc)’
+          (qspec_then ‘hd’ mp_tac) >>
+        qpat_x_assum ‘¬MEM hd (MAP FST st.hlc)’ mp_tac >> simp[]) >>
+  ‘∀x. hl_refused x ps ∨ hl_eof x ps ⇒ x ≠ hd’
+    by (rpt strip_tac >> qpat_x_assum ‘x = hd’ SUBST_ALL_TAC >> fs[]) >>
+  simp[crel_def] >> rpt conj_tac >> TRY (simp[] >> NO_TAC)
+  (* 1 the new channel's index is new *)
+  >- (strip_tac >>
+      qpat_x_assum ‘EVERY _ (MAP SND w.open_fds)’ (mp_tac o REWRITE_RULE [EVERY_MEM]) >>
+      disch_then drule >> simp[])
+  (* 2 *)
+  >- (qpat_x_assum ‘EVERY _ (MAP SND w.open_fds)’ mp_tac >> simp[EVERY_MEM] >>
+      rpt strip_tac >> first_x_assum drule >> simp[])
+  (* 3 the open handles *)
+  >- (gen_tac >> simp[EL_LUPDATE] >> eq_tac
+      >- (strip_tac
+          >- (qexists_tac ‘k’ >> simp[chd_def]) >>
+          qexists_tac ‘i’ >> Cases_on ‘i = k’ >> gvs[chd_def]) >>
+      strip_tac >> Cases_on ‘i = k’ >> gvs[chd_def] >> disj2_tac >>
+      qexists_tac ‘i’ >> simp[])
+  (* 4 one owner *)
+  >- (rpt gen_tac >> simp[EL_LUPDATE] >> rw[] >> gvs[chd_def] >>
+      TRY (qpat_x_assum ‘∀i. i < N ⇒ ¬MEM hd _’ drule >> simp[] >> NO_TAC) >>
+      qpat_x_assum ‘∀i1 i2 hd. _ ⇒ i1 = i2’ irule >>
+      rpt conj_tac >> TRY (first_assum ACCEPT_TAC) >> qexists_tac ‘hd'’ >>
+      conj_tac >> first_assum ACCEPT_TAC)
+  (* 5 each connection's handle *)
+  >- (rpt gen_tac >> strip_tac >> Cases_on ‘i = k’
+      >- (gvs[EL_LUPDATE, chd_def] >>
+          simp[cok_def, EL_LENGTH_APPEND, new_chan_def, combinTheory.APPLY_UPDATE_THM]) >>
+      gvs[EL_LUPDATE, combinTheory.APPLY_UPDATE_THM] >>
+      ‘hd' ≠ hd’ by (strip_tac >> gvs[] >> qpat_x_assum ‘∀i. i < N ⇒ ¬MEM hd _’ drule >> simp[]) >>
+      qpat_x_assum ‘∀i hd. i < N ∧ MEM hd (chd _) ⇒ ∃f j. _’ drule_all >> strip_tac >>
+      ‘f' ≠ f’ by (strip_tac >> gvs[] >> imp_res_tac ALOOKUP_MEM >>
+                   qpat_x_assum ‘¬MEM f (MAP SND hs.tbl)’ mp_tac >> simp[MEM_MAP, EXISTS_PROD] >>
+                   metis_tac[]) >>
+      ‘j < LENGTH w.chans’ by (imp_res_tac ALOOKUP_MEM >>
+                               qpat_x_assum ‘EVERY _ (MAP SND w.open_fds)’ mp_tac >>
+                               simp[EVERY_MEM, MEM_MAP, EXISTS_PROD] >> metis_tac[]) >>
+      simp[EL_APPEND1])
+  (* 6 *)
+  >- (gen_tac >> eq_tac >> rw[] >> simp[])
+  (* 7 issued below nxt *)
+  >- (rw[] >- (qexists_tac ‘hs.nxt’ >> simp[]) >>
+      qpat_x_assum ‘∀hd. MEM hd (MAP FST st.hlc) ⇒ ∃k. _’ (qspec_then ‘hd'’ mp_tac) >>
+      simp[] >> strip_tac >> qexists_tac ‘k'’ >> simp[])
+  (* 8 prefixes *)
+  >- (rpt gen_tac >> IF_CASES_TAC >> rw[] >> gvs[] >>
+      qpat_x_assum ‘∀hd i. ALOOKUP st.hlc hd = SOME i ⇒ _’ drule >> simp[])
+  (* 9 one sending handle per connection *)
+  >- (rpt gen_tac >> rw[] >> gvs[] >>
+      qpat_x_assum ‘∀hd hd' i. _ ⇒ hd = hd'’ irule >>
+      rpt conj_tac >> TRY (first_assum ACCEPT_TAC) >> qexists_tac ‘i’ >>
+      rpt conj_tac >> first_assum ACCEPT_TAC)
+  (* 10 idle or pending: nothing sent *)
+  >- (rpt gen_tac >> simp[EL_LUPDATE] >> rw[] >> gvs[] >>
+      qpat_x_assum ‘∀i hd'. i < N ∧ (_ ∨ _) ∧ _ ⇒ _’ irule >>
+      rpt conj_tac >> TRY (first_assum ACCEPT_TAC) >> qexists_tac ‘i’ >> simp[])
+  (* 11 up: only its handle sent *)
+  >- (rpt gen_tac >> simp[EL_LUPDATE] >> rw[] >> gvs[] >>
+      qpat_x_assum ‘∀i hd rest hd'. _ ⇒ hd' = hd’ irule >> simp[] >>
+      rpt conj_tac >> TRY (first_assum ACCEPT_TAC) >> qexistsl_tac [‘i’, ‘rest’] >>
+      rpt conj_tac >> first_assum ACCEPT_TAC)
+  (* 12 refused or ended: a connect handle *)
+  >- (gen_tac >> disch_tac >> disj2_tac >>
+      qpat_x_assum ‘∀hd. MEM hd (MAP FST st.hlc) ⇔ _’ (fn th => REWRITE_TAC [GSYM th]) >>
+      qpat_x_assum ‘∀hd. hl_refused hd ps ∨ hl_eof hd ps ⇒ MEM hd (MAP FST st.hlc)’ irule >>
+      first_assum ACCEPT_TAC)
+  (* 13 refused or ended: not open *)
+  >- (gen_tac >> disch_tac >> conj_tac
+      >- (qpat_x_assum ‘∀x. _ ⇒ x ≠ hd’ irule >> first_assum ACCEPT_TAC) >>
+      gen_tac >> Cases_on ‘i < N’ >> simp[] >>
+      qpat_x_assum ‘∀hd. _ ⇒ ∀i. i < N ⇒ ¬MEM hd _’ drule >> disch_then drule >> simp[])
+  (* 14 *)
+  >- (gen_tac >> qpat_x_assum ‘∀hd. ¬(hl_refused hd ps ∧ hl_eof hd ps)’ (qspec_then ‘hd'’ mp_tac) >>
+      simp[])
+  (* 15 refused or ended: no connection's *)
+  >> gen_tac >> disch_tac >> gen_tac >> strip_tac >> simp[EL_LUPDATE] >> IF_CASES_TAC
+  >- (simp[chd_def] >> qpat_x_assum ‘∀x. _ ⇒ x ≠ hd’ irule >> first_assum ACCEPT_TAC) >>
+  qpat_x_assum ‘∀hd. _ ⇒ ∀i. i < N ⇒ ¬MEM hd _’ drule >> disch_then drule >> simp[]
+QED

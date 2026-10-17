@@ -2655,3 +2655,113 @@ Proof
        simp[] >> NO_TAC) >>
   fs[up_at_hstat]
 QED
+
+Theorem cD_new:
+  client_world lfd c w0 ∧ N < cbound ∧
+  up_at lfd lv (cifds a N rqs) (cprog a N rqs) w0 (SUC p) hd ∧
+  (∀n'. n' < SUC p ⇒ ¬up_at lfd lv (cifds a N rqs) (cprog a N rqs) w0 n' hd) ⇒
+  cD a N rqs lfd lv w0 p < cD a N rqs lfd lv w0 (SUC p)
+Proof
+  strip_tac >> drule_all newup_chi >> strip_tac >> simp[cD_def] >>
+  irule CARD_PSUBSET >> conj_tac
+  >- (irule SUBSET_FINITE >> qexists_tac ‘count N’ >> simp[SUBSET_DEF]) >>
+  simp[PSUBSET_DEF, SUBSET_DEF, EXTENSION] >> conj_tac
+  >- (rpt strip_tac >> irule chi_SUC >> simp[] >> metis_tac[]) >>
+  qexists_tac ‘k’ >> simp[]
+QED
+
+(* Connect fairness's second half cannot be met forever: at most N
+   connections ever have a handle up *)
+Theorem fair_contra:
+  client_world lfd c w0 ∧ N < cbound ∧
+  inf_often (λn. ∃hd. up_at lfd lv (cifds a N rqs) (cprog a N rqs) w0 n hd ∧
+                      ∀n'. n' < n ⇒ ¬up_at lfd lv (cifds a N rqs) (cprog a N rqs) w0 n' hd) ⇒
+  F
+Proof
+  strip_tac >> fs[inf_often_def] >>
+  ‘∀K. ∃n. K ≤ cD a N rqs lfd lv w0 n’
+    by (Induct >- simp[] >> fs[] >>
+        first_x_assum (qspec_then ‘SUC n’ strip_assume_tac) >>
+        Cases_on ‘n'’ >- fs[up_at_0] >>
+        rename1 ‘SUC n ≤ SUC p’ >>
+        drule_all cD_new >> strip_tac >>
+        ‘cD a N rqs lfd lv w0 n ≤ cD a N rqs lfd lv w0 p’
+          by (irule cD_mono >> simp[] >> metis_tac[]) >>
+        qexists_tac ‘SUC p’ >> simp[]) >>
+  first_x_assum (qspec_then ‘SUC N’ strip_assume_tac) >>
+  ‘cD a N rqs lfd lv w0 n ≤ N’ by simp[cD_le] >> fs[]
+QED
+
+(* LIVENESS (D16) *)
+Theorem client_live_holds:
+  client_live
+Proof
+  simp[client_live_def] >> rpt gen_tac >> strip_tac >> CCONTR_TAC >> fs[] >>
+  (* S1: the connection never goes up or done *)
+  ‘∀n. cC a N rqs lfd lv w0 i n = CIdle ∨ ∃hd. cC a N rqs lfd lv w0 i n = CPend hd’
+    by (Induct >- simp[cst_0] >>
+        qspecl_then [‘w0’, ‘rqs’, ‘n’, ‘lv’, ‘lfd’, ‘i’, ‘c’, ‘a’, ‘N’] mp_tac
+          (Q.GENL [‘w0’, ‘rqs’, ‘n’, ‘lv’, ‘lfd’, ‘i’, ‘c’, ‘a’, ‘N’] run_ctr) >>
+        simp[] >> qpat_x_assum ‘_ ∨ _’ strip_assume_tac >> simp[] >>
+        strip_tac >> simp[] >>
+        qspecl_then [‘w0’, ‘rqs’, ‘n’, ‘lv’, ‘lfd’, ‘i’, ‘hd’, ‘c’, ‘a’, ‘N’] mp_tac
+          (Q.GENL [‘w0’, ‘rqs’, ‘n’, ‘lv’, ‘lfd’, ‘i’, ‘hd’, ‘c’, ‘a’, ‘N’] run_enter) >>
+        impl_tac >- simp[] >> strip_tac >> gvs[]
+        >- (qpat_x_assum ‘∀n. (∀hd. _) ∧ _’ (qspec_then ‘SUC n’ strip_assume_tac) >>
+            ‘hl_sent hd (cps a N rqs lfd lv w0 (SUC n)) = brequests (rqs (clc a N rqs lfd lv w0 hd))’
+              by (qpat_x_assum ‘∀hd'. _ ⇒ ¬MEM _ _ ∨ _’ (qspec_then ‘hd’ mp_tac) >> simp[]) >>
+            qpat_x_assum ‘∀hd'. _ ⇒ _ ⇒ ¬ever_up _ _ _ _ _ _ _’ (qspec_then ‘hd’ mp_tac) >>
+            simp[ever_up_def] >> qexists_tac ‘n’ >> simp[]) >>
+        qspecl_then [‘w0’, ‘rqs’, ‘SUC n’, ‘lv’, ‘lfd’, ‘clc a N rqs lfd lv w0 hd’, ‘hd’, ‘r’, ‘c’, ‘a’, ‘N’] mp_tac
+          (Q.GENL [‘w0’, ‘rqs’, ‘n’, ‘lv’, ‘lfd’, ‘i’, ‘hd’, ‘r’, ‘c’, ‘a’, ‘N’] run_up) >>
+        impl_tac >- simp[] >> strip_tac >>
+        qpat_x_assum ‘∀n. (∀hd. _) ∧ _’ (qspec_then ‘SUC (SUC n)’ strip_assume_tac) >>
+        qpat_x_assum ‘∀hd'. _ ⇒ _ ⇒ ¬ever_up _ _ _ _ _ _ _’ (qspec_then ‘hd’ mp_tac) >>
+        simp[ever_up_def] >> qexists_tac ‘n’ >> simp[]) >>
+  (* S2: handles to spare *)
+  ‘∀n. (cst a N rqs lfd lv w0 n).nh < cbound’
+    by (gen_tac >> CCONTR_TAC >>
+        qspecl_then [‘w0’, ‘rqs’, ‘n’, ‘lv’, ‘lfd’, ‘c’, ‘a’, ‘N’] mp_tac
+          (Q.GENL [‘w0’, ‘rqs’, ‘n’, ‘lv’, ‘lfd’, ‘c’, ‘a’, ‘N’] run_nh) >>
+        impl_tac >- simp[] >>
+        qpat_x_assum ‘∀n. (∀hd. _) ∧ _’ (qspec_then ‘n’ mp_tac) >> simp[]) >>
+  (* S3: idle again and again *)
+  ‘∀n. ∃n'. n ≤ n' ∧ cC a N rqs lfd lv w0 i n' = CIdle’
+    by (gen_tac >> qpat_assum ‘∀n. _ = CIdle ∨ _’ (qspec_then ‘n’ strip_assume_tac)
+        >- (qexists_tac ‘n’ >> simp[]) >>
+        qspecl_then [‘w0’, ‘rqs’, ‘n’, ‘lv’, ‘lfd’, ‘i’, ‘hd’, ‘c’, ‘a’, ‘N’] mp_tac
+          (Q.GENL [‘w0’, ‘rqs’, ‘n’, ‘lv’, ‘lfd’, ‘i’, ‘hd’, ‘c’, ‘a’, ‘N’] run_pend_leaves) >>
+        impl_tac >- simp[] >> strip_tac >>
+        qspec_then ‘λm. n < m ∧ cC a N rqs lfd lv w0 i m ≠ CPend hd’ mp_tac arithmeticTheory.WOP >>
+        simp[] >> impl_tac >- metis_tac[] >> strip_tac >>
+        rename1 ‘n < n2’ >> Cases_on ‘n2’ >- fs[] >> rename1 ‘n < SUC q’ >>
+        ‘cC a N rqs lfd lv w0 i q = CPend hd’
+          by (Cases_on ‘q = n’ >> simp[] >>
+              qpat_x_assum ‘∀m. m < SUC q ⇒ _’ (qspec_then ‘q’ mp_tac) >> simp[]) >>
+        qspecl_then [‘w0’, ‘rqs’, ‘q’, ‘lv’, ‘lfd’, ‘i’, ‘c’, ‘a’, ‘N’] mp_tac
+          (Q.GENL [‘w0’, ‘rqs’, ‘n’, ‘lv’, ‘lfd’, ‘i’, ‘c’, ‘a’, ‘N’] run_ctr) >>
+        simp[] >> strip_tac >> gvs[]
+        >- (qexists_tac ‘SUC q’ >> simp[]) >>
+        qpat_x_assum ‘∀n. _ = CIdle ∨ _’ (qspec_then ‘SUC q’ mp_tac) >> simp[]) >>
+  (* S4: connects again and again *)
+  ‘inf_often (λn. ∃p. MEM (EConnect p)
+                        (new_actions (log_of (cprog a N rqs)) (cH a N rqs lfd lv w0 n)))’
+    by (simp[inf_often_def] >> gen_tac >>
+        qpat_x_assum ‘∀n. ∃n'. n ≤ n' ∧ _’ (qspec_then ‘n’ strip_assume_tac) >>
+        qexists_tac ‘n'’ >> simp[] >> irule run_connect >> simp[] >> metis_tac[]) >>
+  (* S5: so infinitely many handles come up: impossible *)
+  qpat_x_assum ‘conn_fair _ _ _ _ _’ (strip_assume_tac o REWRITE_RULE [conn_fair_def]) >>
+  qpat_x_assum ‘inf_often _ ⇒ inf_often _’ drule >> strip_tac >>
+  drule_all fair_contra >> simp[]
+QED
+
+(* ------------------------------------------------------------------------
+   MAIN (moonshot step 10, the handle layer): the client meets its
+   guarantee in every client world with the run-local rely
+   ------------------------------------------------------------------------ *)
+
+Theorem client_hl_claim_holds:
+  client_hl_claim cprog cifds
+Proof
+  irule client_hl_claim_of_live >> ACCEPT_TAC client_live_holds
+QED

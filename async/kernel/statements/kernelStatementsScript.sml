@@ -224,12 +224,13 @@ Definition broke_def:
             c < LENGTH w.chans ∧ (EL c w.chans).broken
 End
 
-(* Fewer than 2^64 - 1 connections are accepted in the whole run.  After
+(* Fewer than 2^64 - 3 connections are accepted in the whole run.  After
    that many, the L1 loop stops making calls (coordinator decision (A), over
-   wrapping the handle counter), so no liveness is owed past it *)
+   wrapping the handle counter; cut-off 2^64 - 3 by D40, the loop's guard
+   nxt + naccepts + 2 < 2^64), so no liveness is owed past it *)
 Definition accepts_below_def:
   accepts_below (io : io_event llist) ⇔
-    ∀evs. LPREFIX (fromList evs) io ⇒ LENGTH (l0_accepted evs) < 2 ** 64 − 1
+    ∀evs. LPREFIX (fromList evs) io ⇒ LENGTH (l0_accepted evs) < 2 ** 64 − 3
 End
 
 (* A poll event *)

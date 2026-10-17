@@ -158,10 +158,12 @@ Definition sys_pair_def:
       s1 with peer := (e =+ SOME e') ((e' =+ SOME e) s1.peer)
 End
 
-(* A blocking poll is answered as a non-blocking one, once it may return *)
+(* A blocking poll (mode 1w) is answered as a non-blocking one, once it
+   may return; any other mode is left alone, so an invalid one fails as in
+   the L0 world (design/45 §9 (e)) *)
 Definition unblock_def:
   unblock nm (conf : word8 list) =
-    if nm = «sys_poll» ∧ conf ≠ [] then 0w :: TL conf else conf
+    if nm = «sys_poll» ∧ conf ≠ [] ∧ HD conf = 1w then 0w :: TL conf else conf
 End
 
 Definition poll_may_return_def:

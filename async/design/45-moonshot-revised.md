@@ -906,6 +906,8 @@ l0sys inherits the L0 model's `eof_first` (D21, user-approved; honest-ffi, d20-p
 
 **(d) fds below the limit (user, via the coordinator, 2026-10-17):** `sys_init` adds, per process, `∀x. MEM x (l0_used w) ⇒ w2n x < w.fd_limit`. This is `fds_lt`, the same startup-contract assumption as `l0_server_world`'s. Without it, an initial `reserved` list covering all 2^64 words leaves `lowest_fd` unspecified, so the model could hand out an fd twice (B2's port clause fails). The per-process theorems also all assume `fds_lt w0`. B1's conclusion adds `fds_lt w0`; B2 is unchanged.
 
+**(e) unblock only a blocking poll (user, via the coordinator, 2026-10-17):** `unblock` rewrites the mode byte to 0w only when it is 1w (blocking). Before, it rewrote any mode, so a poll with an invalid mode (≥ 2w) was answered by l0sys as a valid non-blocking poll, while the L0 world (`l0_call` needs `w2n (HD conf) ≤ 1`) fails it with FFI_failed. A run could then record an event no L0 world produces, and B1 (`l0sys_proj`) would be false. Found while proving B1. A mode-0 poll was already unchanged, and a mode-1 poll is handled as before.
+
 The safety path (§6, steps 1–4 and 9–12) starts when its dependencies land.
 The coordinator assigns the implementation.
 

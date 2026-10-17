@@ -121,7 +121,8 @@ QED
 Theorem l0_call_poll_unblock:
   l0_call «sys_poll» (unblock «sys_poll» conf) bytes w = SOME (FFIreturn out w1) ⇒ w1 = w
 Proof
-  rw[l0_call_def, unblock_def] >> gvs[AllCaseEqs()]
+  rw[l0_call_def, unblock_def] >> gvs[AllCaseEqs()] >>
+  Cases_on ‘HD conf’ >> gvs[] >> rename1 ‘n < 256’ >> ‘n = 0 ∨ n = 1’ by simp[] >> gvs[]
 QED
 
 Theorem pinv_call_poll:

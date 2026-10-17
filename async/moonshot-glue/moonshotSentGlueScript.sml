@@ -13,7 +13,7 @@
 Theory moonshotSentGlue
 Ancestors
   honestL1EPRefine honestL1EPOut honestL1EPModel honestL1PFOut honestL1PFModel honestL1Model
-  honestL1PFConnRun honestL1PFConn honestL1PFRound honestL1PFRefine honestL0WorldProps honestL0Rely honestL0World honestL0 Marshalling
+  honestL1PFConnRun honestL1PFConn honestL1PFRound honestL1PFRefine honestL1Steps honestL0WorldProps honestL0Rely honestL0World honestL0 Marshalling
   l0sysEpisodes
 Libs
   preamble
@@ -491,4 +491,96 @@ Proof
   ‘ciss lfd es1’ by metis_tac[eown_ciss] >>
   drule_all eacts_rfds_cons >> strip_tac >>
   simp[ep_io_append, FOLDL_APPEND, cnew_append]
+QED
+
+(* ------------------------------------------------------------------------
+   A round's tail: its sends (the flush) come before its new episodes (the
+   fetch's accepts, numbered as arrs numbers the log's FConn)
+   ------------------------------------------------------------------------ *)
+
+Definition fc_next_def:
+  fc_next (opn : (word64 # num) list, k : num) (FConn f) = ((f, k) :: opn, k + 1) ∧
+  fc_next (opn, k) _ = (opn, k)
+End
+
+Theorem arrs_fold:
+  ∀l cm k. SND (arrs lfd (cm, k) l) = FOLDL fc_next (cm, k) l
+Proof
+  Induct >> simp[arrs_def] >> Cases >> simp[arrs_def, fc_next_def] >>
+  rpt gen_tac >> pairarg_tac >> simp[] >> metis_tac[SND]
+QED
+
+Theorem credit_nosend:
+  ∀evs. EVERY (λev. l0sysEpisodes$ev_sent ev = NONE) evs ⇒ credit opn j evs = []
+Proof
+  Induct >> simp[credit_def] >> rpt strip_tac >> fs[credit_def]
+QED
+
+Theorem names_quiet:
+  EVERY (λev. ev_name ev = ExtCall n) evs ∧ n ≠ «sys_connect» ∧ n ≠ «sys_accept» ⇒
+  EVERY (λev. ev_new ev = NONE) evs ∧
+  (n ≠ «sys_send» ⇒ EVERY (λev. l0sysEpisodes$ev_sent ev = NONE) evs)
+Proof
+  rw[EVERY_MEM] >> res_tac >> TRY (irule name_new) >> TRY (irule name_sent) >> simp[]
+QED
+
+Theorem settle_fds_names:
+  ∀fs w es w' es' evs.
+    settle_fds fs (w, es) = SOME ((w', es'), evs) ⇒
+    EVERY (λev. ev_name ev = ExtCall «sys_connerr») evs
+Proof
+  Induct >> simp[settle_fds_def] >> rpt gen_tac >> rw[AllCaseEqs()] >>
+  first_x_assum drule >> simp[] >> gvs[sys_connerr_def] >>
+  drule l0_do_cases >> rw[] >> simp[ev_name_def]
+QED
+
+(* The fetch: an accept that returned an fd is a new episode, its FConn *)
+Theorem pf_fetch_ep:
+  ∀fs w ps w' ps' log evs opn k.
+    pf_fetch lfd pol fs (w, ps) = SOME ((w', ps'), log, evs) ∧ l0_rely w ∧ fds_lt w ∧
+    MEM 0w (l0_used w) ⇒
+    FOLDL ep_next (opn, k) evs = FOLDL fc_next (opn, k) log ∧
+    EVERY (λev. l0sysEpisodes$ev_sent ev = NONE) evs
+Proof
+  Induct >- simp[pf_fetch_def] >>
+  rpt gen_tac >> rename1 ‘pf_fetch _ _ (f :: fs)’ >> strip_tac >>
+  qpat_x_assum ‘pf_fetch _ _ _ _ = _’ mp_tac >> simp[Once pf_fetch_def] >>
+  IF_CASES_TAC >- (strip_tac >> first_x_assum drule_all >> simp[]) >>
+  IF_CASES_TAC
+  >- (qpat_x_assum ‘f = lfd’ SUBST_ALL_TAC >>
+      Cases_on ‘sys_accept lfd w’ >> simp[] >> rename1 ‘_ = SOME x’ >>
+      PairCases_on ‘x’ >> rename1 ‘sys_accept _ _ = SOME (out, w1, ev)’ >> simp[] >>
+      pairarg_tac >> simp[] >> rename1 ‘_ = (ps1, fl1)’ >>
+      Cases_on ‘pf_fetch lfd pol fs (w1, ps1)’ >> simp[] >> rename1 ‘_ = SOME y’ >>
+      PairCases_on ‘y’ >> simp[] >> strip_tac >> gvs[] >>
+      drule_all sys_accept_new >> strip_tac >>
+      ‘l0_rely w1’
+        by (qpat_assum ‘sys_accept _ _ = _’ (assume_tac o REWRITE_RULE [sys_accept_def]) >>
+            drule_all l0_do_rely >> simp[]) >>
+      ‘fds_lt w1’ by (drule_all sys_accept_fds_lt >> simp[]) >>
+      ‘MEM 0w (l0_used w1)’
+        by (qpat_assum ‘sys_accept _ _ = _’ (assume_tac o REWRITE_RULE [sys_accept_def]) >>
+            drule l0_do_used >> simp[]) >>
+      Cases_on ‘l0_res_of out’ >> gvs[ep_next_def, fc_next_def]
+      >- (first_x_assum drule_all >> simp[])
+      >> pop_assum mp_tac >> rw[] >> gvs[] >> first_x_assum drule_all >> simp[]) >>
+  Cases_on ‘sys_recv f pf_chunk w’ >> simp[] >> rename1 ‘_ = SOME x’ >>
+  PairCases_on ‘x’ >> rename1 ‘sys_recv _ _ _ = SOME (out, w1, ev)’ >> simp[] >>
+  pairarg_tac >> simp[] >> rename1 ‘_ = (ps1, fl1)’ >>
+  Cases_on ‘pf_fetch lfd pol fs (w1, ps1)’ >> simp[] >> rename1 ‘_ = SOME y’ >>
+  PairCases_on ‘y’ >> simp[] >> strip_tac >> gvs[] >>
+  ‘∃bl. ev = IO_event (ExtCall «sys_recv») (fd_bytes f) bl’
+    by (gvs[sys_recv_def] >> drule_all l0_do_ev >> metis_tac[]) >>
+  ‘l0_rely w1’
+    by (qpat_assum ‘sys_recv _ _ _ = _’ (assume_tac o REWRITE_RULE [sys_recv_def]) >>
+        drule_all l0_do_rely >> simp[]) >>
+  ‘l0_used w1 = l0_used w ∧ w1.fd_limit = w.fd_limit’
+    by (qpat_assum ‘sys_recv _ _ _ = _’ (assume_tac o REWRITE_RULE [sys_recv_def]) >>
+        imp_res_tac l0_do_env >> drule l0_do_used >> simp[]) >>
+  ‘fds_lt w1’ by gvs[honestL0WorldPropsTheory.fds_lt_def] >>
+  ‘FOLDL fc_next (opn, k) fl1 = (opn, k)’
+    by (qpat_x_assum ‘_ = (ps1, fl1)’ mp_tac >> rw[AllCaseEqs()] >> simp[fc_next_def]) >>
+  gvs[ev_other, ep_next_def, FOLDL_APPEND] >>
+  ‘MEM 0w (l0_used w1)’ by fs[] >>
+  first_x_assum drule_all >> simp[]
 QED

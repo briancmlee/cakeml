@@ -10,8 +10,9 @@
     - l0_read j evs: the bytes the server received in episode j;
     - l0_sent j evs: of each send in episode j, the bytes the kernel took
       (the count in the result header): what the real client can receive.
-  echo_safe_l0: while fewer than 2^64 - 1 connections have been accepted,
-  in every episode, the bytes sent are a prefix of the bytes received.
+  echo_safe_l0: at every point, in every episode, the bytes sent are a
+  prefix of the bytes received (no bound on the number of connections:
+  user decision D31 dropped the 2^64 - 1 accept guard).
 *)
 Theory honestEchoL0Spec
 Ancestors
@@ -112,6 +113,6 @@ End
 (* Safety *)
 Definition echo_safe_l0_def:
   echo_safe_l0 io ⇔
-    ∀evs j. LPREFIX (fromList evs) io ∧ LENGTH (l0_accepted evs) < 2 ** 64 − 1 ⇒
+    ∀evs j. LPREFIX (fromList evs) io ⇒
             l0_sent j evs ≼ l0_read j evs
 End

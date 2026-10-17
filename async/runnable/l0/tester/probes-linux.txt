@@ -1,7 +1,7 @@
 # L0 platform probes: Linux 6.18.26 x86_64
 
 ## P1 partial send / EAGAIN: a client that never reads
-accepted before refusal: 2720256 bytes in 42 sends; partial counts: [33280]
+accepted before refusal: 2625024 bytes in 41 sends; partial counts: [3584]
 last send: EAGAIN(errno 11, value 0)
 poll IN|OUT while full: -
 after the client reads up to 1 MiB: poll - ; send: OK 65536
@@ -106,7 +106,7 @@ on the last: recv EAGAIN(errno 11, value 0) ; send EAGAIN(errno 11, value 0) ; s
 P1_partial_send              conforms
 P2_reset                     conforms
 P3_reset_unread              conforms
-P4_send_then_reset           FINDING at step 11: recv -> code 0 value 0
+P4_send_then_reset           conforms
 P5_emfile                    conforms
 P6_rst_on_close              conforms
 P7_arrivals_between_calls    conforms
@@ -115,4 +115,4 @@ P9_hup                       conforms
 P10_misc                     conforms
 P11_connect                  conforms
 P12_refused                  conforms
-P13_pending                  FINDING at step 18: connerr -> code 5 value 1
+P13_pending                  conforms

@@ -565,12 +565,14 @@ The citations were checked against the primary texts. The rules:
 | errors at other times | [P 2.3]: implementations "may generate errors ... under circumstances other than those described" | `transient`: any error at any call, **except** EAGAIN (**[A2]**) | none seen (0 warnings in the random test) |
 | reset, unread input | [T §3.10.7.4]: "All segment queues should be flushed" (lowercase: not BCP 14) | `LBreak j e keep`: kept or flushed | macOS keeps it (P3) |
 | reset, how reported | [T §3.10.7.4]: "reset" responses; [P recv/send]: ECONNRESET, EPIPE "no longer connected" | a pending error, reported once (`err`); then `broken_recv`/`broken_send` | macOS: recv ECONNRESET once, then 0; send EPIPE, leaving the error pending (P2, P4) |
+| reset after the peer's EOF (D21) | [P recv] 0 when "no messages are available to be received and the peer has performed an orderly shutdown"; [P 2.10.10] the pending error "is returned in response to a subsequent send(), recv(), or getsockopt()"; [P 2.10.11] "The receive queue is logically terminated if an end-of-file indication has been received" | `eof_first`: recv may return 0 and leave the error pending | Linux: 0 for ever; the error is reported by send (P4) |
 | close, unread input | [T §3.6.1]: SHOULD send RST (SHLD-3) | `aborted` (the peer *may* lose data) | macOS: the client lost the response (P6) |
 | close, interrupted | [P close]: EINTR with the fd open, EINPROGRESS with it closed, or 0 (unspecified which) | `close_intr` | none seen (no signal handlers) |
 | sending after the peer's FIN | [T §3.6.1]: permitted | permitted | macOS (P4) |
 | accept, EMFILE | [P accept]: shall fail; the pending connection's fate is **unspecified** | `emfile_drops`: queued, or dropped with the peer reset | macOS drops and resets (P5); Linux keeps it queued (documented) |
 | accept, broken pending | [P accept]: ECONNABORTED (shall), EPROTO (may) | `accept_aborts`: dropped with an error, or returned | macOS returns it (P8); BSDs: ECONNABORTED; **[X3]** Linux also returns network errors not in the list |
 | shutdown when not connected | [P shutdown]: ENOTCONN | `shut_err` on a broken or already-shut channel | macOS: ENOTCONN once both sides have sent FIN (**found by the random test**) |
+| shutdown of a pending connect (D22) | [P shutdown]: shall fail with ENOTCONN "The socket is not connected"; [P connect]: a pending connection is "established asynchronously" | `pending_err`; the observed success is explained by environment choices (`LConnUp`, then `LBreak`; the two ends are not linked, D1), so no rule of its own. Verified L1 never calls `sys_shutdown` | **[X5]** Linux succeeds, aborts the connect and leaves ECONNRESET pending (P13) |
 | POLLERR | [P poll]: **required** for every condition a read or write would report with −1 | `show_err`, **only if** an error is pending or the channel is broken or shut | **[X1]** macOS never shows it (P2) |
 | POLLHUP | [P poll]: defined for devices, pipes and FIFOs; **not for sockets** | `show_hup`; **[A1]** only after the peer's EOF, a break, or our own shutdown | macOS shows it after our SHUT_WR alone (**found by the random test**; [A1] widened) |
 | POLLHUP with POLLOUT | [P poll]: "mutually-exclusive" | not excluded | **[X2]** Linux sets both after a reset (documented) |
@@ -657,7 +659,19 @@ a Linux platform claim.
 
 The pre-D20 C and tester (`41dffdd16`) give the same results on the same
 machine (the same 80 findings and the same probe findings), so neither
-comes from D20. Both are open model findings, for review.
+comes from D20. *Resolved by D21 and D22 (§9):* P4 and the 80 random
+findings are [P] looseness the model now has (`eof_first`); P13 is a
+platform extension [X5] the model already admitted (the checker could
+not see it).
+
+**Conformance run on Linux (Sisyphus), 2026-10-17, after D21/D22** (a
+run, not a Linux platform claim):
+
+| run | result |
+|---|---|
+| the 13 probes | **13/13 conform** |
+| mutants | **11/11 caught** |
+| random test: 100 scenarios × 200 steps, 12461 calls. Exercised: 106 partial sends, 54 resets seen, 223 EMFILEs, 263 short reads, 1356 EOFs, 277 closes without reading first | **0 findings**; 10 warnings, all accept EMFILE explained only as transient ([P 2.3]) |
 
 ## 5. L1: the verified wrapper layer
 
@@ -1455,10 +1469,13 @@ Connect action). The options:
 | calls | `l0_connect`: the lowest free fd [P 2.6], EMFILE at the limit, value 0 when there is no socket. `l0_connerr`: getsockopt(SO_ERROR), reading clears it | [P 2.6], [P getsockopt] |
 | not linked | a connect to the program's own listener also arrives there as `LIncoming`, by the environment's choice. The two ends are not linked: an over-approximation, so every real pairing is a behaviour | D1 |
 
-**Not tested:** macOS conformance never observed the pending state. Every
-connect completed (P13, even with backlog 0), so `pending_err` and "no
-revents while pending" rest on the standard alone until a platform shows
-them, for example Linux or a peer that withholds the handshake.
+**Not tested on macOS:** macOS conformance never observed the pending
+state. Every connect completed (P13, even with backlog 0). *Observed on
+Linux (Sisyphus, 2026-10-17, P13; a run, not a platform claim):* a
+pending connect shows no revents, and recv and send give EAGAIN
+(`pending_err`), as the model says. shutdown on it succeeds, which
+[P shutdown] forbids: **[X5]** (D22), explained by environment choices
+and unreachable from L1.
 
 **R2/R3/R4 for the prefetching L1 (restated; statements first, nothing
 proved yet).** The R2/R3/R4 above were written for the lazy L1, with one
@@ -1696,6 +1713,8 @@ even if it is more work.**
 
 | D19 | Hung-up fds (user decision, option 2; via async-spike's L3-00 Q-L3-1). On POLLHUP for a connection fd L1 holds, L1 fetches what is left. (a) If the input ends with a hard error (`FReset`: the connection really broke), its outbox is dropped and the fd is marked gone, so it is closed. (b) If it ends with EOF (a half-close; the fd may still be writable), L1 keeps flushing and closes when drained, but after `pf_hupwait` consecutive rounds with a non-empty outbox and no send progress (a named constant, like `pf_backoff`) the outbox is dropped. An empty outbox or any progress resets the count. Model: `hups` in the PF state, `hup_step` between the fetch and the reap. No HUP disjunct anywhere: no hung-up fd is polled forever. The cost on the output side: liveness assumes the peer reads within `pf_hupwait` rounds of the hang-up. *Correction:* the first framing said a hung-up fd is always unwritable. That is wrong for a half-close: the L0 model, like platforms, may report POLLHUP after the peer's FIN alone, and the fd stays writable, so dropping at once would lose replies to half-closing clients | **decided (user, via coordinator)** |
 | D20 | **sys_poll on CakeML's `struct pollfd` buffer** (§3.6). The C is a pass-through: `poll` runs in place on the caller's buffer from offset 16, with no copy loop and no cap (`MAX_FDS` 4096 is gone, and with it `poll_chunks`: L1 polls once per round). The layout is a **build-time-checked ABI assumption** (static asserts); a misaligned buffer gets EINVAL (runtime check); events other than POLLIN/POLLOUT are an **unchecked precondition** on callers, which L1 meets (proved). The L0 model reads the entries (`pollfd_entries`), allows fds ≥ 2^31 (revents 0), and has `poll_junk` for a failed poll's revents. Conformance rerun on Linux (§4.3). R1/R1-live are unchanged in wording; internally, `psmall` (polled fds < 2^31) is a new invariant along runs | **decided (user, via coordinator)** |
+| D21 | **Reset after the peer's EOF** (a Linux conformance finding, P4 and the random test). After the peer's EOF, with an empty inbox and a reset's error pending, recv may return 0 and leave the error pending (`eof_first`), as well as report it. Labelled **[P] POSIX looseness**, consistent with the model's reading of recv's ECONNRESET as the once-reported pending error ([P 2.10.10], [P 2.10.11], [P recv] RETURN VALUE; §4.2). No statement changes: a flushed break read as EOF was already reachable, and the D16 corollary already allows it (`flushed`) | **decided (user, via coordinator)** |
+| D22 | **shutdown of a pending connect** (Linux, P13). [P shutdown] forbids the success: platform extension **[X5]**. **No model change** (option A): the observed trace is a behaviour of the model through environment choices (`LConnUp`, then `LBreak`), and verified L1 never calls `sys_shutdown`. The checker may draw a break no client action logged when connerr reports one | **decided (user, via coordinator)** |
 
 **Principle (user):** OS assumptions are justified by POSIX and the RFCs
 only, never by any platform's behaviour. The probes are tests, not

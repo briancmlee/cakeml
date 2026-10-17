@@ -1396,3 +1396,71 @@ Proof
   irule cupd_nh_same >> irule ehacts_new_hd >>
   metis_tac[cacts_upto_noconnect]
 QED
+
+(* ------------------------------------------------------------------------
+   The run
+   ------------------------------------------------------------------------ *)
+
+(* The ready handles the client's state has seen last *)
+Definition crdy_def:
+  crdy (h : (word64, eresp) snapshot list) = if h = [] then ∅ else (LAST h).ready
+End
+
+(* The invariant at round n of the client's run in w0 *)
+Definition cinv_def:
+  cinv a N rqs lfd w0 n ⇔
+    let h = ehhist lfd (cifds a N rqs) (cprog a N rqs) w0 n;
+        st = cstate a N rqs h in
+      crel a N rqs lfd st (K (crdy h)) (hl_pairs (cprog a N rqs) h)
+        (FST (ehst lfd (cifds a N rqs) (cprog a N rqs) w0 n))
+        (SND (ehst lfd (cifds a N rqs) (cprog a N rqs) w0 n)) ∧
+      st.last = cacts a st (crdy h) ∧ st.nh < cbound + N
+End
+
+Theorem crel_init:
+  client_world lfd c w0 ⇒ crel a N rqs lfd (cinit a N) (K ∅) [] w0 ehinit
+Proof
+  rw[client_world_def, crel_def, cinit_def, ehinit_def, endpointSpecFormsTheory.no_backpressure_def, EL_REPLICATE,
+     chd_def] >>
+  TRY (simp[FUN_EQ_THM] >> NO_TAC) >>
+  Cases_on ‘i < N’ >> gvs[EL_REPLICATE, chd_def]
+QED
+
+Theorem cinv_0:
+  client_world lfd c w0 ⇒ cinv a N rqs lfd w0 0
+Proof
+  strip_tac >> drule crel_init >>
+  simp[cinv_def, ehhist_def, ehst_def, ehrounds_def, cstate_def, crdy_def, hl_pairs_def] >>
+  simp[cinit_def, cbound_def, cacts_def]
+QED
+
+Theorem cinv_SUC:
+  cinv a N rqs lfd w0 n ∧ N < cbound ⇒
+  cinv a N rqs lfd w0 (SUC n) ∧
+  ehacts lfd (ehst lfd (cifds a N rqs) (cprog a N rqs) w0 n)
+    (new_actions (log_of (cprog a N rqs)) (ehhist lfd (cifds a N rqs) (cprog a N rqs) w0 n)) ≠ NONE
+Proof
+  qmatch_goalsub_abbrev_tac ‘ehst lfd ifds m w0 n’ >>
+  simp[cinv_def] >> strip_tac >>
+  qabbrev_tac ‘h = ehhist lfd ifds m w0 n’ >>
+  qabbrev_tac ‘st = cstate a N rqs h’ >>
+  Cases_on ‘ehst lfd ifds m w0 n’ >> rename1 ‘_ = (w, hs)’ >> fs[] >>
+  ‘new_actions (log_of m) h = MAP SND st.last’ by simp[Abbr ‘m’, Abbr ‘st’, cprog_new_actions] >>
+  Cases_on ‘ehacts_tot lfd (w, hs) (MAP SND st.last)’ >> rename1 ‘_ = (rs, st1)’ >>
+  PairCases_on ‘st1’ >> rename1 ‘_ = (rs, (w1, hs1))’ >>
+  Cases_on ‘ehpoll lfd hs1 (ifds h) w1’ >> rename1 ‘_ = (rdy', r2)’ >>
+  PairCases_on ‘r2’ >> rename1 ‘_ = (rdy', w2, hs2)’ >>
+  ‘ehhist lfd ifds m w0 (SUC n) = h ++ [ssnap rdy' rs] ∧ ehst lfd ifds m w0 (SUC n) = (w2, hs2)’
+    by (qunabbrev_tac ‘h’ >> irule honestL1EPRefineTheory.ehround_step >> gvs[]) >>
+  ‘st.nh < cbound + N’ by simp[] >>
+  drule_all crel_round >> strip_tac >>
+  simp[cstate_SNOC, crdy_def, hl_pairs_SNOC] >>
+  fs[asyncM3WorldTheory.ssnap_def, Abbr ‘st’, crdy_def] >>
+  qpat_x_assum ‘(cstate a N rqs h).last = _’ (fn th => fs[GSYM th])
+QED
+
+Theorem cinv_all:
+  client_world lfd c w0 ∧ N < cbound ⇒ ∀n. cinv a N rqs lfd w0 n
+Proof
+  strip_tac >> Induct >- metis_tac[cinv_0] >> metis_tac[cinv_SUC]
+QED

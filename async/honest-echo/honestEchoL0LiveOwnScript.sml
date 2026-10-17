@@ -728,3 +728,20 @@ Proof
     by (qspecl_then [‘pre’, ‘(q, r)’] mp_tac ep_end_reindex >> simp[]) >>
   fs[]
 QED
+
+(* ------------------------------------------------------------------------
+   Handles and accepts (for the D25 stop on the trace)
+   ------------------------------------------------------------------------ *)
+
+(* Every accept on the trace is a handed-out or pending connection *)
+Theorem run_nxt_accepted:
+  run_ok lfd pol ifds m w0 ∧ winv w0 ∧ MEM lfd (l0_used w0) ⇒
+  ∀n. (rstate lfd pol ifds m w0 n).b.nxt + LENGTH (rstate lfd pol ifds m w0 n).acq =
+      LENGTH (l0_accepted (revs lfd pol ifds m w0 n))
+Proof
+  strip_tac >> gen_tac >> drule_all run_own >> disch_then (qspec_then ‘n’ strip_assume_tac) >>
+  Cases_on ‘l0_ep_st (0, []) (revs lfd pol ifds m w0 n)’ >>
+  ‘q = LENGTH (l0_accepted (revs lfd pol ifds m w0 n))’
+    by metis_tac[FST_l0_ep_st, FST, ADD] >>
+  gvs[own_ok_def]
+QED

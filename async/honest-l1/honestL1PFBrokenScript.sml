@@ -718,6 +718,49 @@ Proof
   >> disj1_tac >> qexists_tac ‘d’ >> simp[]
 QED
 
+(* live_data_hr with the flush inside the window: the round k that fetched
+   f's EOF had f open (fopen through k), and f's channel was flushed at its
+   end *)
+Theorem live_data_hr2:
+  run_ok lfd pol ifds m w0 ∧ winv w0 ∧ MEM lfd (l0_used w0) ∧
+  (∀n. SND (pcm lfd pol ifds m w0 n) + 1 < dimword (:64)) ∧
+  F1 lfd pol ifds m w0 ∧ S1 lfd pol ifds m w0 ∧ S3w lfd pol ifds m w0 ∧
+  pol_ok hw pol ∧ S4w lfd pol hw ifds m w0 f ⇒
+  ∀R n0 h. ALOOKUP (rstate lfd pol ifds m w0 n0).b.tbl h = SOME f ∧
+           ¬MEM f (rstate lfd pol ifds m w0 n0).eof ∧ fl (rworld lfd pol ifds m w0 n0) f R ⇒
+           (∃d. fopen lfd pol ifds m w0 h f n0 d ∧ R ≼ fdata f (rlogs lfd pol ifds m w0 n0 d)) ∨
+           (∃k. n0 ≤ k ∧ fopen lfd pol ifds m w0 h f n0 (SUC (k − n0)) ∧
+                flushed (rworld lfd pol ifds m w0 (SUC k)) f) ∨
+           ∃k. n0 ≤ k ∧ fopen lfd pol ifds m w0 h f n0 (SUC (k − n0)) ∧
+               MEM (FReset f) (rlog lfd pol ifds m w0 k) ∧
+               hard_recv f (rrev lfd pol ifds m w0 k)
+Proof
+  rpt strip_tac >>
+  drule_all stream_progress >> strip_tac
+  >- (CCONTR_TAC >>
+      pop_assum (strip_assume_tac o SIMP_RULE bool_ss [NOT_EXISTS_THM, DE_MORGAN_THM]) >>
+      ‘fds_lt w0’ by fs[winv_def] >>
+      drule_all fkeep_run >> strip_tac >>
+      drule_all stream_upto >> disch_then (qspec_then ‘d’ strip_assume_tac) >> gvs[] >>
+      TRY (metis_tac[] >> NO_TAC) >>
+      ‘winv (rworld lfd pol ifds m w0 k)’ by (drule_all winv_run >> simp[]) >>
+      drule prun_round' >> disch_then (qspecl_then [‘f’, ‘k’] strip_assume_tac) >>
+      ‘fopen lfd pol ifds m w0 h f n0 (SUC (k − n0))’
+        by (fs[fopen_def] >> rpt strip_tac >> ‘i < d’ by decide_tac >> metis_tac[]) >>
+      Cases_on ‘MEM (FReset f) (rlog lfd pol ifds m w0 k)’
+      >- (drule_all pround_freset >> strip_tac >> metis_tac[]) >>
+      ‘MEM (FEof f) (rlog lfd pol ifds m w0 k)’
+        by (gvs[fend_def, EXISTS_MEM] >> metis_tac[]) >>
+      drule_all pround_feof >> strip_tac
+      >- (‘n0 + (k − n0) = k’ by decide_tac >>
+          ‘fdata f (rlogs lfd pol ifds m w0 n0 (k − n0)) ++ R' ≼
+           fdata f (rlogs lfd pol ifds m w0 n0 (SUC (k − n0)))’
+            by (REWRITE_TAC [rlogs_SUC] >> fs[]) >>
+          metis_tac[])
+      >> metis_tac[])
+  >> disj1_tac >> qexists_tac ‘d’ >> simp[]
+QED
+
 (* ------------------------------------------------------------------------
    Closing flushes: the round that releases f (held at k, not at SUC k)
    leaves everything the server wrote to f's client taken, unless f was

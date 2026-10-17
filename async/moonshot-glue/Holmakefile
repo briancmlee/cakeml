@@ -1,7 +1,7 @@
 # Moonshot step 12 glue (design/45 §3): connects E1 (honest-l1-ep) to the
 # L0 system's episodes (l0sys-bridges).  Kept out of honest-l1-ep so that
 # E1 does not depend on l0sys.
-INCLUDES = ../honest-l1-ep ../l0sys-bridges ../l0sys ../honest-l1 ../endpoint-hl ../endpoint-world \
+INCLUDES = ../moonshot ../honest-l1-ep ../l0sys-bridges ../l0sys ../honest-l1 ../endpoint-hl ../endpoint-world \
            ../honest-l0 ../honest-ffi ../ffi-spike ../model ../cf-actions ../m3-assembly \
            ../socket-v2 ../close-v2-loop \
            $(CAKEMLDIR)/semantics/alt_semantics/proofs $(CAKEMLDIR)/translator

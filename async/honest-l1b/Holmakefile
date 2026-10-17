@@ -1,0 +1,5 @@
+# The blocking L1 (L3-09): over the prefetching L1 and the L0 world.
+INCLUDES = ../honest-l1 ../honest-echo ../honest-l0-cf ../honest-l0 ../honest-ffi ../ffi-spike ../model ../cf-actions ../m3-assembly ../socket-v2 ../close-v2-loop
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

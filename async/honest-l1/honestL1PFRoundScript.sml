@@ -582,7 +582,8 @@ Theorem pdo_f:
   pdo lfd (w, ps) a = SOME (r, (w', ps'), evs) ∧ winv w ∧ fkeep lfd h f ps ⇒
   winv w' ∧ (pend w f ⇒ pend w' f) ∧ fkeep lfd h f ps' ∧
   (inb_of ps f = [] ⇒ inb_of ps' f = []) ∧
-  ((∀bs. a ≠ Write h bs) ⇒ LENGTH (outbox_of ps'.b f) ≤ LENGTH (outbox_of ps.b f)) ∧
+  ((∀bs. a = Write h bs ⇒ bs = []) ⇒
+   LENGTH (outbox_of ps'.b f) ≤ LENGTH (outbox_of ps.b f)) ∧
   EVERY (λev. ev_name ev = ExtCall «sys_send» ∨ ev_name ev = ExtCall «sys_close») evs
 Proof
   Cases_on ‘a’ >> simp[pdo_def] >> strip_tac
@@ -614,7 +615,7 @@ Proof
        qpat_x_assum ‘outbox_of ps.b g ≠ []’ kall_tac >>
        rpt conj_tac >> TRY (first_assum ACCEPT_TAC) >> simp[] >>
        TRY (irule fkeep_b_same >> simp[set_outbox_def] >> fs[] >> NO_TAC) >>
-       strip_tac >> Cases_on ‘g = f’ >- (gvs[] >> metis_tac[]) >>
+       strip_tac >> Cases_on ‘g = f’ >- gvs[outbox_of_set_outbox] >>
        simp[outbox_of_set_outbox] >> NO_TAC) >>
   (* sent at once *)
   ‘winv w' ∧ (pend w f ⇒ pend w' f) ∧ ev_name ev = ExtCall «sys_send»’
@@ -626,7 +627,8 @@ Proof
   rpt conj_tac >> TRY (first_assum ACCEPT_TAC) >> simp[] >>
   TRY (irule fkeep_b_same >> simp[after_send_def, set_outbox_def] >>
        every_case_tac >> fs[] >> NO_TAC) >>
-  strip_tac >> Cases_on ‘g = f’ >- (gvs[] >> metis_tac[]) >>
+  strip_tac >> Cases_on ‘g = f’
+  >- (gvs[after_send_def] >> every_case_tac >> gvs[outbox_of_set_outbox]) >>
   ‘f ≠ g’ by simp[] >> simp[Once outbox_of_after_send, outbox_of_set_outbox]
 QED
 
@@ -635,7 +637,7 @@ Theorem pacts_f:
     pacts lfd (w, ps) acts = SOME (rs, evs, (w', ps')) ∧ winv w ∧ fkeep lfd h f ps ⇒
     winv w' ∧ (pend w f ⇒ pend w' f) ∧ fkeep lfd h f ps' ∧
     (inb_of ps f = [] ⇒ inb_of ps' f = []) ∧
-    ((∀bs. ¬MEM (Write h bs) acts) ⇒
+    ((∀bs. MEM (Write h bs) acts ⇒ bs = []) ⇒
      LENGTH (outbox_of ps'.b f) ≤ LENGTH (outbox_of ps.b f)) ∧
     EVERY (λev. ev_name ev = ExtCall «sys_send» ∨ ev_name ev = ExtCall «sys_close») evs
 Proof
@@ -932,7 +934,7 @@ Theorem pround_f:
   pround lfd pol hs (w, ps) acts = SOME (snap, (w', ps'), log, evs) ∧
   winv w ∧ pend w f ∧ fkeep lfd h f ps ∧ psmall lfd ps ⇒
   (inb_of ps f = [] ∧ pol_ok hw pol ∧ LENGTH (outbox_of ps.b f) ≤ hw ∧ MEM h hs ∧
-   (∀bs. ¬MEM (Write h bs) acts) ⇒
+   (∀bs. MEM (Write h bs) acts ⇒ bs = []) ⇒
    EXISTS (ev_on «sys_poll» f) evs ∧
    ∀ev. MEM ev evs ∧ ev_on «sys_poll» f ev ∧ ¬retried ev ⇒
         EXISTS (ev_on «sys_recv» f) evs) ∧

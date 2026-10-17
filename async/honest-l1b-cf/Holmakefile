@@ -1,0 +1,6 @@
+# The blocking L1 (L3-09) in CakeML, on the prefetching L1's code (honest-l1-cf).
+
+INCLUDES = ../honest-echo-live ../m4-liveness ../close-v2-sim ../honest-l1b ../honest-l1-cf ../honest-echo ../honest-l0-cf ../honest-ffi ../ffi-spike ../honest-l0 ../honest-l1 ../m4-safety ../m4-common ../m4-server ../m3-assembly ../model ../cf-spike ../cf-actions ../cf-reactive ../spec ../socket-v2 ../close-v2-loop $(CAKEMLDIR)/characteristic
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

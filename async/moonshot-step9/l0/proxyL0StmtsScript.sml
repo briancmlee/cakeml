@@ -96,17 +96,21 @@ End
    Safety (every prefix; no fairness)
    ------------------------------------------------------------------------ *)
 
-(* pr: a front's backend.  Relay prefixes both ways; a backend connects to
-   b and serves one front; an unpaired front is sent nothing; BOUNDED
-   BUFFERING (NEW): neither direction holds more than Bnd bytes read and not
-   yet sent on *)
+(* pr: a front's backend.  Every successful listen is on a (rev 5); relay
+   prefixes both ways; a backend connects to b and serves one front; a
+   front's backend is a connect (rev 5: never another front); an unpaired
+   front is sent nothing; BOUNDED BUFFERING (NEW): neither direction holds
+   more than Bnd bytes read and not yet sent on *)
 Definition proxy_safe_l0_def:
-  proxy_safe_l0 Bnd b (pr : num -> num option) io ⇔
+  proxy_safe_l0 Bnd a b (pr : num -> num option) io ⇔
     (∀p p' q. pr p = SOME q ∧ pr p' = SOME q ⇒ p = p') ∧
     ∀evs. LPREFIX (fromList evs) io ⇒
+      (∀conf bs k. MEM (IO_event (ExtCall «sys_listen») conf bs) evs ∧
+                   l0_ev_res bs = SOME (Ok k) ⇒ conf = pbytes a) ∧
       (∀q. q < LENGTH evs ∧ l0_event_connected (EL q evs) ≠ NONE ⇒
            connect_port (EL q evs) = SOME (pbytes b) ∧
            ∃p. p < q ∧ is_front p evs ∧ pr p = SOME q) ∧
+      (∀p q. pr p = SOME q ∧ q < LENGTH evs ⇒ l0_event_connected (EL q evs) ≠ NONE) ∧
       ∀p. is_front p evs ⇒
         case pr p of
         | NONE => pos_sent p evs = []
@@ -178,11 +182,11 @@ End
    proxy's one round of read-but-not-yet-written bytes, the backend's
    outbox ≤ hw + pf_chunk) *)
 Definition l0_proxy_claim_def:
-  l0_proxy_claim K Bnd b prog ⇔
+  l0_proxy_claim K Bnd a b prog ⇔
     ∀w0. l0_server_world w0 ⇒
       ∃beh. semantics_prog (init_state (l0_ffi w0)) init_env prog beh ∧
           (listen_failed beh ∨
-           ∃io pr. beh = Diverge io ∧ proxy_safe_l0 Bnd b pr io ∧
+           ∃io pr. beh = Diverge io ∧ proxy_safe_l0 Bnd a b pr io ∧
                    (F1_io io ∧ F2 w0 ∧ accepts_below io ⇒
                     proxy_live_l0 K pr w0 io ∧ proxy_pairs_l0 pr io ∧ conn_live_l0 w0 io))
 End

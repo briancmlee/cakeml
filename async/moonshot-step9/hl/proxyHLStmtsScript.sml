@@ -111,6 +111,10 @@ Definition proxy_guar_hl_def:
       (∀hd hd' c. pair hd = SOME c ∧ pair hd' = SOME c ⇒ hd = hd') ∧
       (∀n c. MEM c (hl_conn_handles (ps n)) ⇒
              ∃hd. pair hd = SOME c ∧ MEM hd (hl_acc_handles (ps n))) ∧
+      (* (rev 5) and only those: a pair is an accepted front and a connected
+         backend, so no front is relayed to another front *)
+      (∀hd c. pair hd = SOME c ⇒
+              ∃n. MEM hd (hl_acc_handles (ps n)) ∧ MEM c (hl_conn_handles (ps n))) ∧
       (* SAFETY, the relay: each side has been written a prefix of what was
          read from the other; an unpaired front is written nothing *)
       (∀n hd c. pair hd = SOME c ⇒

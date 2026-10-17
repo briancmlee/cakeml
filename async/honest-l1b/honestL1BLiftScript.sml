@@ -83,6 +83,15 @@ Proof
   drule l0_do_cases >> strip_tac >> gvs[DROP_LENGTH_APPEND]
 QED
 
+Theorem lift_do_buf_from:
+  l0_do_buf n conf bs w = SOME (out, w', ev) ∧ tr_from tr hp w.hist L ⇒
+  l0_do_buf n conf bs (lift tr hp w) =
+    SOME (out, lift tr (hp ++ DROP (LENGTH w.hist) w'.hist) w', ev)
+Proof
+  strip_tac >> imp_res_tac tr_from_hist >> drule lift_do_buf >> simp[] >> strip_tac >>
+  drule l0_do_buf_cases >> strip_tac >> gvs[DROP_LENGTH_APPEND]
+QED
+
 Theorem lift_sys:
   (tr_from tr hp w.hist L ∧ sys_accept l w = SOME (out, w', ev) ⇒
      sys_accept l (lift tr hp w) = SOME (out, lift tr (hp ++ DROP (LENGTH w.hist) w'.hist) w', ev)) ∧
@@ -96,6 +105,7 @@ Theorem lift_sys:
      sys_poll fes (lift tr hp w) = SOME (out, lift tr (hp ++ DROP (LENGTH w.hist) w'.hist) w', ev))
 Proof
   rw[sys_accept_def, sys_recv_def, sys_send_def, sys_close_def, sys_poll_def] >>
+  TRY (drule_all lift_do_buf_from >> simp[] >> NO_TAC) >>
   drule_all lift_do_from >> simp[]
 QED
 

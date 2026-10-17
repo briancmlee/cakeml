@@ -56,6 +56,17 @@ Proof
   simp[ev_lcall_def, l0_step_def, MAP_ZIP]
 QED
 
+Theorem rplays_do_buf:
+  l0_do_buf n conf bs w = SOME (out, w', ev) ⇒ rplays w w' [ev]
+Proof
+  rw[rplays_def] >> drule l0_do_buf_cases >> strip_tac >> gvs[] >>
+  ‘l0_ffi_fn n conf bs w =
+     SOME (FFIreturn out (w1 with hist := w.hist ++ [(n, conf, bs)]))’
+    by simp[l0_ffi_fn_def] >>
+  drule_all l0_ffi_fn_length >> strip_tac >>
+  simp[ev_lcall_def, l0_step_def, MAP_ZIP]
+QED
+
 Theorem rplays_sys:
   (sys_accept l w = SOME (out, w', ev) ⇒ rplays w w' [ev]) ∧
   (sys_recv f k w = SOME (out, w', ev) ⇒ rplays w w' [ev]) ∧
@@ -64,7 +75,7 @@ Theorem rplays_sys:
   (sys_poll fes w = SOME (out, w', ev) ⇒ rplays w w' [ev])
 Proof
   rw[sys_accept_def, sys_recv_def, sys_send_def, sys_close_def, sys_poll_def] >>
-  metis_tac[rplays_do]
+  metis_tac[rplays_do, rplays_do_buf]
 QED
 
 Theorem rplays_close:

@@ -37,6 +37,12 @@ Proof
   strip_tac >> drule l0_do_cases >> rw[hgrows_def] >> simp[]
 QED
 
+Theorem hgrows_do_buf:
+  l0_do_buf n conf bs w = SOME (out, w', ev) ⇒ hgrows w w' 1
+Proof
+  strip_tac >> drule l0_do_buf_cases >> rw[hgrows_def] >> simp[]
+QED
+
 Theorem hgrows_sys:
   (sys_accept l w = SOME (out, w', ev) ⇒ hgrows w w' 1) ∧
   (sys_recv f k w = SOME (out, w', ev) ⇒ hgrows w w' 1) ∧
@@ -45,7 +51,7 @@ Theorem hgrows_sys:
   (sys_poll fes w = SOME (out, w', ev) ⇒ hgrows w w' 1)
 Proof
   rw[sys_accept_def, sys_recv_def, sys_send_def, sys_close_def, sys_poll_def] >>
-  metis_tac[hgrows_do]
+  metis_tac[hgrows_do, hgrows_do_buf]
 QED
 
 Theorem hgrows_close:
@@ -135,9 +141,7 @@ Proof
   simp[pf_tail_after, AllCaseEqs()] >> strip_tac >> PairCases_on ‘v’ >> gvs[] >>
   drule hgrows_after >> strip_tac >> imp_res_tac hgrows_polls >>
   drule_all hgrows_trans >> simp[] >> strip_tac >>
-  ‘poll_chunks (pf_poll_set lfd hw ps hs) ≠ []’
-    by (simp[Once poll_chunks_def] >> rw[]) >>
-  Cases_on ‘poll_chunks (pf_poll_set lfd hw ps hs)’ >> gvs[l1_polls_def, AllCaseEqs()]
+  gvs[l1_polls_def, AllCaseEqs()]
 QED
 
 Theorem hgrows_pollb:

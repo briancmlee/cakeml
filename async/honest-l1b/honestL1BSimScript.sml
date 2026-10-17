@@ -94,9 +94,9 @@ QED
 (* An empty non-blocking poll of fes *)
 Definition epoll_def:
   epoll fes ev ⇔
-    ∃x. ev = IO_event (ExtCall «sys_poll») (poll_conf fes)
-               (ZIP (REPLICATE (13 + LENGTH fes) 0w, poll_out x fes)) ∧
-        ¬any_revents x fes
+    ∃x. ev = IO_event (ExtCall «sys_poll») [0w]
+               (ZIP (poll_buf fes, poll_out x (poll_buf fes))) ∧
+        ¬any_revents x (pfes fes)
 End
 
 (* evrel pevs bevs: the PF run's events pevs, the blocking run's bevs *)
@@ -107,8 +107,8 @@ Inductive evrel:
   evrel xs ys ⇒ evrel (xs ++ [e]) (ys ++ [e])
 [~poll:]
   evrel xs ys ∧ EVERY (epoll fes) es ⇒
-  evrel (xs ++ es ++ [IO_event (ExtCall «sys_poll») (poll_conf fes) bs])
-        (ys ++ [IO_event (ExtCall «sys_poll») (pollb_conf fes) bs])
+  evrel (xs ++ es ++ [IO_event (ExtCall «sys_poll») [0w] bs])
+        (ys ++ [IO_event (ExtCall «sys_poll») pollb_conf bs])
 End
 
 Theorem evrel_append:
@@ -130,14 +130,6 @@ Proof
   simp[pf_after_def] >> every_case_tac >> simp[]
 QED
 
-Theorem pf_poll_set_small:
-  EVERY (λ(f, e). e < 256) (pf_poll_set lfd hw ps hs)
-Proof
-  simp[pf_poll_set_def, EVERY_MEM, MEM_FLAT, MEM_MAP, MEM_FILTER, PULL_EXISTS,
-       FORALL_PROD] >>
-  rw[] >> TRY (PairCases_on ‘y’ >> gvs[] >> NO_TAC) >>
-  pop_assum mp_tac >> every_case_tac >> rw[] >> simp[]
-QED
 
 (* A round of the blocking run: not idle, it is the PF round; idle, it is
    its blocking poll and the PF round's tail after it *)
@@ -198,13 +190,7 @@ Proof
   simp[pround_def]
 QED
 
-Theorem poll_chunks_one:
-  LENGTH l ≤ 4096 ⇒ poll_chunks l = [l]
-Proof
-  simp[Once poll_chunks_def]
-QED
-
-Overload pcall = “λfes. («sys_poll», poll_conf fes, REPLICATE (13 + LENGTH fes) (0w : word8))”
+Overload pcall = “λfes. («sys_poll», [0w : word8], poll_buf fes)”
 
 (* An idle round whose poll reports nothing *)
 Theorem pround_idle_lift:
@@ -213,9 +199,8 @@ Theorem pround_idle_lift:
   pround lfd hw hs (lift tr hp u, ps) [] = SOME (esnap, (lift tr (hp ++ [pcall fes]) u', ps), [], [ev])
 Proof
   strip_tac >> gvs[] >>
-  ‘LENGTH (pf_poll_set lfd hw ps hs) ≤ 4096’ by fs[pf_idle_def] >>
-  drule_then assume_tac lift_do >>
-  simp[pround_def, pf_tail_after, poll_chunks_one, l1_polls_def] >>
+  drule_then assume_tac lift_do_buf >>
+  simp[pround_def, pf_tail_after, l1_polls_def] >>
   fs[sys_poll_def] >>
   ‘EVERY (λ(f, r). ¬r.rin ∧ ¬r.rout ∧ ¬r.rerr ∧ ¬r.rhup)
      (poll_revents (pf_poll_set lfd hw ps hs) out)’ by fs[rv_quiet_def] >>
@@ -242,9 +227,8 @@ Theorem pround_wake_lift:
           log, ev :: tevs)
 Proof
   strip_tac >> gvs[] >>
-  ‘LENGTH (pf_poll_set lfd hw ps hs) ≤ 4096’ by fs[pf_idle_def] >>
-  drule_then assume_tac lift_do >>
-  simp[pround_def, pf_tail_after, poll_chunks_one, l1_polls_def] >>
+  drule_then assume_tac lift_do_buf >>
+  simp[pround_def, pf_tail_after, l1_polls_def] >>
   fs[sys_poll_def] >>
   drule_all lift_after0 >> strip_tac >>
   ONCE_REWRITE_TAC[pf_after_pevs] >> simp[]
@@ -282,17 +266,17 @@ Proof
    impl_tac >- (rw[] >> fs[])) >> strip_tac >>
   ‘∃out. sys_poll fes (l0_ticks «sys_poll» i w) =
            SOME (out, l0_ticks «sys_poll» (SUC i) w with hist := w.hist ++ [pcall fes],
-                 IO_event (ExtCall «sys_poll») (poll_conf fes)
-                   (ZIP (REPLICATE (13 + LENGTH fes) 0w, out))) ∧
-         rv_quiet (poll_revents fes out) ∧ ∃x. out = poll_out x fes ∧ ¬any_revents x fes’
+                 IO_event (ExtCall «sys_poll») [0w]
+                   (ZIP (poll_buf fes, out))) ∧
+         rv_quiet (poll_revents fes out) ∧ ∃x. out = poll_out x (poll_buf fes) ∧ ¬any_revents x (pfes fes)’
     by (irule sys_poll_idle >> fs[]) >>
   ‘sfor m ifds bz (full ++ REPLICATE i esnap) h’ by (irule sfor_skips >> fs[bidle_def]) >>
   drule sfor_now >> strip_tac >>
   ‘tr (hp ++ REPLICATE i (pcall fes)) = (l0_ticks «sys_poll» i w).hist’ by simp[] >>
   ‘pf_idle lfd hw ps (ifds h) ∧ new_actions (log_of m) h = []’ by fs[bidle_def] >>
   drule_all pround_idle_lift >> strip_tac >>
-  qexists_tac ‘es ++ [IO_event (ExtCall «sys_poll») (poll_conf fes)
-                        (ZIP (REPLICATE (13 + LENGTH fes) 0w, out))]’ >>
+  qexists_tac ‘es ++ [IO_event (ExtCall «sys_poll») [0w]
+                        (ZIP (poll_buf fes, out))]’ >>
   qpat_x_assum ‘fes = _’ SUBST_ALL_TAC >>
   gvs[ADD_CLAUSES, prounds_def, REPLICATE_SNOC_CONS_APP, epoll_def] >>
   qexists_tac ‘x’ >> simp[]
@@ -314,15 +298,15 @@ QED
 
 Theorem sys_pollb_hist:
   sys_pollb fes w = SOME (INL (out, w2, ev)) ⇒
-  w2.hist = w.hist ++ [(«sys_poll», pollb_conf fes, REPLICATE (13 + LENGTH fes) 0w)]
+  w2.hist = w.hist ++ [(«sys_poll», pollb_conf, poll_buf fes)]
 Proof
   rw[sys_pollb_def, l0_ffi_fn_def, AllCaseEqs()] >> simp[]
 QED
 
 Theorem unblk_pcall:
-  unblk (pcall fes) = («sys_poll», pollb_conf fes, REPLICATE (13 + LENGTH fes) 0w)
+  unblk (pcall fes) = («sys_poll», pollb_conf, poll_buf fes)
 Proof
-  simp[unblk_def, poll_conf_def, pollb_conf_def]
+  simp[unblk_def, pollb_conf_def]
 QED
 
 Theorem lift_reindex:
@@ -476,15 +460,15 @@ Theorem binv_idle:
   ∃k es.
     pollb_wait (pf_poll_set lfd hw ps (ifds h)) w = SOME k ∧
     EVERY (epoll (pf_poll_set lfd hw ps (ifds h))) es ∧ LENGTH es = k ∧
-    ev = IO_event (ExtCall «sys_poll») (pollb_conf (pf_poll_set lfd hw ps (ifds h)))
-           (ZIP (REPLICATE (LENGTH (pf_poll_set lfd hw ps (ifds h)) + 13) 0w, out)) ∧
+    ev = IO_event (ExtCall «sys_poll») (pollb_conf)
+           (ZIP (poll_buf (pf_poll_set lfd hw ps (ifds h)), out)) ∧
     binv_at lfd hw ifds bz m w0 ps0 (SUC (N + k))
       (full ++ REPLICATE k esnap ++ [ssnap rdy []])
       (xs ++ REPLICATE k (pcall (pf_poll_set lfd hw ps (ifds h))) ++
        [pcall (pf_poll_set lfd hw ps (ifds h))] ++ DROP (LENGTH w2.hist) w'.hist)
       (pevs ++ es ++
-       (IO_event (ExtCall «sys_poll») (poll_conf (pf_poll_set lfd hw ps (ifds h)))
-          (ZIP (REPLICATE (LENGTH (pf_poll_set lfd hw ps (ifds h)) + 13) 0w, out)) :: tevs))
+       (IO_event (ExtCall «sys_poll») [0w]
+          (ZIP (poll_buf (pf_poll_set lfd hw ps (ifds h)), out)) :: tevs))
       (plogs ++ REPLICATE k [] ++ [log]) (h ++ [ssnap rdy []]) w' ps' (evs ++ (ev :: tevs))
 Proof
   REWRITE_TAC[binv_at_def] >> rpt strip_tac >>
@@ -492,12 +476,11 @@ Proof
   qabbrev_tac ‘fes = pf_poll_set lfd hw ps (ifds h)’ >>
   ‘pf_idle lfd hw ps (ifds h) ∧ new_actions (log_of m) h = [] ∧ ¬bz h’ by fs[bidle_def] >>
   ‘poll_ok fes’
-    by (irule sys_pollb_ok >> simp[Abbr ‘fes’, pf_poll_set_small] >> fs[pf_idle_def] >>
-        qexists_tac ‘w’ >> simp[]) >>
+    by simp[] >>
   ‘∃k. pollb_wait fes w = SOME k’
     by (Cases_on ‘pollb_wait fes w’ >> simp[] >>
-        drule (cj 1 sys_pollb_wait) >> disch_then (qspec_then ‘w’ mp_tac) >> simp[]) >>
-  drule (cj 2 sys_pollb_wait) >> disch_then drule >> strip_tac >> gvs[] >>
+        mp_tac (Q.SPECL [‘fes’, ‘w’] (Q.GENL [‘fes’, ‘u’] (cj 1 sys_pollb_wait))) >> simp[]) >>
+  drule (cj 2 sys_pollb_wait) >> strip_tac >> gvs[] >>
   ‘fes = pf_poll_set lfd hw ps (ifds h)’ by simp[Abbr ‘fes’] >>
   ‘bwait lfd hw ifds bz m (w0, ps0) w.hist = SOME (SOME k)’
     by (qpat_assum ‘brounds _ _ _ _ _ _ n = _’ (mp_tac o MATCH_MP bwait_at) >>
@@ -516,7 +499,7 @@ Proof
   mp_tac (Q.INST [‘ws0’ |-> ‘(reindex tr w0, ps0)’, ‘hp’ |-> ‘w0.hist ++ xs’,
                   ‘evs’ |-> ‘pevs : io_event list’, ‘logs’ |-> ‘plogs : fetched list list’]
             (Q.SPEC ‘k’ pf_idle_rounds)) >>
-  (impl_tac >- (rpt conj_tac >> TRY (first_assum ACCEPT_TAC) >>
+  (impl_tac >- (rpt conj_tac >> TRY (first_assum ACCEPT_TAC) >> TRY (REWRITE_TAC[poll_ok_T] >> NO_TAC) >>
                 disj2_tac >> qexists_tac ‘k’ >>
                 qpat_assum ‘pollb_wait fes w = SOME k’ (fn th => REWRITE_TAC[th, LESS_EQ_REFL]))) >>
   strip_tac >>
@@ -552,9 +535,6 @@ Proof
   qpat_assum ‘LENGTH es = k’ (fn th => REWRITE_TAC[th]) >>
   qpat_assum ‘fes = _’ (fn th => REWRITE_TAC[GSYM th]) >>
   qpat_assum ‘DROP _ _ = cs’ (fn th => REWRITE_TAC[th]) >>
-  ‘(«sys_poll», poll_conf fes, REPLICATE (LENGTH fes + 13) 0w) = pcall fes’
-    by REWRITE_TAC[Once ADD_COMM] >>
-  pop_assum (fn th => REWRITE_TAC[th]) >>
   rpt conj_tac >> TRY (first_assum ACCEPT_TAC) >> TRY (REWRITE_TAC[] >> NO_TAC)
   >- (REWRITE_TAC[prounds_def] >>
       qpat_assum ‘prounds _ _ _ _ _ (N + k) = _’ (fn th => REWRITE_TAC[th]) >>
@@ -579,7 +559,8 @@ Proof
   >> ‘∀(e : io_event) l. e :: l = [e] ++ l’ by REWRITE_TAC[APPEND] >>
   pop_assum (fn th => ONCE_REWRITE_TAC[th]) >>
   REWRITE_TAC[APPEND_ASSOC, APPEND_NIL] >> irule evrel_append >>
-  irule evrel_poll >> conj_tac >> first_assum ACCEPT_TAC
+  irule evrel_poll >> rpt conj_tac >> TRY (first_assum ACCEPT_TAC >> NO_TAC) >>
+  qexists_tac ‘fes’ >> first_assum ACCEPT_TAC
 QED
 
 (* MAIN, (S2): every round of the blocking run is matched by the PF run in
@@ -634,7 +615,7 @@ Proof
 QED
 
 Theorem sys_pollb_INR:
-  sys_pollb fes w = SOME (INR cb) ⇒ cb = (pollb_conf fes, REPLICATE (13 + LENGTH fes) 0w)
+  sys_pollb fes w = SOME (INR cb) ⇒ cb = (pollb_conf, poll_buf fes)
 Proof
   rw[sys_pollb_def, AllCaseEqs()]
 QED
@@ -645,7 +626,7 @@ Theorem l1b_asleep_pf:
   bquiet m ifds bz ∧
   brounds lfd hw ifds bz m (w0, ps0) n = SOME (BSlept kept evs cb) ⇒
   ∃fes N full xs pevs plogs w ps.
-    cb = (pollb_conf fes, REPLICATE (13 + LENGTH fes) 0w) ∧
+    cb = (pollb_conf, poll_buf fes) ∧
     sfor m ifds bz full kept ∧ evrel pevs evs ∧
     ∀i. ∃es.
       prounds lfd hw ifds m (reindex (btr lfd hw ifds bz m (w0, ps0)) w0, ps0) (N + i) =
@@ -667,21 +648,15 @@ Proof
   qabbrev_tac ‘tr = btr lfd hw ifds bz m (w0, ps0)’ >>
   qabbrev_tac ‘fes = pf_poll_set lfd hw ps (ifds kept)’ >>
   ‘fes = pf_poll_set lfd hw ps (ifds kept)’ by simp[Abbr ‘fes’] >>
-  ‘cb = (pollb_conf fes, REPLICATE (13 + LENGTH fes) 0w)’
+  ‘cb = (pollb_conf, poll_buf fes)’
     by (qpat_assum ‘sys_pollb _ _ = _’ (mp_tac o MATCH_MP sys_pollb_INR) >>
         qpat_assum ‘fes = _’ (fn th => REWRITE_TAC[GSYM th])) >>
   ‘pf_idle lfd hw ps (ifds kept)’
     by (qpat_assum ‘bidle _ _ _ _ _ _ _’ (strip_assume_tac o REWRITE_RULE[bidle_def])) >>
   ‘poll_ok fes’
-    by (irule sys_pollb_ok >> rpt conj_tac >>
-        TRY (qexists_tac ‘w’ >>
-             qpat_assum ‘sys_pollb _ _ = _’ (fn th => REWRITE_TAC[th, optionTheory.NOT_SOME_NONE]) >>
-             NO_TAC) >>
-        TRY (qpat_assum ‘fes = _’ SUBST1_TAC >> REWRITE_TAC[pf_poll_set_small] >> NO_TAC) >>
-        qpat_assum ‘pf_idle _ _ _ _’ mp_tac >> qpat_assum ‘fes = _’ SUBST1_TAC >>
-        REWRITE_TAC[pf_idle_def] >> rpt strip_tac) >>
+    by simp[] >>
   ‘pollb_wait fes w = NONE’
-    by (drule (cj 1 sys_pollb_wait) >> disch_then (qspec_then ‘w’ mp_tac) >>
+    by (mp_tac (Q.SPECL [‘fes’, ‘w’] (Q.GENL [‘fes’, ‘u’] (cj 1 sys_pollb_wait))) >>
         disch_then (SUBST1_TAC o GSYM) >>
         qpat_assum ‘cb = _’ (SUBST1_TAC o GSYM) >> first_assum ACCEPT_TAC) >>
   ‘bwait lfd hw ifds bz m (w0, ps0) w.hist = SOME NONE’

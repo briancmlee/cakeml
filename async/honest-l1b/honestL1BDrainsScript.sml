@@ -22,8 +22,8 @@ Libs
 Theorem sys_poll_chans:
   sys_poll fes x = SOME (out, x', ev) ⇒ x'.chans = (l0_tick «sys_poll» x).chans
 Proof
-  rw[sys_poll_def] >> drule l0_do_cases >> rw[] >>
-  gvs[l0_call_def, AllCaseEqs()] >> gvs[poll_conf_def]
+  rw[sys_poll_def] >> drule l0_do_buf_cases >> rw[] >>
+  gvs[l0_call_def, AllCaseEqs()]
 QED
 
 (* The blocking poll's world, as steps of time *)
@@ -31,7 +31,7 @@ Theorem pollb_chans:
   poll_ok fes ∧ pollb_wait fes w = SOME k ∧ sys_pollb fes w = SOME (INL (out, v, ev)) ⇒
   v.chans = (l0_ticks «sys_poll» (SUC k) w).chans
 Proof
-  strip_tac >> drule (cj 2 sys_pollb_wait) >> disch_then drule >> strip_tac >> gvs[] >>
+  strip_tac >> drule (cj 2 sys_pollb_wait) >> strip_tac >> gvs[] >>
   drule sys_poll_chans >> simp[tick_ticks]
 QED
 
@@ -96,12 +96,7 @@ Theorem idle_poll_ok:
   brounds lfd hw ifds bz mm ws0 (SUC n) ≠ NONE ∧ bidle lfd hw ifds bz mm h ps ⇒
   poll_ok (pf_poll_set lfd hw ps (ifds h))
 Proof
-  strip_tac >> irule sys_pollb_ok >> rpt conj_tac >>
-  TRY (simp[pf_poll_set_small] >> NO_TAC) >>
-  TRY (fs[bidle_def, pf_idle_def] >> NO_TAC) >>
-  qexists_tac ‘wb’ >> strip_tac >>
-  qpat_x_assum ‘brounds _ _ _ _ _ _ (SUC n) ≠ NONE’ mp_tac >>
-  fs[bidle_def] >> simp[brounds_def, bround_def]
+  simp[]
 QED
 
 (* The blocking prefix just after an idle round's poll returns *)
@@ -116,7 +111,7 @@ Proof
   strip_tac >> drule_all idle_poll_ok >> strip_tac >>
   qabbrev_tac ‘fes = pf_poll_set lfd hw ps (ifds h)’ >>
   ‘world_at w0 bp = SOME wb ∧ l0_rely wb’ by metis_tac[bworld] >>
-  drule (cj 2 sys_pollb_wait) >> disch_then drule >> strip_tac >>
+  drule (cj 2 sys_pollb_wait) >> strip_tac >>
   qmatch_asmsub_abbrev_tac ‘sys_pollb fes wb = SOME (INL (out, v, evb))’ >>
   qexistsl_tac [‘evb’, ‘v’] >> rpt conj_tac
   >- (Cases_on ‘pf_after lfd hw (ifds h) ps fes (poll_revents fes out, v, [evb])’
@@ -143,7 +138,9 @@ Theorem idle_asleep:
   ∃cb. brounds lfd hw ifds bz mm ws0 (SUC n) = SOME (BSlept h bp cb)
 Proof
   strip_tac >> drule_all idle_poll_ok >> strip_tac >>
-  drule (cj 1 sys_pollb_wait) >> disch_then (qspec_then ‘wb’ mp_tac) >> simp[] >> strip_tac >>
+  ‘sys_pollb (pf_poll_set lfd hw ps (ifds h)) wb =
+     SOME (INR (pollb_conf, poll_buf (pf_poll_set lfd hw ps (ifds h))))’
+    by metis_tac[sys_pollb_wait] >>
   fs[bidle_def] >> simp[brounds_def, bround_def]
 QED
 

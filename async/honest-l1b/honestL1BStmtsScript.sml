@@ -1,9 +1,10 @@
 (*
   TEMPORARY VERBATIM COPY — remove at L3-09 fold.
-  Source: final/L3-00-statements (PR #153) at 543b90ad7 (first copied at
-  676781133; resynced for ep_polls, l0_close_call and ep_ends),
-  async/kernel/statements/kernelStatementsScript.sml, the raw-trace section
-  (ev_lcall … echo2_guar_l0), copied unchanged so that L3-09 (S3) can be
+  Source: final/L3-00-statements (PR #153) at 2799d4f68 (D20 poll encoding;
+  first copied at 676781133, resynced for ep_polls, l0_close_call and
+  ep_ends), async/kernel/statements/kernelStatementsCoreScript.sml and
+  kernelStatementsScript.sml (split since 61e7733e9), the raw-trace
+  definitions (ev_lcall … echo2_guar_l0), copied unchanged so that L3-09 (S3) can be
   proved on spike/l3-quiet, where kernelStatements is not available.
   If #153's statements change (e.g. hup_drains (b″)), resync this copy.
   Approved by the coordinator (2026-10-16; user policy: temporary copies
@@ -119,9 +120,11 @@ End
 (* A poll (blocking or not) that reported POLLHUP for fd f *)
 Definition poll_hup_def:
   poll_hup f (IO_event nm conf bs) ⇔
-    nm = ExtCall «sys_poll» ∧
-    ∃i. i < LENGTH (poll_entries (DROP 1 conf)) ∧ FST (EL i (poll_entries (DROP 1 conf))) = f ∧
-        13 + i < LENGTH bs ∧ word_bit 3 (SND (EL (13 + i) bs))
+    nm = ExtCall «sys_poll» ∧ (∃k. l0_ev_res bs = SOME (Ok k)) ∧
+    ∃i. i < LENGTH (pollfd_entries (DROP 16 (MAP FST bs))) ∧
+        pe_fd (EL i (pollfd_entries (DROP 16 (MAP FST bs)))) = f ∧
+        i < LENGTH (pollfd_entries (DROP 16 (MAP SND bs))) ∧
+        (abi_revents (DROP 6 (EL i (pollfd_entries (DROP 16 (MAP SND bs)))))).rhup
 End
 
 
@@ -133,7 +136,8 @@ End
 Definition n_out_polls_def:
   n_out_polls f (evs : io_event list) =
     LENGTH (FILTER (λev. ∃conf bs. ev = IO_event (ExtCall «sys_poll») conf bs ∧
-                                   ∃e. MEM (f, e) (poll_entries (DROP 1 conf)) ∧ 2 ≤ e MOD 4)
+                                   ∃e. MEM (f, e) (MAP pe_fe (pollfd_entries (DROP 16 (MAP FST bs)))) ∧
+                                       2 ≤ e MOD 4)
                    evs)
 End
 

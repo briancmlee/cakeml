@@ -59,7 +59,7 @@ QED
 Theorem sys_poll_step:
   sys_poll fes w = SOME (out, w', ev) ⇒ l0_step (SOME w) (pcall fes) = SOME w'
 Proof
-  rw[sys_poll_def] >> drule l0_do_cases >> rw[] >>
+  rw[sys_poll_def] >> drule l0_do_buf_cases >> rw[] >>
   fs[l0_step_def, l0_ffi_fn_def]
 QED
 
@@ -79,7 +79,7 @@ Proof
         TRY (rpt strip_tac >> qpat_assum ‘∀j. j ≤ SUC i ⇒ _’ irule >> decide_tac >> NO_TAC) >>
         TRY (disj1_tac >> first_assum ACCEPT_TAC >> NO_TAC) >>
         disj2_tac >> qexists_tac ‘k’ >> asm_rewrite_tac[] >> decide_tac) >>
-  drule sys_poll_idle >> disch_then (qspecl_then [‘u’, ‘i’] mp_tac) >>
+  mp_tac (Q.SPECL [‘fes’, ‘u’, ‘i’] (Q.GENL [‘fes’, ‘u’, ‘i’] sys_poll_idle)) >>
   (impl_tac >- (TRY (disj1_tac >> first_assum ACCEPT_TAC >> NO_TAC) >>
                 disj2_tac >> qexists_tac ‘k’ >> asm_rewrite_tac[] >> decide_tac)) >>
   strip_tac >>
@@ -113,7 +113,7 @@ Proof
      SOME (lift tr (hp ++ REPLICATE k (pcall fes)) (l0_ticks «sys_poll» k u))’
     by (irule replay_idle >> rpt conj_tac >> TRY (first_assum ACCEPT_TAC) >>
         disj2_tac >> qexists_tac ‘k’ >> asm_rewrite_tac[LESS_EQ_REFL]) >>
-  drule (cj 2 sys_pollb_wait) >> disch_then drule >> strip_tac >>
+  drule (cj 2 sys_pollb_wait) >> strip_tac >>
   qpat_x_assum ‘sys_pollb _ _ = SOME (INL (out', _, _))’ mp_tac >>
   qpat_assum ‘sys_pollb _ _ = SOME (INL (out, _, _))’ (fn th => REWRITE_TAC[th]) >>
   REWRITE_TAC[optionTheory.SOME_11, sumTheory.INR_INL_11, PAIR_EQ] >> strip_tac >>

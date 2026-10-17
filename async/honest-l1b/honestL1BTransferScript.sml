@@ -10,7 +10,7 @@
 *)
 Theory honestL1BTransfer
 Ancestors
-  honestL1BCorr honestL1BObs honestL1BStmts honestL1BSim honestL1BRefine
+  honestL1BCorr honestL1BObs honestL1BStmts honestL1BSim honestL1BRefine honestL1BPoll
   honestL0Reindex honestEchoL0Spec honestL1BModel honestL1PFRound honestL1Steps
   honestL1Model honestL0WorldProps honestL0World honestL0 llist
 Libs
@@ -161,8 +161,8 @@ QED
 
 (* Counts along evrel *)
 Theorem evrel_cnt:
-  (∀fes bs. Q (IO_event (ExtCall «sys_poll») (pollb_conf fes) bs) ⇔
-            Q (IO_event (ExtCall «sys_poll») (poll_conf fes) bs)) ⇒
+  (∀fes bs. Q (IO_event (ExtCall «sys_poll») pollb_conf bs) ⇔
+            Q (IO_event (ExtCall «sys_poll») [0w] bs)) ⇒
   ∀pp bp. evrel pp bp ⇒
           cnt Q bp ≤ cnt Q pp ∧
           ((∀fes e. epoll fes e ⇒ ¬Q e) ⇒ cnt Q pp = cnt Q bp)
@@ -178,30 +178,25 @@ QED
 Theorem epoll_not_retried:
   epoll fes ev ⇒ ¬retried ev
 Proof
-  rw[epoll_def] >>
-  ‘LENGTH (poll_out x fes) = LENGTH fes + 13’ by simp[LENGTH_poll_out] >>
-  ‘MAP SND (ZIP (REPLICATE (LENGTH fes + 13) (0w : word8), poll_out x fes)) = poll_out x fes’
+  rw[epoll_def] >> drule poll_out_quiet >> strip_tac >>
+  ‘MAP SND (ZIP (poll_buf fes, poll_out x (poll_buf fes))) = poll_out x (poll_buf fes)’
     by fs[MAP_ZIP] >>
-  ‘FILTER (λfe. fd_revents x fe ≠ 0w) fes = []’
-    by (fs[any_revents_def, FILTER_EQ_NIL, EVERY_MEM, NOT_EXISTS] ) >>
-  ‘l0_res_of (poll_out x fes) = Ok 0’
-    by (simp[poll_out_def] >> irule l0_res_of_enc_app >> simp[l0_res_ok_def]) >>
   simp[retried_def] >>
   qpat_assum ‘MAP SND _ = _’ (fn th => REWRITE_TAC[th]) >>
   qpat_assum ‘l0_res_of _ = _’ (fn th => REWRITE_TAC[th]) >> simp[]
 QED
 
 Theorem poll_swap_on:
-  ev_on nm f (IO_event (ExtCall «sys_poll») (pollb_conf fes) bs) ⇔
-  ev_on nm f (IO_event (ExtCall «sys_poll») (poll_conf fes) bs)
+  ev_on nm f (IO_event (ExtCall «sys_poll») pollb_conf bs) ⇔
+  ev_on nm f (IO_event (ExtCall «sys_poll») [0w] bs)
 Proof
   simp[ev_on_def] >> Cases_on ‘nm = «sys_poll»’ >>
-  simp[call_fds_def, pollb_conf_def, poll_conf_def]
+  simp[call_fds_def, pollb_conf_def]
 QED
 
 Theorem poll_swap_retried:
-  retried (IO_event (ExtCall «sys_poll») (pollb_conf fes) bs) ⇔
-  retried (IO_event (ExtCall «sys_poll») (poll_conf fes) bs)
+  retried (IO_event (ExtCall «sys_poll») pollb_conf bs) ⇔
+  retried (IO_event (ExtCall «sys_poll») [0w] bs)
 Proof
   simp[retried_def]
 QED
@@ -240,11 +235,11 @@ Proof
   rw[F1_ioinf] >>
   qabbrev_tac ‘Q1 = λev. ev_on nm f ev ∧ retried ev’ >>
   qabbrev_tac ‘Q2 = λev. ev_on nm f ev ∧ ¬retried ev’ >>
-  ‘∀fes bs. Q1 (IO_event (ExtCall «sys_poll») (pollb_conf fes) bs) ⇔
-            Q1 (IO_event (ExtCall «sys_poll») (poll_conf fes) bs)’
+  ‘∀fes bs. Q1 (IO_event (ExtCall «sys_poll») pollb_conf bs) ⇔
+            Q1 (IO_event (ExtCall «sys_poll») [0w] bs)’
     by simp[Abbr ‘Q1’, poll_swap_on, poll_swap_retried] >>
-  ‘∀fes bs. Q2 (IO_event (ExtCall «sys_poll») (pollb_conf fes) bs) ⇔
-            Q2 (IO_event (ExtCall «sys_poll») (poll_conf fes) bs)’
+  ‘∀fes bs. Q2 (IO_event (ExtCall «sys_poll») pollb_conf bs) ⇔
+            Q2 (IO_event (ExtCall «sys_poll») [0w] bs)’
     by simp[Abbr ‘Q2’, poll_swap_on, poll_swap_retried] >>
   ‘∀fes e. epoll fes e ⇒ ¬Q1 e’ by (simp[Abbr ‘Q1’] >> metis_tac[epoll_not_retried]) >>
   ‘∀pp bp. evrel pp bp ⇒ cnt Q1 pp = cnt Q1 bp’

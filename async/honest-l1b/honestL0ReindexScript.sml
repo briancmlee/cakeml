@@ -46,7 +46,9 @@ Definition reindex_ch_def:
        misuse := (λh. c.misuse (tr h));
        reserved_rev := (λh. c.reserved_rev (tr h));
        connect_now := (λh. c.connect_now (tr h));
-       pending_err := (λh. c.pending_err (tr h)) |>
+       pending_err := (λh. c.pending_err (tr h));
+       eof_first := (λh. c.eof_first (tr h));
+       poll_junk := (λh. c.poll_junk (tr h)) |>
 End
 
 Definition reindex_def:
@@ -160,17 +162,23 @@ Proof
   every_case_tac >> gvs[reindex_ch_def]
 QED
 
+Theorem sim_pfd_revents:
+  sim tr w' w ⇒ pfd_revents w' = pfd_revents w
+Proof
+  strip_tac >> simp[FUN_EQ_THM, FORALL_PROD, pfd_revents_def] >>
+  metis_tac[sim_revents]
+QED
+
 Theorem sim_any_revents:
   sim tr w' w ⇒ (any_revents w' fes ⇔ any_revents w fes)
 Proof
-  rw[any_revents_def] >> drule sim_revents >> simp[]
+  rw[any_revents_def] >> drule sim_pfd_revents >> simp[]
 QED
 
 Theorem sim_poll_out:
   sim tr w' w ⇒ poll_out w' fes = poll_out w fes
 Proof
-  rw[poll_out_def] >> drule sim_revents >> simp[] >> strip_tac >>
-  ‘fd_revents w' = fd_revents w’ by simp[FUN_EQ_THM] >> simp[]
+  rw[poll_out_def] >> drule sim_pfd_revents >> simp[]
 QED
 
 (* MAIN: a blocking poll waits as long in both worlds *)
@@ -257,10 +265,12 @@ Theorem lift_fail:
   tr h' = v.hist ⇒
   fail (lift tr h' v) e = fail v e ∧ not_chan (lift tr h' v) f = not_chan v f ∧
   enc_err_val (lift tr h' v) e x = enc_err_val v e x ∧
-  enc_listen_fail (lift tr h' v) ke = enc_listen_fail v ke
+  enc_listen_fail (lift tr h' v) ke = enc_listen_fail v ke ∧
+  poll_failed (lift tr h' v) e bs = poll_failed v e bs
 Proof
   strip_tac >> PairCases_on ‘ke’ >>
-  fs[fail_def, not_chan_def, enc_err_val_def, enc_listen_fail_def, reindex_ch_def]
+  fs[fail_def, not_chan_def, enc_err_val_def, enc_listen_fail_def, reindex_ch_def,
+     poll_failed_def]
 QED
 
 Theorem lift_FOLDL_break[local]:
@@ -343,9 +353,10 @@ Proof
     by metis_tac[sim_ticks] >>
   ‘∀k fes. poll_out (l0_ticks «sys_poll» k (lift tr h' w)) fes =
            poll_out (l0_ticks «sys_poll» k w) fes’ by metis_tac[sim_poll_out] >>
-  ‘∀e x ke. enc_err_val (lift tr h' w) e x = enc_err_val w e x ∧
-            enc_listen_fail (lift tr h' w) ke = enc_listen_fail w ke ∧
-            fail (lift tr h' w) e = fail w e’
+  ‘∀e x ke bs. enc_err_val (lift tr h' w) e x = enc_err_val w e x ∧
+               enc_listen_fail (lift tr h' w) ke = enc_listen_fail w ke ∧
+               fail (lift tr h' w) e = fail w e ∧
+               poll_failed (lift tr h' w) e bs = poll_failed w e bs’
     by (rpt gen_tac >> drule lift_fail >> simp[]) >>
   simp[l0_call_def] >>
   rpt (IF_CASES_TAC >> simp[lift_res_def]) >>

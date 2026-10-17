@@ -11,8 +11,8 @@
    - L1 has nothing only the clock would end: the listener is not paused,
      every hung-up fd (D19's hups) is still held, with an empty outbox and
      a zero count, and every closing fd still has bytes to flush (none is
-     due to be reaped);
-   - the poll set fits one poll (at most 4096 entries).
+     due to be reaped).
+  (D20: a poll has no size limit, so every poll set fits one call.)
   An idle round's poll waits until something in the poll set is ready, or
   forever: then the program is asleep (brounds stops, BAsleep).  Every
   other round is the PF round unchanged; after the poll, an idle round is
@@ -50,10 +50,10 @@ Definition pf_after_def:
                         pevs ++ fevs ++ gevs ++ cevs)
 End
 
-(* MAIN: the PF tail is its (chunked, non-blocking) poll, then pf_after *)
+(* MAIN: the PF tail is its (non-blocking) poll, then pf_after *)
 Theorem pf_tail_after:
   pf_tail lfd hw hs (w, ps) =
-    case l1_polls (poll_chunks (pf_poll_set lfd hw ps hs)) w of
+    case l1_polls [pf_poll_set lfd hw ps hs] w of
     | NONE => NONE
     | SOME (rv, w1, pevs) => pf_after lfd hw hs ps (pf_poll_set lfd hw ps hs) (rv, w1, pevs)
 Proof
@@ -64,21 +64,21 @@ QED
    The blocking poll
    ------------------------------------------------------------------------ *)
 
-(* A blocking poll of (fd, events) entries *)
+(* A blocking poll (block flag 1) of (fd, events) entries; its buffer is
+   the non-blocking poll's (poll_buf, D20) *)
 Definition pollb_conf_def:
-  pollb_conf (fes : (word64 # num) list) =
-    1w :: FLAT (MAP (λ(f, e). fd_bytes f ++ [n2w e]) fes)
+  pollb_conf = [1w : word8]
 End
 
 (* Its outcome: it returns (INL: the bytes, the world, the event), or it
-   waits forever (INR: the configuration of the final, diverging call) *)
+   waits forever (INR: the configuration and buffer of the final, diverging
+   call) *)
 Definition sys_pollb_def:
   sys_pollb fes w =
-    let conf = pollb_conf fes; alen = 13 + LENGTH fes in
-    case l0_ffi_fn «sys_poll» conf (REPLICATE alen 0w) w of
+    case l0_ffi_fn «sys_poll» pollb_conf (poll_buf fes) w of
     | SOME (FFIreturn out w') =>
-        SOME (INL (out, w', IO_event (ExtCall «sys_poll») conf (ZIP (REPLICATE alen 0w, out))))
-    | SOME FFIdiverge => SOME (INR (conf, REPLICATE alen (0w:word8)))
+        SOME (INL (out, w', IO_event (ExtCall «sys_poll») pollb_conf (ZIP (poll_buf fes, out))))
+    | SOME FFIdiverge => SOME (INR (pollb_conf, poll_buf fes))
     | NONE => NONE
 End
 
@@ -91,8 +91,7 @@ Definition pf_idle_def:
     ps.pause = 0 ∧ pf_ready lfd ps hs = [] ∧
     EVERY (λ(f, n). outbox_of ps.b f = [] ∧ n = 0 ∧
                     (MEM f (MAP SND ps.b.tbl) ∨ MEM f ps.b.closing)) ps.hups ∧
-    EVERY (λf. outbox_of ps.b f ≠ [] ∧ ¬MEM f ps.b.gone) ps.b.closing ∧
-    LENGTH (pf_poll_set lfd hw ps hs) ≤ 4096
+    EVERY (λf. outbox_of ps.b f ≠ [] ∧ ¬MEM f ps.b.gone) ps.b.closing
 End
 
 Datatype:

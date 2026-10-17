@@ -247,7 +247,11 @@ End
    polls that list episode j's fd for output while j holds it (only polls
    before j's close count, since the fd number may be reused after it).
    With [F2] (nothing in flight: a send takes a byte) this gives send
-   progress before L1's timeout *)
+   progress before L1's timeout.  D30 (user decision, async-spike's
+   finding #1): within the same window, the first send on episode j's fd
+   after its bytes in flight reach 0 does not fail transiently (observed,
+   while episode j is open) -- otherwise a transient failure there could
+   use up the window with nothing in flight *)
 Definition stall_drains_def:
   stall_drains K w0 io j c ⇔
     ∀evs mid w.
@@ -258,7 +262,15 @@ Definition stall_drains_def:
                 n_out_polls (EL j (l0_accepted evs))
                   (ep_polls (EL j (l0_accepted evs)) mid more) < K ∧
                 world_at w0 (evs ++ mid ++ more) = SOME w' ∧ c < LENGTH w'.chans ∧
-                (EL c w'.chans).inflight = 0
+                (EL c w'.chans).inflight = 0 ∧
+                ∀more2 ev.
+                  LPREFIX (fromList (evs ++ mid ++ more ++ more2 ++ [ev])) io ∧
+                  ep_open j (evs ++ mid ++ more ++ more2) ∧
+                  n_out_polls (EL j (l0_accepted evs))
+                    (ep_polls (EL j (l0_accepted evs)) mid (more ++ more2)) < K ∧
+                  ¬EXISTS (ev_on «sys_send» (EL j (l0_accepted evs))) more2 ∧
+                  ev_on «sys_send» (EL j (l0_accepted evs)) ev ⇒
+                  ¬retried ev
 End
 
 (* Raw liveness of the echo, per episode, unless X: if episode j is open on

@@ -31,8 +31,7 @@ End
 Definition oassm_def:
   oassm lfd pol ifds m w0 ⇔
     run_ok lfd pol ifds m w0 ∧ winv w0 ∧ qfresh w0 ∧ MEM lfd (l0_used w0) ∧
-    (∀n. SND (pcm lfd pol ifds m w0 n) + 1 < dimword (:64)) ∧
-    ∀n. EVERY small_send (revs lfd pol ifds m w0 n)
+    ∀n. SND (pcm lfd pol ifds m w0 n) + 1 < dimword (:64)
 End
 
 Theorem prun_parts:
@@ -257,13 +256,6 @@ Proof
   gvs[olive_def, good_def, pown_def, ALL_DISTINCT_APPEND] >> rpt strip_tac >> gvs[]
 QED
 
-(* Round k's events are small sends *)
-Theorem rrev_small:
-  oassm lfd pol ifds m w0 ⇒ EVERY small_send (rrev lfd pol ifds m w0 k)
-Proof
-  rw[oassm_def] >> drule prun_round' >> disch_then (qspecl_then [‘ARB’, ‘k’] strip_assume_tac) >>
-  first_x_assum (qspec_then ‘SUC k’ mp_tac) >> simp[EVERY_APPEND]
-QED
 
 (* A non-retried send on f in a round from good f with output owed: it
    took bytes, or failed hard *)
@@ -274,7 +266,6 @@ Theorem good_send:
   evs_sent f (rrev lfd pol ifds m w0 k) ≠ [] ∨ hard_send f (rrev lfd pol ifds m w0 k)
 Proof
   strip_tac >> drule_all good_olive >> strip_tac >>
-  drule rrev_small >> disch_then (qspec_then ‘k’ assume_tac) >>
   ‘run_ok lfd pol ifds m w0 ∧ winv w0’ by fs[oassm_def] >>
   ‘winv (rworld lfd pol ifds m w0 k)’ by metis_tac[winv_run] >>
   drule prun_round' >> disch_then (qspecl_then [‘ARB’, ‘k’] strip_assume_tac) >>
@@ -564,33 +555,6 @@ Proof
   first_x_assum irule >> simp[]
 QED
 
-(* sys_send_res without the length hypothesis: D24 (the kernel's counts
-   are below 2^64) makes the recorded count exact for any payload *)
-Theorem sys_send_res_rely:
-  sys_send g bs w = SOME (out, w', ev) ∧ winv w ∧ bs ≠ [] ⇒
-  (∃k. l0_res_of out = Ok k ∧ 0 < k ∧ k ≤ LENGTH bs) ∨ (∃e x. l0_res_of out = Fail e x)
-Proof
-  rw[sys_send_def] >> drule l0_do_cases >> strip_tac >> gvs[] >>
-  qpat_x_assum ‘l0_call _ _ _ _ = _’ mp_tac >> simp[l0_call_def] >> rw[AllCaseEqs()] >>
-  pairarg_tac >> gvs[] >>
-  ‘LENGTH (fd_bytes g) = 8’ by simp[] >>
-  ‘TAKE 8 (fd_bytes g ++ bs) = fd_bytes g ∧ DROP 8 (fd_bytes g ++ bs) = bs’
-    by metis_tac[TAKE_LENGTH_APPEND, DROP_LENGTH_APPEND] >>
-  gvs[] >>
-  ‘l0_rely (l0_tick «sys_send» w)’
-    by (gvs[winv_def] >> irule l0_rely_ch >> qexists_tac ‘w’ >> simp[]) >>
-  ‘l0_res_ok r’
-    by (qpat_x_assum ‘l0_send _ _ _ = _’ mp_tac >>
-        simp[l0_send_def, not_chan_def] >> rw[AllCaseEqs()] >>
-        TRY (irule fail_ok >> first_assum ACCEPT_TAC >> NO_TAC) >>
-        simp[l0_res_ok_def, MIN_DEF] >> rw[] >> fs[l0_rely_def] >>
-        irule LESS_EQ_LESS_TRANS >> goal_assum (first_assum o mp_then Any mp_tac) >>
-        simp[]) >>
-  simp[l0_res_of_enc] >>
-  qpat_x_assum ‘l0_send _ _ _ = _’ mp_tac >>
-  simp[l0_send_def, not_chan_def] >> rw[AllCaseEqs()] >> gvs[fail_def] >>
-  simp[MIN_DEF] >> rw[] >> fs[] >> Cases_on ‘bs’ >> fs[]
-QED
 
 Theorem after_send_le:
   LENGTH (outbox_of (after_send g r b) f) ≤ LENGTH (outbox_of b f)

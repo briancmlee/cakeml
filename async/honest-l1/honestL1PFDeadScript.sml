@@ -67,7 +67,7 @@ Theorem sys_dinv:
   (sys_recv g k w = SOME (out, w', ev) ⇒ dinv f c sb w') ∧
   (sys_accept g w = SOME (out, w', ev) ⇒ dinv f c sb w') ∧
   (sys_poll fes w = SOME (out, w', ev) ⇒ dinv f c sb w') ∧
-  (sys_send g bs w = SOME (out, w', ev) ∧ g ≠ f ∧ small_send ev ⇒ dinv f c sb w') ∧
+  (sys_send g bs w = SOME (out, w', ev) ∧ g ≠ f ⇒ dinv f c sb w') ∧
   (sys_close g w = SOME (out, w', ev) ⇒ dinv f c sb w')
 Proof
   strip_tac >> qpat_x_assum ‘dinv _ _ _ _’ mp_tac >> simp[dinv_def] >> strip_tac
@@ -100,7 +100,7 @@ QED
 (* The flush leaves an fd with nothing to send (or gone) alone *)
 Theorem l1_flush_dinv:
   ∀fs w b w' b' evs.
-    l1_flush fs (w, b) = SOME ((w', b'), evs) ∧ winv w ∧ EVERY small_send evs ∧
+    l1_flush fs (w, b) = SOME ((w', b'), evs) ∧ winv w ∧
     dinv f c sb w ∧ (outbox_of b f = [] ∨ MEM f b.gone) ⇒
     dinv f c sb w' ∧ evs_sent f evs = []
 Proof
@@ -136,7 +136,7 @@ QED
 
 (* An action on others leaves f's channel alone *)
 Theorem pdo_dinv:
-  pdo lfd (w, ps) a = SOME (r, (w', ps'), evs) ∧ winv w ∧ EVERY small_send evs ∧
+  pdo lfd (w, ps) a = SOME (r, (w', ps'), evs) ∧ winv w ∧
   dinv f c sb w ∧ ¬MEM f (MAP SND ps.b.tbl) ⇒
   dinv f c sb w'
 Proof
@@ -225,7 +225,7 @@ QED
 (* An action, from an fd with channel c: c's sent grows by what the
    action's sends took on f, and c stays f's or (f closed) unused *)
 Theorem pdo_dinv_live:
-  pdo lfd (w, ps) a = SOME (r, (w', ps'), evs) ∧ winv w ∧ EVERY small_send evs ∧
+  pdo lfd (w, ps) a = SOME (r, (w', ps'), evs) ∧ winv w ∧
   pown lfd ps ∧ l0_chan_of w f = SOME c ⇒
   dinv f c (csent w c ++ evs_sent f evs) w'
 Proof
@@ -259,7 +259,7 @@ End
 
 Theorem pdo_tkx:
   pdo lfd (w, ps) a = SOME (r, (w', ps'), evs) ∧ winv w ∧ pown lfd ps ∧
-  EVERY small_send evs ∧ tkx live dx w ps f c ts out ∧ (¬live ⇒ ¬MEM f ps.acq) ⇒
+  tkx live dx w ps f c ts out ∧ (¬live ⇒ ¬MEM f ps.acq) ⇒
   ∃live'. tkx live' (dx ∨ hard_send f evs) w' ps' f c (ts ++ evs_sent f evs)
             (out ++ wbytes f ps.b a) ∧ (¬live' ⇒ ¬MEM f ps'.acq)
 Proof
@@ -288,7 +288,7 @@ Theorem pacts_tkx:
   ∀acts w ps s rs evs w' ps' s' hs' hrs hevs live dx ts.
     pacts lfd (w, ps) acts = SOME (rs, evs, (w', ps')) ∧
     hacts lfd (s, hs_of ps) acts = SOME (hrs, hevs, (s', hs')) ∧
-    pv_rel lfd cm ps s ∧ pown lfd ps ∧ winv w ∧ EVERY small_send evs ∧
+    pv_rel lfd cm ps s ∧ pown lfd ps ∧ winv w ∧
     MEM f (MAP FST cm) ∧
     tkx live dx w ps f c ts (EL (cl cm f) s.clients).outgoing ∧ (¬live ⇒ ¬MEM f ps.acq) ⇒
     ∃live'. tkx live' (dx ∨ hard_send f evs) w' ps' f c (ts ++ evs_sent f evs)
@@ -301,7 +301,6 @@ Proof
   rename1 ‘pdo _ _ _ = SOME (r1, ws1, evs1)’ >> PairCases_on ‘ws1’ >>
   rename1 ‘hdo _ _ _ = SOME (r2, st1, hevs1)’ >> PairCases_on ‘st1’ >>
   drule_all pdo_hdo >> strip_tac >> gvs[] >>
-  ‘EVERY small_send evs1 ∧ EVERY small_send evs'’ by fs[] >>
   drule_all pdo_tkx >> strip_tac >>
   drule_all pdo_winv >> strip_tac >>
   drule hdo_out >> strip_tac >>
@@ -393,7 +392,7 @@ QED
 (* The tail of a round, from a closed fd: nothing changes for it *)
 Theorem tail_dinv_dead:
   pf_tail lfd pol hs (w, ps) = SOME (rdy, (w', ps'), log, evs) ∧ winv w ∧ qfresh w ∧
-  EVERY small_send evs ∧ dinv f c ts w ∧ outbox_of ps.b f = [] ⇒
+  dinv f c ts w ∧ outbox_of ps.b f = [] ⇒
   dinv f c ts w' ∧ evs_sent f evs = []
 Proof
   simp[pf_tail_def, AllCaseEqs()] >> strip_tac >> gvs[] >>
@@ -417,7 +416,7 @@ QED
    dropped it in this tail *)
 Theorem tail_live_close:
   pf_tail lfd pol hs (w, ps) = SOME (rdy, (w', ps'), log, evs) ∧ winv w ∧ qfresh w ∧
-  EVERY small_send evs ∧ acct w ps.b f c out ∧
+  acct w ps.b f c out ∧
   ¬MEM f ps'.b.closing ∧ outbox_of ps'.b f = [] ∧ ¬MEM f ps'.b.gone ⇒
   dinv f c (csent w c ++ evs_sent f evs) w' ∧
   (csent w c ++ evs_sent f evs = out ∨ MEM f ps.b.gone ∨ hard_send f evs ∨
@@ -475,7 +474,7 @@ QED
 
 Theorem tail_tkx:
   pf_tail lfd pol hs (w, ps) = SOME (rdy, (w', ps'), log, evs) ∧
-  winv w ∧ qfresh w ∧ pown lfd ps ∧ EVERY small_send evs ∧ tkx live dx w ps f c ts out ⇒
+  winv w ∧ qfresh w ∧ pown lfd ps ∧ tkx live dx w ps f c ts out ⇒
   ∃live'. tkx live' (dx ∨ hard_send f evs ∨ MEM f (tail_drops lfd pol hs (w, ps)))
             w' ps' f c (ts ++ evs_sent f evs) out
 Proof
@@ -510,7 +509,7 @@ End
    round, or the write timeout dropped f in the round *)
 Theorem round_tkx:
   pround lfd pol hs (w, ps) acts = SOME (snap, (w', ps'), log, evs) ∧
-  pv_rel lfd cm ps s ∧ pown lfd ps ∧ winv w ∧ EVERY small_send evs ∧ out_rel cm w ps s ∧
+  pv_rel lfd cm ps s ∧ pown lfd ps ∧ winv w ∧ out_rel cm w ps s ∧
   (MEM f (MAP SND ps.b.tbl) ∨ MEM f ps.b.closing ∨ MEM f ps.acq) ∧ l0_chan_of w f = SOME c ⇒
   MEM f (MAP FST cm) ∧
   ∃rs hevs s1 hs1.
@@ -530,7 +529,6 @@ Proof
   drule_all pacts_hacts >> strip_tac >> gvs[] >>
   ‘tkx T (MEM f ps.b.gone) w ps f c (csent w c) (EL (cl cm f) s.clients).outgoing’
     by simp[tkx_def, tk_def] >>
-  ‘EVERY small_send aevs ∧ EVERY small_send tevs’ by fs[] >>
   ‘¬T ⇒ ¬MEM f ps.acq’ by simp[] >>
   drule_all pacts_tkx >> strip_tac >>
   ‘qfresh w’ by fs[out_rel_def] >>
@@ -551,8 +549,7 @@ Theorem l1pf_round_sent_x:
     SUC n ≤ N ∧
     prounds lfd pol ifds m (w0, pinit) n = SOME (h, ws, evs, logs) ∧
     prounds lfd pol ifds m (w0, pinit) (SUC n) = SOME (h', ws', evs', logs') ∧
-    EVERY small_send evs' ∧
-    (MEM f (MAP SND (SND ws).b.tbl) ∨ MEM f (SND ws).b.closing ∨ MEM f (SND ws).acq) ∧
+        (MEM f (MAP SND (SND ws).b.tbl) ∨ MEM f (SND ws).b.closing ∨ MEM f (SND ws).acq) ∧
     l0_chan_of (FST ws) f = SOME c ⇒
     ∃live. tkx live (MEM f (SND ws).b.gone ∨ hard_send f (DROP (LENGTH evs) evs') ∨
                      MEM f (round_drops lfd pol (ifds h) ws (new_actions (log_of m) h)))
@@ -566,7 +563,6 @@ Proof
   ‘l0_rely w0 ∧ fds_lt w0’ by fs[winv_def] >>
   drule_all prounds_SUC_step >> strip_tac >>
   qpat_x_assum ‘evs' = _’ SUBST_ALL_TAC >>
-  qpat_x_assum ‘EVERY _ (_ ++ _)’ (strip_assume_tac o REWRITE_RULE [EVERY_APPEND]) >>
   REWRITE_TAC [DROP_LENGTH_APPEND] >>
   ‘n ≤ N’ by simp[] >>
   mp_tac (Q.INST [‘N’ |-> ‘N’] l1pf_refines_hl_out_upto) >>
@@ -611,7 +607,7 @@ QED
 
 Theorem tail_noconn:
   pf_tail lfd pol hs (w, ps) = SOME (rdy, (w', ps'), log, evs) ∧ winv w ∧ qfresh w ∧
-  EVERY small_send evs ∧ tkx live dx w ps f c ts out ∧ l0_chan_of w' f = SOME c ⇒
+  tkx live dx w ps f c ts out ∧ l0_chan_of w' f = SOME c ⇒
   ¬MEM (FConn f) log
 Proof
   simp[pf_tail_def, AllCaseEqs()] >> strip_tac >> gvs[] >> strip_tac >>
@@ -643,15 +639,37 @@ QED
    failed hard, when L1 sends f's (non-empty) outbox
    ------------------------------------------------------------------------ *)
 
-Theorem sys_send_small:
-  sys_send g bs w = SOME (out, w', ev) ∧ small_send ev ⇒ LENGTH bs < 256 ** 8
+(* sys_send_res without the length hypothesis: D24 (the kernel's counts
+   are below 2^64) makes the recorded count exact for any payload *)
+Theorem sys_send_res_rely:
+  sys_send g bs w = SOME (out, w', ev) ∧ winv w ∧ bs ≠ [] ⇒
+  (∃k. l0_res_of out = Ok k ∧ 0 < k ∧ k ≤ LENGTH bs) ∨ (∃e x. l0_res_of out = Fail e x)
 Proof
-  rw[sys_send_def] >> drule l0_do_cases >> strip_tac >> gvs[small_send_def]
+  rw[sys_send_def] >> drule l0_do_cases >> strip_tac >> gvs[] >>
+  qpat_x_assum ‘l0_call _ _ _ _ = _’ mp_tac >> simp[l0_call_def] >> rw[AllCaseEqs()] >>
+  pairarg_tac >> gvs[] >>
+  ‘LENGTH (fd_bytes g) = 8’ by simp[] >>
+  ‘TAKE 8 (fd_bytes g ++ bs) = fd_bytes g ∧ DROP 8 (fd_bytes g ++ bs) = bs’
+    by metis_tac[TAKE_LENGTH_APPEND, DROP_LENGTH_APPEND] >>
+  gvs[] >>
+  ‘l0_rely (l0_tick «sys_send» w)’
+    by (gvs[winv_def] >> irule l0_rely_ch >> qexists_tac ‘w’ >> simp[]) >>
+  ‘l0_res_ok r’
+    by (qpat_x_assum ‘l0_send _ _ _ = _’ mp_tac >>
+        simp[l0_send_def, not_chan_def] >> rw[AllCaseEqs()] >>
+        TRY (irule fail_ok >> first_assum ACCEPT_TAC >> NO_TAC) >>
+        simp[l0_res_ok_def, MIN_DEF] >> rw[] >> fs[l0_rely_def] >>
+        irule LESS_EQ_LESS_TRANS >> goal_assum (first_assum o mp_then Any mp_tac) >>
+        simp[]) >>
+  simp[l0_res_of_enc] >>
+  qpat_x_assum ‘l0_send _ _ _ = _’ mp_tac >>
+  simp[l0_send_def, not_chan_def] >> rw[AllCaseEqs()] >> gvs[fail_def] >>
+  simp[MIN_DEF] >> rw[] >> fs[] >> Cases_on ‘bs’ >> fs[]
 QED
 
 Theorem l1_flush_progress:
   ∀fs w b w' b' evs.
-    l1_flush fs (w, b) = SOME ((w', b'), evs) ∧ winv w ∧ EVERY small_send evs ∧
+    l1_flush fs (w, b) = SOME ((w', b'), evs) ∧ winv w ∧
     l0_chan_of w f = SOME c ∧ (∃ev. MEM ev evs ∧ ev_on «sys_send» f ev ∧ ¬retried ev) ⇒
     evs_sent f evs ≠ [] ∨ hard_send f evs
 Proof
@@ -667,8 +685,7 @@ Proof
        fs[] >> metis_tac[] >> NO_TAC) >>
   ‘h = f’ by (imp_res_tac ev_on_send >> fs[]) >> gvs[] >>
   drule_all retried_send >> strip_tac >>
-  drule_all sys_send_small >> strip_tac >>
-  drule sys_send_res >> simp[] >> strip_tac >> gvs[] >>
+  drule sys_send_res_rely >> simp[] >> strip_tac >> gvs[] >>
   TRY (Cases_on ‘outbox_of b f’ >> gvs[] >> NO_TAC) >>
   rpt strip_tac >> disj1_tac >> drule_all sys_send_hard >> simp[]
 QED
@@ -686,7 +703,7 @@ QED
    not retry took bytes or failed hard (only the flush sends on it) *)
 Theorem pround_progress:
   pround lfd pol hs (w, ps) acts = SOME (snap, (w', ps'), log, evs) ∧
-  winv w ∧ olive lfd f ps ∧ l0_chan_of w f = SOME c ∧ EVERY small_send evs ∧
+  winv w ∧ olive lfd f ps ∧ l0_chan_of w f = SOME c ∧
   MEM ev evs ∧ ev_on «sys_send» f ev ∧ ¬retried ev ⇒
   evs_sent f evs ≠ [] ∨ hard_send f evs
 Proof
@@ -712,7 +729,7 @@ QED
    channel at the end was not re-accepted in the round *)
 Theorem round_noconn:
   pround lfd pol hs (w, ps) acts = SOME (snap, (w', ps'), log, evs) ∧
-  pv_rel lfd cm ps s ∧ pown lfd ps ∧ winv w ∧ EVERY small_send evs ∧ out_rel cm w ps s ∧
+  pv_rel lfd cm ps s ∧ pown lfd ps ∧ winv w ∧ out_rel cm w ps s ∧
   (MEM f (MAP SND ps.b.tbl) ∨ MEM f ps.b.closing ∨ MEM f ps.acq) ∧ l0_chan_of w f = SOME c ∧
   l0_chan_of w' f = SOME c ⇒
   ¬MEM (FConn f) log
@@ -726,7 +743,6 @@ Proof
   drule_all pacts_hacts >> strip_tac >> gvs[] >>
   ‘tkx T (MEM f ps.b.gone) w ps f c (csent w c) (EL (cl cm f) s.clients).outgoing’
     by simp[tkx_def, tk_def] >>
-  ‘EVERY small_send aevs ∧ EVERY small_send tevs’ by fs[] >>
   ‘¬T ⇒ ¬MEM f ps.acq’ by simp[] >>
   drule_all pacts_tkx >> strip_tac >>
   ‘qfresh w’ by fs[out_rel_def] >>
@@ -742,8 +758,7 @@ Theorem l1pf_round_noconn:
     SUC n ≤ N ∧
     prounds lfd pol ifds m (w0, pinit) n = SOME (h, ws, evs, logs) ∧
     prounds lfd pol ifds m (w0, pinit) (SUC n) = SOME (h', ws', evs', logs') ∧
-    EVERY small_send evs' ∧
-    (MEM f (MAP SND (SND ws).b.tbl) ∨ MEM f (SND ws).b.closing ∨ MEM f (SND ws).acq) ∧
+        (MEM f (MAP SND (SND ws).b.tbl) ∨ MEM f (SND ws).b.closing ∨ MEM f (SND ws).acq) ∧
     l0_chan_of (FST ws) f = SOME c ∧ l0_chan_of (FST ws') f = SOME c ⇒
     ¬MEM (FConn f) (plog lfd pol ifds m w0 n)
 Proof

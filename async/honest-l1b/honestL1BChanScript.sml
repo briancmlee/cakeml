@@ -133,3 +133,65 @@ Proof
   conj_tac >- (irule step_dmono >> qexists_tac ‘h’ >> first_assum ACCEPT_TAC) >>
   first_x_assum irule >> first_assum ACCEPT_TAC
 QED
+
+Theorem ticks_add:
+  ∀a w. l0_ticks nm (a + b) w = l0_ticks nm b (l0_ticks nm a w)
+Proof
+  Induct >> simp[l0_ticks_def, ADD_CLAUSES]
+QED
+
+(* Steps of time never add bytes in flight: an existing channel's count
+   does not grow, and a new one has none *)
+Definition inflight_le_def:
+  inflight_le c (w : l0world) (w' : l0world) ⇔
+    c < LENGTH w'.chans ⇒
+    if c < LENGTH w.chans then (EL c w'.chans).inflight ≤ (EL c w.chans).inflight
+    else (EL c w'.chans).inflight = 0
+End
+
+Theorem inflight_le_trans:
+  inflight_le c w1 w2 ∧ inflight_le c w2 w3 ∧ (c < LENGTH w1.chans ⇒ c < LENGTH w2.chans) ⇒
+  inflight_le c w1 w3
+Proof
+  rw[inflight_le_def] >> Cases_on ‘c < LENGTH w2.chans’ >> fs[] >> rw[] >> fs[]
+QED
+
+Theorem deliver_inflight[local]:
+  inflight_le c w (l0_deliver w a)
+Proof
+  Cases_on ‘a’ >> rw[l0_deliver_def, inflight_le_def, upd_lchan_def, EL_LUPDATE] >>
+  every_case_tac >> gvs[EL_APPEND1, EL_APPEND2, EL_LUPDATE, fresh_lchan_def] >> rw[] >>
+  gvs[break_lchan_def, EL_APPEND1, EL_APPEND2] >> rw[] >> fs[] >>
+  TRY (‘c = LENGTH w.chans’ by decide_tac >> gvs[EL_APPEND2, fresh_lchan_def] >> NO_TAC)
+QED
+
+Theorem deliver_len[local]:
+  c < LENGTH w.chans ⇒ c < LENGTH (l0_deliver w a).chans
+Proof
+  strip_tac >> qspecl_then [‘c’, ‘w’, ‘a’] mp_tac (Q.GENL [‘c’, ‘w’, ‘a’] deliver_chan) >>
+  simp[chan_mono_def]
+QED
+
+Theorem FOLDL_deliver_inflight[local]:
+  ∀as w. inflight_le c w (FOLDL l0_deliver w as)
+Proof
+  Induct >- simp[inflight_le_def] >> rw[] >>
+  irule inflight_le_trans >> qexists_tac ‘l0_deliver w h’ >> simp[deliver_inflight, deliver_len]
+QED
+
+Theorem tick_inflight:
+  inflight_le c w (l0_tick nm w)
+Proof
+  simp[l0_tick_def] >>
+  qspecl_then [‘w.env w.clock w.hist nm’, ‘w with clock := w.clock + 1’] mp_tac FOLDL_deliver_inflight >>
+  simp[inflight_le_def]
+QED
+
+(* MAIN *)
+Theorem ticks_inflight:
+  ∀k w. inflight_le c w (l0_ticks nm k w)
+Proof
+  Induct >- simp[l0_ticks_def, inflight_le_def] >> rw[l0_ticks_def] >>
+  irule inflight_le_trans >> qexists_tac ‘l0_tick nm w’ >> simp[tick_inflight] >>
+  qspecl_then [‘c’, ‘w’, ‘nm’] mp_tac (Q.GENL [‘c’, ‘w’, ‘nm’] tick_chan) >> simp[chan_mono_def]
+QED

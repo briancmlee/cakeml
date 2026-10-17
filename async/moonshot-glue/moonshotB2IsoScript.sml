@@ -401,3 +401,317 @@ Proof
   asm_rewrite_tac[] >> qpat_x_assum ‘zo _ _ _ _’ mp_tac >> rewrite_tac[zo_def] >>
   disch_then drule >> simp[]
 QED
+
+(*---------------------------------------------------------------------------*)
+(* One step: what isolation says of it, and a call's two outcomes *)
+
+Definition iso_step_def:
+  iso_step a b r (s : sysstate) ⇔
+    (∀k p. r = Env (EIncoming k p) ⇒ p ≠ a ∧ p ≠ b) ∧
+    (∀k x j. r = Env (EArrive k x) ∧ env_arrival_chan x = SOME j ⇒ ¬on_ab a b s (k, j))
+End
+
+Theorem isolated_iso_step:
+  isolated a b rs ss ∧ i < LENGTH rs ⇒ iso_step a b (EL i rs) (EL i ss)
+Proof
+  rewrite_tac[isolated_def, iso_step_def] >> strip_tac >>
+  qpat_x_assum ‘∀i. _’ (qspec_then ‘i’ mp_tac) >> asm_rewrite_tac[] >> metis_tac[]
+QED
+
+Theorem call_step_cases:
+  sys_step s (Call k nm conf bys out) s' ⇒
+  k < LENGTH s.procs ∧
+  ∃w1. l0_call nm (unblock nm conf) bys (EL k s.procs) = SOME (FFIreturn out w1) ∧
+       (s' = call_state s k nm conf bys w1 ∨
+        nm = «sys_connect» ∧ LENGTH w1.chans = LENGTH (EL k s.procs).chans + 1 ∧
+        ∃k'. sys_room (call_state s k nm conf bys w1) k' (w22n conf) ∧
+             s' = sys_pair (k, LENGTH (EL k s.procs).chans) k' (w22n conf)
+                    (call_state s k nm conf bys w1))
+Proof
+  rw[sys_step_def] >> qexists_tac ‘w1’ >> simp[] >>
+  qpat_x_assum ‘if _ then _ else _’ mp_tac >>
+  simp[call_state_def, call_target_def] >>
+  rw[] >> fs[l0sysTheory.sysstate_component_equality] >> metis_tac[]
+QED
+
+Theorem sinv_lsn_distinct:
+  sinv rs s css ∧ k < LENGTH s.procs ⇒ ALL_DISTINCT (MAP FST (EL k s.procs).listeners)
+Proof
+  rw[sinv_def] >> first_x_assum drule >> simp[pk_def, pinv_def]
+QED
+
+Theorem exit_state:
+  s with <| alive := A; procs := P |> = (s with procs := P) with alive := A
+Proof
+  simp[l0sysTheory.sysstate_component_equality]
+QED
+
+(*---------------------------------------------------------------------------*)
+(* I3 over a step *)
+
+Theorem i3_call_state:
+  i3 a b s ∧ sinv rs s css ∧ k < LENGTH s.procs ∧
+  l0_call nm (unblock nm conf) bys (EL k s.procs) = SOME (FFIreturn out w1) ⇒
+  i3 a b (call_state s k nm conf bys w1)
+Proof
+  strip_tac >>
+  qabbrev_tac ‘w = EL k s.procs’ >>
+  qabbrev_tac ‘w2 = w1 with <| clock := w.clock + 1; hist := w.hist ++ [(nm, conf, bys)] |>’ >>
+  ‘l0_rely w’ by fs[sinv_def, pk_def, Abbr ‘w’] >>
+  ‘wmono w w2’ by metis_tac[wmono_fields, wmono_call] >>
+  ‘i3 a b (s with procs := LUPDATE w2 k s.procs)’ by (irule i3_local >> simp[Abbr ‘w’]) >>
+  simp[call_state_def, call_target_def] >> IF_CASES_TAC
+  >- (‘s with <| procs := LUPDATE w2 k s.procs;
+                 target := ((k, LENGTH w.chans) =+ SOME (w22n conf)) s.target |> =
+       (s with procs := LUPDATE w2 k s.procs) with
+         target := ((k, LENGTH w.chans) =+ SOME (w22n conf))
+                     (s with procs := LUPDATE w2 k s.procs).target’ by simp[] >>
+      pop_assum SUBST1_TAC >> irule i3_target >> simp[] >>
+      simp[sys_chan_def, EL_LUPDATE, Abbr ‘w2’] >> strip_tac >>
+      irule connect_peer_sent >> fs[unblock_other] >> metis_tac[]) >>
+  ‘s with <| procs := LUPDATE w2 k s.procs; target := s.target |> =
+   s with procs := LUPDATE w2 k s.procs’ by simp[l0sysTheory.sysstate_component_equality] >>
+  pop_assum SUBST1_TAC >> simp[]
+QED
+
+Theorem i3_pair:
+  i3 a b s ∧ k' < LENGTH s.procs ⇒ i3 a b (sys_pair e k' p s)
+Proof
+  strip_tac >> simp[sys_pair_def] >>
+  qmatch_goalsub_abbrev_tac ‘s1 with peer := _’ >>
+  ‘s1.peer = s.peer’ by simp[Abbr ‘s1’, sys_deliver_def] >>
+  ‘i3 a b s1’ by (simp[Abbr ‘s1’] >> irule i3_deliver >> simp[]) >>
+  qpat_x_assum ‘s1.peer = s.peer’ (fn th => rewrite_tac[GSYM th]) >>
+  irule i3_peer >> first_assum ACCEPT_TAC
+QED
+
+Theorem i3_step:
+  i3 a b s ∧ sinv rs s css ∧ iso_step a b r s ∧ sys_step s r s' ⇒ i3 a b s'
+Proof
+  strip_tac >> ‘kinv s’ by fs[sinv_def] >>
+  Cases_on ‘r’
+  >- (rename1 ‘Call k nm conf bys out’ >> drule call_step_cases >> rpt strip_tac >>
+      ‘i3 a b (call_state s k nm conf bys w1)’ by (irule i3_call_state >> metis_tac[]) >>
+      rveq >> TRY (first_assum ACCEPT_TAC) >> irule i3_pair >> fs[sys_room_def])
+  >- (rename1 ‘Kern ks’ >> Cases_on ‘ks’ >> fs[sys_step_def] >> rveq
+      >- (irule i3_pair >> fs[sys_room_def] >> irule i3_deliver >> fs[is_end_def])
+      >- (rename1 ‘s.peer (k, j) = SOME (k', j')’ >>
+          ‘s.peer (k', j') = SOME (k, j) ∧ is_end s (k', j')’
+            by (qpat_x_assum ‘kinv s’ mp_tac >> rewrite_tac[kinv_def] >> metis_tac[]) >>
+          simp[] >> irule i3_deliver >> fs[is_end_def])
+      >- (simp[] >> irule i3_deliver >> fs[is_end_def])
+      >- (rename1 ‘s.peer (k, j) = SOME (k', j')’ >>
+          ‘is_end s (k', j')’
+            by (qpat_x_assum ‘kinv s’ mp_tac >> rewrite_tac[kinv_def] >> metis_tac[]) >>
+          simp[] >> irule i3_deliver >> fs[is_end_def])
+      >> irule i3_deliver >> fs[is_end_def])
+  >- (rename1 ‘Env es’ >> Cases_on ‘es’ >> fs[sys_step_def] >> rveq >>
+      irule i3_deliver >> fs[is_end_def, sys_room_def] >>
+      qx_genl_tac [‘j1’, ‘bs’] >> rpt strip_tac >>
+      qpat_x_assum ‘iso_step _ _ _ _’ mp_tac >> rewrite_tac[iso_step_def] >>
+      disch_then (qspecl_then [‘n’, ‘l’, ‘j1’] mp_tac o CONJUNCT2) >>
+      fs[env_arrival_chan_def]) >>
+  fs[sys_step_def] >> rveq >>
+  ‘i3 a b (s with procs := LUPDATE (close_all (EL n s.procs)) n s.procs)’
+    by (irule i3_local >> simp[wmono_close_all]) >>
+  pop_assum mp_tac >> rewrite_tac[i3_def, on_ab_def] >> strip_tac >> gen_tac >>
+  PairCases_on ‘e’ >> pop_assum (qspec_then ‘(e0, e1)’ mp_tac) >>
+  simp[is_end_def, sys_chan_def]
+QED
+
+(*---------------------------------------------------------------------------*)
+(* I1 over a step *)
+
+Theorem i1_call_state:
+  i1 a b s ∧ k < LENGTH s.procs ∧
+  l0_call nm (unblock nm conf) bys (EL k s.procs) = SOME (FFIreturn out w1) ⇒
+  i1 a b (call_state s k nm conf bys w1)
+Proof
+  strip_tac >>
+  ‘i1 a b (s with procs := LUPDATE (w1 with <| clock := (EL k s.procs).clock + 1;
+                                               hist := (EL k s.procs).hist ++ [(nm, conf, bys)] |>)
+                                   k s.procs)’
+    by (irule i1_local >> simp[] >> irule (cj 4 lsub_fields) >> metis_tac[lsub_call]) >>
+  pop_assum mp_tac >> simp[call_state_def, i1_def]
+QED
+
+Theorem i1_step:
+  i1 a b s ∧ sinv rs s css ∧ iso_step a b r s ∧ sys_step s r s' ⇒ i1 a b s'
+Proof
+  strip_tac >> ‘kinv s’ by fs[sinv_def] >>
+  Cases_on ‘r’
+  >- (rename1 ‘Call k nm conf bys out’ >> drule call_step_cases >> rpt strip_tac >>
+      ‘i1 a b (call_state s k nm conf bys w1)’ by (irule i1_call_state >> metis_tac[]) >>
+      rveq >> TRY (first_assum ACCEPT_TAC) >> irule i1_pair >> simp[] >>
+      ‘sinv (rs ++ [Call k «sys_connect» conf bys out])
+            (call_state s k «sys_connect» conf bys w1)
+            (call_css s k «sys_connect» conf bys out css)’ by (irule sinv_call >> simp[]) >>
+      drule sinv_lsn_distinct >> disch_then irule >> fs[sys_room_def])
+  >- (rename1 ‘Kern ks’ >> Cases_on ‘ks’ >> fs[sys_step_def] >> rveq
+      >- (rename1 ‘Handshake k j k'’ >>
+          ‘k < LENGTH s.procs ∧ k' < LENGTH s.procs’ by fs[is_end_def, sys_room_def] >>
+          ‘i1 a b (sys_deliver k (LConnUp j) s)’ by (irule i1_deliver >> simp[]) >>
+          ‘ALL_DISTINCT (MAP FST (EL k' (sys_deliver k (LConnUp j) s).procs).listeners)’
+            by (simp[sys_deliver_def, EL_LUPDATE] >> rw[conn_up_fields] >>
+                irule sinv_lsn_distinct >> metis_tac[]) >>
+          ‘sys_room (sys_deliver k (LConnUp j) s) k' p’
+            by (qpat_x_assum ‘sys_room _ _ _’ mp_tac >>
+                simp[sys_room_def, sys_deliver_def, EL_LUPDATE] >>
+                Cases_on ‘k' = k’ >> simp[conn_up_fields]) >>
+          irule i1_pair >> simp[])
+      >- (rename1 ‘s.peer (k, j) = SOME (k', j')’ >>
+          ‘is_end s (k', j')’
+            by (qpat_x_assum ‘kinv s’ mp_tac >> rewrite_tac[kinv_def] >> metis_tac[]) >>
+          simp[] >> irule i1_deliver >> fs[is_end_def])
+      >- (simp[] >> irule i1_deliver >> fs[is_end_def])
+      >- (rename1 ‘s.peer (k, j) = SOME (k', j')’ >>
+          ‘is_end s (k', j')’
+            by (qpat_x_assum ‘kinv s’ mp_tac >> rewrite_tac[kinv_def] >> metis_tac[]) >>
+          simp[] >> irule i1_deliver >> fs[is_end_def])
+      >> irule i1_deliver >> fs[is_end_def])
+  >- (rename1 ‘Env es’ >> Cases_on ‘es’ >> fs[sys_step_def] >> rveq
+      >- (irule i1_incoming >> fs[iso_step_def] >> irule sinv_lsn_distinct >>
+          fs[sys_room_def] >> metis_tac[])
+      >- (irule i1_deliver >> fs[is_end_def]) >>
+      irule i1_deliver >> fs[is_end_def] >> rpt strip_tac >> fs[env_arrival_chan_def]) >>
+  fs[sys_step_def] >> rveq >>
+  ‘i1 a b (s with procs := LUPDATE (close_all (EL n s.procs)) n s.procs)’
+    by (irule i1_local >> simp[lsub_close_all]) >>
+  pop_assum mp_tac >> simp[i1_def]
+QED
+
+(*---------------------------------------------------------------------------*)
+(* I2 over a step: from a call's own state, pairs persist *)
+
+Theorem i2_step:
+  i2 a b rs s css ∧ i1 a b s ∧ sinv rs s css ∧ sys_step s r s' ⇒
+  i2 a b (rs ++ [r]) s' (step_css s r css)
+Proof
+  strip_tac >> drule_all sys_ext_step >> strip_tac >>
+  ‘LENGTH s'.procs = LENGTH s.procs ∧ ∀e e'. s.peer e = SOME e' ⇒ s'.peer e = SOME e'’
+    by fs[sys_ext_def] >>
+  Cases_on ‘r’
+  >- (rename1 ‘Call k nm conf bys out’ >> drule call_step_cases >>
+      disch_then (CONJUNCTS_THEN2 assume_tac
+                   (qx_choose_then ‘w1’ (CONJUNCTS_THEN2 assume_tac kall_tac))) >>
+      ‘i2 a b (rs ++ [Call k nm conf bys out]) (call_state s k nm conf bys w1)
+          (call_css s k nm conf bys out css)’ by (irule i2_call >> simp[]) >>
+      simp[step_css_def] >> irule i2_mono >>
+      qexists_tac ‘call_state s k nm conf bys w1’ >> simp[] >> simp[call_state_def]) >>
+  simp[step_css_def, i2_other] >> irule i2_mono >> qexists_tac ‘s’ >> simp[]
+QED
+
+(*---------------------------------------------------------------------------*)
+(* zo over a step *)
+
+Theorem zo_pair:
+  zo RS rs s css ∧ k' < LENGTH s.procs ⇒ zo RS rs (sys_pair e k' p s) css
+Proof
+  strip_tac >> simp[sys_pair_def] >> irule zo_deliver >> simp[]
+QED
+
+Theorem zo_step:
+  zo RS rs s css ∧ sinv rs s css ∧ sys_step s r s' ∧ rs ++ [r] ≼ RS ∧
+  (∀k nm conf bys out. r = Call k nm conf bys out ⇒ fd0_ok (proc_events k RS)) ⇒
+  zo RS (rs ++ [r]) s' (step_css s r css)
+Proof
+  strip_tac >> ‘kinv s’ by fs[sinv_def] >>
+  Cases_on ‘r’
+  >- (rename1 ‘Call k nm conf bys out’ >> drule call_step_cases >> rpt strip_tac >>
+      ‘zo RS (rs ++ [Call k nm conf bys out]) (call_state s k nm conf bys w1)
+          (call_css s k nm conf bys out css)’ by (irule zo_call >> fs[]) >>
+      rveq >> simp[step_css_def] >> TRY (first_assum ACCEPT_TAC) >>
+      irule zo_pair >> fs[sys_room_def])
+  >- (rename1 ‘Kern ks’ >> simp[step_css_def, zo_other] >>
+      Cases_on ‘ks’ >> fs[sys_step_def] >> rveq
+      >- (irule zo_pair >> fs[sys_room_def] >> irule zo_deliver >> fs[is_end_def])
+      >- (rename1 ‘s.peer (k, j) = SOME (k', j')’ >>
+          ‘is_end s (k', j')’
+            by (qpat_x_assum ‘kinv s’ mp_tac >> rewrite_tac[kinv_def] >> metis_tac[]) >>
+          simp[] >> irule zo_deliver >> fs[is_end_def])
+      >- (simp[] >> irule zo_deliver >> fs[is_end_def])
+      >- (rename1 ‘s.peer (k, j) = SOME (k', j')’ >>
+          ‘is_end s (k', j')’
+            by (qpat_x_assum ‘kinv s’ mp_tac >> rewrite_tac[kinv_def] >> metis_tac[]) >>
+          simp[] >> irule zo_deliver >> fs[is_end_def])
+      >> irule zo_deliver >> fs[is_end_def])
+  >- (rename1 ‘Env es’ >> simp[step_css_def, zo_other] >>
+      Cases_on ‘es’ >> fs[sys_step_def] >> rveq >>
+      irule zo_deliver >> fs[is_end_def, sys_room_def]) >>
+  simp[step_css_def, zo_other] >> fs[sys_step_def] >> rveq >>
+  ‘zo RS rs (s with procs := LUPDATE (close_all (EL n s.procs)) n s.procs) css’
+    by (irule zo_exit >> simp[]) >>
+  pop_assum mp_tac >> simp[zo_def]
+QED
+
+(*---------------------------------------------------------------------------*)
+(* All four, along a run *)
+
+Definition binv_def:
+  binv a b RS rs s css ⇔ i3 a b s ∧ i1 a b s ∧ i2 a b rs s css ∧ zo RS rs s css
+End
+
+Theorem binv_step:
+  binv a b RS rs s css ∧ sinv rs s css ∧ iso_step a b r s ∧ sys_step s r s' ∧ rs ++ [r] ≼ RS ∧
+  (∀k nm conf bys out. r = Call k nm conf bys out ⇒ fd0_ok (proc_events k RS)) ⇒
+  binv a b RS (rs ++ [r]) s' (step_css s r css)
+Proof
+  rewrite_tac[binv_def] >> strip_tac >> rpt conj_tac
+  >- (irule i3_step >> metis_tac[])
+  >- (irule i1_step >> metis_tac[])
+  >- (irule i2_step >> simp[]) >>
+  irule zo_step >> simp[]
+QED
+
+Theorem binv_init:
+  sys_init ps s0 ⇒ binv a b RS [] s0 (K [])
+Proof
+  strip_tac >> rewrite_tac[binv_def] >> rpt conj_tac
+  >- (‘s0.target = K NONE’ by fs[sys_init_def] >> simp[i3_def, on_ab_def])
+  >- (rw[i1_def] >> ‘k < LENGTH ps’ by fs[sys_init_def] >>
+      qpat_x_assum ‘sys_init _ _’ mp_tac >> rewrite_tac[sys_init_def] >>
+      strip_tac >> qpat_x_assum ‘∀k. k < LENGTH ps ⇒ _’ (qspec_then ‘k’ mp_tac) >> simp[LET_THM] >>
+      strip_tac >> fs[])
+  >- simp[i2_def] >>
+  rw[zo_def, zinv_def, oinv_def, proc_events_def] >>
+  ‘k < LENGTH ps’ by fs[sys_init_def] >>
+  qpat_x_assum ‘sys_init _ _’ mp_tac >> rewrite_tac[sys_init_def] >>
+  strip_tac >> qpat_x_assum ‘∀k. k < LENGTH ps ⇒ _’ (qspec_then ‘k’ mp_tac) >> simp[LET_THM] >>
+  strip_tac >> fs[]
+QED
+
+Theorem binv_run:
+  sys_init ps s0 ∧ sys_steps s0 RS ss ∧ isolated a b RS ss ∧
+  (∀k. k < LENGTH ps ⇒ fd0_ok (proc_events k RS)) ⇒
+  ∀t. t ≤ LENGTH RS ⇒
+      LENGTH (EL t ss).procs = LENGTH ps ∧
+      binv a b RS (TAKE t RS) (EL t ss) (ghost ss RS (K []) t)
+Proof
+  strip_tac >>
+  ‘sinv [] s0 (K [])’
+    by (irule sinv_init >> qexists_tac ‘ps’ >> rw[] >> irule l0_rely_small_ch >>
+        fs[sys_init_def, LET_THM]) >>
+  ‘∀t. t ≤ LENGTH RS ⇒ sinv (TAKE t RS) (EL t ss) (ghost ss RS (K []) t)’
+    by (match_mp_tac sinv_run >> simp[]) >>
+  drule sys_steps_EL >> strip_tac >>
+  Induct
+  >- (strip_tac >> ‘EL 0 ss = s0’ by (Cases_on ‘ss’ >> fs[]) >>
+      simp[ghost_def] >> conj_tac >- fs[sys_init_def] >>
+      irule binv_init >> metis_tac[]) >>
+  strip_tac >> ‘t < LENGTH RS’ by simp[] >>
+  ‘LENGTH (EL t ss).procs = LENGTH ps ∧ binv a b RS (TAKE t RS) (EL t ss) (ghost ss RS (K []) t)’
+    by (qpat_x_assum ‘t ≤ LENGTH RS ⇒ _’ irule >> simp[]) >>
+  ‘sinv (TAKE t RS) (EL t ss) (ghost ss RS (K []) t)’
+    by (qpat_x_assum ‘∀t. t ≤ LENGTH RS ⇒ sinv _ _ _’ irule >> simp[]) >>
+  ‘sys_step (EL t ss) (EL t RS) (EL (t + 1) ss)’
+    by (qpat_x_assum ‘∀t. t < LENGTH RS ⇒ sys_step _ _ _’ irule >> simp[]) >>
+  ‘iso_step a b (EL t RS) (EL t ss)’ by (irule isolated_iso_step >> simp[]) >>
+  simp[ghost_def, ADD1, TAKE_SUC_SNOC] >> conj_tac
+  >- (drule_all sys_ext_step >> simp[sys_ext_def]) >>
+  ‘TAKE t RS ++ [EL t RS] ≼ RS’ by metis_tac[TAKE_SUC_SNOC, TAKE_prefix_self] >>
+  irule binv_step >> simp[] >>
+  rpt strip_tac >>
+  qpat_x_assum ‘∀k. k < LENGTH ps ⇒ fd0_ok _’ irule >>
+  qpat_x_assum ‘sys_step _ _ _’ mp_tac >> asm_rewrite_tac[sys_step_def] >>
+  qpat_x_assum ‘LENGTH _ = LENGTH ps’ (fn th => rewrite_tac[th]) >> simp[]
+QED

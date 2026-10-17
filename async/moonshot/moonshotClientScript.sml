@@ -1161,7 +1161,7 @@ QED
    relation; every connection's ready set used up *)
 Theorem crel_acts:
   crel a N rqs lfd st0 (K rdy) ps w hs ∧ N < dimword (:64) ∧
-  (st0.nh < cbound ⇒ st0.nh + N + 2 < dimword (:64)) ⇒
+  (st0.nh < cbound ⇒ st0.nh + N + 1 < dimword (:64)) ⇒
   ∀m. m ≤ N ⇒
     ∃rs w1 hs1.
       ehacts lfd (w, hs) (MAP SND (cacts_upto a st0 rdy m)) = SOME (rs, (w1, hs1)) ∧
@@ -1318,4 +1318,81 @@ Proof
   irule poll_cok >>
   qexistsl_tac [‘EL j w.chans’, ‘MEM hd hfds’, ‘MEM hd hs.settling’] >>
   simp[MEM_FILTER] >> rpt (pop_assum kall_tac) >> metis_tac[]
+QED
+
+(* ------------------------------------------------------------------------
+   One round
+   ------------------------------------------------------------------------ *)
+
+Theorem ehdo_new_hd:
+  ehdo lfd st x = SOME (r, st') ∧ (∀p. x ≠ EConnect p) ⇒ new_hd r = NONE
+Proof
+  PairCases_on ‘st’ >> Cases_on ‘x’ >> simp[ehdo_def] >> rw[] >>
+  every_case_tac >> gvs[new_hd_def] >> pairarg_tac >> gvs[new_hd_def]
+QED
+
+Theorem ehacts_new_hd:
+  ∀xs st rs st'. ehacts lfd st xs = SOME (rs, st') ∧ EVERY (λx. ∀p. x ≠ EConnect p) xs ⇒
+    EVERY (λr. new_hd r = NONE) rs
+Proof
+  Induct >> simp[ehacts_def] >> rw[] >> gvs[AllCaseEqs()] >>
+  metis_tac[ehdo_new_hd]
+QED
+
+Theorem cupd_nh_same:
+  ∀xs rs st. EVERY (λr. new_hd r = NONE) rs ⇒ (cupd rqs st xs rs).nh = st.nh
+Proof
+  Induct >> simp[cupd_def] >> rpt gen_tac >> PairCases_on ‘h’ >> Cases_on ‘rs’ >>
+  simp[cupd_def]
+QED
+
+Theorem cacts_upto_noconnect:
+  ¬(st0.nh < cbound) ⇒ EVERY (λx. ∀p. x ≠ EConnect p) (MAP SND (cacts_upto a st0 rdy m))
+Proof
+  strip_tac >> simp[cacts_upto_def, MAP_FLAT, EVERY_FLAT, EVERY_GENLIST, EVERY_MAP] >>
+  rw[] >> Cases_on ‘EL i st0.cs’ >> rw[cact1_def]
+QED
+
+Theorem crel_last[simp]:
+  crel a N rqs lfd (st with last := x) = crel a N rqs lfd st
+Proof
+  simp[FUN_EQ_THM, crel_def]
+QED
+
+Theorem cacts_last[simp]:
+  cacts a (st with last := x) rdy = cacts a st rdy
+Proof
+  simp[cacts_def]
+QED
+
+Theorem crel_round:
+  crel a N rqs lfd st0 (K rdy) ps w hs ∧ st0.last = cacts a st0 rdy ∧
+  N < cbound ∧ st0.nh < cbound + N ∧
+  ehacts_tot lfd (w, hs) (MAP SND st0.last) = (rs, (w1, hs1)) ∧
+  ehpoll lfd hs1 hfds w1 = (rdy', w2, hs2) ⇒
+  ehacts lfd (w, hs) (MAP SND st0.last) = SOME (rs, (w1, hs1)) ∧
+  crel a N rqs lfd (cstep a rqs st0 (ssnap rdy' rs)) (K (set rdy'))
+    (ps ++ ZIP (MAP SND st0.last, rs)) w2 hs2 ∧
+  (cstep a rqs st0 (ssnap rdy' rs)).last = cacts a (cstep a rqs st0 (ssnap rdy' rs)) (set rdy') ∧
+  (cstep a rqs st0 (ssnap rdy' rs)).nh < cbound + N ∧ wkeep w w1
+Proof
+  strip_tac >> ‘LENGTH st0.cs = N’ by fs[crel_def] >>
+  ‘N < dimword (:64) ∧ (st0.nh < cbound ⇒ st0.nh + N + 1 < dimword (:64))’
+    by fs[cbound_def] >>
+  drule crel_acts >> simp[] >> disch_then (qspec_then ‘N’ mp_tac) >> simp[] >> strip_tac >>
+  ‘st0.last = cacts_upto a st0 rdy N’ by simp[cacts_upto_all] >>
+  ‘ehacts lfd (w, hs) (MAP SND st0.last) = SOME (rs', (w1', hs1'))’ by simp[] >>
+  ‘rs' = rs ∧ w1' = w1 ∧ hs1' = hs1’ by gvs[ehacts_tot_def] >> gvs[] >>
+  simp[cstep_def, asyncM3WorldTheory.ssnap_def] >>
+  conj_tac
+  >- (‘crel a (LENGTH st0.cs) rqs lfd (cupd rqs st0 (cacts a st0 rdy) rs) (K ∅)
+         (ps ++ ZIP (MAP SND (cacts a st0 rdy), rs)) w1 hs1’
+        by (irule crel_rdyf >> qexists_tac ‘λi. if i < LENGTH st0.cs then ∅ else rdy’ >>
+            conj_tac >> TRY (first_assum ACCEPT_TAC) >> simp[]) >>
+      drule_all crel_poll >> simp[]) >>
+  Cases_on ‘st0.nh < cbound’
+  >- simp[] >>
+  ‘(cupd rqs st0 (cacts a st0 rdy) rs).nh = st0.nh’ suffices_by simp[] >>
+  irule cupd_nh_same >> irule ehacts_new_hd >>
+  metis_tac[cacts_upto_noconnect]
 QED

@@ -15,20 +15,20 @@ Libs
   preamble
 
 (* The run, with pol_never *)
-Definition erun_def:
-  erun lfd ifds m w0 n = THE (erounds lfd pol_never ifds m (w0, einit) n)
+Definition nrun_def:
+  nrun lfd ifds m w0 n = THE (erounds lfd pol_never ifds m (w0, einit) n)
 End
 
 Definition erhist_def:
-  erhist lfd ifds m w0 n = FST (erun lfd ifds m w0 n)
+  erhist lfd ifds m w0 n = FST (nrun lfd ifds m w0 n)
 End
 
 Definition erworld_def:
-  erworld lfd ifds m w0 n = FST (FST (SND (erun lfd ifds m w0 n)))
+  erworld lfd ifds m w0 n = FST (FST (SND (nrun lfd ifds m w0 n)))
 End
 
 Definition erstate_def:
-  erstate lfd ifds m w0 n = SND (FST (SND (erun lfd ifds m w0 n)))
+  erstate lfd ifds m w0 n = SND (FST (SND (nrun lfd ifds m w0 n)))
 End
 
 (* Round n's events *)
@@ -73,9 +73,9 @@ Theorem erun_some:
   erun_ok lfd ifds m w0 ⇒
   erounds lfd pol_never ifds m (w0, einit) n =
     SOME (erhist lfd ifds m w0 n, (erworld lfd ifds m w0 n, erstate lfd ifds m w0 n),
-          FST (SND (SND (erun lfd ifds m w0 n))), SND (SND (SND (erun lfd ifds m w0 n))))
+          FST (SND (SND (nrun lfd ifds m w0 n))), SND (SND (SND (nrun lfd ifds m w0 n))))
 Proof
-  rw[erun_ok_def, erhist_def, erworld_def, erstate_def, erun_def] >>
+  rw[erun_ok_def, erhist_def, erworld_def, erstate_def, nrun_def] >>
   first_x_assum (qspec_then ‘n’ mp_tac) >>
   Cases_on ‘erounds lfd pol_never ifds m (w0, einit) n’ >> simp[] >>
   PairCases_on ‘x’ >> simp[]

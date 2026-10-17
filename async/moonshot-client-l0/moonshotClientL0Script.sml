@@ -14,7 +14,7 @@
 Theory moonshotClientL0
 Ancestors
   moonshotClientL0Rounds moonshotClientL0Stmts e1ClientSem e1World e1TracePrefix
-  e1TraceEvents moonshotSentGlue moonshotClientTotal moonshotClientSpec
+  e1TraceEvents e1TraceRound moonshotSentGlue moonshotClientTotal moonshotClientSpec
   honestL0Fdok e1DriverSpec e1DriverMain e1DriverProg e1DriverLoop honestL0Part
   honestL0Outcome l0sysBridges honestL1PFRound honestL1EPModel proxyL0StmtsCopy
   honestL1Model honestEchoL0SpecCopy honestL0World

@@ -260,8 +260,8 @@ End
 Theorem live_data_d16:
   run_ok lfd pol ifds m w0 ∧ winv w0 ∧ MEM lfd (l0_used w0) ∧
   (∀n. SND (pcm lfd pol ifds m w0 n) + 1 < dimword (:64)) ∧
-  F1 lfd pol ifds m w0 ∧ S1 lfd pol ifds m w0 ∧ S3 lfd pol ifds m w0 ∧
-  pol_ok hw pol ∧ S4 lfd pol hw ifds m w0 f ∧ HD16 lfd pol ifds m w0 f ⇒
+  F1 lfd pol ifds m w0 ∧ S1 lfd pol ifds m w0 ∧ S3w lfd pol ifds m w0 ∧
+  pol_ok hw pol ∧ S4w lfd pol hw ifds m w0 f ∧ HD16 lfd pol ifds m w0 f ⇒
   ∀R n0 h. ALOOKUP (rstate lfd pol ifds m w0 n0).b.tbl h = SOME f ∧
            ¬MEM f (rstate lfd pol ifds m w0 n0).eof ∧ fl (rworld lfd pol ifds m w0 n0) f R ⇒
            (∃d. fopen lfd pol ifds m w0 h f n0 d ∧ R ≼ fdata f (rlogs lfd pol ifds m w0 n0 d)) ∨
@@ -301,8 +301,8 @@ QED
 Theorem live_data_psk_d16:
   run_ok lfd pol ifds m w0 ∧ winv w0 ∧ MEM lfd (l0_used w0) ∧
   (∀n. SND (pcm lfd pol ifds m w0 n) + 1 < dimword (:64)) ∧
-  F1 lfd pol ifds m w0 ∧ S1 lfd pol ifds m w0 ∧ S3 lfd pol ifds m w0 ∧
-  pol_ok hw pol ∧ S4 lfd pol hw ifds m w0 f ∧ HD16 lfd pol ifds m w0 f ⇒
+  F1 lfd pol ifds m w0 ∧ S1 lfd pol ifds m w0 ∧ S3w lfd pol ifds m w0 ∧
+  pol_ok hw pol ∧ S4w lfd pol hw ifds m w0 f ∧ HD16 lfd pol ifds m w0 f ⇒
   ∀n0 h c.
     ALOOKUP (rstate lfd pol ifds m w0 n0).b.tbl h = SOME f ∧
     ¬MEM f (rstate lfd pol ifds m w0 n0).eof ∧

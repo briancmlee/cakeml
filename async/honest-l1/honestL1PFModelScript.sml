@@ -38,8 +38,8 @@
   simulation (honestL1PFRefine).
 
   A round: the actions; then the poll (one call, as honestL1Model), the
-  flush of the writable outboxes, the fetch, the hung-up policy (D19,
-  hup_step), the reap of the closing fds;
+  flush of the writable outboxes, the fetch, the write timeout (D23,
+  stall_step), the reap of the closing fds;
   the snapshot; one round of the listener's pause passes.  The run
   also records what each round fetched (the fetch log), from which R1 builds the version-2 world's schedule.
 *)
@@ -62,12 +62,12 @@ Datatype:
          ; acq : word64 list                 (* accepted fds not yet handed out *)
          ; pause : num                       (* rounds left before the listener
                                                 is polled again (after EMFILE) *)
-         ; hups : (word64 # num) list |>     (* hung-up fds, with the rounds
-                                                without send progress (D19) *)
+         ; stalls : (word64 # num) list |>     (* held fds, with the rounds
+                                                without send progress (D23) *)
 End
 
 Definition pinit_def:
-  pinit = <| b := l1init; inb := []; eof := []; acq := []; pause := 0; hups := [] |>
+  pinit = <| b := l1init; inb := []; eof := []; acq := []; pause := 0; stalls := [] |>
 End
 
 Definition inb_of_def:
@@ -263,44 +263,47 @@ Definition pf_ready_def:
                 | NONE => if h = lfd then ps.acq ≠ [] else T) hs
 End
 
-(* The fds the poll reported hung up (POLLHUP) *)
-Definition hup_fds_def:
-  hup_fds rv = MAP FST (FILTER (λ(f, r). r.rhup) rv)
+(* The fds L1 holds: open (with a handle) or closing *)
+Definition pf_held_def:
+  pf_held (ps : l1p) = MAP SND ps.b.tbl ++ ps.b.closing
 End
 
-(* D19, the hung-up policy (user decision, option 2).  A connection fd L1
-   holds that the poll reports hung up (POLLHUP) joins `hups` with a count
-   of 0.  Its input is fetched to the end as usual.  If that input ends
-   with a hard error (the connection really broke), its outbox is dropped
-   at once.  Otherwise (an orderly EOF: a half-close, and the fd may still
-   be writable) L1 keeps flushing it; each round that ends with its outbox
-   not empty and no smaller than before the round's flush adds 1, a round
-   with progress or an empty outbox resets the count; at pf_hupwait the
-   outbox is dropped.  Dropping marks the fd gone (later writes are
-   dropped), so it is closed as soon as the server has closed or read
-   to EOF (the reap, or the auto-close).  No hung-up fd is polled for ever:
-   after its EOF it is not polled for input, and once its outbox is empty
-   or dropped not for output *)
-Definition pf_hupwait_def:
-  pf_hupwait = 8n
+(* D23, the write timeout (user decision; generalises D19's hung-up
+   policy to every fd).  A peer that stops reading for good looks, through
+   poll and send, like a slow one: a receiver that keeps its window closed
+   while it acknowledges the probes keeps the connection open indefinitely
+   ([T] RFC 1122 4.2.2.17), so no error ever comes.  So every fd L1 holds
+   has a stall count (`stalls`): each round that ends with its outbox not
+   empty and no smaller than before the round's flush adds 1; a round with
+   progress or an empty outbox resets it to 0; at pf_sendwait the outbox
+   is dropped.  An fd whose input ends with a hard error (FReset: the
+   connection really broke) has its outbox dropped at once (D19 (a)).
+   Dropping marks the fd gone (later writes are dropped), so it is closed
+   as soon as the server has closed or read to EOF (the reap, or the
+   auto-close) *)
+Definition pf_sendwait_def:
+  pf_sendwait = 8n
 End
 
 Definition drop_out_def:
   drop_out (b : l1st) f = set_outbox f [] (b with gone := f :: FILTER ($≠ f) b.gone)
 End
 
-Definition hup_step_def:
-  hup_step (hfs : word64 list) (ob : word64 -> word8 list) log (ps : l1p) =
+(* One round's stall counts (D23): hfs are the fds to count (the round
+   passes pf_held, every fd L1 holds); ob is the outboxes before the
+   round's flush; log is the round's fetch log *)
+Definition stall_step_def:
+  stall_step (hfs : word64 list) (ob : word64 -> word8 list) log (ps : l1p) =
     let held = (λf. MEM f (MAP SND ps.b.tbl) ∨ MEM f ps.b.closing);
-        hs0 = FILTER (λ(f, n). held f) ps.hups ++
-              MAP (λf. (f, 0n)) (nub (FILTER (λf. held f ∧ ¬MEM f (MAP FST ps.hups)) hfs));
-        hs1 = MAP (λ(f, n). if MEM (FReset f) log then (f, pf_hupwait)
+        hs0 = FILTER (λ(f, n). held f) ps.stalls ++
+              MAP (λf. (f, 0n)) (nub (FILTER (λf. held f ∧ ¬MEM f (MAP FST ps.stalls)) hfs));
+        hs1 = MAP (λ(f, n). if MEM (FReset f) log then (f, pf_sendwait)
                             else if outbox_of ps.b f = [] ∨
                                     LENGTH (outbox_of ps.b f) < LENGTH (ob f) then (f, 0)
                             else (f, n + 1)) hs0;
-        drop = MAP FST (FILTER (λ(f, n). pf_hupwait ≤ n) hs1)
+        drop = MAP FST (FILTER (λ(f, n). pf_sendwait ≤ n) hs1)
     in ps with <| b := FOLDL drop_out ps.b drop;
-                  hups := FILTER (λ(f, n). n < pf_hupwait) hs1 |>
+                  stalls := FILTER (λ(f, n). n < pf_sendwait) hs1 |>
 End
 
 Theorem drop_out_fields[simp]:
@@ -327,35 +330,35 @@ Proof
   simp[drop_out_def, set_outbox_def, ADELKEY_def, MEM_MAP, MEM_FILTER] >> metis_tac[]
 QED
 
-Theorem hup_step_fields[simp]:
-  (hup_step hfs ob log ps).b.tbl = ps.b.tbl ∧ (hup_step hfs ob log ps).b.nxt = ps.b.nxt ∧
-  (hup_step hfs ob log ps).b.closing = ps.b.closing ∧
-  (hup_step hfs ob log ps).b.rdy = ps.b.rdy ∧
-  (hup_step hfs ob log ps).acq = ps.acq ∧ (hup_step hfs ob log ps).inb = ps.inb ∧
-  (hup_step hfs ob log ps).eof = ps.eof ∧ (hup_step hfs ob log ps).pause = ps.pause
+Theorem stall_step_fields[simp]:
+  (stall_step hfs ob log ps).b.tbl = ps.b.tbl ∧ (stall_step hfs ob log ps).b.nxt = ps.b.nxt ∧
+  (stall_step hfs ob log ps).b.closing = ps.b.closing ∧
+  (stall_step hfs ob log ps).b.rdy = ps.b.rdy ∧
+  (stall_step hfs ob log ps).acq = ps.acq ∧ (stall_step hfs ob log ps).inb = ps.inb ∧
+  (stall_step hfs ob log ps).eof = ps.eof ∧ (stall_step hfs ob log ps).pause = ps.pause
 Proof
-  simp[hup_step_def, FOLDL_drop_out]
+  simp[stall_step_def, FOLDL_drop_out]
 QED
 
-(* The hung-up policy only drops outboxes, of fds L1 holds *)
-Theorem hup_step_b:
-  ∃l. (hup_step hfs ob log ps).b = FOLDL drop_out ps.b l ∧
+(* The write timeout only drops outboxes, of fds L1 holds *)
+Theorem stall_step_b:
+  ∃l. (stall_step hfs ob log ps).b = FOLDL drop_out ps.b l ∧
       ∀f. MEM f l ⇒ MEM f (MAP SND ps.b.tbl) ∨ MEM f ps.b.closing
 Proof
-  simp[hup_step_def] >> irule_at Any EQ_REFL >>
+  simp[stall_step_def] >> irule_at Any EQ_REFL >>
   rpt strip_tac >> gvs[MEM_MAP, MEM_FILTER, EXISTS_PROD, MEM_APPEND, nub_set] >>
   every_case_tac >> gvs[] >> metis_tac[]
 QED
 
-Theorem hup_step_outbox:
-  (∀f. outbox_of (hup_step hfs ob log ps).b f = [] ∨
-       outbox_of (hup_step hfs ob log ps).b f = outbox_of ps.b f) ∧
-  (∀f. MEM f (hup_step hfs ob log ps).b.gone ⇒
+Theorem stall_step_outbox:
+  (∀f. outbox_of (stall_step hfs ob log ps).b f = [] ∨
+       outbox_of (stall_step hfs ob log ps).b f = outbox_of ps.b f) ∧
+  (∀f. MEM f (stall_step hfs ob log ps).b.gone ⇒
        MEM f ps.b.gone ∨ MEM f (MAP SND ps.b.tbl) ∨ MEM f ps.b.closing) ∧
-  (∀f. MEM f (MAP FST (hup_step hfs ob log ps).b.outbox) ⇒ MEM f (MAP FST ps.b.outbox))
+  (∀f. MEM f (MAP FST (stall_step hfs ob log ps).b.outbox) ⇒ MEM f (MAP FST ps.b.outbox))
 Proof
   qspecl_then [‘hfs’, ‘ob’, ‘log’, ‘ps’] strip_assume_tac
-    (Q.GENL [‘hfs’, ‘ob’, ‘log’, ‘ps’] hup_step_b) >>
+    (Q.GENL [‘hfs’, ‘ob’, ‘log’, ‘ps’] stall_step_b) >>
   simp[FOLDL_drop_out] >> rw[] >> metis_tac[FOLDL_drop_out]
 QED
 
@@ -374,7 +377,7 @@ Definition pf_tail_def:
                    (w2, ps with b := b2) of
             | NONE => NONE
             | SOME ((w3, ps3'), log, gevs) =>
-                let ps3 = hup_step (hup_fds rv) (outbox_of ps.b) log ps3' in
+                let ps3 = stall_step (pf_held ps3') (outbox_of ps.b) log ps3' in
                 case l1_reap ps3.b.closing (w3, ps3.b) of
                 | NONE => NONE
                 | SOME ((w4, b4), cevs) =>

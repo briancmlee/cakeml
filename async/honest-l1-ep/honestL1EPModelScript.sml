@@ -183,7 +183,7 @@ Definition etail_def:
                    (w2, es.p with b := b2) of
             | NONE => NONE
             | SOME ((w3, ps3'), log, gevs) =>
-                let ps3 = hup_step (hup_fds rv) (outbox_of es.p.b) log ps3' in
+                let ps3 = stall_step (pf_held ps3') (outbox_of es.p.b) log ps3' in
                 case l1_reap ps3.b.closing (w3, ps3.b) of
                 | NONE => NONE
                 | SOME ((w4, b4), cevs) =>

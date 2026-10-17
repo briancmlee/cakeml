@@ -97,6 +97,8 @@ _Static_assert(offsetof(struct pollfd, revents) == 6, "pollfd.revents at 6");
 _Static_assert(sizeof(int) == 4 && sizeof(short) == 2, "int32 fd, int16 events");
 _Static_assert(POLLIN == 1 && POLLOUT == 4 && POLLERR == 8 && POLLHUP == 16 && POLLNVAL == 32,
                "poll flag values");
+/* send and recv return ssize_t, so a count is below 2^64 (design/36 §9 D24) */
+_Static_assert(sizeof(ssize_t) <= 8, "ssize_t counts fit in 64 bits");
 #if !defined(__BYTE_ORDER__) || __BYTE_ORDER__ != __ORDER_LITTLE_ENDIAN__
 #error "the L0 model assumes little-endian struct pollfd fields"
 #endif

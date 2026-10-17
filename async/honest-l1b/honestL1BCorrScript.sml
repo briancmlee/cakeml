@@ -257,7 +257,7 @@ Proof
 QED
 
 Theorem evrel_poll_cons:
-  evrel xs ys ∧ EVERY (epoll fes) es ⇒
+  evrel xs ys ∧ EVERY (epoll fes) es ∧ EVERY (λ(f, e). e < 2) fes ⇒
   evrel (xs ++ es ++ IO_event (ExtCall «sys_poll») [0w] bs :: t)
         (ys ++ IO_event (ExtCall «sys_poll») pollb_conf bs :: t)
 Proof
@@ -265,7 +265,7 @@ Proof
   ‘∀l (x : io_event). l ++ x :: t = (l ++ [x]) ++ t’ by REWRITE_TAC[GSYM APPEND_ASSOC, APPEND] >>
   pop_assum (fn th => ONCE_REWRITE_TAC[th]) >>
   irule evrel_append >> irule evrel_poll >> rpt conj_tac >>
-  TRY (first_assum ACCEPT_TAC >> NO_TAC) >> qexists_tac ‘fes’ >> first_assum ACCEPT_TAC
+  TRY (first_assum ACCEPT_TAC >> NO_TAC) >> qexists_tac ‘fes’ >> simp[]
 QED
 
 Theorem bpre_BRun:
@@ -353,8 +353,12 @@ Proof
       irule prefix_app >> REWRITE_TAC[isPREFIX_THM] >> first_assum ACCEPT_TAC)
   >> qpat_assum ‘binv_at _ _ _ _ _ _ _ N _ _ _ _ _ _ _ _’
        (strip_assume_tac o REWRITE_RULE[binv_at_def]) >>
-  TRY (qpat_assum ‘ev = _’ SUBST1_TAC >> irule evrel_poll_cons >> TRY (qexists_tac ‘fes’) >> rpt conj_tac >>
-       TRY (qexists_tac ‘fes’) >> first_assum ACCEPT_TAC >> NO_TAC) >>
+  TRY (qpat_assum ‘ev = _’ SUBST1_TAC >> irule evrel_poll_cons >> conj_tac
+       >- (qexists_tac ‘fes’ >> conj_tac >- first_assum ACCEPT_TAC >>
+           qpat_assum ‘fes = _’ SUBST1_TAC >> irule idle_fes >>
+           qpat_assum ‘bidle _ _ _ _ _ _ _’ (strip_assume_tac o REWRITE_RULE[bidle_def]) >>
+           first_assum ACCEPT_TAC)
+       >> first_assum ACCEPT_TAC) >>
   qpat_assum ‘evrel pevs _’ (assume_tac o MATCH_MP evrel_nopoll) >>
   qpat_assum ‘EVERY (epoll _) es’ (assume_tac o MATCH_MP nopoll_epolls) >>
   qpat_assum ‘ev = _’ SUBST1_TAC >>
@@ -562,8 +566,12 @@ Proof
   TRY (qpat_assum ‘binv_at _ _ _ _ _ _ _ N _ _ _ _ _ _ _ _’
          (strip_assume_tac o REWRITE_RULE[binv_at_def]) >>
        REWRITE_TAC[APPEND_ASSOC] >> qpat_assum ‘ev = _’ SUBST1_TAC >>
-       irule evrel_poll_cons >> TRY (qexists_tac ‘fes’) >> rpt conj_tac >>
-       TRY (qexists_tac ‘fes’) >> first_assum ACCEPT_TAC >> NO_TAC)
+       irule evrel_poll_cons >> conj_tac
+       >- (qexists_tac ‘fes’ >> conj_tac >- first_assum ACCEPT_TAC >>
+           qpat_assum ‘fes = _’ SUBST1_TAC >> irule idle_fes >>
+           qpat_assum ‘bidle _ _ _ _ _ _ _’ (strip_assume_tac o REWRITE_RULE[bidle_def]) >>
+           first_assum ACCEPT_TAC)
+       >> first_assum ACCEPT_TAC)
   >- (‘evs0 ++ ev :: tt ≼ evs0 ++ ev :: tevs’
         by (irule prefix_app >> REWRITE_TAC[isPREFIX_THM] >> first_assum ACCEPT_TAC) >>
       metis_tac[bpre_round])

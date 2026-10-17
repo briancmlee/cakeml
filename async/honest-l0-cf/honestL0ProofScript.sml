@@ -181,3 +181,32 @@ Theorem L0_close_spec:
 Proof
   l0_call_tac (fetch "honestL0Prog" "L0_close_v_def") “«sys_close»”
 QED
+
+(* For the endpoint L1 (E1): connect to a port, and a socket's pending error *)
+Theorem L0_connect_spec:
+  STRING_TYPE (bytes_str conf) confv ∧ NUM alen alenv ∧
+  l0_do «sys_connect» conf alen w = SOME (out, w', ev) ⇒
+  app (p:'ffi ffi_proj) L0_connect_v [confv; alenv] (L0_EV w0 w evs)
+    (POSTv v. &STRING_TYPE (bytes_str out) v * L0_EV w0 w' (evs ++ [ev]))
+Proof
+  l0_call_tac (fetch "honestL0Prog" "L0_connect_v_def") “«sys_connect»”
+QED
+
+Theorem L0_connerr_spec:
+  STRING_TYPE (bytes_str conf) confv ∧ NUM alen alenv ∧
+  l0_do «sys_connerr» conf alen w = SOME (out, w', ev) ⇒
+  app (p:'ffi ffi_proj) L0_connerr_v [confv; alenv] (L0_EV w0 w evs)
+    (POSTv v. &STRING_TYPE (bytes_str out) v * L0_EV w0 w' (evs ++ [ev]))
+Proof
+  l0_call_tac (fetch "honestL0Prog" "L0_connerr_v_def") “«sys_connerr»”
+QED
+
+(* D33: whether one fd is open (design/50 (c2)) *)
+Theorem L0_fdok_spec:
+  STRING_TYPE (bytes_str conf) confv ∧ NUM alen alenv ∧
+  l0_do «sys_fdok» conf alen w = SOME (out, w', ev) ⇒
+  app (p:'ffi ffi_proj) L0_fdok_v [confv; alenv] (L0_EV w0 w evs)
+    (POSTv v. &STRING_TYPE (bytes_str out) v * L0_EV w0 w' (evs ++ [ev]))
+Proof
+  l0_call_tac (fetch "honestL0Prog" "L0_fdok_v_def") “«sys_fdok»”
+QED

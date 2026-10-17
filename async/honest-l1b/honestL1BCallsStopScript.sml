@@ -6,10 +6,8 @@
   a recv or accept fetches something (none any more past fetch_stop), a
   close removes a closing fd.
 
-  The send count recorded in the trace is the kernel's for sends of fewer
-  than 2^64 bytes (as PFOut's small_send), so outboxes are taken to stay
-  below that size: a stated hypothesis (the echo's are within hw plus a
-  chunk).
+  The send count recorded in the trace is the kernel's: D24's rely bounds
+  it below 2^64.
 
   MAIN: calls_stop.
 *)
@@ -69,19 +67,14 @@ Proof
   rw[outbox_of_def, set_outbox_def, ALOOKUP_ADELKEY] >> rw[]
 QED
 
-(* The outbox bound (kept folded, so that simplification leaves it alone) *)
-Definition obound_def:
-  obound = 256n ** 8
-End
-
 (* A send of a non-empty buffer below 2^64 bytes that L1 does not retry
    takes bytes from the outbox, or drops it *)
 Theorem send_progress:
   l0_rely w ∧ sys_send f (outbox_of st f) w = SOME (out, w', ev) ∧ outbox_of st f ≠ [] ∧
-  LENGTH (outbox_of st f) < obound ∧ ¬retried ev ⇒
+  ¬retried ev ⇒
   LENGTH (outbox_of (after_send f (l0_res_of out) st) f) < LENGTH (outbox_of st f)
 Proof
-  rewrite_tac[obound_def] >> strip_tac >> qabbrev_tac ‘bs = outbox_of st f’ >>
+  strip_tac >> qabbrev_tac ‘bs = outbox_of st f’ >>
   ‘l0_do «sys_send» (fd_bytes f ++ bs) 13 w = SOME (out, w', ev)’ by fs[sys_send_def] >>
   drule_all ev_do >> strip_tac >>
   ‘∃r w1. l0_send f bs (l0_tick «sys_send» w) = (r, w1) ∧ out = enc_res r’
@@ -111,8 +104,7 @@ QED
    unless retried, shrinks it *)
 Theorem flush_sends:
   ∀fs w st w' st' evs.
-    l1_flush fs (w, st) = SOME ((w', st'), evs) ∧ l0_rely w ∧
-    (∀g. LENGTH (outbox_of st g) < obound) ⇒
+    l1_flush fs (w, st) = SOME ((w', st'), evs) ∧ l0_rely w ⇒
     st'.tbl = st.tbl ∧ st'.closing = st.closing ∧
     (∀g. LENGTH (outbox_of st' g) ≤ LENGTH (outbox_of st g)) ∧
     ∀ev. MEM ev evs ⇒
@@ -222,8 +214,7 @@ QED
    ------------------------------------------------------------------------ *)
 
 Theorem quiet_round:
-  pround lfd pol hs (w, ps) [] = SOME (snap, (w', ps'), log, evs) ∧ l0_rely w ∧
-  (∀g. LENGTH (outbox_of ps.b g) < obound) ⇒
+  pround lfd pol hs (w, ps) [] = SOME (snap, (w', ps'), log, evs) ∧ l0_rely w ⇒
   ps'.b.tbl = ps.b.tbl ∧ (∀g. LENGTH (outbox_of ps'.b g) ≤ LENGTH (outbox_of ps.b g)) ∧
   (∀g. MEM g ps'.b.closing ⇒ MEM g ps.b.closing) ∧
   ∀ev. MEM ev evs ⇒
@@ -275,8 +266,7 @@ QED
 
 Theorem run_still:
   run_ok lfd pol ifds m w0 ∧
-  (∀k. K0 ≤ k ⇒ new_actions (log_of m) (rhist lfd pol ifds m w0 k) = []) ∧
-  (∀n g. LENGTH (outbox_of (rstate lfd pol ifds m w0 n).b g) < obound) ⇒
+  (∀k. K0 ≤ k ⇒ new_actions (log_of m) (rhist lfd pol ifds m w0 k) = []) ⇒
   ∀k. K0 ≤ k ⇒
     (rstate lfd pol ifds m w0 (SUC k)).b.tbl = (rstate lfd pol ifds m w0 k).b.tbl ∧
     (∀g. LENGTH (outbox_of (rstate lfd pol ifds m w0 (SUC k)).b g) ≤
@@ -350,4 +340,180 @@ Theorem outbox_key[local]:
 Proof
   rw[outbox_of_def] >> every_case_tac >> gvs[] >>
   imp_res_tac ALOOKUP_MEM >> simp[MEM_MAP, EXISTS_PROD] >> metis_tac[]
+QED
+
+(* ------------------------------------------------------------------------
+   Every call but the poll stops
+   ------------------------------------------------------------------------ *)
+
+Theorem still_tbl[local]:
+  run_ok lfd pol ifds m w0 ∧
+  (∀k. K0 ≤ k ⇒ new_actions (log_of m) (rhist lfd pol ifds m w0 k) = []) ⇒
+  ∀d. (rstate lfd pol ifds m w0 (K0 + d)).b.tbl = (rstate lfd pol ifds m w0 K0).b.tbl
+Proof
+  strip_tac >> drule run_still >> disch_then drule >> strip_tac >>
+  Induct >> simp[] >> first_x_assum (qspec_then ‘K0 + d’ mp_tac) >> simp[ADD_CLAUSES]
+QED
+
+Theorem still_out[local]:
+  run_ok lfd pol ifds m w0 ∧
+  (∀k. K0 ≤ k ⇒ new_actions (log_of m) (rhist lfd pol ifds m w0 k) = []) ⇒
+  ∀d k g. K0 ≤ k ⇒
+          LENGTH (outbox_of (rstate lfd pol ifds m w0 (k + d)).b g) ≤
+          LENGTH (outbox_of (rstate lfd pol ifds m w0 k).b g)
+Proof
+  strip_tac >> drule run_still >> disch_then drule >> strip_tac >>
+  Induct >> simp[] >> rpt strip_tac >>
+  qpat_assum ‘∀k. K0 ≤ k ⇒ (rstate _ _ _ _ _ (SUC k)).b.tbl = _ ∧ _’
+    (qspec_then ‘k + d’ mp_tac) >> impl_tac >- simp[] >> strip_tac >>
+  qpat_x_assum ‘∀k g. K0 ≤ k ⇒ _’ (qspecl_then [‘k’, ‘g’] mp_tac) >> simp[] >> strip_tac >>
+  REWRITE_TAC[ADD_CLAUSES] >>
+  irule LESS_EQ_TRANS >> qexists_tac ‘LENGTH (outbox_of (rstate lfd pol ifds m w0 (k + d)).b g)’ >>
+  simp[]
+QED
+
+Theorem sends_stop[local]:
+  run_ok lfd pol ifds m w0 ∧ F1 lfd pol ifds m w0 ∧
+  (∀k. K0 ≤ k ⇒ new_actions (log_of m) (rhist lfd pol ifds m w0 k) = []) ⇒
+  ∃K1. ∀k. K1 ≤ k ⇒ ¬EXISTS (ev_on «sys_send» g) (rrev lfd pol ifds m w0 k)
+Proof
+  strip_tac >> drule still_out >> disch_then drule >> strip_tac >>
+  qspecl_then [‘λk. LENGTH (outbox_of (rstate lfd pol ifds m w0 k).b g)’, ‘K0’]
+    mp_tac (Q.GENL [‘f’, ‘K0’] noninc_stable) >>
+  impl_tac
+  >- (rw[] >> first_x_assum (qspecl_then [‘1’, ‘k’, ‘g’] mp_tac) >> simp[ADD1]) >>
+  simp[] >> strip_tac >>
+  ‘∃K1. ∀k. K1 ≤ k ⇒ ¬EXISTS (ev_on «sys_send» g) (rrev lfd pol ifds m w0 k)’ suffices_by simp[] >>
+  irule calls_stop >> simp[] >> qexists_tac ‘KK’ >> rpt strip_tac >>
+  spose_not_then assume_tac >>
+  drule run_still >> disch_then drule >> disch_then (qspec_then ‘k’ mp_tac) >> impl_tac >- decide_tac >>
+  strip_tac >> first_x_assum drule >> disch_then assume_tac >>
+  drule (Q.GEN ‘f’ still_cases) >> disch_then (qspec_then ‘g’ strip_assume_tac) >>
+  rfs[] >>
+  ‘KK ≤ SUC k’ by decide_tac >>
+  qpat_assum ‘∀k. KK ≤ k ⇒ _ = _’ (qspec_then ‘SUC k’ mp_tac) >>
+  qpat_assum ‘∀k. KK ≤ k ⇒ _ = _’ (qspec_then ‘k’ mp_tac) >> simp[]
+QED
+
+Theorem recvs_stop[local]:
+  run_ok lfd pol ifds m w0 ∧ F1 lfd pol ifds m w0 ∧
+  (∀k. K0 ≤ k ⇒ new_actions (log_of m) (rhist lfd pol ifds m w0 k) = [] ∧
+                rlog lfd pol ifds m w0 k = []) ⇒
+  ∃K1. ∀k. K1 ≤ k ⇒ ¬EXISTS (ev_on «sys_recv» g) (rrev lfd pol ifds m w0 k)
+Proof
+  strip_tac >>
+  ‘∀k. K0 ≤ k ⇒ new_actions (log_of m) (rhist lfd pol ifds m w0 k) = []’ by metis_tac[] >>
+  ‘∃K1. ∀k. K1 ≤ k ⇒ ¬EXISTS (ev_on «sys_recv» g) (rrev lfd pol ifds m w0 k)’ suffices_by simp[] >>
+  irule calls_stop >> simp[] >> qexists_tac ‘K0’ >> rpt strip_tac >>
+  spose_not_then assume_tac >>
+  drule run_still >> disch_then drule >> disch_then (qspec_then ‘k’ mp_tac) >> impl_tac >- decide_tac >>
+  strip_tac >> first_x_assum drule >> disch_then assume_tac >>
+  drule (Q.GEN ‘f’ still_cases) >> disch_then (qspec_then ‘g’ strip_assume_tac) >>
+  rfs[] >> metis_tac[]
+QED
+
+Theorem accepts_stop[local]:
+  run_ok lfd pol ifds m w0 ∧ ¬accepts_fail lfd pol ifds m w0 ∧
+  (∀k. K0 ≤ k ⇒ qof (rworld lfd pol ifds m w0 k) lfd = [] ∧
+                N ≤ (rworld lfd pol ifds m w0 k).clock ∧
+                quiet_after N (rworld lfd pol ifds m w0 k)) ⇒
+  ∃K1. ∀k. K1 ≤ k ⇒ ¬EXISTS (ev_on «sys_accept» lfd) (rrev lfd pol ifds m w0 k)
+Proof
+  strip_tac >>
+  ‘∃K2. K0 ≤ K2 ∧ ∀k. K2 ≤ k ⇒ ¬EXISTS (ev_on «sys_accept» lfd) (rrev lfd pol ifds m w0 k)’
+    suffices_by metis_tac[] >>
+  irule no_accepts_late >> simp[] >> rpt strip_tac >> CCONTR_TAC >> fs[] >>
+  qpat_assum ‘∀k. K0 ≤ k ⇒ _’ (qspec_then ‘k’ mp_tac) >> impl_tac >- simp[] >> strip_tac >>
+  drule_all round_qof >> disch_then (qspec_then ‘lfd’ strip_assume_tac) >>
+  qpat_assum ‘∀k. K0 ≤ k ⇒ _’ (qspec_then ‘SUC k’ mp_tac) >> impl_tac >- simp[] >> strip_tac >>
+  ‘LENGTH (qof (rworld lfd pol ifds m w0 (SUC k)) lfd) <
+   LENGTH (qof (rworld lfd pol ifds m w0 k) lfd)’ by metis_tac[] >>
+  gvs[]
+QED
+
+Theorem closes_stop[local]:
+  run_ok lfd pol ifds m w0 ∧
+  (∀k. K0 ≤ k ⇒ new_actions (log_of m) (rhist lfd pol ifds m w0 k) = []) ⇒
+  ∃K1. ∀k ev g. K1 ≤ k ∧ MEM ev (rrev lfd pol ifds m w0 k) ⇒ ¬ev_on «sys_close» g ev
+Proof
+  strip_tac >> drule run_still >> disch_then drule >> strip_tac >>
+  qspecl_then [‘λk. CARD (set (rstate lfd pol ifds m w0 k).b.closing)’, ‘K0’]
+    mp_tac (Q.GENL [‘f’, ‘K0’] noninc_stable) >>
+  impl_tac
+  >- (rw[] >> irule CARD_SUBSET >> simp[SUBSET_DEF] >> metis_tac[]) >>
+  simp[] >> strip_tac >> qexists_tac ‘KK’ >> rpt strip_tac >>
+  ‘K0 ≤ k’ by decide_tac >>
+  qpat_x_assum ‘∀k. K0 ≤ k ⇒ (rstate _ _ _ _ _ (SUC k)).b.tbl = _ ∧ _’
+    (qspec_then ‘k’ mp_tac) >> impl_tac >- simp[] >> strip_tac >>
+  qpat_x_assum ‘∀ev. MEM ev _ ⇒ _’ drule >> disch_then assume_tac >>
+  drule (Q.GEN ‘f’ still_cases) >> disch_then (qspec_then ‘g’ strip_assume_tac) >>
+  rfs[] >>
+  ‘set (rstate lfd pol ifds m w0 (SUC k)).b.closing ⊂ set (rstate lfd pol ifds m w0 k).b.closing’
+    by (simp[PSUBSET_DEF, SUBSET_DEF, EXTENSION] >> metis_tac[]) >>
+  drule_at Any CARD_PSUBSET >> simp[] >>
+  ‘KK ≤ SUC k’ by decide_tac >>
+  qpat_assum ‘∀k. KK ≤ k ⇒ _ = _’ (qspec_then ‘SUC k’ mp_tac) >>
+  qpat_assum ‘∀k. KK ≤ k ⇒ _ = _’ (qspec_then ‘k’ mp_tac) >> simp[]
+QED
+
+(* MAIN: once the server stops acting, past the last arrival, with the
+   listener's queue empty and nothing fetched, every call L1 makes from
+   some round on is a poll *)
+Theorem only_polls:
+  run_ok lfd pol ifds m w0 ∧ F1 lfd pol ifds m w0 ∧ ¬accepts_fail lfd pol ifds m w0 ∧
+  (∀k. K0 ≤ k ⇒ new_actions (log_of m) (rhist lfd pol ifds m w0 k) = [] ∧
+                rlog lfd pol ifds m w0 k = [] ∧
+                qof (rworld lfd pol ifds m w0 k) lfd = [] ∧
+                N ≤ (rworld lfd pol ifds m w0 k).clock ∧
+                quiet_after N (rworld lfd pol ifds m w0 k)) ⇒
+  ∃K. ∀k ev. K ≤ k ∧ MEM ev (rrev lfd pol ifds m w0 k) ⇒ ev_name ev = ExtCall «sys_poll»
+Proof
+  strip_tac >>
+  ‘∀k. K0 ≤ k ⇒ new_actions (log_of m) (rhist lfd pol ifds m w0 k) = []’ by simp[] >>
+  ‘∀k. K0 ≤ k ⇒ new_actions (log_of m) (rhist lfd pol ifds m w0 k) = [] ∧
+               rlog lfd pol ifds m w0 k = []’ by simp[] >>
+  ‘∀k. K0 ≤ k ⇒ qof (rworld lfd pol ifds m w0 k) lfd = [] ∧
+               N ≤ (rworld lfd pol ifds m w0 k).clock ∧
+               quiet_after N (rworld lfd pol ifds m w0 k)’ by simp[] >>
+  qspecl_then [‘λg k. ¬EXISTS (ev_on «sys_send» g) (rrev lfd pol ifds m w0 k)’,
+               ‘MAP FST (rstate lfd pol ifds m w0 K0).b.outbox’]
+    mp_tac (Q.GEN ‘P’ list_bound) >>
+  impl_tac >- (rpt strip_tac >> BETA_TAC >> irule sends_stop >> simp[] >> qexists_tac ‘K0’ >> simp[]) >>
+  disch_then (qx_choose_then ‘Ks’ assume_tac) >>
+  qspecl_then [‘λg k. ¬EXISTS (ev_on «sys_recv» g) (rrev lfd pol ifds m w0 k)’,
+               ‘MAP SND (rstate lfd pol ifds m w0 K0).b.tbl’]
+    mp_tac (Q.GEN ‘P’ list_bound) >>
+  impl_tac >- (rpt strip_tac >> BETA_TAC >> irule recvs_stop >> simp[] >> qexists_tac ‘K0’ >> simp[]) >>
+  disch_then (qx_choose_then ‘Kr’ assume_tac) >>
+  ‘∃Ka. ∀k. Ka ≤ k ⇒ ¬EXISTS (ev_on «sys_accept» lfd) (rrev lfd pol ifds m w0 k)’
+    by (irule accepts_stop >> simp[] >> qexistsl_tac [‘K0’, ‘N’] >> simp[]) >>
+  ‘∃Kc. ∀k ev g. Kc ≤ k ∧ MEM ev (rrev lfd pol ifds m w0 k) ⇒ ¬ev_on «sys_close» g ev’
+    by (irule closes_stop >> simp[] >> qexists_tac ‘K0’ >> simp[]) >>
+  drule run_still >> disch_then drule >> strip_tac >>
+  drule still_out >> disch_then drule >> strip_tac >>
+  drule still_tbl >> disch_then drule >> strip_tac >>
+  qexists_tac ‘K0 + Ks + Kr + Ka + Kc’ >> rpt strip_tac >>
+  spose_not_then assume_tac >>
+  ‘K0 ≤ k’ by decide_tac >>
+  qpat_assum ‘∀k. K0 ≤ k ⇒ (rstate _ _ _ _ _ (SUC k)).b.tbl = _ ∧ _’
+    (qspec_then ‘k’ mp_tac) >> impl_tac >- simp[] >> strip_tac >>
+  qpat_x_assum ‘∀ev. MEM ev _ ⇒ _’ drule >> strip_tac >> TRY (fs[] >> NO_TAC)
+  >- (qpat_x_assum ‘∀k. Ka ≤ k ⇒ _’ (qspec_then ‘k’ mp_tac) >> impl_tac >- decide_tac >>
+      simp[EXISTS_MEM] >> qexists_tac ‘ev’ >> simp[])
+  >- (‘outbox_of (rstate lfd pol ifds m w0 K0).b g ≠ []’
+        by (qpat_x_assum ‘∀d k g. K0 ≤ k ⇒ _’ (qspecl_then [‘k − K0’, ‘K0’, ‘g’] mp_tac) >>
+            ‘k − K0 + K0 = k’ by decide_tac >> simp[] >>
+            Cases_on ‘outbox_of (rstate lfd pol ifds m w0 K0).b g’ >> simp[] >>
+            Cases_on ‘outbox_of (rstate lfd pol ifds m w0 k).b g’ >> fs[]) >>
+      drule outbox_key >> strip_tac >>
+      ‘Ks ≤ k’ by decide_tac >>
+      qpat_x_assum ‘∀g k. MEM g (MAP FST _) ∧ Ks ≤ k ⇒ _’ drule_all >>
+      simp[EXISTS_MEM] >> qexists_tac ‘ev’ >> simp[])
+  >- (‘MEM g (MAP SND (rstate lfd pol ifds m w0 K0).b.tbl)’
+        by (qpat_x_assum ‘∀d. _ = _’ (qspec_then ‘k − K0’ mp_tac) >>
+            ‘K0 + (k − K0) = k’ by decide_tac >> simp[] >> strip_tac >> fs[]) >>
+      ‘Kr ≤ k’ by decide_tac >>
+      qpat_x_assum ‘∀g k. MEM g (MAP SND _) ∧ Kr ≤ k ⇒ _’ drule_all >>
+      simp[EXISTS_MEM] >> qexists_tac ‘ev’ >> simp[])
+  >> qpat_x_assum ‘∀k ev g. Kc ≤ k ∧ _ ⇒ _’ (qspecl_then [‘k’, ‘ev’, ‘g’] mp_tac) >> simp[]
 QED

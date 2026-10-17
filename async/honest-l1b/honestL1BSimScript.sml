@@ -99,6 +99,19 @@ Definition epoll_def:
         ¬any_revents x (pfes fes)
 End
 
+(* An idle state's poll set polls nothing for output (no outbox holds
+   bytes) *)
+Theorem idle_fes:
+  pf_idle lfd hw ps hs ⇒ EVERY (λ(f, e). e < 2) (pf_poll_set lfd hw ps hs)
+Proof
+  rw[pf_idle_def, pf_poll_set_def, EVERY_MEM, MEM_FLAT, MEM_MAP, MEM_FILTER, FORALL_PROD,
+     EXISTS_PROD, PULL_EXISTS] >>
+  gvs[AllCaseEqs()] >> every_case_tac >> gvs[] >>
+  TRY (qpat_x_assum ‘outbox_of _ _ ≠ []’ mp_tac >> simp[outbox_of_def] >> CASE_TAC >>
+       imp_res_tac ALOOKUP_MEM >> res_tac >> simp[] >> NO_TAC) >>
+  res_tac >> fs[]
+QED
+
 (* evrel pevs bevs: the PF run's events pevs, the blocking run's bevs *)
 Inductive evrel:
 [~nil:]
@@ -106,7 +119,7 @@ Inductive evrel:
 [~snoc:]
   evrel xs ys ⇒ evrel (xs ++ [e]) (ys ++ [e])
 [~poll:]
-  evrel xs ys ∧ EVERY (epoll fes) es ⇒
+  evrel xs ys ∧ EVERY (epoll fes) es ∧ EVERY (λ(f, e). e < 2) fes ⇒
   evrel (xs ++ es ++ [IO_event (ExtCall «sys_poll») [0w] bs])
         (ys ++ [IO_event (ExtCall «sys_poll») pollb_conf bs])
 End
@@ -560,7 +573,9 @@ Proof
   pop_assum (fn th => ONCE_REWRITE_TAC[th]) >>
   REWRITE_TAC[APPEND_ASSOC, APPEND_NIL] >> irule evrel_append >>
   irule evrel_poll >> rpt conj_tac >> TRY (first_assum ACCEPT_TAC >> NO_TAC) >>
-  qexists_tac ‘fes’ >> first_assum ACCEPT_TAC
+  qexists_tac ‘fes’ >> conj_tac >- first_assum ACCEPT_TAC >>
+  qpat_x_assum ‘Abbrev (fes = _)’ (SUBST1_TAC o REWRITE_RULE[markerTheory.Abbrev_def]) >>
+  irule idle_fes >> fs[bidle_def]
 QED
 
 (* MAIN, (S2): every round of the blocking run is matched by the PF run in

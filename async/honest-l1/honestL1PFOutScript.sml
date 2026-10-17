@@ -151,7 +151,6 @@ QED
 Theorem csent_call:
   l0_chan_of w f = SOME c ∧ l0wf w ∧ fds_lt w ∧ l0_rely w ∧
   n ≠ «sys_connect» ∧ ¬(n = «sys_close» ∧ bytes_fd conf = f) ∧
-  (n = «sys_send» ⇒ LENGTH conf < 8 + 256 ** 8) ∧
   l0_call n conf bytes w = SOME (FFIreturn bytes' w') ⇒
   l0_chan_of w' f = SOME c ∧
   csent w' c = csent w c ++
@@ -173,7 +172,9 @@ Proof
     by (qpat_x_assum ‘l0_send _ _ _ = _’ mp_tac >>
         simp[l0_send_def, not_chan_def] >> rw[AllCaseEqs()] >>
         TRY (irule fail_ok >> simp[] >> NO_TAC) >>
-        simp[l0_res_ok_def, MIN_DEF] >> rw[] >> fs[]) >>
+        simp[l0_res_ok_def, MIN_DEF] >> rw[] >> fs[l0_rely_def] >>
+        irule LESS_EQ_LESS_TRANS >> goal_assum (first_assum o mp_then Any mp_tac) >>
+        simp[]) >>
   simp[l0_res_of_enc, taken_def] >> rw[] >> every_case_tac >> gvs[]
 QED
 
@@ -197,7 +198,7 @@ QED
 
 Theorem csent_do:
   winv w ∧ l0_chan_of w f = SOME c ∧ n ≠ «sys_connect» ∧
-  ¬(n = «sys_close» ∧ bytes_fd conf = f) ∧ (n = «sys_send» ⇒ LENGTH conf < 8 + 256 ** 8) ∧
+  ¬(n = «sys_close» ∧ bytes_fd conf = f) ∧
   l0_do n conf alen w = SOME (out, w', ev) ⇒
   l0_chan_of w' f = SOME c ∧ csent w' c = csent w c ++ ev_sent f ev
 Proof
@@ -219,7 +220,7 @@ QED
 
 Theorem csent_do_buf:
   winv w ∧ l0_chan_of w f = SOME c ∧ n ≠ «sys_connect» ∧
-  ¬(n = «sys_close» ∧ bytes_fd conf = f) ∧ (n = «sys_send» ⇒ LENGTH conf < 8 + 256 ** 8) ∧
+  ¬(n = «sys_close» ∧ bytes_fd conf = f) ∧
   l0_do_buf n conf bs w = SOME (out, w', ev) ⇒
   l0_chan_of w' f = SOME c ∧ csent w' c = csent w c ++ ev_sent f ev
 Proof
@@ -243,11 +244,6 @@ QED
    L1's calls and one fd's account
    ------------------------------------------------------------------------ *)
 
-(* A send event (if any) of fewer than 2^64 bytes: its recorded count is
-   the kernel's (an explicit, observed hypothesis on the trace) *)
-Definition small_send_def:
-  small_send (IO_event n conf bs) ⇔ (n = ExtCall «sys_send» ⇒ LENGTH conf < 8 + 256 ** 8)
-End
 
 (* f's account: the kernel took what the server wrote, up to f's outbox;
    a prefix of it once the outbox was dropped *)
@@ -259,7 +255,7 @@ Definition acct_def:
 End
 
 Theorem sys_send_csent:
-  sys_send g bs w = SOME (out, w', ev) ∧ winv w ∧ small_send ev ∧ l0_chan_of w f = SOME c ⇒
+  sys_send g bs w = SOME (out, w', ev) ∧ winv w ∧ l0_chan_of w f = SOME c ⇒
   l0_chan_of w' f = SOME c ∧
   csent w' c = csent w c ++ ev_sent f ev ∧
   ev_sent f ev = (if g = f then (case l0_res_of out of Ok k => TAKE k bs | Fail _ _ => [])
@@ -269,7 +265,6 @@ Proof
   ‘LENGTH out = 13’
     by (gvs[l0_do_def, AllCaseEqs(), winv_def] >> drule_all l0_ffi_fn_length >> simp[]) >>
   drule l0_do_cases >> strip_tac >>
-  ‘LENGTH bs < 256 ** 8’ by gvs[small_send_def] >>
   qpat_x_assum ‘l0_do _ _ _ _ = _’ assume_tac >>
   drule_at (Pos last) csent_do >> disch_then (qspecl_then [‘f’, ‘c’] mp_tac) >>
   impl_tac >- fs[] >> strip_tac >> simp[] >>
@@ -326,7 +321,7 @@ QED
    on f *)
 Theorem l1_flush_acct:
   ∀fs w b w' b' evs.
-    l1_flush fs (w, b) = SOME ((w', b'), evs) ∧ winv w ∧ EVERY small_send evs ∧
+    l1_flush fs (w, b) = SOME ((w', b'), evs) ∧ winv w ∧
     acct w b f c out ⇒
     acct w' b' f c out ∧ csent w' c = csent w c ++ evs_sent f evs
 Proof
@@ -389,7 +384,7 @@ Definition wbytes_def:
 End
 
 Theorem pdo_acct:
-  pdo lfd (w, ps) a = SOME (r, (w', ps'), evs) ∧ winv w ∧ EVERY small_send evs ∧
+  pdo lfd (w, ps) a = SOME (r, (w', ps'), evs) ∧ winv w ∧
   l0_chan_of w f = SOME c ∧ pown lfd ps ⇒
   c < LENGTH w'.chans ∧ csent w' c = csent w c ++ evs_sent f evs ∧
   (acct w ps.b f c out ∧ (MEM f (MAP SND ps'.b.tbl) ∨ MEM f ps'.b.closing) ⇒
@@ -878,7 +873,7 @@ QED
 
 (* An action touches only fds with a handle *)
 Theorem pdo_chan:
-  pdo lfd (w, ps) a = SOME (r, (w', ps'), evs) ∧ winv w ∧ EVERY small_send evs ∧
+  pdo lfd (w, ps) a = SOME (r, (w', ps'), evs) ∧ winv w ∧
   l0_chan_of w f = SOME c ∧ ¬MEM f (MAP SND ps.b.tbl) ⇒
   l0_chan_of w' f = SOME c ∧ csent w' c = csent w c ∧ evs_sent f evs = []
 Proof
@@ -932,7 +927,7 @@ QED
 Theorem pdo_out:
   pdo lfd (w, ps) a = SOME (r, (w', ps'), evs) ∧
   hdo lfd (s, hs_of ps) a = SOME (r', (s', hs'), hevs) ∧
-  pv_rel lfd cm ps s ∧ pown lfd ps ∧ winv w ∧ EVERY small_send evs ∧ out_rel cm w ps s ⇒
+  pv_rel lfd cm ps s ∧ pown lfd ps ∧ winv w ∧ out_rel cm w ps s ⇒
   out_rel cm w' ps' s'
 Proof
   strip_tac >> drule hdo_out >> strip_tac >>
@@ -968,7 +963,7 @@ Theorem pacts_out:
   ∀acts w ps s rs evs w' ps' s' hs' hrs hevs.
     pacts lfd (w, ps) acts = SOME (rs, evs, (w', ps')) ∧
     hacts lfd (s, hs_of ps) acts = SOME (hrs, hevs, (s', hs')) ∧
-    pv_rel lfd cm ps s ∧ pown lfd ps ∧ winv w ∧ EVERY small_send evs ∧
+    pv_rel lfd cm ps s ∧ pown lfd ps ∧ winv w ∧
     out_rel cm w ps s ⇒
     out_rel cm w' ps' s'
 Proof
@@ -1068,7 +1063,7 @@ QED
 
 (* A flush leaves an fd with nothing to send alone *)
 Theorem l1_flush_quiet:
-  l1_flush fs (w, b) = SOME ((w', b'), evs) ∧ winv w ∧ EVERY small_send evs ∧
+  l1_flush fs (w, b) = SOME ((w', b'), evs) ∧ winv w ∧
   l0_chan_of w f = SOME c ∧ outbox_of b f = [] ∧ ¬MEM f b.gone ⇒
   l0_chan_of w' f = SOME c ∧ csent w' c = csent w c ∧ evs_sent f evs = []
 Proof
@@ -1382,7 +1377,7 @@ val not_new_tac =
 
 Theorem tail_out:
   pf_tail lfd pol hs (w, ps) = SOME (rdy, (w', ps'), log, evs) ∧
-  pv_rel lfd cm ps s ∧ pown lfd ps ∧ winv w ∧ EVERY small_send evs ∧ out_rel cm w ps s ∧
+  pv_rel lfd cm ps s ∧ pown lfd ps ∧ winv w ∧ out_rel cm w ps s ∧
   arrs lfd (cm, LENGTH s.clients) log = (as, (cm', k')) ∧ cext s s' ∧
   k' = LENGTH s'.clients ⇒
   out_rel cm' w' ps' s'
@@ -1524,7 +1519,7 @@ QED
 Theorem round_out:
   pround lfd pol hs (w, ps) acts = SOME (snap, (w', ps'), log, evs) ∧
   pv_rel lfd cm ps s ∧ pown lfd ps ∧ l0own lfd w ps ∧ winv w ∧
-  EVERY small_send evs ∧ out_rel cm w ps s ∧
+  out_rel cm w ps s ∧
   arrs lfd (cm, LENGTH s.clients) log = (as, (cm', k')) ∧
   (∀f j. MEM (f, j) cm' ∧ LENGTH s.clients ≤ j ⇒
          ∀used. ¬MEM f used ⇒ s.alloc j used = f) ∧
@@ -1551,9 +1546,9 @@ Proof
   impl_tac >- fs[cext_hpoll] >> simp[]
 QED
 
-(* MAIN (R1-safe, output side), for the rounds up to N: on a run whose
-   sends each record their count (small_send, an explicit hypothesis on the
-   trace), in a world whose queued connections have nothing sent (qfresh),
+(* MAIN (R1-safe, output side), for the rounds up to N: in a world whose
+   queued connections have nothing sent (qfresh) (each send's recorded
+   count is the kernel's: D24 bounds it below 2^64),
    every fd L1 holds has its account: what the kernel took on its channel,
    then L1's outbox, is what the server wrote to its client in psk (a
    prefix once the fd is gone) *)
@@ -1561,8 +1556,7 @@ Theorem l1pf_refines_hl_out_upto:
   winv w0 ∧ qfresh w0 ∧ MEM lfd (l0_used w0) ∧
   (∀n'. n' ≤ N ⇒ SND (pcm lfd pol ifds m w0 n') + 1 < dimword (:64)) ⇒
   ∀n h ws evs logs.
-    n ≤ N ∧ prounds lfd pol ifds m (w0, pinit) n = SOME (h, ws, evs, logs) ∧
-    EVERY small_send evs ⇒
+    n ≤ N ∧ prounds lfd pol ifds m (w0, pinit) n = SOME (h, ws, evs, logs) ⇒
     out_rel (FST (pcm lfd pol ifds m w0 n)) (FST ws) (SND ws)
       (FST (hst lfd ifds m (psk lfd pol ifds m w0) n)) ∧ winv (FST ws)
 Proof
@@ -1578,8 +1572,6 @@ Proof
   rpt BasicProvers.VAR_EQ_TAC >>
   rename1 ‘prounds _ _ _ _ _ n = SOME (h0, ws0, evs0, logs0)’ >>
   ‘n ≤ N’ by simp[] >>
-  RULE_ASSUM_TAC (REWRITE_RULE [EVERY_APPEND]) >>
-  qpat_x_assum ‘EVERY _ evs0 ∧ _’ strip_assume_tac >>
   qpat_x_assum ‘∀h ws evs logs. _’ drule_all >> strip_tac >>
   mp_tac (Q.INST [‘N’ |-> ‘N’] l1pf_refines_hl_upto) >> impl_tac >- simp[] >>
   disch_then drule_all >> strip_tac >>
@@ -1618,8 +1610,7 @@ Theorem l1pf_refines_hl_out:
   winv w0 ∧ qfresh w0 ∧ MEM lfd (l0_used w0) ∧
   (∀n. SND (pcm lfd pol ifds m w0 n) + 1 < dimword (:64)) ⇒
   ∀n h ws evs logs.
-    prounds lfd pol ifds m (w0, pinit) n = SOME (h, ws, evs, logs) ∧
-    EVERY small_send evs ⇒
+    prounds lfd pol ifds m (w0, pinit) n = SOME (h, ws, evs, logs) ⇒
     out_rel (FST (pcm lfd pol ifds m w0 n)) (FST ws) (SND ws)
       (FST (hst lfd ifds m (psk lfd pol ifds m w0) n))
 Proof
@@ -1712,7 +1703,7 @@ QED
 
 Theorem pdo_tk:
   pdo lfd (w, ps) a = SOME (r, (w', ps'), evs) ∧ winv w ∧ pown lfd ps ∧
-  EVERY small_send evs ∧ tk live w ps f c ts out ∧ (¬live ⇒ ¬MEM f ps.acq) ⇒
+  tk live w ps f c ts out ∧ (¬live ⇒ ¬MEM f ps.acq) ⇒
   ∃live'. tk live' w' ps' f c (ts ++ evs_sent f evs) (out ++ wbytes f ps.b a) ∧
           (¬live' ⇒ ¬MEM f ps'.acq)
 Proof
@@ -1750,7 +1741,7 @@ Theorem pacts_tk:
   ∀acts w ps s rs evs w' ps' s' hs' hrs hevs live ts.
     pacts lfd (w, ps) acts = SOME (rs, evs, (w', ps')) ∧
     hacts lfd (s, hs_of ps) acts = SOME (hrs, hevs, (s', hs')) ∧
-    pv_rel lfd cm ps s ∧ pown lfd ps ∧ winv w ∧ EVERY small_send evs ∧
+    pv_rel lfd cm ps s ∧ pown lfd ps ∧ winv w ∧
     MEM f (MAP FST cm) ∧
     tk live w ps f c ts (EL (cl cm f) s.clients).outgoing ∧ (¬live ⇒ ¬MEM f ps.acq) ⇒
     ∃live'. tk live' w' ps' f c (ts ++ evs_sent f evs) (EL (cl cm f) s'.clients).outgoing ∧
@@ -1762,7 +1753,6 @@ Proof
   rename1 ‘pdo _ _ _ = SOME (r1, ws1, evs1)’ >> PairCases_on ‘ws1’ >>
   rename1 ‘hdo _ _ _ = SOME (r2, st1, hevs1)’ >> PairCases_on ‘st1’ >>
   drule_all pdo_hdo >> strip_tac >> gvs[] >>
-  ‘EVERY small_send evs1 ∧ EVERY small_send evs'’ by fs[] >>
   drule_all pdo_tk >> strip_tac >>
   drule_all pdo_winv >> strip_tac >>
   drule hdo_out >> strip_tac >>
@@ -1903,7 +1893,7 @@ QED
 
 Theorem tail_tk:
   pf_tail lfd pol hs (w, ps) = SOME (rdy, (w', ps'), log, evs) ∧
-  winv w ∧ qfresh w ∧ pown lfd ps ∧ EVERY small_send evs ∧ tk live w ps f c ts out ⇒
+  winv w ∧ qfresh w ∧ pown lfd ps ∧ tk live w ps f c ts out ⇒
   ∃live'. tk live' w' ps' f c (ts ++ evs_sent f evs) out
 Proof
   simp[pf_tail_def] >> strip_tac >>
@@ -2020,7 +2010,7 @@ QED
 (* One round, followed from an fd L1 holds or has pre-accepted at its start *)
 Theorem round_tk:
   pround lfd pol hs (w, ps) acts = SOME (snap, (w', ps'), log, evs) ∧
-  pv_rel lfd cm ps s ∧ pown lfd ps ∧ winv w ∧ EVERY small_send evs ∧ out_rel cm w ps s ∧
+  pv_rel lfd cm ps s ∧ pown lfd ps ∧ winv w ∧ out_rel cm w ps s ∧
   (MEM f (MAP SND ps.b.tbl) ∨ MEM f ps.b.closing ∨ MEM f ps.acq) ∧ l0_chan_of w f = SOME c ⇒
   MEM f (MAP FST cm) ∧
   ∃rs hevs s1 hs1.
@@ -2035,7 +2025,6 @@ Proof
   rename1 ‘pacts _ _ _ = SOME (rs1, aevs, (w1, ps1))’ >>
   drule_all pacts_hacts >> strip_tac >> gvs[] >>
   ‘tk T w ps f c (csent w c) (EL (cl cm f) s.clients).outgoing’ by simp[tk_def] >>
-  ‘EVERY small_send aevs ∧ EVERY small_send tevs’ by fs[] >>
   ‘¬T ⇒ ¬MEM f ps.acq’ by simp[] >>
   drule_all pacts_tk >> strip_tac >>
   ‘qfresh w’ by fs[out_rel_def] >>
@@ -2070,8 +2059,7 @@ Theorem l1pf_round_sent_upto:
     SUC n ≤ N ∧
     prounds lfd pol ifds m (w0, pinit) n = SOME (h, ws, evs, logs) ∧
     prounds lfd pol ifds m (w0, pinit) (SUC n) = SOME (h', ws', evs', logs') ∧
-    EVERY small_send evs' ∧
-    (MEM f (MAP SND (SND ws).b.tbl) ∨ MEM f (SND ws).b.closing ∨ MEM f (SND ws).acq) ∧
+        (MEM f (MAP SND (SND ws).b.tbl) ∨ MEM f (SND ws).b.closing ∨ MEM f (SND ws).acq) ∧
     l0_chan_of (FST ws) f = SOME c ⇒
     ∃live. tk live (FST ws') (SND ws') f c
              (csent (FST ws) c ++ evs_sent f (DROP (LENGTH evs) evs'))
@@ -2083,7 +2071,6 @@ Proof
   ‘l0_rely w0 ∧ fds_lt w0’ by fs[winv_def] >>
   drule_all prounds_SUC_step >> strip_tac >>
   qpat_x_assum ‘evs' = _’ SUBST_ALL_TAC >>
-  qpat_x_assum ‘EVERY _ (_ ++ _)’ (strip_assume_tac o REWRITE_RULE [EVERY_APPEND]) >>
   REWRITE_TAC [DROP_LENGTH_APPEND] >>
   ‘n ≤ N’ by simp[] >>
   mp_tac (Q.INST [‘N’ |-> ‘N’] l1pf_refines_hl_out_upto) >>

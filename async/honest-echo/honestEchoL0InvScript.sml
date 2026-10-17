@@ -593,3 +593,54 @@ Proof
   drule_all l1do_write_l0 >> strip_tac >>
   gvs[wown_def, fds_lt_def]
 QED
+
+Theorem pacts_wown:
+  ∀acts w ps rs evs w' ps' opn.
+    pacts lfd (w, ps) acts = SOME (rs, evs, (w', ps')) ∧ wown lfd w ps ∧
+    own_ok lfd (k, opn) ps ∧ l1hdln (w2n lfd) k < dimword (:64) ⇒
+    wown lfd w' ps'
+Proof
+  Induct >> simp[pacts_def] >> rpt gen_tac >> strip_tac >> gvs[AllCaseEqs()] >>
+  PairCases_on ‘ws1’ >>
+  ‘l1hdln (w2n lfd) k < dimword (:64)’ by simp[] >>
+  ‘l0_rely w’ by gvs[wown_def] >>
+  drule_all pdo_wown >> strip_tac >>
+  drule_all pdo_in >> strip_tac >>
+  Cases_on ‘l0_ep_st (k, opn) evs1’ >> gvs[] >>
+  first_x_assum irule >> metis_tac[]
+QED
+
+(* fds_lt depends on the fds in use and the limit only *)
+Theorem fds_lt_same:
+  l0_used w' = l0_used w ∧ w'.fd_limit = w.fd_limit ⇒ (fds_lt w' ⇔ fds_lt w)
+Proof
+  simp[fds_lt_def]
+QED
+
+Theorem l1_polls_wown:
+  l1_polls cs w = SOME (rv, w', evs) ∧ wown lfd w ps ⇒ wown lfd w' ps
+Proof
+  strip_tac >> ‘l0_rely w’ by gvs[wown_def] >>
+  drule_all l1_polls_l0 >> strip_tac >> gvs[wown_def, fds_lt_def]
+QED
+
+Theorem l1_flush_wown:
+  l1_flush fs (w, ps.b) = SOME ((w', b'), evs) ∧ wown lfd w ps ⇒
+  wown lfd w' (ps with b := b')
+Proof
+  strip_tac >> ‘l0_rely w’ by gvs[wown_def] >>
+  drule_all l1_flush_l0 >> strip_tac >>
+  ‘owned (ps with b := b') = owned ps’ by simp[owned_def, FUN_EQ_THM] >>
+  gvs[wown_def, fds_lt_def]
+QED
+
+Theorem l1_reap_wown:
+  l1_reap fs (w, ps.b) = SOME ((w', b'), evs) ∧ wown lfd w ps ∧
+  (∀f. MEM f fs ⇒ ¬MEM f (MAP SND ps.b.tbl) ∧ ¬MEM f ps.acq ∧ f ≠ lfd) ⇒
+  wown lfd w' (ps with b := b')
+Proof
+  strip_tac >> ‘l0_rely w’ by gvs[wown_def] >>
+  drule_all l1_reap_l0 >> strip_tac >>
+  ‘fds_lt w'’ by (gvs[wown_def, fds_lt_def] >> metis_tac[]) >>
+  gvs[wown_def, owned_def] >> rw[] >> metis_tac[]
+QED

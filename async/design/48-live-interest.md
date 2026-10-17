@@ -147,6 +147,20 @@ cf-actions (mine):
 - step_pfb / run_pfb specs, honestL1BTrace, honestEchoL0BMain / Sem / Quiet: re-point to live.
 - New: live_held, then SQ for the echo = pf_drain_read + live_held + server_settles. This removes SQ from echo_pf_facts.
 
+KV worker, P4 (spike/servers-honest-l1; approved option (i), 2026-10-17):
+- proto-v2-sim and kv-v2 were also re-instantiated, not only close-v2-sim.
+  They are now parametrised by any `ifds` with `ifds_sub lfd ifds ⇔ ∀h c. MEM c (ifds h) ⇒ MEM c (interest [lfd] h)`,
+  and `ifds_sub_live : ifds_sub lfd (live [lfd] acts)`.
+- New `_if` theorems:
+  - asyncHLSimRunGen: hrun_sim_if, hrun_ok_if.
+  - asyncHLSimTraceGen: hrun_events_if.
+  - asyncProto2Model: accepted_bound_if, ep_rounds_if, proto2_safe_if (HTTP reuses this).
+  - asyncKv2Bridge: kv2_rounds_bytes_if, kv2_query_handle_if.
+  - asyncKv2Safe: kv2_safe_if.
+- Each old EI theorem is kept under its name and statement, as a one-line corollary.
+- close-v2-sim: interest_ghist_sub_gen (any `ifds` under `grun_ok`); `interest_ghist_sub` is its EI corollary.
+- Growth of `ifds` is never used: only `ifds_sub` against `interest [lfd]`.
+
 ## 5. Order of work, once (C) is approved
 
 1. Shared definition `live` / `live_round` / `live_SNOC` in m4-common/asyncM4Loop (one copy, next to interest), plus the CakeML `live_round`.

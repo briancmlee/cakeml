@@ -200,7 +200,7 @@ Proof
     by (drule_all pown_alookup >> simp[]) >>
   ‘fkeep (n2w lfdn) h f (rstate (n2w lfdn) pol EI ES w0 n)’
     by (drule_all fkeep_run >> simp[]) >>
-  ‘S1 (n2w lfdn) pol EI ES w0’ by (irule S1_interest >> simp[]) >>
+  ‘S1 (n2w lfdn) pol EI ES w0’ by (irule echo_S1 >> first_assum ACCEPT_TAC) >>
   ‘S3w (n2w lfdn) pol EI ES w0’ by metis_tac[echo_S3w] >>
   ‘S4w (n2w lfdn) pol hw EI ES w0 f’ by metis_tac[echo_S4w] >>
   ‘∃k. n ≤ k ∧ (∀i. n ≤ i ∧ i < k ⇒ fkeep (n2w lfdn) h f (rstate (n2w lfdn) pol EI ES w0 i)) ∧

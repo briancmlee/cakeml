@@ -191,6 +191,15 @@ Proof
   qexistsl [‘ev :: evs’, ‘w’] >> fs[LPREFIX_LCONS]
 QED
 
+(* For ruling #4 (echo_live_l0's excuse gains flushed_ch) *)
+Theorem flushed_ch_shift:
+  l0_step (SOME W0) (ev_lcall ev) = SOME w1 ∧ flushed_ch w1 io c ⇒
+  flushed_ch W0 (LCONS ev io) c
+Proof
+  rw[flushed_ch_def] >> drule world_at_cons >> strip_tac >>
+  qexistsl [‘ev :: evs’, ‘w’] >> fs[LPREFIX_LCONS]
+QED
+
 Theorem ep_hard_err_shift:
   listen_ev ev ∧ ep_hard_err j io ⇒ ep_hard_err j (LCONS ev io)
 Proof

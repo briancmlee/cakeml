@@ -1112,3 +1112,91 @@ Proof
       rw[combinTheory.APPLY_UPDATE_THM] >> gvs[chd_def]) >>
   simp[]
 QED
+
+Theorem cupd_APPEND:
+  ∀xs rs st. LENGTH rs = LENGTH xs ⇒
+    cupd rqs st (xs ++ ys) (rs ++ rs') = cupd rqs (cupd rqs st xs rs) ys rs'
+Proof
+  Induct >> simp[cupd_def] >> rpt gen_tac >> PairCases_on ‘h’ >> Cases_on ‘rs’ >>
+  simp[cupd_def]
+QED
+
+Theorem ehacts_APPEND:
+  ∀xs st rs st1. ehacts lfd st xs = SOME (rs, st1) ∧ ehacts lfd st1 ys = SOME (rs', st2) ⇒
+    ehacts lfd st (xs ++ ys) = SOME (rs ++ rs', st2)
+Proof
+  Induct >> simp[ehacts_def] >> rw[] >> gvs[AllCaseEqs()] >>
+  first_x_assum drule_all >> simp[]
+QED
+
+Theorem ehacts_LENGTH:
+  ∀xs st rs st1. ehacts lfd st xs = SOME (rs, st1) ⇒ LENGTH rs = LENGTH xs
+Proof
+  Induct >> simp[ehacts_def] >> rw[] >> gvs[AllCaseEqs()] >> res_tac
+QED
+
+(* The round's actions, connection by connection: the first m *)
+Definition cacts_upto_def:
+  cacts_upto a st0 rdy m =
+    FLAT (GENLIST (λi. MAP (λx. (i, x)) (cact1 a st0.nh (EL i st0.cs) rdy)) m)
+End
+
+Theorem cacts_upto_SUC:
+  cacts_upto a st0 rdy (SUC m) =
+    cacts_upto a st0 rdy m ++ MAP (λx. (m, x)) (cact1 a st0.nh (EL m st0.cs) rdy)
+Proof
+  simp[cacts_upto_def, GENLIST, SNOC_APPEND, FLAT_APPEND]
+QED
+
+Theorem cacts_upto_all:
+  cacts a st0 rdy = cacts_upto a st0 rdy (LENGTH st0.cs)
+Proof
+  simp[cacts_def, cacts_upto_def]
+QED
+
+(* The round's actions (from st0, with the ready handles rdy) keep the
+   relation; every connection's ready set used up *)
+Theorem crel_acts:
+  crel a N rqs lfd st0 (K rdy) ps w hs ∧ N < dimword (:64) ∧
+  (st0.nh < cbound ⇒ st0.nh + N + 2 < dimword (:64)) ⇒
+  ∀m. m ≤ N ⇒
+    ∃rs w1 hs1.
+      ehacts lfd (w, hs) (MAP SND (cacts_upto a st0 rdy m)) = SOME (rs, (w1, hs1)) ∧
+      LENGTH rs = LENGTH (cacts_upto a st0 rdy m) ∧
+      crel a N rqs lfd (cupd rqs st0 (cacts_upto a st0 rdy m) rs) (λi. if i < m then ∅ else rdy)
+        (ps ++ ZIP (MAP SND (cacts_upto a st0 rdy m), rs)) w1 hs1 ∧
+      wkeep w w1 ∧
+      (∀i. m ≤ i ⇒ EL i (cupd rqs st0 (cacts_upto a st0 rdy m) rs).cs = EL i st0.cs) ∧
+      (cupd rqs st0 (cacts_upto a st0 rdy m) rs).nh ≤ st0.nh + m
+Proof
+  strip_tac >> Induct
+  >- (simp[cacts_upto_def, ehacts_def, cupd_def] >>
+      ‘(λi:num. rdy) = K rdy’ by simp[FUN_EQ_THM] >> simp[]) >>
+  strip_tac >> fs[] >>
+  qabbrev_tac ‘st = cupd rqs st0 (cacts_upto a st0 rdy m) rs’ >>
+  ‘m < N’ by simp[] >>
+  ‘st0.nh < cbound ⇒ st.nh + 2 < dimword (:64)’ by simp[] >>
+  drule_then (qspecl_then [‘st0.nh’, ‘m’] mp_tac) crel_conn >> simp[] >>
+  ‘EL m st.cs = EL m st0.cs’ by simp[] >> simp[] >> strip_tac >>
+  qexistsl_tac [‘rs ++ rs'’, ‘w1'’, ‘hs1'’] >>
+  qabbrev_tac ‘xs = cact1 a st0.nh (EL m st0.cs) rdy’ >>
+  ‘MAP SND (cacts_upto a st0 rdy (SUC m)) = MAP SND (cacts_upto a st0 rdy m) ++ xs’
+    by simp[cacts_upto_SUC, MAP_MAP_o, combinTheory.o_DEF] >>
+  ‘cupd rqs st0 (cacts_upto a st0 rdy (SUC m)) (rs ++ rs') = cupd rqs st (MAP (λx. (m, x)) xs) rs'’
+    by (simp[cacts_upto_SUC, Abbr ‘st’] >> irule cupd_APPEND >> simp[]) >>
+  ‘(λi. if i < SUC m then ∅ else rdy) = (m =+ ∅) (λi. if i < m then ∅ else rdy)’
+    by (simp[FUN_EQ_THM, combinTheory.APPLY_UPDATE_THM] >> rw[] >> fs[]) >>
+  ‘ps ++ ZIP (MAP SND (cacts_upto a st0 rdy m) ++ xs, rs ++ rs') =
+   ps ++ ZIP (MAP SND (cacts_upto a st0 rdy m), rs) ++ ZIP (xs, rs')’
+    by simp[ZIP_APPEND] >>
+  ‘LENGTH (cacts_upto a st0 rdy (SUC m)) = LENGTH (cacts_upto a st0 rdy m) + LENGTH xs’
+    by simp[cacts_upto_SUC] >>
+  ntac 5 (pop_assum (fn th => REWRITE_TAC [th] >> mp_tac th)) >>
+  ntac 5 (disch_then (fn th => REWRITE_TAC [th])) >> rpt conj_tac
+  >- (irule ehacts_APPEND >> metis_tac[])
+  >- simp[]
+  >- first_assum ACCEPT_TAC
+  >- (irule wkeep_trans >> qexists_tac ‘w1’ >> conj_tac >> first_assum ACCEPT_TAC)
+  >- (rpt strip_tac >> ‘i ≠ m ∧ m ≤ i’ by simp[] >> metis_tac[])
+  >> simp[]
+QED

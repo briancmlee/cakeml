@@ -11,13 +11,16 @@
 
   ri_gen: ri along the guarded run of any server that writes only through
   handles it was handed.
+  round_pair: per round, raw episode j against handle j.
+  prounds_t_pcm_bound: while the guard holds, R1's client-count bound
+  (for psk_upto).
 *)
 Theory honestKvL0Run
 Ancestors
   asyncTranscript asyncServer asyncServerSafety asyncM4ServerUses asyncM4Relabel asyncM4RelabelDist
   asyncM4SockModel asyncRunOkGen honestL1PFModel honestL1PFProg
   honestL1PFSpec honestEchoL0Spec honestEchoL0Trace honestEchoL0Model honestEchoL0Inv
-  honestEchoL0Out honestEchoL0Run
+  honestEchoL0Out honestEchoL0Run honestKvL0Count honestL1PFRefine
 Libs
   preamble
 
@@ -110,17 +113,17 @@ QED
    (answered or not) *)
 Theorem round_pair:
   ri lfd m (h, (w, ps), evs) ∧
-  ri lfd m (h ++ [sn], (w', ps'), evs ++ revs) ∧
+  ri lfd m (h ++ [sn], (w', ps'), evs ++ tevs) ∧
   hdl_room lfd ps (naccepts (new_actions (log_of m) h)) ∧
-  pround lfd hw hs (w, ps) (new_actions (log_of m) h) = SOME (sn, (w', ps'), log, revs) ∧
-  evs ≼ pre ∧ pre ≼ evs ++ revs ∧ hdln (w2n lfd) j < dimword (:64) ⇒
+  pround lfd hw hs (w, ps) (new_actions (log_of m) h) = SOME (sn, (w', ps'), log, tevs) ∧
+  evs ≼ pre ∧ pre ≼ evs ++ tevs ∧ hdln (w2n lfd) j < dimword (:64) ⇒
   hread (l1hdl lfd j) (texec m (h ++ [sn])) ≼ l0_read j pre ∧
   l0_sent j pre ≼ hwritten (l1hdl lfd j) (trans m h)
 Proof
   strip_tac >>
   qabbrev_tac ‘acts = new_actions (log_of m) h’ >>
   REWRITE_TAC[l0_read_fold, l0_sent_fold] >>
-  ‘ep_sn j (0, []) pre ≼ ep_sn j (0, []) (evs ++ revs) ∧
+  ‘ep_sn j (0, []) pre ≼ ep_sn j (0, []) (evs ++ tevs) ∧
    ep_rd j (0, []) evs ≼ ep_rd j (0, []) pre’ by simp[ep_fold_prefix] >>
   (* the end of the round *)
   qpat_assum ‘ri _ _ (h ++ [sn], _, _)’ (strip_assume_tac o REWRITE_RULE [ri_def]) >>
@@ -128,7 +131,7 @@ Proof
     by (qpat_x_assum ‘∀i. i < LENGTH (h ++ [sn]) ⇒ _’ (qspec_then ‘LENGTH h’ mp_tac) >>
         simp[EL_APPEND2, TAKE_APPEND1, Abbr ‘acts’]) >>
   first_x_assum (qspec_then ‘j’ mp_tac) >> simp[] >> strip_tac >>
-  ‘ep_sn j (0, []) (evs ++ revs) ≼ hwritten (l1hdl lfd j) (texec m (h ++ [sn]))’
+  ‘ep_sn j (0, []) (evs ++ tevs) ≼ hwritten (l1hdl lfd j) (texec m (h ++ [sn]))’
     by (gvs[oi_def] >> imp_res_tac isPREFIX_APPEND_L) >>
   (* the start of the round *)
   qpat_x_assum ‘ri _ _ (h, _, _)’ (strip_assume_tac o REWRITE_RULE [ri_def]) >>
@@ -140,16 +143,84 @@ Proof
   ‘hread (l1hdl lfd j) (ZIP (acts, MAP SOME sn.results)) ≼ inbp lfd ps j’
     by (irule pround_hread >> gvs[hdl_room_def] >>
         conj_tac >- (Cases_on ‘l0_ep_st (0,[]) evs’ >> gvs[] >> metis_tac[]) >>
-        qexistsl [‘revs’, ‘hs’, ‘hw’, ‘log’, ‘ps'’, ‘w’, ‘w'’] >> simp[]) >>
+        qexistsl [‘tevs’, ‘hs’, ‘hw’, ‘log’, ‘ps'’, ‘w’, ‘w'’] >> simp[]) >>
   conj_tac
   >- (irule isPREFIX_TRANS >> qexists_tac ‘ep_rd j (0, []) evs’ >>
       reverse conj_tac >- first_assum ACCEPT_TAC >>
       simp[texec_SNOC, hread_APPEND] >>
       qpat_x_assum ‘ep_rd j (0,[]) evs = _’ (fn th => REWRITE_TAC [th]) >>
       fs[Abbr ‘acts’]) >>
-  irule isPREFIX_TRANS >> qexists_tac ‘ep_sn j (0, []) (evs ++ revs)’ >>
+  irule isPREFIX_TRANS >> qexists_tac ‘ep_sn j (0, []) (evs ++ tevs)’ >>
   conj_tac >- first_assum ACCEPT_TAC >>
-  qpat_x_assum ‘ep_sn j _ (evs ++ revs) ≼ hwritten (l1hdl _ _) _’ mp_tac >>
+  qpat_x_assum ‘ep_sn j _ (evs ++ tevs) ≼ hwritten (l1hdl _ _) _’ mp_tac >>
   qpat_x_assum ‘hwritten _ (texec _ _) = _’ mp_tac >>
   simp[]
+QED
+
+Theorem prounds_t_some_le:
+  ∀k i. prounds_t lfd hw ifds m ws0 k ≠ NONE ∧ i ≤ k ⇒ prounds_t lfd hw ifds m ws0 i ≠ NONE
+Proof
+  Induct >> simp[] >> rpt strip_tac >>
+  Cases_on ‘i = SUC k’ >- gvs[] >>
+  ‘prounds_t lfd hw ifds m ws0 k ≠ NONE’
+    by (strip_tac >> qpat_x_assum ‘prounds_t _ _ _ _ _ (SUC k) ≠ NONE’ mp_tac >>
+        simp[prounds_t_def]) >>
+  first_x_assum (qspec_then ‘i’ mp_tac) >> simp[]
+QED
+
+(* MAIN: while the loop's guard (D40) holds, the client count stays below
+   2^64 − 1, as R1 and psk_upto need *)
+Theorem prounds_t_pcm_bound:
+  writes_accepted m ∧ ri lfd m ([], (w0, pinit), []) ∧
+  prounds_t lfd hw ifds m (w0, pinit) (SUC n) ≠ NONE ∧
+  (∀i h ws evs logs. i ≤ n ∧ prounds_t lfd hw ifds m (w0, pinit) i = SOME (h, ws, evs, logs) ⇒
+     hdl_room lfd (SND ws) (naccepts (new_actions (log_of m) h))) ⇒
+  ∀n'. n' ≤ SUC n ⇒ SND (pcm lfd (pol_self hw) ifds m w0 n') + 1 < dimword (:64)
+Proof
+  strip_tac >> Cases >- simp[pcm_def] >> rename1 ‘SUC i ≤ SUC n’ >> strip_tac >>
+  ‘prounds_t lfd hw ifds m (w0, pinit) i ≠ NONE’
+    by (irule prounds_t_some_le >> qexists_tac ‘SUC n’ >> simp[]) >>
+  Cases_on ‘prounds_t lfd hw ifds m (w0, pinit) i’ >- gvs[] >>
+  rename1 ‘SOME x’ >> PairCases_on ‘x’ >>
+  rename1 ‘prounds_t _ _ _ _ _ i = SOME (h, (w, ps), evs, logs)’ >>
+  ‘hdl_room lfd ps (naccepts (new_actions (log_of m) h))’
+    by (qpat_x_assum ‘∀i h ws evs logs. _’ (qspecl_then [‘i’, ‘h’, ‘(w, ps)’, ‘evs’, ‘logs’] mp_tac) >>
+        simp[]) >>
+  ‘prounds_t lfd hw ifds m (w0, pinit) (SUC i) ≠ NONE’
+    by (irule prounds_t_some_le >> qexists_tac ‘SUC n’ >> simp[]) >>
+  qpat_x_assum ‘prounds_t _ _ _ _ _ (SUC i) ≠ NONE’ mp_tac >>
+  simp[prounds_t_def] >>
+  Cases_on ‘pround lfd (pol_self hw) (ifds h) (w, ps) (new_actions (log_of m) h)’ >> simp[] >>
+  rename1 ‘SOME y’ >> PairCases_on ‘y’ >>
+  rename1 ‘pround _ _ _ _ _ = SOME (sn, (w', ps'), log, tevs)’ >> strip_tac >>
+  ‘prounds_t lfd hw ifds m (w0, pinit) (SUC i) = SOME (h ++ [sn], (w', ps'), evs ++ tevs, logs ++ [log])’
+    by simp[prounds_t_def] >>
+  ‘ri lfd m (h, (w, ps), evs)’
+    by (drule ri_gen >> disch_then drule >> disch_then (qspecl_then [‘ifds’, ‘hw’, ‘i’] mp_tac) >> simp[]) >>
+  ‘ri lfd m (h ++ [sn], (w', ps'), evs ++ tevs)’
+    by (drule ri_gen >> disch_then drule >> disch_then (qspecl_then [‘ifds’, ‘hw’, ‘SUC i’] mp_tac) >> simp[]) >>
+  ‘prounds_t lfd hw ifds m (w0, pinit) (SUC i) = prounds lfd (pol_self hw) ifds m (w0, pinit) (SUC i)’
+    by (irule prounds_t_prounds >> rpt strip_tac >>
+        qpat_x_assum ‘∀i h ws evs logs. _’ irule >> simp[] >>
+        qexistsl [‘evs'’, ‘i'’, ‘logs'’] >> simp[]) >>
+  ‘SND (pcm lfd (pol_self hw) ifds m w0 (SUC i)) = ps'.b.nxt + LENGTH ps'.acq’
+    by (‘prounds lfd (pol_self hw) ifds m (w0, pinit) (SUC i) =
+         SOME (h ++ [sn], (w', ps'), evs ++ tevs, logs ++ [log])’
+          by (qpat_x_assum ‘prounds_t _ _ _ _ _ (SUC i) = prounds _ _ _ _ _ _’
+                (fn th => REWRITE_TAC [GSYM th]) >>
+              qpat_x_assum ‘prounds_t _ _ _ _ _ (SUC i) = SOME _’ ACCEPT_TAC) >>
+        drule prounds_pcm >> simp[]) >>
+  ‘LENGTH ps'.acq ≤ 1’ by gvs[ri_def] >>
+  ‘ps.b.nxt + naccepts (new_actions (log_of m) h) + 2 < dimword (:64)’ by gvs[hdl_room_def] >>
+  qpat_x_assum ‘ri lfd m (h, _, _)’ (strip_assume_tac o REWRITE_RULE [ri_def]) >>
+  Cases_on ‘l0_ep_st (0, []) evs’ >>
+  ‘ps'.b.nxt ≤ ps.b.nxt + naccepts (new_actions (log_of m) h)’
+    by (‘ps.b.nxt + naccepts (new_actions (log_of m) h) < dimword (:64)’
+          by (qpat_x_assum ‘_ + _ + 2 < dimword (:64)’ mp_tac >> simp[]) >>
+        drule_all pround_acc >> simp[]) >>
+  qpat_x_assum ‘SND (pcm _ _ _ _ _ _) = _’ SUBST1_TAC >>
+  qpat_x_assum ‘LENGTH ps'.acq ≤ 1’ mp_tac >>
+  qpat_x_assum ‘ps'.b.nxt ≤ _’ mp_tac >>
+  qpat_x_assum ‘_ + _ + 2 < dimword (:64)’ mp_tac >>
+  rpt (pop_assum kall_tac) >> simp[]
 QED

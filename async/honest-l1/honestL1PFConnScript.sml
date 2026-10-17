@@ -637,7 +637,7 @@ Proof
   drule_all pf_fetch_queue >> strip_tac >>
   drule pf_fetch_closing >> strip_tac >>
   drule_all pf_fetch_winv >> strip_tac >>
-  qabbrev_tac ‘ps3 = hup_step (hup_fds rv) (outbox_of pa.b) log ps3f’ >>
+  qabbrev_tac ‘ps3 = stall_step (pf_held ps3f) (outbox_of pa.b) log ps3f’ >>
   ‘ps3f.b.closing = ps3.b.closing’ by simp[Abbr ‘ps3’] >>
   pop_assum (fn th => RULE_ASSUM_TAC (REWRITE_RULE [th])) >>
   ‘∀g. MEM (FConn g) log ⇒ ¬MEM g ps3.b.closing’

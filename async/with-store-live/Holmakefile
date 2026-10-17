@@ -1,0 +1,3 @@
+# Liveness facts of with_store (design/34 §2.5): the store answers every
+# query in the next round.
+INCLUDES = ../model ../http-kv

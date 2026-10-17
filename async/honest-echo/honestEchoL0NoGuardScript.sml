@@ -51,12 +51,12 @@ Proof
 QED
 
 (* When the echo loop's guard fails, the trace has accepted all but at most
-   the round's accepts of the 2^64 − 1 handles *)
+   the round's accepts of the 2^64 − 3 handles (D40) *)
 Theorem echo_guard_stop:
   ri lfd (srelabel (server k)) ([], ws0, []) ∧
   prounds_t lfd hw ifds (srelabel (server k)) ws0 n = SOME (h, (w, ps), evs, logs) ∧
   ¬hdl_room lfd ps (naccepts (new_actions (log_of (srelabel (server k))) h)) ⇒
-  2 ** 64 ≤ LENGTH (l0_accepted evs) + naccepts (new_actions (log_of (srelabel (server k))) h)
+  2 ** 64 ≤ LENGTH (l0_accepted evs) + naccepts (new_actions (log_of (srelabel (server k))) h) + 2
 Proof
   strip_tac >> drule_all ri_echo >> strip_tac >>
   drule ri_nxt_accepted >> gvs[hdl_room_def]

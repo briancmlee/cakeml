@@ -191,12 +191,12 @@ Proof
 QED
 
 (* MAIN (for cf-actions): the echo loop's guard fails only after
-   2^64 − 1 accepts *)
+   2^64 − 3 accepts (D40) *)
 Theorem echo_guard_stop_accepted:
   ri lfd (srelabel (server k)) ([], ws0, []) ∧
   prounds_t lfd hw ifds (srelabel (server k)) ws0 n = SOME (h, (w, ps), evs, logs) ∧
   ¬hdl_room lfd ps (honestL1PFModel$naccepts (new_actions (log_of (srelabel (server k))) h)) ⇒
-  2 ** 64 − 1 ≤ LENGTH (l0_accepted evs)
+  2 ** 64 − 3 ≤ LENGTH (l0_accepted evs)
 Proof
   strip_tac >> drule_all echo_guard_stop >> strip_tac >>
   drule_all ri_echo >> strip_tac >>

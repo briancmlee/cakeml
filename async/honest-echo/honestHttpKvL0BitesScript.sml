@@ -24,7 +24,7 @@
 Theory honestHttpKvL0Bites
 Ancestors
   llist rich_list ffi honestL0 honestEchoL0Spec honestEchoL0Bites honestHttpKvL0Spec
-  HttpSpecBodies HttpSpecBodiesBite HttpKvSpec HttpKvSpecBite HttpSpec Marshalling
+  HttpSpecBodies HttpSpecBodiesBite HttpKvSpec HttpKvSpecBite HttpSpec Marshalling honestL0Outcome
 Libs
   preamble
 
@@ -421,14 +421,14 @@ QED
 (* The stop branches' events, the sys_fdok checks and a failed listen, are
    within the topology *)
 Theorem topo_stdio_open:
-  stdio_open pre ⇒ EVERY (l0_topo_ev port) pre
+  stdio_open (fromList pre) ∧ LENGTH pre = 3 ⇒ EVERY (l0_topo_ev port) pre
 Proof
-  rw[stdio_open_def] >> simp[l0_topo_ev_def]
+  rw[stdio_open_def, LENGTH_EQ_NUM_compute] >> gvs[] >> simp[l0_topo_ev_def]
 QED
 
 Theorem topo_listen_failed:
-  l0_listen_failed ev ⇒ l0_topo_ev port ev
+  l0_listen_failed_ev ev ⇒ l0_topo_ev port ev
 Proof
   Cases_on ‘ev’ >> rename1 ‘IO_event n cf bs’ >> Cases_on ‘n’ >>
-  rw[l0_listen_failed_def, l0_topo_ev_def] >> gvs[]
+  rw[l0_listen_failed_ev_def, l0_topo_ev_def] >> gvs[]
 QED

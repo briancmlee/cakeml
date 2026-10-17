@@ -251,7 +251,7 @@ The transcript shows:
 - **Known limitation, documented in the spec:** `Expect: 100-continue` is
   not supported.
 
-## 8. Spec change: RFC character sets for paths and field values (PENDING user approval)
+## 8. Spec change: RFC character sets for paths and field values (APPROVED by the user, 2026-10-16)
 
 - **Finding H-CHARS (low severity):** a compliance gap, not a framing
   issue. A TAB or non-ASCII character in a path, or NUL in a header

@@ -149,6 +149,15 @@ Definition round_instant_def:
     npolls (rworld lfd hw ifds m w1 (SUC n)).hist − npolls w1.hist
 End
 
+(* Room for one more fd at each round's start: fewer fds in use than the
+   limit.  A bound on the connections open at once (coordinator-required
+   concurrency bound, in a weaker form than "used fds + queued connections
+   < limit"), not on all connections the run ever accepts *)
+Definition fds_room_def:
+  fds_room lfd hw ifds m w1 ⇔
+    ∀n. CARD (set (l0_used (rworld lfd hw ifds m w1 n))) < w1.fd_limit
+End
+
 (* R2′, the headline (user decision Q-L3-2), for the server m (its type is the server's).  w1 is the world just
    after the listen.  Two simple-class conditions (coordinator-approved):
    sched_wf2 of the kernel's schedule (sk_of): otherwise the schedule may
@@ -156,7 +165,9 @@ End
    no delay relation can hold; no emfile_drops: otherwise the world may
    reset a queued connection under EMFILE and L1 fetches an EOF the kernel's
    schedule never sent.  F1 is not a hypothesis:
-   simple worlds have no transient failures *)
+   simple worlds have no transient failures.  fds_room (above): with it no
+   accept fails, so every queued connection is accepted (proved:
+   honestL1PFSimple's simple_F1 and conns_caught_up) *)
 Definition l1pf_simple_claim_def:
   l1pf_simple_claim m ⇔
     ∀p lfd sched hw ifds w1.
@@ -164,6 +175,7 @@ Definition l1pf_simple_claim_def:
       (∀h. ¬w1.ch.emfile_drops h) ∧ winv w1 ∧ w1.listeners = [(lfd, p, [])] ∧
       w1.chans = [] ∧ w1.open_fds = [] ∧
       run_ok lfd hw ifds m w1 ∧ (∀n. SND (pcm lfd hw ifds m w1 n) + 1 < dimword (:64)) ∧
+      fds_room lfd hw ifds m w1 ∧
       S1 lfd hw ifds m w1 ∧ S2 lfd hw ifds m w1 ∧ S3 lfd hw ifds m w1 ∧
       (∀f. S4 lfd hw ifds m w1 f) ⇒
       delays (round_instant lfd hw ifds m w1) (parr lfd hw ifds m w1)
@@ -179,6 +191,7 @@ Definition l1pf_simple_eq_claim_def:
       (∀h. ¬w1.ch.emfile_drops h) ∧ winv w1 ∧ w1.listeners = [(lfd, p, [])] ∧
       w1.chans = [] ∧ w1.open_fds = [] ∧
       run_ok lfd hw ifds m w1 ∧ (∀n. SND (pcm lfd hw ifds m w1 n) + 1 < dimword (:64)) ∧
+      fds_room lfd hw ifds m w1 ∧
       S1 lfd hw ifds m w1 ∧ S2 lfd hw ifds m w1 ∧ S3 lfd hw ifds m w1 ∧
       (∀f. S4 lfd hw ifds m w1 f) ∧
       prompt_sched p sched ∧ prompt_server lfd hw ifds m w1 ⇒

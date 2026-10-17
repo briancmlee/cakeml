@@ -785,7 +785,8 @@ Theorem eround_live:
     ∀f. (live es f ⇒ ostepc f es.p.b evs (eawbytes lfd pol f (w, es) acts)) ∧
         (live es f ∧ live es1 f ∧ live es' f ∧ ¬MEM (FConn f) log ⇒
          ostep f es.p.b es'.p.b evs (eawbytes lfd pol f (w, es) acts)) ∧
-        (¬live es f ⇒ evs_sent f evs = [] ∧ eawbytes lfd pol f (w, es) acts = []) ∧
+        (¬live es f ⇒
+         evs_sent f evs = [] ∧ eawbytes lfd pol f (w, es) acts = [] ∧ ¬live es1 f) ∧
         (live es' f ∧ (¬live es1 f ∨ MEM (FConn f) log) ⇒
          outbox_of es'.p.b f = [] ∧ ¬MEM f es'.p.b.gone)
 Proof

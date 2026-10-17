@@ -3052,13 +3052,13 @@ End
 
 Theorem ALOOKUP_cm_split:
   EVERY (λj. k + LENGTH fs ≤ j) (MAP SND new) ∧ EVERY (λj. j < k) (MAP SND cm) ⇒
-  (∀f j. ALOOKUP (new ++ (cnew k fs ++ cm)) f = SOME j ∧ j < k ⇒
+  (∀f j. ALOOKUP (new ++ cnew k fs ++ cm) f = SOME j ∧ j < k ⇒
          ALOOKUP cm f = SOME j ∧ ¬MEM f (MAP FST new) ∧ ¬MEM f fs) ∧
-  (∀f j. ALOOKUP (new ++ (cnew k fs ++ cm)) f = SOME j ∧ k ≤ j ∧ j < k + LENGTH fs ⇒
+  (∀f j. ALOOKUP (new ++ cnew k fs ++ cm) f = SOME j ∧ k ≤ j ∧ j < k + LENGTH fs ⇒
          MEM f fs ∧ ¬MEM f (MAP FST new)) ∧
-  (∀f j. ALOOKUP (new ++ (cnew k fs ++ cm)) f = SOME j ∧ k + LENGTH fs ≤ j ⇒
+  (∀f j. ALOOKUP (new ++ cnew k fs ++ cm) f = SOME j ∧ k + LENGTH fs ≤ j ⇒
          MEM f (MAP FST new)) ∧
-  (∀f. ¬MEM f (MAP FST new) ∧ ¬MEM f fs ⇒ ALOOKUP (new ++ (cnew k fs ++ cm)) f = ALOOKUP cm f)
+  (∀f. ¬MEM f (MAP FST new) ∧ ¬MEM f fs ⇒ ALOOKUP (new ++ cnew k fs ++ cm) f = ALOOKUP cm f)
 Proof
   strip_tac >>
   ‘∀f j. ALOOKUP (cnew k fs) f = SOME j ⇒ MEM f fs ∧ k ≤ j ∧ j < k + LENGTH fs’
@@ -3077,13 +3077,201 @@ Proof
   metis_tac[NOT_SOME_NONE, ALOOKUP_NONE]
 QED
 
+(* A fd connecting, or one that starts its episode in the round: nothing
+   to send yet *)
+Theorem ctbl_clean:
+  eown lfd es ∧ okeys es.p.b ∧ MEM f (MAP SND es.ctbl) ⇒
+  outbox_of es.p.b f = [] ∧ ¬MEM f es.p.b.gone
+Proof
+  strip_tac >> drule_all eown_ctbl_unlive >> rw[live_def, held_def] >>
+  gvs[honestL1PFOutTheory.okeys_def] >> metis_tac[]
+QED
+
+Theorem oacct_clean:
+  outbox_of b f = [] ∧ ¬MEM f b.gone ⇒ (oacct raw b f hl ⇔ raw = hl)
+Proof
+  simp[oacct_def]
+QED
+
+(* One round keeps the account: the round's raw sends on channel j's fd
+   are credited to j *)
+Theorem sent_round:
+  sent_inv cm w es R ∧ ev_rel lfd a cm es w ∧ eown lfd es ∧ eown lfd es' ∧ l0_rely wl ∧
+  eacts lfd pol (wl, es) acts = SOME (rs, aevs, (wl1, es1)) ∧
+  etail lfd pol hfds (wl1, es1) = SOME (rdy, (wl', es'), log, tevs) ∧
+  (∀i rs0 evs0 wi esi.
+     i ≤ LENGTH acts ∧ eacts lfd pol (wl, es) (TAKE i acts) = SOME (rs0, evs0, (wi, esi)) ⇒
+     eown lfd esi) ∧
+  (∀f j. ALOOKUP cm f = SOME j ⇒
+         (EL j w1.chans).sent = (EL j w.chans).sent ++ eawbytes lfd pol f (wl, es) acts) ∧
+  (∀j. j < LENGTH w.chans ∧ (∀f. ALOOKUP cm f ≠ SOME j) ⇒
+       (EL j w1.chans).sent = (EL j w.chans).sent) ∧
+  (∀j. LENGTH w.chans ≤ j ∧ j < LENGTH w1.chans ⇒ (EL j w1.chans).sent = []) ∧
+  LENGTH w1.chans = LENGTH w.chans + LENGTH (rfds es1 rs) ∧ chans_keep w1 w2 ∧
+  (∀f. MEM f (MAP FST new) ⇔ MEM (FConn f) log) ∧
+  EVERY (λj. LENGTH w1.chans ≤ j) (MAP SND new) ⇒
+  sent_inv (new ++ (cnew (LENGTH w.chans) (rfds es1 rs) ++ cm)) w2 es'
+    (λj. R j ++ ecred cm j (aevs ++ tevs))
+Proof
+  strip_tac >>
+  ‘eround lfd pol hfds (wl, es) acts = SOME (ssnap rdy rs, (wl', es'), log, aevs ++ tevs)’
+    by simp[eround_def] >>
+  ‘eown lfd es1’
+    by (qpat_x_assum ‘∀i rs0 evs0 wi esi. _’
+          (qspecl_then [‘LENGTH acts’, ‘rs’, ‘aevs’, ‘wl1’, ‘es1’] mp_tac) >>
+        simp[TAKE_LENGTH_ID]) >>
+  ‘okeys es.p.b’ by fs[sent_inv_def] >>
+  drule eround_live >> impl_tac
+  >- (‘pown lfd es'.p’ by fs[eown_def] >> simp[] >> rpt strip_tac >> irule eown_oown >>
+      qpat_x_assum ‘∀i rs0 evs0 wi esi. _’ irule >> qexistsl_tac [‘evs0’, ‘i’, ‘rs0’, ‘wi’] >>
+      simp[]) >>
+  strip_tac >> gvs[] >>
+  qabbrev_tac ‘fs = rfds es1 rs’ >>
+  ‘ALL_DISTINCT (MAP SND cm) ∧ EVERY (λj. j < LENGTH w.chans) (MAP SND cm)’
+    by fs[ev_rel_def] >>
+  ‘∀f j. ALOOKUP cm f = SOME j ⇒ j < LENGTH w.chans’
+    by (rpt strip_tac >> imp_res_tac ALOOKUP_MEM >> gvs[EVERY_MEM, MEM_MAP] >> metis_tac[SND]) >>
+  ‘EVERY (λj. LENGTH w.chans + LENGTH fs ≤ j) (MAP SND new)’ by gvs[EVERY_MEM] >>
+  drule_all ALOOKUP_cm_split >> strip_tac >>
+  ‘ciss lfd es’ by metis_tac[eown_ciss] >>
+  qpat_x_assum ‘eacts _ _ _ _ = _’ assume_tac >> drule_all eacts_ctbl >> strip_tac >>
+  ‘∀f. MEM f (MAP SND es'.ctbl) ⇒ outbox_of es'.p.b f = [] ∧ ¬MEM f es'.p.b.gone’
+    by metis_tac[ctbl_clean] >>
+  ‘LENGTH w1.chans ≤ LENGTH w2.chans’ by fs[chans_keep_def] >>
+  simp[sent_inv_def] >> conj_tac
+  >- (rpt strip_tac
+      >- (qpat_assum ‘sent_inv _ _ _ _’ (strip_assume_tac o REWRITE_RULE [sent_inv_def]) >>
+          first_x_assum irule >> fs[])
+      >> irule ecred_nil >> rpt strip_tac >> res_tac >> fs[] >> decide_tac) >>
+  gen_tac >> strip_tac >>
+  qpat_x_assum ‘∀f. (live es f ⇒ _) ∧ _’ (assume_tac o GEN_ALL o SPEC_ALL) >>
+  Cases_on ‘j < LENGTH w.chans’
+  >- ((* an old channel *)
+      ‘(EL j w2.chans).sent = (EL j w1.chans).sent’ by fs[chans_keep_def] >>
+      ‘R j ≼ (EL j w.chans).sent ∧
+       ∀f. ALOOKUP cm f = SOME j ∧ (live es f ∨ MEM f (MAP SND es.ctbl)) ⇒
+           oacct (R j) es.p.b f (EL j w.chans).sent’
+        by (qpat_assum ‘sent_inv _ _ _ _’ (strip_assume_tac o REWRITE_RULE [sent_inv_def]) >>
+            first_x_assum drule >> simp[]) >>
+      ‘∀f. ALOOKUP (new ++ cnew (LENGTH w.chans) fs ++ cm) f = SOME j ⇒
+           ALOOKUP cm f = SOME j ∧ ¬MEM f (MAP FST new) ∧ ¬MEM f fs’
+        by (rpt strip_tac >>
+            qpat_x_assum ‘∀f j. ALOOKUP _ f = SOME j ∧ j < LENGTH w.chans ⇒ _’ drule >>
+            simp[]) >>
+      reverse (Cases_on ‘∃f0. ALOOKUP cm f0 = SOME j’)
+      >- ((* no fd: nothing *)
+          ‘∀f. ALOOKUP cm f ≠ SOME j’ by metis_tac[] >>
+          qpat_x_assum ‘¬∃f0. _’ kall_tac >>
+          ‘(EL j w1.chans).sent = (EL j w.chans).sent’
+            by (qpat_x_assum ‘∀j. j < LENGTH w.chans ∧ _ ⇒ (EL j w1.chans).sent = _’ irule >>
+                fs[]) >>
+          ‘ecred cm j (aevs ++ tevs) = []’ by (irule ecred_nil >> fs[]) >>
+          simp[] >> rpt strip_tac >>
+          ‘ALOOKUP cm f = SOME j’ by (res_tac >> simp[]) >>
+          qpat_x_assum ‘∀f. ALOOKUP cm f ≠ SOME j’ (qspec_then ‘f’ mp_tac) >> asm_rewrite_tac[]) >>
+      fs[] >>
+      ‘ecred cm j (aevs ++ tevs) = evs_sent f0 (aevs ++ tevs)’ by (irule ecred_eq >> simp[]) >>
+      ‘(EL j w1.chans).sent = (EL j w.chans).sent ++ eawbytes lfd pol f0 (wl, es) acts’
+        by (qpat_x_assum ‘∀f j. ALOOKUP cm f = SOME j ⇒ (EL j w1.chans).sent = _’
+              (qspecl_then [‘f0’, ‘j’] mp_tac) >> simp[]) >>
+      ‘∀f. ALOOKUP (new ++ cnew (LENGTH w.chans) fs ++ cm) f = SOME j ⇒
+           f = f0 ∧ ¬MEM f0 (MAP FST new) ∧ ¬MEM f0 fs’
+        by (gen_tac >> strip_tac >> res_tac >> ‘f = f0’ by metis_tac[ALOOKUP_SND_inj] >>
+            gvs[]) >>
+      qpat_x_assum ‘∀f. (live es f ⇒ _) ∧ _’ (qspec_then ‘f0’ strip_assume_tac) >>
+      Cases_on ‘live es f0’
+      >- (‘¬MEM f0 (MAP SND es.ctbl)’ by metis_tac[eown_ctbl_unlive] >>
+          ‘oacct (R j) es.p.b f0 (EL j w.chans).sent’
+            by (qpat_x_assum ‘∀f. ALOOKUP cm f = SOME j ∧ _ ⇒ oacct _ _ _ _’ irule >> simp[]) >>
+          ‘R j ++ evs_sent f0 (aevs ++ tevs) ≼
+           (EL j w.chans).sent ++ eawbytes lfd pol f0 (wl, es) acts’
+            by (irule ostepc_acct >> qexists_tac ‘es.p.b’ >> fs[]) >>
+          simp[] >> conj_tac >- fs[] >>
+          gen_tac >> strip_tac >>
+          ‘f = f0 ∧ ¬MEM f0 (MAP FST new) ∧ ¬MEM f0 fs’ by (qpat_x_assum ‘∀f. ALOOKUP _ f = SOME j ⇒ f = f0 ∧ _’ drule >> simp[]) >>
+          rveq >>
+          ‘¬MEM (FConn f) log’
+            by (qpat_x_assum ‘∀f. MEM f (MAP FST new) ⇔ _’ (qspec_then ‘f’ mp_tac) >>
+                asm_rewrite_tac[]) >>
+          ‘¬MEM f (MAP SND es1.ctbl)’ by (strip_tac >> res_tac >> fs[Abbr ‘fs’]) >>
+          fs[]
+          >- (‘live es1 f’ by (res_tac >> fs[]) >>
+              ‘oacct (R j ++ evs_sent f (aevs ++ tevs)) es'.p.b f
+                 ((EL j w.chans).sent ++ eawbytes lfd pol f (wl, es) acts)’
+                by (irule ostep_acct >> qexists_tac ‘es.p.b’ >> fs[]) >>
+              fs[])
+          >> res_tac) >>
+      fs[] >>
+      Cases_on ‘MEM f0 (MAP SND es.ctbl)’
+      >- (‘outbox_of es.p.b f0 = [] ∧ ¬MEM f0 es.p.b.gone’ by metis_tac[ctbl_clean] >>
+          ‘R j = (EL j w.chans).sent’
+            by (‘oacct (R j) es.p.b f0 (EL j w.chans).sent’
+                  by (qpat_x_assum ‘∀f. ALOOKUP cm f = SOME j ∧
+                                        (live es f ∨ MEM f (MAP SND es.ctbl)) ⇒ _’
+                        (qspec_then ‘f0’ mp_tac) >> impl_tac >- fs[] >> simp[]) >>
+                qspecl_then [‘R j’, ‘es.p.b’, ‘f0’, ‘(EL j w.chans).sent’] mp_tac
+                  (Q.GENL [‘raw’, ‘b’, ‘f’, ‘hl’] oacct_clean) >>
+                impl_tac >- fs[] >> disch_then (fn th => fs[th])) >>
+          simp[] >> gen_tac >> strip_tac >>
+          ‘f = f0’ by (qpat_x_assum ‘∀f. ALOOKUP _ f = SOME j ⇒ f = f0 ∧ _’ drule >> simp[]) >> rveq >>
+          ‘outbox_of es'.p.b f = [] ∧ ¬MEM f es'.p.b.gone’ by (res_tac >> fs[]) >>
+          fs[oacct_def]) >>
+      gen_tac >> strip_tac >>
+      ‘f = f0 ∧ ¬MEM f0 (MAP FST new) ∧ ¬MEM f0 fs’ by (qpat_x_assum ‘∀f. ALOOKUP _ f = SOME j ⇒ f = f0 ∧ _’ drule >> simp[]) >>
+      rveq >> ‘¬MEM (FConn f) log’
+            by (qpat_x_assum ‘∀f. MEM f (MAP FST new) ⇔ _’ (qspec_then ‘f’ mp_tac) >>
+                asm_rewrite_tac[]) >>
+      ‘¬MEM f (MAP SND es1.ctbl)’ by (strip_tac >> res_tac >> fs[Abbr ‘fs’]) >>
+      res_tac >> fs[]) >>
+  (* a new channel: nothing sent on either side *)
+  ‘R j = [] ∧ ecred cm j (aevs ++ tevs) = []’
+    by (conj_tac
+        >- (qpat_assum ‘sent_inv _ _ _ _’ (strip_assume_tac o REWRITE_RULE [sent_inv_def]) >>
+            first_x_assum irule >> fs[])
+        >> irule ecred_nil >> rpt strip_tac >> res_tac >> fs[]) >>
+  ‘(EL j w2.chans).sent = []’
+    by (Cases_on ‘j < LENGTH w1.chans’ >> fs[chans_keep_def]) >>
+  simp[] >> gen_tac >> strip_tac >>
+  ‘outbox_of es'.p.b f = [] ∧ ¬MEM f es'.p.b.gone’ suffices_by simp[oacct_def] >>
+  TRY (qpat_x_assum ‘∀f. MEM f (MAP SND es'.ctbl) ⇒ outbox_of _ _ = _ ∧ _’ drule >> simp[] >>
+       NO_TAC) >>
+  qpat_x_assum ‘∀f. (live es f ⇒ _) ∧ _’ (qspec_then ‘f’ strip_assume_tac) >>
+  qpat_x_assum ‘live es' f ∧ _ ⇒ _’ irule >> simp[] >>
+  ‘LENGTH w.chans ≤ j’ by decide_tac >>
+  Cases_on ‘j < LENGTH w.chans + LENGTH fs’
+  >- (‘MEM f fs’
+        by (qpat_x_assum ‘∀f j. _ ∧ LENGTH w.chans ≤ j ∧ _ ⇒ MEM f fs ∧ _’ drule >> simp[]) >>
+      ‘MEM f (MAP SND es1.ctbl)’
+        by (qpat_x_assum ‘∀f. MEM f (rfds es1 rs) ⇒ _’ irule >> fs[Abbr ‘fs’]) >>
+      disj1_tac >>
+      qspecl_then [‘lfd’, ‘es1’, ‘f’] mp_tac (Q.GENL [‘lfd’, ‘es’, ‘f’] eown_ctbl_unlive) >>
+      impl_tac >- fs[] >> simp[]) >>
+  disj2_tac >>
+  ‘MEM f (MAP FST new)’
+    by (qpat_x_assum ‘∀f j. _ ∧ LENGTH w.chans + LENGTH fs ≤ j ⇒ MEM f (MAP FST new)’ drule >>
+        simp[]) >>
+  qpat_x_assum ‘∀f. MEM f (MAP FST new) ⇔ _’ (qspec_then ‘f’ mp_tac) >> asm_rewrite_tac[]
+QED
+
+(* C1(ii)'s ghost: what L1 sent, on the raw trace, on channel j's fds
+   before round n (each round's sends credited by the map before it) *)
+Definition ersent_def:
+  ersent lfd pol ifds m w0 j 0 = [] ∧
+  ersent lfd pol ifds m w0 j (SUC n) =
+    ersent lfd pol ifds m w0 j n ++
+    (case (erounds lfd pol ifds m (w0, einit) n, erounds lfd pol ifds m (w0, einit) (SUC n)) of
+     | (SOME (_, _, evs, _), SOME (_, _, evs', _)) =>
+         ecred (FST (ecm lfd pol ifds m w0 n)) j (DROP (LENGTH evs) evs')
+     | _ => [])
+End
+
 (* MAIN (R1-safe), for a run looked at up to round N: in ANY L0 world, the
    prefetching L1 with connects running the computation m has exactly the
    history of the endpoint handle layer running m in the endpoint world pew
    built from L1's own run, round by round (a connect gets no socket in
    that world exactly when L1's did); the relation and the invariants hold
    throughout *)
-Theorem l1ep_refines_ehl_upto:
+Theorem l1ep_refines_ehl_upto_sent:
   l0_rely w0 ∧ fds_lt w0 ∧ MEM lfd (l0_used w0) ∧
   (∀n'. n' ≤ N ⇒ SND (ecm lfd pol ifds m w0 n') + 1 < dimword (:64)) ⇒
   ∀n h ws evs logs.
@@ -3105,12 +3293,16 @@ Theorem l1ep_refines_ehl_upto:
     (FST (ehst lfd (elv lfd pol ifds m w0) ifds m (pew lfd a pol ifds m w0 calls) n)).nconnects = LENGTH (nosock_of h) ∧
     eown lfd (SND ws) ∧ l0owne lfd (FST ws) (SND ws) ∧
     l0_rely (FST ws) ∧ fds_lt (FST ws) ∧
+    sent_inv (FST (ecm lfd pol ifds m w0 n))
+      (FST (ehst lfd (elv lfd pol ifds m w0) ifds m (pew lfd a pol ifds m w0 calls) n)) (SND ws)
+      (λj. ersent lfd pol ifds m w0 j n) ∧
     ∀n'. n' < n ⇒ eh_round_ok lfd (elv lfd pol ifds m w0) ifds m (pew lfd a pol ifds m w0 calls) n'
 Proof
   strip_tac >> qabbrev_tac ‘lv = elv lfd pol ifds m w0’ >> Induct
   >- (simp[erounds_def, ehhist_def, ehst_def, ehrounds_def, ecm_def, pew_def, nosock_of_def] >>
       rw[] >> simp[einit_def, pinit_def, l1init_def, ehinit_def, ehs_rel_def, ev_rel_def,
-                   eown_def, pown_def, l0owne_def, l0own_def, inb_of_def]) >>
+                   eown_def, pown_def, l0owne_def, l0own_def, inb_of_def,
+                   sent_inv_def, ersent_def, honestL1PFOutTheory.okeys_def, outbox_of_def]) >>
   rpt gen_tac >> strip_tac >>
   qpat_assum ‘erounds _ _ _ _ _ (SUC _) = _’
     (strip_assume_tac o SIMP_RULE (srw_ss()) [AllCaseEqs()] o
@@ -3198,10 +3390,57 @@ Proof
     by (rpt strip_tac >> Cases_on ‘n' = n’ >- fs[] >> ‘n' < n’ by decide_tac >>
         qpat_x_assum ‘∀n'. n' < n ⇒ _’ drule >> simp[]) >>
   ‘nosock_of [ssnap rdy rs] = conn_outs rs’ by simp[nosock_of_def, ssnap_def] >>
+  (* C1(ii) *)
+  ‘ALL_DISTINCT (MAP SND (cnew k fs ++ cm)) ∧
+   EVERY (λj. j < LENGTH w1.chans) (MAP SND (cnew k fs ++ cm))’
+    by (qpat_x_assum ‘ev_rel _ _ (cnew k fs ++ cm) ws11 w1’ mp_tac >> simp[ev_rel_def]) >>
+  qpat_x_assum ‘arrs _ (cnew k fs ++ cm, LENGTH w1.chans) _ = _’ assume_tac >>
+  drule_all arrs_new >> strip_tac >> rename1 ‘cm' = new2 ++ (cnew k fs ++ cm)’ >>
+  ‘chans_keep w1 w2’ by (drule ehpoll_keep >> simp[]) >>
+  ‘eown lfd ws1’ by fs[] >>
+  ‘sent_inv cm' w2 ws1 (λj. ersent lfd pol ifds m w0 j (SUC n))’
+    by (‘(λj. ersent lfd pol ifds m w0 j (SUC n)) =
+         (λj. ersent lfd pol ifds m w0 j n ++ ecred cm j (aevs ++ tevs))’
+          by (simp[FUN_EQ_THM, ersent_def] >> rw[] >> simp[DROP_LENGTH_APPEND]) >>
+        pop_assum SUBST1_TAC >>
+        qpat_x_assum ‘cm' = new2 ++ _’ SUBST1_TAC >>
+        qpat_x_assum ‘cnew k fs = _’ kall_tac >>
+        ‘k = LENGTH w.chans’ by fs[] >>
+        qpat_x_assum ‘Abbrev (fs = _)’ (fn th => fs[REWRITE_RULE [markerTheory.Abbrev_def] th]) >>
+        irule sent_round >> simp[] >>
+        cheat) >>
   simp[] >> fs[] >>
   qpat_x_assum ‘ev_rel _ _ cm' ws1 w2’ mp_tac >>
   qpat_x_assum ‘cm' = _’ (fn th => rewrite_tac[th]) >>
   rewrite_tac[APPEND_ASSOC]
+QED
+
+Theorem l1ep_refines_ehl_upto:
+  l0_rely w0 ∧ fds_lt w0 ∧ MEM lfd (l0_used w0) ∧
+  (∀n'. n' ≤ N ⇒ SND (ecm lfd pol ifds m w0 n') + 1 < dimword (:64)) ⇒
+  ∀n h ws evs logs.
+    n ≤ N ∧ erounds lfd pol ifds m (w0, einit) n = SOME (h, ws, evs, logs) ⇒
+    ehhist lfd (elv lfd pol ifds m w0) ifds m (pew lfd a pol ifds m w0 calls) n = h ∧
+    ehs_rel (SND (ehst lfd (elv lfd pol ifds m w0) ifds m (pew lfd a pol ifds m w0 calls) n)) (SND ws) ∧
+    ev_rel lfd a (FST (ecm lfd pol ifds m w0 n)) (SND ws)
+      (FST (ehst lfd (elv lfd pol ifds m w0) ifds m (pew lfd a pol ifds m w0 calls) n)) ∧
+    LENGTH (FST (ehst lfd (elv lfd pol ifds m w0) ifds m (pew lfd a pol ifds m w0 calls) n)).chans =
+      SND (ecm lfd pol ifds m w0 n) ∧
+    (FST (ehst lfd (elv lfd pol ifds m w0) ifds m (pew lfd a pol ifds m w0 calls) n)).alloc =
+      erun_alloc lfd pol ifds m w0 ∧
+    (FST (ehst lfd (elv lfd pol ifds m w0) ifds m (pew lfd a pol ifds m w0 calls) n)).env =
+      (λn hist. earr lfd a pol ifds m w0 n) ∧
+    (FST (ehst lfd (elv lfd pol ifds m w0) ifds m (pew lfd a pol ifds m w0 calls) n)).clock = n ∧
+    (FST (ehst lfd (elv lfd pol ifds m w0) ifds m (pew lfd a pol ifds m w0 calls) n)).hist = [] ∧
+    (FST (ehst lfd (elv lfd pol ifds m w0) ifds m (pew lfd a pol ifds m w0 calls) n)).nosock =
+      erun_nosock lfd pol ifds m w0 ∧
+    (FST (ehst lfd (elv lfd pol ifds m w0) ifds m (pew lfd a pol ifds m w0 calls) n)).nconnects = LENGTH (nosock_of h) ∧
+    eown lfd (SND ws) ∧ l0owne lfd (FST ws) (SND ws) ∧
+    l0_rely (FST ws) ∧ fds_lt (FST ws) ∧
+    ∀n'. n' < n ⇒ eh_round_ok lfd (elv lfd pol ifds m w0) ifds m (pew lfd a pol ifds m w0 calls) n'
+Proof
+  strip_tac >> mp_tac l1ep_refines_ehl_upto_sent >> impl_tac >- simp[] >>
+  rpt strip_tac >> first_x_assum drule_all >> simp[]
 QED
 
 (* E1: every run of L1 is refined by the endpoint handle layer, in the

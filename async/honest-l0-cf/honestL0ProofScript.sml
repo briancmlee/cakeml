@@ -85,13 +85,53 @@ Proof
   l0_call_tac (fetch "honestL0Prog" "L0_listen_v_def") “«sys_listen»”
 QED
 
+Theorem l0_do_buf_ffi:
+  l0_do_buf n conf bytes w = SOME (out, w', ev) ⇒
+  l0_ffi_fn n conf bytes w = SOME (FFIreturn out w') ∧
+  ev = IO_event (ExtCall n) conf (ZIP (bytes, out))
+Proof
+  simp[l0_do_buf_def, AllCaseEqs()] >> rw[] >> simp[]
+QED
+
+Theorem bytes_str_bytes[local]:
+  MAP (n2w o ORD) (explode (bytes_str bs)) = bs : word8 list ∧
+  strlen (bytes_str bs) = LENGTH bs
+Proof
+  simp[MAP_MAP_o, o_DEF] >>
+  ‘∀b : word8. w2n b < 256’ by (gen_tac >> assume_tac (INST_TYPE [alpha |-> “:8”] w2n_lt) >> fs[]) >>
+  simp[ORD_CHR] >> Induct_on ‘bs’ >> simp[]
+QED
+
+(* D20: the call's buffer carries the entries in *)
 Theorem L0_poll_spec:
-  STRING_TYPE (bytes_str conf) confv ∧ NUM alen alenv ∧
-  l0_do «sys_poll» conf alen w = SOME (out, w', ev) ⇒
-  app (p:'ffi ffi_proj) L0_poll_v [confv; alenv] (L0_EV w0 w evs)
+  STRING_TYPE (bytes_str conf) confv ∧ STRING_TYPE (bytes_str bytes) bufv ∧
+  l0_do_buf «sys_poll» conf bytes w = SOME (out, w', ev) ⇒
+  app (p:'ffi ffi_proj) L0_poll_v [confv; bufv] (L0_EV w0 w evs)
     (POSTv v. &STRING_TYPE (bytes_str out) v * L0_EV w0 w' (evs ++ [ev]))
 Proof
-  l0_call_tac (fetch "honestL0Prog" "L0_poll_v_def") “«sys_poll»”
+  rpt strip_tac >> xcf_with_def (fetch "honestL0Prog" "L0_poll_v_def") >>
+  simp[L0_EV_def] >> xpull >>
+  drule l0_do_buf_ffi >> strip_tac >>
+  ‘LENGTH out = LENGTH bytes’
+    by (fs[l0_reach_def] >> drule_all honestL0WorldPropsTheory.l0_ffi_fn_length >> simp[]) >>
+  ‘MEM «sys_poll» l0_names’ by simp[l0_names_def] >>
+  drule_all l0_next_call >> strip_tac >>
+  xlet_auto >- xsimpl >>
+  xlet_auto >- xsimpl >>
+  xlet_auto >- xsimpl >>
+  rename1 ‘W8ARRAY av (REPLICATE _ _)’ >>
+  xlet ‘POSTv uv. W8ARRAY av bytes * one (FFI_part (l0_enc w0 w) (l0_next w0) l0_names evs)’
+  >- (xapp >> xsimpl >> gvs[NUM_def, INT_def, bytes_str_bytes] >>
+      simp[mlstringTheory.substring_def, bytes_str_bytes, DROP_REPLICATE]) >>
+  xlet ‘POSTv uv. W8ARRAY av out *
+          one (FFI_part (l0_enc w0 w') (l0_next w0) l0_names (evs ++ [ev]))’
+  >- (xffi >> xsimpl >> gvs[STRING_TYPE_def] >>
+      qexistsl [‘conf’, ‘emp’, ‘l0_enc w0 w’, ‘l0_next w0’, ‘l0_names’, ‘evs’] >>
+      simp[] >> conj_tac >- EVAL_TAC >> xsimpl) >>
+  xapp >>
+  qexistsl [‘one (FFI_part (l0_enc w0 w') (l0_next w0) l0_names (evs ++ [ev]))’,
+            ‘0’, ‘out’, ‘LENGTH bytes’] >>
+  xsimpl >> simp[NUM_def, INT_def, TAKE_LENGTH_ID_rwt]
 QED
 
 Theorem L0_accept_spec:

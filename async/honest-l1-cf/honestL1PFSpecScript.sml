@@ -85,7 +85,19 @@ Theorem c_poll_spec:
   app (p:'ffi ffi_proj) c_poll_v [fesv] (L0_EV w0 w evs)
     (POSTv v. &LIST_TYPE WORD out v * L0_EV w0 w' (evs ++ [ev]))
 Proof
-  call_tac (fetch "honestL1PFProg" "c_poll_v_def") L0_poll_spec
+  rpt strip_tac >> xcf_with_def (fetch "honestL1PFProg" "c_poll_v_def") >>
+  rpt (xlet_auto >- xsimpl) >>
+  xlet ‘POSTv v. &LIST_TYPE WORD ([] : word8 list) v * L0_EV w0 w evs’
+  >- (xcon >> xsimpl >> simp[LIST_TYPE_def]) >>
+  xlet_auto >- xsimpl >>
+  xlet ‘POSTv v. &LIST_TYPE WORD [0w : word8] v * L0_EV w0 w evs’
+  >- (xcon >> xsimpl >> fs[LIST_TYPE_def]) >>
+  rpt (xlet_auto >- xsimpl) >>
+  xlet ‘POSTv v. &STRING_TYPE (bytes_str out) v * L0_EV w0 w' (evs ++ [ev])’
+  >- (xapp_spec L0_poll_spec >> xsimpl >> gvs[sys_poll_def, bytes_str_bytes_to_str] >>
+      metis_tac[]) >>
+  xapp >> xsimpl >> qexists_tac ‘bytes_str out’ >>
+  simp[bytes_str_bytes_to_str, str_to_bytes_bytes_to_str]
 QED
 
 (* ------------------------------------------------------------------------
@@ -337,6 +349,12 @@ Proof
   xcf_with_def (fetch "honestL1PFProg" "pf_tail_v_def") >>
   gvs[pf_tail_def, AllCaseEqs()] >>
   rpt (xlet_auto >- xsimpl) >>
+  xlet ‘POSTv v. &LIST_TYPE (LIST_TYPE (PAIR_TYPE WORD NUM))
+                   ([] : (word64 # num) list list) v * L0_EV w0 w evs’
+  >- (xcon >> xsimpl >> simp[LIST_TYPE_def]) >>
+  xlet ‘POSTv v. &LIST_TYPE (LIST_TYPE (PAIR_TYPE WORD NUM))
+                   [pf_poll_set lfd hw ps hs] v * L0_EV w0 w evs’
+  >- (xcon >> xsimpl >> fs[LIST_TYPE_def]) >>
   xlet ‘POSTv v. &LIST_TYPE (PAIR_TYPE WORD REV) rv v * L0_EV w0 w1 (evs ++ pevs)’
   >- (xapp_spec l1_polls_spec >> xsimpl >> metis_tac[]) >>
   rpt (xlet_auto >- xsimpl) >>

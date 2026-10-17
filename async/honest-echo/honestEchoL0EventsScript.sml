@@ -94,11 +94,20 @@ Proof
   every_case_tac >> gvs[]
 QED
 
+(* D20: a call whose buffer carries data in *)
+Theorem l0_do_buf_event:
+  l0_rely w ∧ l0_do_buf n conf bytes w = SOME (out, w', ev) ⇒
+  ev = IO_event (ExtCall n) conf (ZIP (bytes, out)) ∧ LENGTH out = LENGTH bytes ∧
+  l0_rely w'
+Proof
+  rw[l0_do_buf_def, AllCaseEqs()] >> drule_all l0_ffi_fn_length >> rw[]
+QED
+
 Theorem sys_poll_event:
   l0_rely w ∧ sys_poll fes w = SOME (out, w', ev) ⇒
   l0_event_accepted ev = NONE ∧ l0_event_closed ev = NONE ∧
-  recv_fd ev = NONE ∧ send_fd ev = NONE
+  recv_fd ev = NONE ∧ send_fd ev = NONE ∧ l0_rely w'
 Proof
-  rw[sys_poll_def] >> drule_all l0_do_event >> rw[] >>
+  rw[sys_poll_def] >> drule_all l0_do_buf_event >> rw[] >>
   simp[l0_event_accepted_def, l0_event_closed_def, recv_fd_def, send_fd_def]
 QED

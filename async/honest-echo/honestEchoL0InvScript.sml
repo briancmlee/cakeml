@@ -405,7 +405,6 @@ Proof
   Induct >> simp[l1_polls_def, ep_fold_def] >> rpt gen_tac >> strip_tac >>
   gvs[AllCaseEqs()] >>
   drule_all sys_poll_event >> strip_tac >>
-  ‘l0_rely w1’ by (gvs[sys_poll_def] >> metis_tac[l0_do_rely]) >>
   first_x_assum drule_all >> strip_tac >>
   PairCases_on ‘es’ >> gvs[ep_fold_def, l0_ep_step_def]
 QED

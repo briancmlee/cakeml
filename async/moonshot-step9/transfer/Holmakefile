@@ -7,7 +7,7 @@ INCLUDES = ../../model ../../ffi-spike ../../m3-assembly ../../m4-server ../../m
            ../../socket-v2-cf ../../close-v2-loop ../../endpoint-world \
            ../../honest-l1-ep ../../honest-l1 ../../endpoint-hl ../../honest-l0 ../../honest-ffi \
            ../../moonshot ../hl ../proxy ../../e1-trace ../../moonshot-glue ../../l0sys-bridges ../../l0sys \
-           ../l0 ../../honest-l1b ../../honest-echo ../../honest-l0-cf ../../e1-driver
+           ../l0 ../../honest-l1b ../../honest-echo ../../honest-l0-cf ../../e1-driver ../../proxy-e1
 ifdef POLY
 HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
 endif

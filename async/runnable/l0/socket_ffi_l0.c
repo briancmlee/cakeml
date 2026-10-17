@@ -12,7 +12,8 @@
   every behaviour of this file plus the kernel must be a behaviour of
   the model.
 
-  RESULT HEADER: every call's output buffer a starts with 13 bytes
+  RESULT HEADER: every call's output buffer a, except sys_fdok's, starts
+  with 13 bytes
       a[0]      code  : 0 = success, else err_code(errno); 255 = an errno
                         the table does not list (never disguised)
       a[1..8]   value : big-endian (fd, count); on error 0, or for
@@ -35,6 +36,8 @@
   | sys_connect     | socket(AF_INET, SOCK_STREAM, 0); fcntl F_SETFL       | port (2 bytes)   | -                   |
   |                 | O_NONBLOCK; connect 127.0.0.1:port                   |                  |                     |
   | sys_connerr     | getsockopt(fd, SOL_SOCKET, SO_ERROR)                 | fd               | -                   |
+  | sys_fdok        | fcntl(fd, F_GETFD)                                   | fd (1 byte)      | NO header: 1 byte,  |
+  |                 |                                                      |                  | 1 open / 0 closed   |
 
   sys_poll (design/36 §9 D20): the caller's buffer a holds, after the
   13-byte header and 3 pad bytes (untouched), k = (alen - 16) / 8 entries
@@ -49,8 +52,8 @@
   sys_connect's value is the new fd as soon as socket() succeeded, also
   when connect then fails (EINPROGRESS: pending; ECONNREFUSED etc.:
   failed); the fd stays open until the program closes it.  Value 0: no fd
-  (socket or fcntl failed; fd 0 is always open, by the startup contract,
-  so 0 is never a new fd).
+  (socket or fcntl failed; a program that has seen sys_fdok report fd 0
+  open, and never closes it, never gets 0 as a new fd).
   sys_connerr: code 0 and value 0: no pending error; code e and value 1:
   the socket's pending error e (reading it clears it); code e and value
   0: getsockopt itself failed with e.
@@ -61,10 +64,14 @@
   peer addresses, MSG_PEEK/OOB/WAITALL, SHUT_RD, poll timeouts other
   than 0 and infinity.
 
-  STARTUP CONTRACT (the constructor, before cml_main): fds 0, 1, 2 must be
-  open (checked: exit 3 otherwise; the model's reserved fds), and SIGPIPE
-  is ignored (a write to a gone peer is the EPIPE result, not a kill;
-  macOS has no MSG_NOSIGNAL).
+  sys_fdok (D33, design/50 (c2)): a[0] = 1 if fd c[0] is open, 0 if not.
+  [P fcntl]: F_GETFD fails (EBADF) exactly when the fd is not an open file
+  descriptor.  The programs call it on 0, 1 and 2 first and stop if any is
+  closed, so the check is in the verified program, not here.
+
+  STARTUP CONTRACT (the constructor, before cml_main): SIGPIPE is ignored
+  (a write to a gone peer is the EPIPE result, not a kill; macOS has no
+  MSG_NOSIGNAL).
 
   MISUSE (exit 3; the model's call fails, FFI_failed): buffer lengths
   other than the above, a poll block flag other than 0/1, an fd above
@@ -158,8 +165,6 @@ static void put_res(unsigned char *a, long r) {
 }
 
 __attribute__((constructor)) static void l0_startup(void) {
-  if (fcntl(0, F_GETFD) < 0 || fcntl(1, F_GETFD) < 0 || fcntl(2, F_GETFD) < 0)
-    die("startup: fds 0, 1 and 2 must be open");
   signal(SIGPIPE, SIG_IGN);
 }
 
@@ -256,4 +261,9 @@ void ffisys_connerr(unsigned char *c, long clen, unsigned char *a, long alen) {
 void ffisys_close(unsigned char *c, long clen, unsigned char *a, long alen) {
   if (clen != 8 || alen != HDR) die("sys_close: lengths");
   put_res(a, close(get_fd(c)));
+}
+
+void ffisys_fdok(unsigned char *c, long clen, unsigned char *a, long alen) {
+  if (clen != 1 || alen != 1) die("sys_fdok: lengths");
+  a[0] = fcntl(c[0], F_GETFD) >= 0;
 }

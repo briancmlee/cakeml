@@ -100,11 +100,12 @@ Definition l0_sent_def:
 End
 
 (* The startup contract: no listener, no connections, only the process's
-   own fds (0-2 among them), within the fd limit, and the world's rely *)
+   own fds, within the fd limit, and the world's rely.  D33: fds 0-2 are
+   not assumed open; the programs ask (sys_fdok) and stop if one is
+   closed (stdio_closed) *)
 Definition l0_server_world_def:
   l0_server_world w0 ⇔
     w0.listeners = [] ∧ w0.chans = [] ∧ w0.open_fds = [] ∧ w0.hist = [] ∧
-    MEM 0w w0.reserved ∧ MEM 1w w0.reserved ∧ MEM 2w w0.reserved ∧
     fds_lt w0 ∧ l0_rely w0
 End
 

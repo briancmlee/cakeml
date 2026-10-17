@@ -40,7 +40,7 @@ Definition close_ev_def:
       (ZIP (REPLICATE 13 0w, enc_res (Ok 0)))
 End
 
-Theorem LENGTH_fd_bytes[local,simp]:
+Theorem LENGTH_fd_bytes[simp]:
   LENGTH (fd_bytes f) = 8
 Proof
   simp[fd_bytes_def, LENGTH_n2w8]
@@ -96,7 +96,7 @@ Proof
 QED
 
 (* What the spec's event functions see *)
-Theorem l0_events_of[local,simp]:
+Theorem l0_events_of[simp]:
   l0_event_accepted (acc_ev l f) = SOME f ∧
   l0_event_accepted (recv_ev f bs) = NONE ∧
   l0_event_accepted (send_ev f bs k) = NONE ∧
@@ -207,4 +207,65 @@ Theorem echo_safe_l0_ideal:
   echo_safe_l0 (fromList ideal_trace)
 Proof
   irule safe_upto_echo_safe_l0 >> EVAL_TAC
+QED
+
+(* An interrupted close: EINTR [P close], after which the world may have
+   freed the fd (honestL0World's close_intr) *)
+Definition close_intr_ev_def:
+  close_intr_ev (f : word64) =
+    IO_event (ExtCall «sys_close») (fd_bytes f)
+      (ZIP (REPLICATE 13 0w, enc_res (Fail E_INTR [0w; 0w; 0w; 4w])))
+End
+
+(* Bite 4', as bite 4 with the close interrupted (the kernel freed fd 4
+   all the same): the accept that reuses fd 4 ends client 0's episode, so
+   the leak to client 1 is still caught *)
+Theorem bite_fd_reuse_leak_intr:
+  LPREFIX (fromList [acc_ev 3w 4w; recv_ev 4w [115w]; close_intr_ev 4w; acc_ev 3w 4w;
+                     send_ev 4w [115w] 1]) io ⇒
+  ¬echo_safe_l0 io
+Proof
+  bite_tac >> qexists_tac ‘1’ >> EVAL_TAC
+QED
+
+(* ... and an honest echo across an interrupted close and reuse is safe:
+   client 1's bytes are not counted in client 0's episode *)
+Theorem echo_safe_l0_reuse_intr:
+  echo_safe_l0 (fromList [acc_ev 3w 4w; recv_ev 4w [115w]; send_ev 4w [115w] 1;
+                          close_intr_ev 4w; acc_ev 3w 4w; recv_ev 4w [116w];
+                          send_ev 4w [116w] 1])
+Proof
+  irule safe_upto_echo_safe_l0 >> EVAL_TAC
+QED
+
+(* In general: an episode no longer open is never reopened *)
+Theorem ep_events_gone[local]:
+  ∀evs k opn. ¬MEM j (MAP SND opn) ∧ j < k ⇒ l0_ep_events j k opn evs = []
+Proof
+  Induct >> simp[l0_ep_events_def] >> rpt strip_tac >> every_case_tac >>
+  first_x_assum irule >>
+  gvs[MEM_MAP, alistTheory.ADELKEY_def, MEM_FILTER, FORALL_PROD, EXISTS_PROD] >>
+  metis_tac[]
+QED
+
+Theorem ALL_DISTINCT_SND_MEM[local]:
+  ∀l. ALL_DISTINCT (MAP SND l) ∧ MEM (a, j) l ∧ MEM (b, j) l ⇒ a = b
+Proof
+  Induct >> simp[FORALL_PROD] >> rw[] >> gvs[MEM_MAP, EXISTS_PROD] >> metis_tac[]
+QED
+
+(* MAIN: an accept that returns episode j's fd ends episode j, whether or
+   not j's close succeeded (or was ever called): the spec never counts the
+   new connection's events in j *)
+Theorem l0_ep_events_reuse:
+  l0_event_accepted ev = SOME f ∧ ALOOKUP opn f = SOME j ∧
+  ALL_DISTINCT (MAP SND opn) ∧ j < k ⇒
+  l0_ep_events j k opn (ev :: evs) = [ev]
+Proof
+  strip_tac >> imp_res_tac alistTheory.ALOOKUP_MEM >>
+  simp[l0_ep_events_def] >>
+  ‘MEM j (MAP SND opn)’ by (simp[MEM_MAP, EXISTS_PROD] >> metis_tac[]) >>
+  simp[] >> irule ep_events_gone >> simp[] >>
+  simp[MEM_MAP, alistTheory.ADELKEY_def, MEM_FILTER, FORALL_PROD] >>
+  rpt strip_tac >> metis_tac[ALL_DISTINCT_SND_MEM]
 QED

@@ -46,3 +46,12 @@ Route (c), through R1 (`l1pf_refines_hl`, psk) and close-v2's `echo2_safe`, was 
 - it needs an output-side relation that does not exist yet: psk's per-episode bytes ↔ raw L0 send events. `pv_rel` covers only the input side.
 
 **This choice is for echo only. HTTP, KV and the moonshot need the generic output-side relation** (psk's per-episode bytes ↔ raw L0 events, and `precedes` through psk), which is the core of the R4′ template. KV's linearizability compares real-time order across connections, and a per-handle local invariant cannot carry that. After D19, honest-ffi plans to extend `pv_rel` to the output side.
+
+### Tracked near-duplicate: echo's output half
+
+Echo's output half is proved locally in `honest-echo/honestEchoL0Inv`: per episode j, `ep_sn j ++ outbox ≼ hwritten (handle j)`. It mirrors the input half on the same `own_ok` invariant. This is a **tracked near-duplicate** of honest-ffi's `out_rel` and `l1pf_round_sent_upto` (honestL1PFOut). The coordinator approved it, for two reasons:
+
+- consuming `out_rel` needs the per-round connection-count bound on `prounds`, which would make the proof a circular strong induction with this invariant;
+- it also needs a key bridge from episodes (accept order) to v2 clients (`cl cm f`) and channels.
+
+KV needs that key bridge anyway (moonshot step 11, the R4-style transfer). **Once the bridge exists, re-derive echo through `out_rel` and delete the local output half.**

@@ -27,6 +27,9 @@ void ffisys_clock(unsigned char *c, long clen, unsigned char *a, long alen) {
   struct timespec t;
   if (clen != 0 || alen != 8) die("sys_clock: lengths");
   if (clock_gettime(CLOCK_MONOTONIC, &t) != 0) die("sys_clock: clock_gettime");
+  if (t.tv_sec < 0 || t.tv_nsec < 0 || t.tv_nsec >= 1000000000L ||
+      (uint64_t)t.tv_sec > (UINT64_MAX - (uint64_t)t.tv_nsec) / 1000000000u)
+    die("sys_clock: overflow");
   put_be(a, 8, (uint64_t)t.tv_sec * 1000000000u + (uint64_t)t.tv_nsec);
 }
 ```
@@ -36,7 +39,14 @@ void ffisys_clock(unsigned char *c, long clen, unsigned char *a, long alen) {
 - The only POSIX error for a supported clock is EINVAL, for an unsupported clock id. CLOCK_MONOTONIC
   is required by POSIX.1-2008 and later. So a failure is a broken platform: `die`, which the model
   answers with FFI_failed, as for misuse.
-- Overflow: 2^64 ns is about 584 years of uptime. The rely bounds it (below), as D24 bounds counts.
+- Overflow (revised after the bounds review): the conversion `tv_sec * 10^9 + tv_nsec` can wrap,
+  and a wrapped reading would break the monotone rely. So the C dies when the sum does not fit in
+  64 bits (and on a `timespec` outside POSIX's ranges), as it dies for fd > INT_MAX; the model
+  answers FFI_failed. The check is exact: `tv_sec * 10^9 + tv_nsec ≤ 2^64 − 1` iff
+  `tv_sec ≤ ⌊(2^64 − 1 − tv_nsec) / 10^9⌋`. "2^64 ns ≈ 584 years of uptime" holds on Linux, which
+  counts from boot. POSIX only says "since an unspecified point in the past", so by the standard
+  the first reading may be anywhere below 2^64. The rely bounds readings (below), as D24 bounds
+  counts.
 
 **Model.** This needs no new world state. The world chooses the reading from the history, and the
 rely makes it monotone:
@@ -104,9 +114,25 @@ form (`F1_io`'s style):
 ```
 F5_io io ⇔
   (∀i. ∃i' ev. i ≤ i' ∧ LNTH i' io = SOME ev ∧ clock_ev ev) ⇒
-  ∀T. ∃i ev. LNTH i io = SOME ev ∧ clock_ev ev ∧ T ≤ clock_val ev
+  ∀T. T < 256 ** 8 ⇒ ∃i ev. LNTH i io = SOME ev ∧ clock_ev ev ∧ T ≤ clock_val ev
 ```
-- In words: if the program reads the clock infinitely often, its readings are unbounded.
+- In words: if the program reads the clock infinitely often, its readings pass every value a
+  reading can have.
+- REVISED (bounds review): the first version said `∀T` with no bound. The rely says every reading
+  is `< 256 ** 8`, so that F5 was false in every rely world that reads the clock forever, and every
+  liveness claim assuming it was vacuous. With `T < 256 ** 8` it is consistent: a world whose
+  readings reach `256 ** 8 − 1` satisfies it.
+- The program limit this leaves, stated as an observed excuse rather than hidden: a timeout started
+  at reading `t0` fires only at a reading `≥ t0 + T_send`, which does not exist once
+  `t0 + T_send ≥ 256 ** 8`. So the time-based excuse comes with a twin, `clock_late T_send io`: some
+  reading is `≥ 256 ** 8 − T_send`. The liveness claims take
+  `pos_timed_out_t … ∨ clock_late T_send io` wherever they took the timeout excuse. This is the same
+  move as the proxy's accept cap (`accepts_lt`): a real limit of the program, here about 584 years
+  of uptime on Linux, named in the claim.
+- Options considered and rejected: (i) wraparound arithmetic (compare `now − t0 mod 2^64`). It
+  contradicts the monotone rely, needs every stall to be shorter than 2^63 ns as a new assumption,
+  and the C dies before wrapping anyway; (ii) unbounded readings (drop `< 256 ** 8`). The 8-byte
+  encoding `n2w8` cannot carry them, so the model would lie about the C.
 - Like [F1], it is stated on observed results, not on world choices. It is used for liveness only.
   Safety needs nothing.
 - The system form is the same per process (`F5_sys`).

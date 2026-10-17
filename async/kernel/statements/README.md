@@ -1,15 +1,28 @@
 # L3 (the real kernel): the headline statements, drafted for review
 
-`kernelStatementsScript.sml` states L3's headline claims before their
-proofs, as L2-00 did for the peers. Each claim is a **definition of a
-proposition**, so nothing is assumed. One bite is **proved** now, in the L0
-model: `hup_spin_bite`.
+These files state L3's headline claims before their proofs, as L2-00
+did for the peers. Each claim is a **definition of a proposition**, so
+nothing is assumed. One bite is **proved** now, in the L0 model:
+`hup_spin_bite`.
 
-The file typechecks and builds (no cheats; `grep -c cheat` on the `.dat`
-is 0) against the spike theories, merged on `scratch/l3-stmts` (7159bd537:
-`spike/servers-honest-l1` with `spike/honest-connect`). It has no
-Holmakefile here, because the honest L0/L1 theories enter the series in the
-later L3 layers. The names are the spike names, as in L2-00.
+The statements are split in two (a reorganisation; every definition is
+unchanged):
+- `kernelStatementsCoreScript.sml` holds what needs no CakeML program
+  semantics: R2′'s claims (`l1pf_simple_claim`, `l1pf_simple_eq_claim`)
+  with their vocabulary, and `hup_spin_bite`. The kernel layers build
+  against it: L3-06 proves `l1pf_simple_claim` from it, without copying
+  its definitions.
+- `kernelStatementsScript.sml` imports Core and adds the whole-program
+  claims (`l0_echo2_claim`, `l0_echo2_strong_claim`,
+  `quiet_on_kernel_claim`). They need `semantics_prog` and `honestL0Part`'s
+  `l0_replay`, which enter the series with the CakeML layer (L3-07).
+
+Both files typecheck and build (no cheats; `grep -c cheat` on the `.dat`
+files is 0) against the spike theories, merged on `scratch/l3-stmts`
+(7159bd537: `spike/servers-honest-l1` with `spike/honest-connect`). There
+is no Holmakefile here: the honest L0/L1 theories enter the series in the
+later L3 layers. The names are the spike names, as in L2-00; L3-06 renames
+them when Core first builds in the series.
 
 **The user's policy, followed throughout:**
 - no new trusted kernel facts;

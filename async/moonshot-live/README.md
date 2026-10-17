@@ -265,3 +265,23 @@ Shared lift pieces (`moonshotLiveLiftScript.sml`, moonshot-live):
   by `F1_sys`.
 - KV, G3: honest-ffi's proxy backend cap. Over the proxy trace, `backend_broke ∨ conn_ok_count b ≤ 2^62` gives
   `accepts_lt_irun`'s `conns_ok` premise with cl = 1, p = b, N = 2^62.
+- KV, G2 (`peer_valid`, K-asks' premise). System level, `kv_peer_valid_sys` (moonshotLiveRelay, proved). At every
+  instant, a KV end paired with a connect to b (kv_ob's ends) has received a prefix of `brequests rqs` for valid
+  rqs. The chain:
+  - KV's peer_sent ≼ the backend's sent (kinv);
+  - the backend's sent = the proxy's episode sent (pinv);
+  - ≼ the front's recvd (`relay_ok`);
+  - ≼ the client's episode sent (causal_at, with acc_peer pairing the front with the client's connect);
+  - ≼ brequests (`csend_ok`).
+
+  Before its pairing such an end had received nothing (`irun_peer_or_empty`).
+
+  Hypotheses still to discharge:
+  - `relay_ok`: clauses 3 and 5 of close-v2's `proxy_safe_ep`, through `proxy_safe_bridge` at ft = ptr rs 1 n;
+  - `csend_ok`: the client's C-sends;
+  - `no_fd0` for client and proxy: moonshot_sys_safe's W2;
+  - ¬close0 for client and proxy;
+  - only the client connects to a, and only the proxy to b.
+
+  World level, `world_peer_valid` (moonshotLiveRelayWorld, proved, generic in k): the system fact at every instant
+  gives `peer_valid w0 tr c`, with the hypotheses of N2's `world_drains`.

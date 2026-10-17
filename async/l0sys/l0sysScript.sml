@@ -315,17 +315,17 @@ End
 (*---------------------------------------------------------------------------*)
 (* The run *)
 
-(* One fresh L0 state per program: no listener, no channel; the reserved
-   fds include 0 (the startup contract: fds 0-2 are open), and every fd in
-   use is below the fd limit (the startup contract, as l0_server_world's
-   fds_lt; user-approved 2026-10-17, design/45 §9 (d)); the choices
-   satisfy honestL0Rely's rely *)
+(* One fresh L0 state per program: no listener, no channel; fds 0-2 may
+   be open or closed (the programs check them first, with sys_stdio:
+   design/50 (c2)); every fd in use is below the fd limit (the startup
+   contract, as l0_server_world's fds_lt; user-approved 2026-10-17,
+   design/45 §9 (d)); the choices satisfy honestL0Rely's rely *)
 Definition sys_init_def:
   sys_init (S : dec list list) s ⇔
     LENGTH s.procs = LENGTH S ∧
     (∀k. k < LENGTH S ⇒
          let w = EL k s.procs in
-           w.listeners = [] ∧ w.chans = [] ∧ w.open_fds = [] ∧ MEM 0w w.reserved ∧
+           w.listeners = [] ∧ w.chans = [] ∧ w.open_fds = [] ∧
            (∀x. MEM x (l0_used w) ⇒ w2n x < w.fd_limit) ∧
            w.clock = 0 ∧ w.hist = [] ∧ l0_rely w) ∧
     (∀k. s.alive k ⇔ k < LENGTH S) ∧

@@ -187,7 +187,8 @@ QED
 Theorem pdo_write_out:
   pdo lfd (w, ps) (Write h bs) = SOME (r, (w', ps'), evs) ∧ l0_rely w ∧
   own_ok lfd (k, opn) ps ∧ hdln (w2n lfd) k < dimword (:64) ∧ okb ps.b ∧
-  (∀j. hdln (w2n lfd) j < dimword (:64) ∧ ps.b.nxt ≤ j ⇒ h ≠ l1hdl lfd j) ⇒
+  (∀j. hdln (w2n lfd) j < dimword (:64) ∧ ps.b.nxt ≤ j ⇒
+       wr (l1hdl lfd j) (Write h bs) = []) ⇒
   okb ps'.b ∧ ps'.b.nxt = ps.b.nxt ∧ l0_ep_st (k, opn) evs = (k, opn) ∧
   ∀j snt hwt. hdln (w2n lfd) j < dimword (:64) ∧ oi lfd ps opn snt hwt j ⇒
     oi lfd ps' opn (snt ++ ep_sn j (k, opn) evs) (hwt ++ wr (l1hdl lfd j) (Write h bs)) j
@@ -203,7 +204,8 @@ Proof
       ‘oi lfd ps' = oi lfd ps’ by (irule oi_b >> simp[]) >>
       simp[ep_fold_def] >> rpt strip_tac >>
       simp[wr_def] >> rw[] >> irule oi_drop_write >> fs[live_def] >>
-      rpt strip_tac >> qpat_x_assum ‘∀j'. _ ⇒ _ ≠ _’ (qspec_then ‘j’ mp_tac) >> fs[]) >>
+      rpt strip_tac >> qpat_x_assum ‘∀j'. _ ⇒ wr _ _ = _’ (qspec_then ‘j’ mp_tac) >>
+      fs[wr_def]) >>
   gvs[] >>
   drule_all own_tbl_lookup >> strip_tac >> rename1 ‘h = l1hdl lfd i’ >>
   ‘i < k’ by gvs[own_ok_def] >>
@@ -442,4 +444,182 @@ Proof
   ‘obp lfd PS opn j = obp lfd ps opn j ∧ (live lfd PS j ⇔ live lfd ps j)’
     by (irule obp_frame >> simp[Abbr ‘PS’, ALOOKUP_ADELKEY, outbox_of_def] >> metis_tac[]) >>
   gvs[oi_def, Abbr ‘PS’]
+QED
+
+(* MAIN, one action *)
+Theorem pdo_out:
+  pdo lfd (w, ps) a = SOME (r, (w', ps'), evs) ∧ l0_rely w ∧
+  own_ok lfd (k, opn) ps ∧ hdln (w2n lfd) k < dimword (:64) ∧ okb ps.b ∧
+  (∀j. hdln (w2n lfd) j < dimword (:64) ∧ ps.b.nxt ≤ j ⇒ wr (l1hdl lfd j) a = []) ⇒
+  okb ps'.b ∧ ps.b.nxt ≤ ps'.b.nxt ∧
+  ∀j snt hwt. hdln (w2n lfd) j < dimword (:64) ∧ oi lfd ps opn snt hwt j ⇒
+    oi lfd ps' (SND (l0_ep_st (k, opn) evs)) (snt ++ ep_sn j (k, opn) evs)
+       (hwt ++ wr (l1hdl lfd j) a) j
+Proof
+  Cases_on ‘a’ >> strip_tac
+  >- (drule_all pdo_accept_out >> strip_tac >> gvs[wr_def, ep_fold_def])
+  >- (drule_all pdo_read_out >> strip_tac >> gvs[wr_def])
+  >> drule_all pdo_write_out >> strip_tac >> gvs[]
+QED
+
+(* MAIN, the round's actions *)
+Theorem pacts_out:
+  ∀acts w ps rs evs w' ps' opn.
+    pacts lfd (w, ps) acts = SOME (rs, evs, (w', ps')) ∧ l0_rely w ∧
+    own_ok lfd (k, opn) ps ∧ hdln (w2n lfd) k < dimword (:64) ∧ okb ps.b ∧
+    (∀j. hdln (w2n lfd) j < dimword (:64) ∧ ps.b.nxt ≤ j ⇒
+         FLAT (MAP (wr (l1hdl lfd j)) acts) = []) ⇒
+    okb ps'.b ∧ ps.b.nxt ≤ ps'.b.nxt ∧
+    ∀j snt hwt. hdln (w2n lfd) j < dimword (:64) ∧ oi lfd ps opn snt hwt j ⇒
+      oi lfd ps' (SND (l0_ep_st (k, opn) evs)) (snt ++ ep_sn j (k, opn) evs)
+         (hwt ++ FLAT (MAP (wr (l1hdl lfd j)) acts)) j
+Proof
+  Induct >> simp[pacts_def, ep_fold_def] >> rpt gen_tac >> strip_tac >>
+  gvs[AllCaseEqs()] >>
+  rename1 ‘pdo lfd (w, ps) a = SOME (r, ws1, evs1)’ >> PairCases_on ‘ws1’ >>
+  drule pdo_out >> simp[] >>
+  disch_then (qspecl_then [‘opn’, ‘k’] mp_tac) >> simp[] >> strip_tac >>
+  ‘l1hdln (w2n lfd) k < dimword (:64)’ by fs[] >>
+  drule_all pdo_in >> strip_tac >>
+  ‘l0_rely ws10’ by metis_tac[pdo_rely] >>
+  Cases_on ‘l0_ep_st (k, opn) evs1’ >> rename1 ‘_ = (k1, opn1)’ >> gvs[] >>
+  first_x_assum (qspecl_then [‘ws10’, ‘ws11’, ‘rs'’, ‘evs'’, ‘w'’, ‘ps'’, ‘opn1’] mp_tac) >>
+  impl_tac
+  >- (simp[] >> rpt strip_tac >> first_x_assum (qspec_then ‘j’ mp_tac) >> simp[]) >>
+  strip_tac >> simp[] >> rpt strip_tac >>
+  first_x_assum drule_all >> strip_tac >>
+  first_x_assum drule_all >>
+  simp[ep_fold_APPEND]
+QED
+
+(* A stage that only moves queued bytes out (or drops them) *)
+Theorem oi_shift:
+  oi lfd ps opn snt hwt j ∧ sn ++ obp lfd ps' opn' j ≼ obp lfd ps opn j ∧
+  (live lfd ps' j ⇒ live lfd ps j ∧ sn ++ obp lfd ps' opn' j = obp lfd ps opn j) ∧
+  ps'.b.nxt = ps.b.nxt ⇒
+  oi lfd ps' opn' (snt ++ sn) hwt j
+Proof
+  rw[oi_def] >> gvs[]
+  >- (irule isPREFIX_TRANS >> qexists_tac ‘snt ++ obp lfd ps opn j’ >>
+      simp_tac std_ss [GSYM APPEND_ASSOC, rich_listTheory.IS_PREFIX_APPENDS] >> simp[]) >>
+  gvs[]
+QED
+
+(* A fd L1 holds (in the table or closing) is one episode's, whose
+   bytes are its outbox *)
+Theorem held_episode:
+  own_ok lfd (k, opn) ps ∧ hdln (w2n lfd) k < dimword (:64) ∧
+  (MEM f (MAP SND ps.b.tbl) ∨ MEM f ps.b.closing) ⇒
+  ∃i. i < ps.b.nxt ∧ ALOOKUP opn f = SOME i ∧
+      obp lfd ps opn i = outbox_of ps.b f ∧
+      (∀j. hdln (w2n lfd) j < dimword (:64) ∧ ALOOKUP ps.b.tbl (l1hdl lfd j) = SOME f ⇒
+           i = j)
+Proof
+  strip_tac >> ‘ep_ok (k, opn)’ by gvs[own_ok_def] >>
+  ‘∃i. i < ps.b.nxt ∧ ALOOKUP opn f = SOME i ∧ obp lfd ps opn i = outbox_of ps.b f’
+    by (‘hdln (w2n lfd) k < dimword (:64)’ by fs[] >>
+        (Cases_on ‘MEM f ps.b.closing’
+         >- (qpat_x_assum ‘own_ok _ _ _’ mp_tac >> simp[own_ok_def] >> strip_tac >>
+             first_x_assum drule >> strip_tac >> qexists_tac ‘j’ >> simp[] >>
+             ‘epfd opn j = SOME f’ by metis_tac[epfd_iff] >> simp[obp_def]) >>
+         ‘MEM f (MAP SND ps.b.tbl)’ by gvs[] >>
+         gvs[MEM_MAP, EXISTS_PROD] >> rename1 ‘MEM (h, f) ps.b.tbl’ >>
+         ‘∃i. i < ps.b.nxt ∧ h = l1hdl lfd i ∧ ALOOKUP opn f = SOME i’
+           by (qpat_x_assum ‘own_ok _ _ _’ mp_tac >> simp[own_ok_def] >> strip_tac >>
+               first_x_assum drule >> strip_tac >> metis_tac[]) >>
+         qexists_tac ‘i’ >> gvs[] >>
+         ‘∃g. ALOOKUP ps.b.tbl (hdl lfd i) = SOME g’
+           by (Cases_on ‘ALOOKUP ps.b.tbl (hdl lfd i)’ >>
+               gvs[ALOOKUP_NONE, MEM_MAP, EXISTS_PROD] >> metis_tac[]) >>
+         ‘ALOOKUP ps.b.tbl (l1hdl lfd i) = SOME g ∧ MEM (l1hdl lfd i, f) ps.b.tbl’ by simp[] >>
+         ‘hdln (w2n lfd) k < dimword (:64)’ by fs[] >>
+         drule_all own_tbl_entry_fd >> strip_tac >> gvs[] >>
+         ‘epfd opn i = SOME f’ by metis_tac[epfd_iff] >> simp[obp_def])) >>
+  qexists_tac ‘i’ >> simp[] >> rpt strip_tac >>
+  drule_all own_tbl_lookup >> strip_tac >>
+  ‘j' = i’ by gvs[] >> gvs[] >>
+  ‘i < k’ by gvs[own_ok_def] >>
+  ‘hdln (w2n lfd) i < dimword (:64)’ by (irule hdln_mono >> qexists_tac ‘k’ >> fs[]) >>
+  ‘hdl lfd j = hdl lfd i ⇔ j = i’ by (irule hdl_eq_iff >> fs[]) >> gvs[]
+QED
+
+(* One send from an outbox *)
+Theorem send_out:
+  sys_send f (outbox_of b f) w = SOME (out, w1, ev) ∧ l0_rely w ∧ okb b ∧
+  outbox_of b f ≠ [] ∧ ¬MEM f b.gone ∧
+  own_ok lfd (k, opn) (ps with b := b) ∧ hdln (w2n lfd) k < dimword (:64) ∧
+  hdln (w2n lfd) j < dimword (:64) ∧ oi lfd (ps with b := b) opn snt hwt j ⇒
+  okb (after_send f (l0_res_of out) b) ∧ l0_ep_step (k, opn) ev = (k, opn) ∧
+  oi lfd (ps with b := after_send f (l0_res_of out) b) opn
+     (snt ++ ep_sn j (k, opn) [ev]) hwt j
+Proof
+  strip_tac >> drule_all sys_send_event >> strip_tac >>
+  ‘MEM f (MAP SND b.tbl) ∨ MEM f b.closing’ by gvs[okb_def] >>
+  ‘okb (after_send f (l0_res_of out) b)’ by (irule okb_after_send >> simp[]) >>
+  simp[l0_ep_step_def] >>
+  ‘ep_ok (k, opn)’ by gvs[own_ok_def] >>
+  mp_tac (Q.INST [‘ps’ |-> ‘ps with b := b’] held_episode) >> simp[] >> strip_tac >>
+  ‘epfd opn i = SOME f’
+    by (drule epfd_iff >> disch_then (qspecl_then [‘i’, ‘f’] (fn th => rewrite_tac[th])) >>
+        first_assum ACCEPT_TAC) >>
+  ‘ep_sn j (k, opn) [ev] = if i = j then l0_event_sent f ev else []’
+    by (rewrite_tac[ep_fold_def] >> qpat_x_assum ‘send_fd ev = _’ (fn th => rewrite_tac[th]) >>
+        simp_tac std_ss [optionTheory.option_case_def, APPEND_NIL] >>
+        qpat_x_assum ‘ALOOKUP opn f = SOME i’ (fn th => rewrite_tac[th, optionTheory.SOME_11])) >>
+  pop_assum (fn th => rewrite_tac[th]) >>
+  (* per disjunct of the held fd *)
+  (reverse (Cases_on ‘j = i’)
+  >- (‘ALOOKUP opn f ≠ SOME j’ by gvs[] >> simp[] >>
+      ‘obp lfd (ps with b := after_send f (l0_res_of out) b) opn j =
+       obp lfd (ps with b := b) opn j ∧
+       (live lfd (ps with b := after_send f (l0_res_of out) b) j ⇔
+        live lfd (ps with b := b) j)’
+        by (mp_tac (Q.INST [‘ps’ |-> ‘ps with b := b’, ‘b'’ |-> ‘after_send f (l0_res_of out) b’]
+                      obp_other) >>
+            simp[] >> disch_then irule >> rpt conj_tac
+            >- (rpt strip_tac >> fs[after_send_other])
+            >- (strip_tac >> first_x_assum (qspec_then ‘j’ mp_tac) >> fs[])
+            >> strip_tac >> drule_then (qspecl_then [‘j’, ‘f’] mp_tac) epfd_iff >> fs[]) >>
+      gvs[oi_def]) >>
+  gvs[] >> irule oi_shift >> qexistsl [‘opn’, ‘ps with b := b’] >> simp[] >>
+  ‘obp lfd (ps with b := after_send f (l0_res_of out) b) opn i =
+   outbox_of (after_send f (l0_res_of out) b) f’
+    by (qpat_x_assum ‘obp _ _ _ _ = outbox_of _ _’ mp_tac >> simp[obp_def] >>
+        rw[] >> gvs[]) >>
+  simp[live_def] >>
+  Cases_on ‘l0_res_of out’ >> gvs[after_send_def] >> rw[] >> gvs[] >>
+  disj1_tac >>
+  ‘ALOOKUP (ps with b := b).b.tbl (l1hdl lfd i) = SOME f'’ by simp[] >>
+  drule_all own_tbl_lookup >> strip_tac >>
+  qmatch_asmsub_rename_tac ‘l1hdl lfd i = l1hdl lfd jj’ >>
+  ‘jj < k’ by gvs[own_ok_def] >>
+  ‘hdln (w2n lfd) jj < dimword (:64) ∧ hdln (w2n lfd) i < dimword (:64)’
+    by (fs[] >> irule hdln_mono >> qexists_tac ‘k’ >> fs[]) >>
+  ‘hdl lfd i = hdl lfd jj ⇔ i = jj’ by (irule hdl_eq_iff >> simp[]) >>
+  gvs[] >> metis_tac[own_fd_unique])
+QED
+
+(* The flush: what a send takes leaves the outbox *)
+Theorem l1_flush_out:
+  ∀fs w b w' b' evs snt.
+    l1_flush fs (w, b) = SOME ((w', b'), evs) ∧ l0_rely w ∧ okb b ∧
+    own_ok lfd (k, opn) (ps with b := b) ∧ hdln (w2n lfd) k < dimword (:64) ∧
+    hdln (w2n lfd) j < dimword (:64) ∧ oi lfd (ps with b := b) opn snt hwt j ⇒
+    okb b' ∧ b'.tbl = b.tbl ∧ b'.nxt = b.nxt ∧ b'.closing = b.closing ∧
+    oi lfd (ps with b := b') opn (snt ++ ep_sn j (k, opn) evs) hwt j
+Proof
+  Induct >> simp[l1_flush_def, ep_fold_def] >> rpt gen_tac >> strip_tac >>
+  ‘hdln (w2n lfd) k < dimword (:64) ∧ hdln (w2n lfd) j < dimword (:64)’ by fs[] >>
+  qpat_x_assum ‘(if _ then _ else _) = _’ mp_tac >> IF_CASES_TAC >> simp[]
+  >- (strip_tac >> first_x_assum drule_all >> simp[]) >>
+  simp[AllCaseEqs(), PULL_EXISTS] >> rpt gen_tac >> strip_tac >> gvs[] >>
+  rename1 ‘sys_send h _ w = SOME (out, w1, ev)’ >>
+  ‘hdln (w2n lfd) k < dimword (:64) ∧ hdln (w2n lfd) j < dimword (:64)’ by fs[] >>
+  drule_all send_out >> strip_tac >>
+  ‘l0_rely w1’ by (gvs[sys_send_def] >> metis_tac[l0_do_rely]) >>
+  ‘own_ok lfd (k, opn) (ps with b := after_send h (l0_res_of out) b)’
+    by (mp_tac (Q.INST [‘ps'’ |-> ‘ps with b := after_send h (l0_res_of out) b’,
+                        ‘ps’ |-> ‘ps with b := b’, ‘es’ |-> ‘(k, opn)’] own_ok_cong) >>
+        simp[]) >>
+  first_x_assum drule_all >> strip_tac >> gvs[ep_fold_def]
 QED

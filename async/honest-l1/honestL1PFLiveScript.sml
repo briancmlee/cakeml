@@ -125,9 +125,9 @@ End
 
 (* TO PROVE (the statement, kept as a comment until it is proved):
 
-(* PROGRESS: if fd f is an open handle's fd at round n and its channel has
+PROGRESS: if fd f is an open handle's fd at round n and its channel has
    input pending (data, EOF, or broken), then L1 eventually fetches on f,
-   or f stops being an open handle's fd *-)
+   or f stops being an open handle's fd.
 Theorem fetch_progress:
   l0_rely w0 ∧ psmall lfd pinit ∧ pl2_ok lfd hw ifds m (w0, pinit) ∧
   F1 lfd hw ifds m w0 ∧ S1 lfd hw ifds m w0 ∧ S3 lfd hw ifds m w0 ∧

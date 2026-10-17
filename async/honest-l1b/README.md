@@ -34,12 +34,12 @@ runs in the world w3 after the three sys_fdok checks (`stdio_prefix w0 w3`).
 | `run_ok`, `winv`, `linv`, `qfresh`, `MEM lfd (l0_used …)`, pcm bound | async-spike / honest-ffi (PF standing facts; design/47 for reindexing) | open |
 | `pl2_room` (D40: every PF round has nxt + naccepts + 2 < 2^64, so the loop's guard never fires) | async-spike (program link) | open; false in worlds with endless connects, as run_ok's room: goes with D25′ |
 | `S1`, `S2` | async-spike (`S1_interest`, `echo_S2`) | available for `interest`; needs re-pointing to `epfw` |
-| `SQ` | cf-actions | partial, see below |
 | `∀io_p. ptrace … io_p ⇒ (∀evs. LPREFIX (fromList evs) io_p ⇒ no_close_stdio evs) ∧ echo2_guar_l0 KK (epfw k w1) io_p` | async-spike (liveness), KV worker (safety, `echo_run_nostdio` for D37) | open |
 
 These are already discharged, so they are no longer premises:
 - `bquiet`: `echo_bquiet` (honest-l1b-cf/honestEchoL0BStutterScript.sml);
-- `l0wf` and `lone` after the listen: `listen_l0wf`, `listen_lone` (honestEchoL0BQuietScript.sml).
+- `l0wf` and `lone` after the listen: `listen_l0wf`, `listen_lone` (honestEchoL0BQuietScript.sml);
+- `SQ` on the live list: `echo_SQ` (honest-l1b-cf/honestEchoL0BSQScript.sml), from the facts above.
 
 ### SQ status
 
@@ -48,7 +48,9 @@ These are already discharged, so they are no longer premises:
 | Drain (independent of (C)) | `pf_drain`, `pf_drain_read`, `echo_drain` | honest-l1b/honestL1BQuietDrainScript.sml, honestL1BEofCloseScript.sml, honest-l1b-cf/honestEchoL0BDrainScript.sml |
 | Echo silent when nothing is ready | `server_settles` | honest-l1b-cf/honestEchoQuiesceScript.sml |
 | End-of-file read-soon (M4) | `read_soon_eof_s` | m4-liveness/asyncM4ReadSoonEofScript.sml (lifted to PF by async-spike: honest-echo-live/honestEchoL0EofRead `echo_read_soon_eof`) |
-| Drained ⇒ nothing ready | `live_held` (honest-ffi @c837d1a91), then re-point the chain to `live` | in progress (D26) |
+| Drained ⇒ nothing ready | `live_held` | honest-echo-live/honestL1PFOblLiveScript.sml |
+| Settling through the socket relabelling | `settles_relabel`, `srelabel_settles` | honest-l1b-cf/honestEchoL0BSQScript.sml |
+| SQ for the echo (via `SQ_live`) | `echo_SQ` | honest-l1b-cf/honestEchoL0BSQScript.sml |
 
 ## Copies and placement at the fold
 

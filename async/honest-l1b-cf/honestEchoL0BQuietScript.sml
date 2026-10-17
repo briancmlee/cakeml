@@ -26,7 +26,7 @@ Ancestors
   honestL1BModel honestL1BSim honestL1BRefine honestL1BTransfer honestL1BConn honestL1BStable
   honestL1BStmts honestL1BQuiet honestL1BShift
   honestL1BSpec honestL1BTrace honestEchoL0BProg honestEchoL0BMain honestEchoL0BSem
-  honestEchoL0BStutter honestL0Fdok honestL1PFRefine
+  honestEchoL0BStutter honestL0Fdok honestL1PFRefine honestEchoL0BSQ
 Libs
   preamble
 
@@ -72,8 +72,8 @@ Definition stdio_prefix_def:
 End
 
 (* The PF run's standing facts and the PF echo's guarantee there (with its
-   D37 no_close_stdio, as the KV worker's echo_run_nostdio), and the
-   server's SQ; bquiet (echo_bquiet) and the world facts after the listen
+   D37 no_close_stdio, as the KV worker's echo_run_nostdio); the server's
+   SQ (echo_SQ), bquiet (echo_bquiet) and the world facts after the listen
    (listen_l0wf, listen_lone) are proved *)
 Definition echo_pf_facts_def:
   echo_pf_facts KK k w1 ⇔
@@ -84,7 +84,6 @@ Definition echo_pf_facts_def:
     (∀n. SND (pcm (elfd k) epol (eifds k) (esrv k) (epfw k w1) n) + 1 < dimword (:64)) ∧
     S1 (elfd k) epol (eifds k) (esrv k) (epfw k w1) ∧
     S2 (elfd k) epol (eifds k) (esrv k) (epfw k w1) ∧
-    SQ (elfd k) epol (eifds k) (K F) (esrv k) (epfw k w1) ∧
     ∀io_p. ptrace (elfd k) epol (eifds k) (K F) (esrv k) w1 pinit io_p ⇒
            (∀evs. LPREFIX (fromList evs) io_p ⇒ no_close_stdio evs) ∧
            echo2_guar_l0 KK (epfw k w1) io_p
@@ -192,7 +191,7 @@ Proof
 QED
 
 Theorem l0_call_env[local]:
-  l0_call n conf bytes w = SOME (FFIreturn bytes' w') ⇒ w'.env = w.env
+  l0_call n conf bs w = SOME (FFIreturn bs' w') ⇒ w'.env = w.env
 Proof
   rw[l0_call_def] >> gvs[AllCaseEqs()] >>
   rpt (pairarg_tac >> gvs[]) >> imp_res_tac ops_env >> simp[]
@@ -412,6 +411,10 @@ Proof
    >- (simp[stdio_prefix_def] >>
        qexistsl [‘o0’, ‘w1’, ‘e0’, ‘o1’, ‘w2’, ‘e1’, ‘o2’, ‘e2’] >> simp[])) >>
   simp[echo_pf_facts_def] >> strip_tac >>
+  ‘SQ (elfd k) epol (eifds k) (K F) (esrv k) (epfw k w4)’
+    by (irule echo_SQ >> rewrite_tac[honestEchoL0OblTheory.echo_run_def] >>
+        drule honestEchoL0MainTheory.listen_fd_lt >> rewrite_tac[wordsTheory.dimword_64] >>
+        strip_tac >> ASM_REWRITE_TAC[wordsTheory.dimword_64]) >>
   ‘l0wf w4 ∧ lone (elfd k) w4’ by metis_tac[listen_l0wf, listen_lone] >>
   ‘bquiet (esrv k) (eifds k) (K F)’ by simp[echo_bquiet_live] >>
   ‘l0_rely w4’ by (irule l0_do_rely >> fs[sys_listen_echo_def] >> metis_tac[]) >>

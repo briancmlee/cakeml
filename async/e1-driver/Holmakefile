@@ -1,0 +1,3 @@
+# The generic E1 CakeML driver (moonshot C1(i)): fold programs on E1's L1
+# (honest-l1-ep), listen-first, stdio check (D33), and the semantics bridge.
+INCLUDES = ../model

@@ -12,7 +12,7 @@
 *)
 Theory honestEchoL0FlAt
 Ancestors
-  honestEchoL0Excuse honestEchoL0LiveOwn honestEchoL0Inv honestEchoL0Trace
+  honestEchoL0Drains honestL1PFConnTrace honestEchoL0Excuse honestEchoL0LiveOwn honestEchoL0Inv honestEchoL0Trace
   honestL1PFBroken honestL1PFD16 honestL1PFStream honestL1PFInput honestL1PFOutLive
   honestL1PFLive honestL1PFInv honestL1PFRound honestL1PFModel honestL1BStmts
 Libs
@@ -24,6 +24,33 @@ Definition fl_at_def:
     flushed (rworld lfd pol ifds m w0 k) f ∧ owned (rstate lfd pol ifds m w0 k) f ∧
     ALOOKUP (SND (l0_ep_st (0, []) (revs lfd pol ifds m w0 k))) f = SOME j
 End
+
+(* Channels only grow along the run *)
+Theorem run_chans_mono:
+  run_ok lfd pol ifds m w0 ∧ a ≤ b ∧ c < LENGTH (rworld lfd pol ifds m w0 a).chans ⇒
+  c < LENGTH (rworld lfd pol ifds m w0 b).chans
+Proof
+  strip_tac >>
+  ‘revs lfd pol ifds m w0 a ≼ revs lfd pol ifds m w0 (a + (b − a))’
+    by (drule revs_prefix >> disch_then (qspecl_then [‘b − a’, ‘a’] ACCEPT_TAC)) >>
+  ‘a + (b − a) = b’ by decide_tac >> fs[IS_PREFIX_APPEND] >>
+  ‘smono c (rworld lfd pol ifds m w0 a) (rworld lfd pol ifds m w0 b)’
+    by (irule world_at_smono >> qexistsl_tac [‘revs lfd pol ifds m w0 a’, ‘l’, ‘w0’] >>
+        metis_tac[run_world_at]) >>
+  fs[smono_def]
+QED
+
+(* X reached the kernel on channel c by round n (c exists then) *)
+Definition cs_ok_def:
+  cs_ok lfd pol ifds m w0 c X n ⇔
+    c < LENGTH (rworld lfd pol ifds m w0 n).chans ∧ X ≼ csent (rworld lfd pol ifds m w0 n) c
+End
+
+Theorem cs_ok_pfx:
+  Y ≼ X ∧ cs_ok lfd pol ifds m w0 c X n ⇒ cs_ok lfd pol ifds m w0 c Y n
+Proof
+  rw[cs_ok_def] >> metis_tac[IS_PREFIX_TRANS]
+QED
 
 (* L1 holding f without EOF at a round's start: the round ends no
    episode of f *)

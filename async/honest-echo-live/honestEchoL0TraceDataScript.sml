@@ -99,8 +99,7 @@ Theorem zombie_data_out:
   rrev (n2w lfdn) pol EI ES w0 m = pre ++ post ∧
   world_at w0 (revs (n2w lfdn) pol EI ES w0 m ++ pre) = SOME w ∧ l0_chan_of w f = SOME c ∧
   ALOOKUP (SND (l0_ep_st (0, []) (revs (n2w lfdn) pol EI ES w0 m ++ pre))) f = SOME j ⇒
-  (∃n'. (EL c (rworld (n2w lfdn) pol EI ES w0 N).chans).peer_sent ≼
-        csent (rworld (n2w lfdn) pol EI ES w0 n') c) ∨
+  (∃n'. cs_ok (n2w lfdn) pol EI ES w0 c (EL c (rworld (n2w lfdn) pol EI ES w0 N).chans).peer_sent n') ∨
   (∃k. fl_at (n2w lfdn) pol EI ES w0 f j k) ∨
   ep_hard_err j io ∨ ep_timed_out pf_sendwait j io
 Proof
@@ -151,7 +150,7 @@ Theorem trace_open_data:
   world_at w0 (revs (n2w lfdn) pol EI ES w0 r ++ pre) = SOME w ∧ l0_chan_of w f = SOME c ∧
   ALOOKUP (SND (l0_ep_st (0, []) (revs (n2w lfdn) pol EI ES w0 r ++ pre))) f = SOME j ∧
   ALOOKUP (SND (l0_ep_st (0, []) (revs (n2w lfdn) pol EI ES w0 (SUC r)))) f = SOME j ⇒
-  (∃n'. (EL c w.chans).peer_sent ≼ csent (rworld (n2w lfdn) pol EI ES w0 n') c) ∨
+  (∃n'. cs_ok (n2w lfdn) pol EI ES w0 c (EL c w.chans).peer_sent n') ∨
   (∃k. fl_at (n2w lfdn) pol EI ES w0 f j k) ∨
   ep_hard_err j io ∨ ep_timed_out pf_sendwait j io
 Proof
@@ -177,12 +176,11 @@ Proof
               qexistsl_tac [‘revs (n2w lfdn) pol EI ES w0 r ++ pre’, ‘post’, ‘w0’] >> simp[]) >>
         fs[psmono_def]) >>
   (* the data chain from some round N ≥ r + 1, for peer_sent at r + 1 *)
-  ‘(∃n'. (EL c (rworld (n2w lfdn) pol EI ES w0 (SUC r)).chans).peer_sent ≼
-         csent (rworld (n2w lfdn) pol EI ES w0 n') c) ∨
+  ‘(∃n'. cs_ok (n2w lfdn) pol EI ES w0 c (EL c (rworld (n2w lfdn) pol EI ES w0 (SUC r)).chans).peer_sent n') ∨
    (∃k. fl_at (n2w lfdn) pol EI ES w0 f j k) ∨
    ep_hard_err j io ∨ ep_timed_out pf_sendwait j io’
     suffices_by (strip_tac >> TRY (metis_tac[] >> NO_TAC) >>
-                 disj1_tac >> qexists_tac ‘n'’ >> irule pfx_trans >>
+                 disj1_tac >> qexists_tac ‘n'’ >> irule cs_ok_pfx >>
                  qexists_tac ‘(EL c (rworld (n2w lfdn) pol EI ES w0 (SUC r)).chans).peer_sent’ >>
                  fs[]) >>
   Cases_on ‘MEM f (MAP SND (rstate (n2w lfdn) pol EI ES w0 (SUC r)).b.tbl) ∨
@@ -214,7 +212,7 @@ Theorem trace_end_data:
   world_at w0 (revs (n2w lfdn) pol EI ES w0 r ++ pre) = SOME w ∧ l0_chan_of w f = SOME c ∧
   ALOOKUP (SND (l0_ep_st (0, []) (revs (n2w lfdn) pol EI ES w0 r ++ pre))) f = SOME j ∧
   EXISTS (ep_ends f) post ⇒
-  (∃n'. (EL c w.chans).peer_sent ≼ csent (rworld (n2w lfdn) pol EI ES w0 n') c) ∨
+  (∃n'. cs_ok (n2w lfdn) pol EI ES w0 c (EL c w.chans).peer_sent n') ∨
   (∃k. fl_at (n2w lfdn) pol EI ES w0 f j k) ∨
   ep_hard_err j io ∨ ep_timed_out pf_sendwait j io
 Proof
@@ -237,12 +235,11 @@ Proof
           by (irule world_at_psmono >>
               qexistsl_tac [‘revs (n2w lfdn) pol EI ES w0 r ++ pre’, ‘post’, ‘w0’] >> simp[]) >>
         fs[psmono_def]) >>
-  ‘(∃n'. (EL c (rworld (n2w lfdn) pol EI ES w0 (SUC r)).chans).peer_sent ≼
-         csent (rworld (n2w lfdn) pol EI ES w0 n') c) ∨
+  ‘(∃n'. cs_ok (n2w lfdn) pol EI ES w0 c (EL c (rworld (n2w lfdn) pol EI ES w0 (SUC r)).chans).peer_sent n') ∨
    (∃k. fl_at (n2w lfdn) pol EI ES w0 f j k) ∨
    ep_hard_err j io ∨ ep_timed_out pf_sendwait j io’
     suffices_by (strip_tac >> TRY (metis_tac[] >> NO_TAC) >>
-                 disj1_tac >> qexists_tac ‘n'’ >> irule pfx_trans >>
+                 disj1_tac >> qexists_tac ‘n'’ >> irule cs_ok_pfx >>
                  qexists_tac ‘(EL c (rworld (n2w lfdn) pol EI ES w0 (SUC r)).chans).peer_sent’ >>
                  fs[]) >>
   (* j was open at round r's start, on channel c *)
@@ -286,7 +283,7 @@ Theorem trace_data:
   rrev (n2w lfdn) pol EI ES w0 r = pre ++ post ∧
   world_at w0 (revs (n2w lfdn) pol EI ES w0 r ++ pre) = SOME w ∧ l0_chan_of w f = SOME c ∧
   ALOOKUP (SND (l0_ep_st (0, []) (revs (n2w lfdn) pol EI ES w0 r ++ pre))) f = SOME j ⇒
-  (∃n'. (EL c w.chans).peer_sent ≼ csent (rworld (n2w lfdn) pol EI ES w0 n') c) ∨
+  (∃n'. cs_ok (n2w lfdn) pol EI ES w0 c (EL c w.chans).peer_sent n') ∨
   (∃k. fl_at (n2w lfdn) pol EI ES w0 f j k) ∨
   ep_hard_err j io ∨ ep_timed_out pf_sendwait j io
 Proof

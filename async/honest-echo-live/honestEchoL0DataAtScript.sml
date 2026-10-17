@@ -10,7 +10,7 @@
 *)
 Theory honestEchoL0DataAt
 Ancestors
-  honestEchoL0ChanId honestEchoL0RoundData honestEchoL0Acq honestEchoL0EofCase
+  honestEchoL0FlAt honestEchoL0ChanId honestEchoL0RoundData honestEchoL0Acq honestEchoL0EofCase
   honestEchoL0Peer honestEchoL0Excuse honestEchoL0DataIn honestEchoL0LiveOwn
   honestEchoL0Inv honestEchoL0Obl honestL1PFObl honestL1PFBroken honestL1PFInput
   honestL1PFStream honestL1PFLive honestL1PFRound honestL1PFOutLive honestL1PFOut
@@ -47,8 +47,7 @@ Theorem eof_held_data_out:
    MEM f (rstate (n2w lfdn) pol EI ES w0 k).b.closing) ∧
   l0_chan_of (rworld (n2w lfdn) pol EI ES w0 k) f = SOME c ∧
   ALOOKUP (SND (l0_ep_st (0, []) (revs (n2w lfdn) pol EI ES w0 k))) f = SOME j0 ∧ k ≤ N ⇒
-  (∃n'. (EL c (rworld (n2w lfdn) pol EI ES w0 N).chans).peer_sent ≼
-        csent (rworld (n2w lfdn) pol EI ES w0 n') c) ∨
+  (∃n'. cs_ok (n2w lfdn) pol EI ES w0 c (EL c (rworld (n2w lfdn) pol EI ES w0 N).chans).peer_sent n') ∨
   (∃k'. fl_at (n2w lfdn) pol EI ES w0 f j0 k') ∨
   ep_hard_err j0 io ∨ ep_timed_out pf_sendwait j0 io
 Proof
@@ -106,8 +105,7 @@ Theorem known_data_out:
   pftrace (n2w lfdn) pol EI ES w0 io ∧
   l0_chan_of (rworld (n2w lfdn) pol EI ES w0 n) f = SOME c ∧
   ALOOKUP (SND (l0_ep_st (0, []) (revs (n2w lfdn) pol EI ES w0 n))) f = SOME j0 ⇒
-  (∃n'. (EL c (rworld (n2w lfdn) pol EI ES w0 n).chans).peer_sent ≼
-        csent (rworld (n2w lfdn) pol EI ES w0 n') c) ∨
+  (∃n'. cs_ok (n2w lfdn) pol EI ES w0 c (EL c (rworld (n2w lfdn) pol EI ES w0 n).chans).peer_sent n') ∨
   (∃k. fl_at (n2w lfdn) pol EI ES w0 f j0 k) ∨
   ep_hard_err j0 io ∨ ep_timed_out pf_sendwait j0 io
 Proof
@@ -133,13 +131,12 @@ Proof
               by (irule run_chan_same >> simp[] >> qexists_tac ‘n'’ >> simp[]) >>
             fs[]) >>
       rveq >>
-      ‘(∃n''. (EL c (rworld (n2w lfdn) pol EI ES w0 n').chans).peer_sent ≼
-              csent (rworld (n2w lfdn) pol EI ES w0 n'') c) ∨
+      ‘(∃n''. cs_ok (n2w lfdn) pol EI ES w0 c (EL c (rworld (n2w lfdn) pol EI ES w0 n').chans).peer_sent n'') ∨
        (∃k. fl_at (n2w lfdn) pol EI ES w0 f j0 k) ∨
        ep_hard_err j0 io ∨ ep_timed_out pf_sendwait j0 io’
         by (irule held_data_out >> simp[] >> metis_tac[]) >>
       TRY (disj2_tac >> fs[] >> metis_tac[] >> NO_TAC) >>
-      disj1_tac >> qexists_tac ‘n''’ >> irule pfx_trans >>
+      disj1_tac >> qexists_tac ‘n''’ >> irule cs_ok_pfx >>
       qexists_tac ‘(EL c (rworld (n2w lfdn) pol EI ES w0 n').chans).peer_sent’ >> simp[] >>
       ‘n ≤ n'’ by simp[] >> drule_all run_psmono2 >>
       disch_then (qspec_then ‘c’ mp_tac) >> simp[psmono_def] >>

@@ -69,8 +69,7 @@ Theorem eof_data_out:
   MEM f (rstate (n2w lfdn) pol EI ES w0 n).eof ∧
   l0_chan_of (rworld (n2w lfdn) pol EI ES w0 n) f = SOME c ∧
   ALOOKUP (SND (l0_ep_st (0, []) (revs (n2w lfdn) pol EI ES w0 n))) f = SOME j0 ∧ n ≤ N ⇒
-  (∃n'. (EL c (rworld (n2w lfdn) pol EI ES w0 N).chans).peer_sent ≼
-        csent (rworld (n2w lfdn) pol EI ES w0 n') c) ∨
+  (∃n'. cs_ok (n2w lfdn) pol EI ES w0 c (EL c (rworld (n2w lfdn) pol EI ES w0 N).chans).peer_sent n') ∨
   (∃k. k ≤ n ∧ fl_at (n2w lfdn) pol EI ES w0 f j0 k ∧
        l0_chan_of (rworld (n2w lfdn) pol EI ES w0 k) f = SOME c) ∨
   ep_hard_err j0 io ∨ ep_timed_out pf_sendwait j0 io
@@ -152,8 +151,7 @@ Proof
             by (‘SUC k ≤ N’ by decide_tac >>
                 drule_all run_psmono >> disch_then (qspec_then ‘c’ mp_tac) >>
                 simp[psmono_def] >> impl_tac >- metis_tac[chan_lt] >> simp[]) >>
-          ‘∃n'. (EL c (rworld (n2w lfdn) pol EI ES w0 N).chans).peer_sent ≼
-                  csent (rworld (n2w lfdn) pol EI ES w0 n') c ∨
+          ‘∃n'. cs_ok (n2w lfdn) pol EI ES w0 c (EL c (rworld (n2w lfdn) pol EI ES w0 N).chans).peer_sent n' ∨
                 ep_hard_err j0 io ∨ ep_timed_out pf_sendwait j0 io’
             by (irule fetched_out >> rpt conj_tac >> TRY (first_assum ACCEPT_TAC) >>
                 qexistsl_tac [‘SUC k − a’, ‘a’, ‘f’, ‘SUC k’] >>

@@ -281,7 +281,7 @@ QED
    The number of clients: at most the accepted fds of the trace
    ------------------------------------------------------------------------ *)
 
-Theorem arrs_count:
+Theorem arrs_nconns:
   ∀l cm k. SND (SND (arrs lfd (cm, k) l)) = k + LENGTH (log_conns l)
 Proof
   Induct >- simp[arrs_def, log_conns_def] >>
@@ -334,7 +334,7 @@ Proof
   ‘SND (pcm lfd pol ifds m w0 (SUC n)) =
    SND (pcm lfd pol ifds m w0 n) + LENGTH (log_conns (rlog lfd pol ifds m w0 n))’
     by (simp[pcm_def] >> Cases_on ‘pcm lfd pol ifds m w0 n’ >>
-        simp[arrs_count] >> metis_tac[plog_rlog]) >>
+        simp[arrs_nconns] >> metis_tac[plog_rlog]) >>
   drule_then (qspec_then ‘n’ strip_assume_tac) prun_round >>
   ‘rlog lfd pol ifds m w0 n = log’ by simp[rlog_def] >>
   ‘l0_rely (rworld lfd pol ifds m w0 n)’ by fs[winv_def] >>

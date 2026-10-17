@@ -1,0 +1,7 @@
+# Moonshot liveness (design/45 §4.2, steps 14–19): statement drafts.
+INCLUDES = ../l0sys-bridges ../l0sys ../honest-l1 ../honest-l0 ../honest-ffi ../ffi-spike \
+           ../spec ../model ../m3-assembly \
+           $(CAKEMLDIR)/semantics/alt_semantics/proofs $(CAKEMLDIR)/translator
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

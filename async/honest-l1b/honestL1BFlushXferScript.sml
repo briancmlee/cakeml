@@ -11,13 +11,18 @@
   the blocking prefix that ends in it sees the world i steps on and more,
   where c is still flushed (honestL1BFlush).
 
-  MAIN: p2b_fl.
+  Step 3a (idle_break_wakes): in an idle round, a held fd on the interest
+  list is polled for input, so a break on its channel wakes the blocking
+  poll.
+
+  MAIN: p2b_fl, idle_break_wakes.
 *)
 Theory honestL1BFlushXfer
 Ancestors
   honestL1BFlush honestL1BDrains honestL1BCorr honestL1BObs honestL1BRuns honestL1BChan
   honestL1BPoll honestL1BSim honestL1BRefine honestL1BModel honestL1BStmts
-  honestL0Reindex honestL1PFModel honestL1Model honestL0World honestL0
+  honestL0Reindex honestL1PFModel honestL1Model honestL1Inv honestL0WorldInv
+  honestL0World honestL0
 Libs
   preamble
 
@@ -97,4 +102,46 @@ Proof
   drule_all bworld >> strip_tac >>
   drule rplays_pollb >> simp[rplays_def] >> strip_tac >>
   simp[world_at_append]
+QED
+
+(* ------------------------------------------------------------------------
+   Step 3a: a break on a held, interesting fd wakes the idle blocking poll
+   ------------------------------------------------------------------------ *)
+
+Theorem idle_polls_in:
+  (∀ps f. outbox_of ps.b f = [] ⇒ ¬pol ps f) ∧
+  ALOOKUP ps.b.tbl hh = SOME f ∧ MEM hh hs ∧ pf_idle lfd pol ps hs ∧ f ≠ lfd ⇒
+  MEM (f, 1) (pf_poll_set lfd pol ps hs)
+Proof
+  strip_tac >> fs[pf_idle_def] >>
+  ‘inb_of ps f = [] ∧ ¬MEM f ps.eof’
+    by (qpat_x_assum ‘pf_ready _ _ _ = []’ mp_tac >>
+        simp[pf_ready_def, FILTER_EQ_NIL, EVERY_MEM] >>
+        disch_then drule >> simp[]) >>
+  ‘outbox_of ps.b f = []’ by metis_tac[outbox_entries_nil] >>
+  simp[pf_poll_set_def, MEM_FLAT, MEM_MAP] >> disj1_tac >>
+  qexists_tac ‘[(f, 1)]’ >> simp[] >> qexists_tac ‘hh’ >> simp[wants_input_def]
+QED
+
+(* MAIN *)
+Theorem idle_break_wakes:
+  (∀ps f. outbox_of ps.b f = [] ⇒ ¬pol ps f) ∧
+  ALOOKUP ps.b.tbl hh = SOME f ∧ MEM hh hs ∧ pf_idle lfd pol ps hs ∧ f ≠ lfd ∧ small f ∧
+  noconn (l0_ticks «sys_poll» (SUC i) wb) ∧
+  l0_chan_of (l0_ticks «sys_poll» (SUC i) wb) f = SOME c ∧
+  fl c (l0_ticks «sys_poll» (SUC i) wb) ⇒
+  pollb_wait (pf_poll_set lfd pol ps hs) wb ≠ NONE
+Proof
+  strip_tac >> drule_all idle_polls_in >> strip_tac >>
+  simp[pollb_wait_def] >> CASE_TAC >> simp[l0_wait_def] >>
+  qexists_tac ‘i’ >>
+  ‘l0_ticks «sys_poll» i (l0_tick «sys_poll» wb) = l0_ticks «sys_poll» (SUC i) wb’
+    by simp[l0_ticks_def] >>
+  simp[any_revents_def, EXISTS_MEM, pfes_eq, MEM_MAP, PULL_EXISTS] >>
+  qexists_tac ‘(f, 1)’ >> simp[pe_pfd_bytes] >>
+  qabbrev_tac ‘x = l0_ticks «sys_poll» (SUC i) wb’ >>
+  fs[small_def, pfd_revents_def, fd_revents_def] >>
+  ‘c < LENGTH x.chans’ by fs[l0_chan_of_def, AllCaseEqs()] >>
+  fs[chan_revents_def, fl_def, noconn_def, revents_byte_def] >>
+  rw[]
 QED

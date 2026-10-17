@@ -28,3 +28,19 @@ Proof
   ‘S2 (n2w lfdn) pol EI ES w0’ by metis_tac[echo_S2] >>
   metis_tac[pf_conn_live]
 QED
+
+(* MAIN (C, statement premises): the client bound comes from the trace's
+   accepts_below *)
+Theorem echo_conn_live_trace:
+  run_ok (n2w lfdn) pol EI ES w0 ∧ winv w0 ∧ MEM (n2w lfdn) (l0_used w0) ∧
+  lfdn < dimword (:64) ∧ linv (n2w lfdn) w0 ∧ lone (n2w lfdn) w0 ∧
+  pftrace (n2w lfdn) pol EI ES w0 io ∧ F1_io io ∧ accepts_below io ⇒
+  conn_live_l0 w0 io
+Proof
+  strip_tac >>
+  ‘∀n. SND (pcm (n2w lfdn) pol EI ES w0 n) + 1 < dimword (:64)’
+    by metis_tac[pcm_bound_accepts_below] >>
+  ‘echo_run lfdn pol w0’
+    by (PURE_REWRITE_TAC[echo_run_def] >> rpt conj_tac >> first_assum ACCEPT_TAC) >>
+  metis_tac[echo_conn_live]
+QED

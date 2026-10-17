@@ -15,7 +15,7 @@ Theory honestL1PFConnTrace
 Ancestors
   honestL1PFObl honestL1BConnLive honestL1BConn honestL1BFaith honestL1BTransfer
   honestL1BCorr honestL1BRuns honestL1BStmts
-  honestL1PFConnRun honestL1PFConn honestL1PFLive honestL1PFRound honestL1PFRefine
+  honestL1PFConnRun honestL1PFClient honestL1PFConn honestL1PFLive honestL1PFRound honestL1PFRefine
   honestL1PFModel honestL1Steps honestL1Model honestEchoL0Spec honestL0WorldInv honestL0WorldProps
   honestL0Rely
   honestL0Part honestL0World honestL0 llist
@@ -275,4 +275,79 @@ Proof
        simp[l0_accepted_def] >> NO_TAC) >>
   disj2_tac >> disj2_tac >> simp[broke_def] >>
   qexistsl_tac [‘evs ++ a ++ [ev]’, ‘x’] >> simp[]
+QED
+
+(* ------------------------------------------------------------------------
+   The number of clients: at most the accepted fds of the trace
+   ------------------------------------------------------------------------ *)
+
+Theorem arrs_count:
+  ∀l cm k. SND (SND (arrs lfd (cm, k) l)) = k + LENGTH (log_conns l)
+Proof
+  Induct >- simp[arrs_def, log_conns_def] >>
+  Cases >> rpt gen_tac >> simp[arrs_def] >> rpt (pairarg_tac >> gvs[]) >>
+  TRY (first_x_assum (qspecl_then [‘(c, k) :: cm’, ‘k + 1’] mp_tac) >>
+       gvs[log_conns_def] >> NO_TAC) >>
+  first_x_assum (qspecl_then [‘cm’, ‘k’] mp_tac) >> gvs[log_conns_def]
+QED
+
+Theorem pf_fetch_conns:
+  ∀fs w ps w' ps' log evs.
+    pf_fetch lfd pol fs (w, ps) = SOME ((w', ps'), log, evs) ∧ l0_rely w ⇒
+    LENGTH (log_conns log) ≤ LENGTH (l0_accepted evs)
+Proof
+  Induct >- simp[pf_fetch_def, log_conns_def, l0_accepted_def] >>
+  simp[pf_fetch_def] >> rpt gen_tac >> strip_tac >>
+  qpat_x_assum ‘(if _ then _ else _) = _’ mp_tac >> rw[] >> gvs[AllCaseEqs()] >>
+  rpt (pairarg_tac >> gvs[]) >> gvs[AllCaseEqs()] >>
+  imp_res_tac rplays_sys >> gvs[rplays_def] >>
+  first_x_assum drule_all >> strip_tac >>
+  fs[log_conns_def, l0_accepted_def] >>
+  TRY (drule_all sys_accept_accepted >> simp[] >> NO_TAC) >>
+  CASE_TAC >> simp[]
+QED
+
+Theorem pround_conns:
+  pround lfd pol hs (w, ps) acts = SOME (snap, (w', ps'), log, evs) ∧ l0_rely w ⇒
+  LENGTH (log_conns log) ≤ LENGTH (l0_accepted evs)
+Proof
+  rw[pround_def, AllCaseEqs()] >> PairCases_on ‘ws1’ >> gvs[pf_tail_def, AllCaseEqs()] >>
+  imp_res_tac rplays_pacts >> imp_res_tac rplays_polls >> imp_res_tac rplays_flush >>
+  gvs[rplays_def] >> drule_all pf_fetch_conns >>
+  simp[l0_accepted_def, FLAT_APPEND, MAP_APPEND]
+QED
+
+Theorem plog_rlog:
+  run_ok lfd pol ifds m w0 ⇒ plog lfd pol ifds m w0 n = rlog lfd pol ifds m w0 n
+Proof
+  strip_tac >> drule_then (qspec_then ‘SUC n’ assume_tac) prun_some >>
+  simp[plog_def, rlog_def] >> Cases_on ‘prun lfd pol ifds m w0 (SUC n)’ >>
+  PairCases_on ‘r’ >> gvs[]
+QED
+
+Theorem run_pcm_le:
+  run_ok lfd pol ifds m w0 ∧ winv w0 ⇒
+  ∀n. SND (pcm lfd pol ifds m w0 n) ≤ LENGTH (l0_accepted (revs lfd pol ifds m w0 n))
+Proof
+  strip_tac >> drule_all winv_run >> strip_tac >>
+  Induct >- simp[pcm_def, revs_def, prun_0, l0_accepted_def] >>
+  ‘SND (pcm lfd pol ifds m w0 (SUC n)) =
+   SND (pcm lfd pol ifds m w0 n) + LENGTH (log_conns (rlog lfd pol ifds m w0 n))’
+    by (simp[pcm_def] >> Cases_on ‘pcm lfd pol ifds m w0 n’ >>
+        simp[arrs_count] >> metis_tac[plog_rlog]) >>
+  drule_then (qspec_then ‘n’ strip_assume_tac) prun_round >>
+  ‘rlog lfd pol ifds m w0 n = log’ by simp[rlog_def] >>
+  ‘l0_rely (rworld lfd pol ifds m w0 n)’ by fs[winv_def] >>
+  drule_all pround_conns >> strip_tac >> gvs[] >>
+  simp[l0_accepted_def, FLAT_APPEND, MAP_APPEND] >> fs[l0_accepted_def]
+QED
+
+(* The client count bound from the trace's accepts_below *)
+Theorem pcm_bound_accepts_below:
+  run_ok lfd pol ifds m w0 ∧ winv w0 ∧ pftrace lfd pol ifds m w0 io ∧ accepts_below io ⇒
+  ∀n. SND (pcm lfd pol ifds m w0 n) + 1 < dimword (:64)
+Proof
+  rpt strip_tac >> drule_all run_pcm_le >> disch_then (qspec_then ‘n’ assume_tac) >>
+  drule_all pftrace_revs >> disch_then (qspec_then ‘n’ assume_tac) >>
+  fs[accepts_below_def] >> first_x_assum drule >> simp[]
 QED

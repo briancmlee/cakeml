@@ -3700,3 +3700,96 @@ Proof
   drule rinv_chan >> disch_then (qspecl_then [‘SUC k4’, ‘c’] mp_tac) >> simp[] >> strip_tac >>
   gvs[]
 QED
+
+Theorem tbl_lookup:
+  simple_run p lfd sched hw ifds m w1 ∧ MEM f (MAP SND (rstate lfd hw ifds m w1 k).b.tbl) ⇒
+  ∃h. ALOOKUP (rstate lfd hw ifds m w1 k).b.tbl h = SOME f
+Proof
+  strip_tac >>
+  qpat_x_assum ‘simple_run _ _ _ _ _ _ _’ (strip_assume_tac o REWRITE_RULE [simple_run_def]) >>
+  ‘MEM lfd (l0_used w1)’ by simp[l0_used_def] >>
+  drule_all round_facts >> disch_then (qspec_then ‘k’ strip_assume_tac) >>
+  fs[MEM_MAP, EXISTS_PROD, pown_def] >> metis_tac[ALOOKUP_ALL_DISTINCT_MEM]
+QED
+
+Theorem prefix_app_mono:
+  a ≼ b ⇒ l ++ a ≼ l ++ b
+Proof
+  rw[IS_PREFIX_APPEND] >> metis_tac[APPEND_ASSOC]
+QED
+
+Theorem prefix_app_nil:
+  ps ≼ d ∧ d ++ i = ps ⇒ i = []
+Proof
+  rw[] >> imp_res_tac IS_PREFIX_LENGTH >> fs[] >> Cases_on ‘i’ >> fs[]
+QED
+
+(* MAIN (G7): what the kernel delivered to a client by round R, psk
+   eventually delivers too *)
+Theorem chan_caught_up:
+  simple_run p lfd sched hw ifds m w1 ∧ fds_room lfd hw ifds m w1 ∧
+  S1 lfd hw ifds m w1 ∧ S2 lfd hw ifds m w1 ∧ S3 lfd hw ifds m w1 ∧
+  (∀f. S4 lfd hw ifds m w1 f) ⇒
+  ∀R c. c < LENGTH (rworld lfd hw ifds m w1 R).chans ⇒
+    ∃k. R ≤ k ∧
+        (EL c (rworld lfd hw ifds m w1 R).chans).peer_sent ≼
+          data_of c (upto (parr lfd hw ifds m w1) k) ∧
+        ((EL c (rworld lfd hw ifds m w1 R).chans).peer_eof ⇒
+         MEM (Eof2 c) (upto (parr lfd hw ifds m w1) k))
+Proof
+  strip_tac >> rpt gen_tac >> strip_tac >>
+  ‘∀k. R ≤ k ∧ MEM (Eof2 c) (upto (parr lfd hw ifds m w1) k) ⇒
+       ∃k. R ≤ k ∧
+           (EL c (rworld lfd hw ifds m w1 R).chans).peer_sent ≼
+             data_of c (upto (parr lfd hw ifds m w1) k) ∧
+           ((EL c (rworld lfd hw ifds m w1 R).chans).peer_eof ⇒
+            MEM (Eof2 c) (upto (parr lfd hw ifds m w1) k))’
+    by (rpt strip_tac >> qexists_tac ‘k’ >> simp[] >> irule fin_eof >> simp[] >> metis_tac[]) >>
+  ‘F1 lfd hw ifds m w1’
+    by (qpat_assum ‘simple_run _ _ _ _ _ _ _’ (strip_assume_tac o REWRITE_RULE [simple_run_def]) >>
+        drule_all run_ok_ev >> strip_tac >> metis_tac[simple_F1]) >>
+  mp_tac handle_reached >> impl_tac >- fs[] >>
+  disch_then (qspecl_then [‘R’, ‘c’] mp_tac) >> simp[] >> strip_tac >- metis_tac[] >>
+  rename1 ‘ALOOKUP (rworld _ _ _ _ _ k2).open_fds f = SOME c’ >>
+  Cases_on ‘MEM (Eof2 c) (upto (parr lfd hw ifds m w1) k2)’ >- metis_tac[] >>
+  drule_all ps_mono >> strip_tac >>
+  ‘∃h. ALOOKUP (rstate lfd hw ifds m w1 k2).b.tbl h = SOME f’ by metis_tac[tbl_lookup] >>
+  qpat_assum ‘simple_run _ _ _ _ _ _ _’ (strip_assume_tac o REWRITE_RULE [simple_run_def]) >>
+  ‘MEM lfd (l0_used w1)’ by simp[l0_used_def] >>
+  drule_all rinv_run >> disch_then (qspec_then ‘k2’ mp_tac) >>
+  simp_tac std_ss [rinv_def, eown_def] >> strip_tac >>
+  ‘¬MEM f (rstate lfd hw ifds m w1 k2).eof’ by (strip_tac >> res_tac) >>
+  ‘l0_chan_of (rworld lfd hw ifds m w1 k2) f = SOME c’ by simp[l0_chan_of_def] >>
+  mp_tac (Q.INST [‘w0’ |-> ‘w1’] live_data_kernel) >> simp[] >>
+  disch_then (qspecl_then [‘k2’, ‘h’, ‘c’] mp_tac) >> simp[] >> strip_tac >>
+  qpat_assum ‘simple_run _ _ _ _ _ _ _’ (fn th => mp_tac (MATCH_MP dl_iter th)) >>
+  disch_then (qspecl_then [‘d’, ‘k2’, ‘f’, ‘c’] mp_tac) >> simp[] >> strip_tac
+  >- (qpat_x_assum ‘∀k. R ≤ k ∧ _ ⇒ _’ irule >> qexists_tac ‘d + k2’ >> fs[])
+  >- (qpat_x_assum ‘∀k. R ≤ k ∧ _ ⇒ _’ irule >> qexists_tac ‘d + k2’ >> fs[])
+  >> ‘data_of c (upto (parr lfd hw ifds m w1) k2) ++ (EL c (rworld lfd hw ifds m w1 k2).chans).inbox =
+      (EL c (rworld lfd hw ifds m w1 k2).chans).peer_sent’
+       by (qpat_assum ‘simple_run _ _ _ _ _ _ _’ (fn th => mp_tac (MATCH_MP rinv_chan th)) >>
+           disch_then (qspecl_then [‘k2’, ‘c’] mp_tac) >> impl_tac >- simp[] >>
+           strip_tac >> first_assum ACCEPT_TAC) >>
+  ‘(EL c (rworld lfd hw ifds m w1 R).chans).peer_sent ≼
+   data_of c (upto (parr lfd hw ifds m w1) (d + k2))’
+    by (qpat_x_assum ‘data_of c (upto _ (d + k2)) = _’ SUBST1_TAC >>
+        irule IS_PREFIX_TRANS >>
+        qexists_tac ‘(EL c (rworld lfd hw ifds m w1 k2).chans).peer_sent’ >> conj_tac
+        >- (qpat_x_assum ‘_ ++ _ = (EL c (rworld _ _ _ _ _ k2).chans).peer_sent’
+              (SUBST1_TAC o SYM) >> irule prefix_app_mono >> first_assum ACCEPT_TAC)
+        >> first_assum ACCEPT_TAC) >>
+  reverse (Cases_on ‘(EL c (rworld lfd hw ifds m w1 R).chans).peer_eof’)
+  >- (qexists_tac ‘d + k2’ >> simp[]) >>
+  ‘R ≤ d + k2’ by simp[] >>
+  qpat_assum ‘simple_run _ _ _ _ _ _ _’ assume_tac >>
+  drule_all ps_mono >> strip_tac >> gvs[] >>
+  qpat_assum ‘simple_run _ _ _ _ _ _ _’ (fn th => mp_tac (MATCH_MP rinv_chan th)) >>
+  disch_then (qspecl_then [‘d + k2’, ‘c’] mp_tac) >> simp[] >> strip_tac >>
+  ‘(EL c (rworld lfd hw ifds m w1 (d + k2)).chans).inbox = []’ by metis_tac[prefix_app_nil] >>
+  ‘∃h'. ALOOKUP (rstate lfd hw ifds m w1 (d + k2)).b.tbl h' = SOME f’ by metis_tac[tbl_lookup] >>
+  mp_tac eof_phase >> impl_tac >- simp[] >>
+  disch_then (qspecl_then [‘d + k2’, ‘f’, ‘c’, ‘h'’] mp_tac) >> simp[] >> strip_tac >>
+  qpat_x_assum ‘∀k. R ≤ k ∧ _ ⇒ _’ (qspec_then ‘k’ mp_tac) >> impl_tac >- simp[] >>
+  strip_tac >> qexists_tac ‘k'’ >> gvs[]
+QED

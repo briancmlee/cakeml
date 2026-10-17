@@ -20,7 +20,7 @@ Ancestors
   proxyStart proxyL1Claim proxyL0Run proxyL0Stmts honestL1BStmts honestL1PFModel e1DriverLoop
   moonshotProxyLive moonshotProxySafe moonshotProxyRel proxyHLStmts e1TraceAccBind e1TraceKind
   e1TraceRole e1TraceChan moonshotProxy moonshotClientSpec endpointHLModel endpointWorld
-  honestEchoL0Spec l0sysEpisodes
+  honestEchoL0Spec l0sysEpisodes e1TracePrefix
 Libs
   preamble
 
@@ -437,6 +437,259 @@ Proof
     by (REWRITE_TAC[e1DriverLoopTheory.erun_def] >>
         qpat_x_assum ‘erounds _ _ _ _ _ n = _’ SUBST1_TAC >> simp[]) >>
   gvs[GENLIST, SNOC_APPEND, FLAT_APPEND]
+QED
+
+(* ------------------------------------------------------------------------
+   Episode numbers: position i's episode is the number of episodes before it
+   ------------------------------------------------------------------------ *)
+
+Theorem ep_fds_conn_LENGTH:
+  ∀evs. LENGTH (ep_fds evs) = LENGTH (ep_conn evs)
+Proof
+  Induct >> simp[l0sysInvTheory.ep_fds_def, ep_conn_def] >> gen_tac >>
+  fs[l0sysInvTheory.ep_fds_def] >>
+  Cases_on ‘ev_new h’ >> simp[] >> PairCases_on ‘x’ >> simp[]
+QED
+
+Theorem TAKE_EL_DROP:
+  i < LENGTH l ⇒ TAKE i l ++ EL i l :: DROP (SUC i) l = l
+Proof
+  strip_tac >> ‘DROP i l = EL i l :: DROP (SUC i) l’ by simp[DROP_EL_CONS, ADD1] >>
+  pop_assum (SUBST1_TAC o SYM) >> simp[TAKE_DROP]
+QED
+
+Theorem ep_conn_mid:
+  ev_new e = SOME (f, x) ⇒
+  LENGTH (ep_conn l1) < LENGTH (ep_conn (l1 ++ e :: l2)) ∧
+  EL (LENGTH (ep_conn l1)) (ep_conn (l1 ++ e :: l2)) = ISL x
+Proof
+  strip_tac >> simp[ep_conn_def] >>
+  REWRITE_TAC [GSYM APPEND_ASSOC, APPEND] >> simp[EL_APPEND2]
+QED
+
+Theorem ep_conn_at:
+  i < LENGTH evs ∧ ev_new (EL i evs) = SOME (f, x) ⇒
+  LENGTH (ep_conn (TAKE i evs)) < LENGTH (ep_conn evs) ∧
+  EL (LENGTH (ep_conn (TAKE i evs))) (ep_conn evs) = ISL x
+Proof
+  strip_tac >>
+  qspecl_then [‘EL i evs’, ‘f’, ‘x’, ‘TAKE i evs’, ‘DROP (SUC i) evs’] mp_tac
+    (Q.GENL [‘e’, ‘f’, ‘x’, ‘l1’, ‘l2’] ep_conn_mid) >>
+  impl_tac >- first_assum ACCEPT_TAC >>
+  drule TAKE_EL_DROP >> disch_then (fn th => REWRITE_TAC [th])
+QED
+
+Theorem ep_conn_from:
+  ∀evs j. j < LENGTH (ep_conn evs) ⇒
+          ∃i. i < LENGTH evs ∧ ev_new (EL i evs) ≠ NONE ∧ LENGTH (ep_conn (TAKE i evs)) = j
+Proof
+  Induct >> simp[ep_conn_def] >> rpt gen_tac >>
+  Cases_on ‘ev_new h’ >> simp[]
+  >- (strip_tac >> first_x_assum drule >> strip_tac >>
+      qexists_tac ‘SUC i’ >> simp[ep_conn_def]) >>
+  PairCases_on ‘x’ >> simp[] >> strip_tac >>
+  Cases_on ‘j’
+  >- (qexists_tac ‘0’ >> simp[ep_conn_def]) >>
+  first_x_assum (qspec_then ‘n’ mp_tac) >> impl_tac >- fs[] >> strip_tac >>
+  qexists_tac ‘SUC i’ >> simp[ep_conn_def]
+QED
+
+Theorem ep_conn_TAKE_lt:
+  i1 < i2 ∧ i2 ≤ LENGTH evs ∧ ev_new (EL i1 evs) ≠ NONE ⇒
+  LENGTH (ep_conn (TAKE i1 evs)) < LENGTH (ep_conn (TAKE i2 evs))
+Proof
+  strip_tac >> Cases_on ‘ev_new (EL i1 evs)’ >> fs[] >> PairCases_on ‘x’ >>
+  qspecl_then [‘i1’, ‘TAKE i2 evs’, ‘x0’, ‘x1’] mp_tac (Q.GENL [‘i’, ‘evs’, ‘f’, ‘x’] ep_conn_at) >>
+  simp[EL_TAKE, TAKE_TAKE]
+QED
+
+(* ------------------------------------------------------------------------
+   Positions of the whole trace, through its finite prefixes
+   ------------------------------------------------------------------------ *)
+
+Theorem LTAKE_SOME_LAPPEND:
+  ∀n ll l. LTAKE n ll = SOME l ⇒ ∃ll'. ll = LAPPEND (fromList l) ll'
+Proof
+  Induct >- (rw[] >> qexists_tac ‘ll’ >> simp[]) >>
+  rpt gen_tac >> qspec_then ‘ll’ STRUCT_CASES_TAC llist_CASES >> simp[] >>
+  strip_tac >> first_x_assum drule >> strip_tac >> simp[] >> metis_tac[]
+QED
+
+Theorem LNTH_prefix:
+  LNTH q ll = SOME e ⇒ ∃l. LPREFIX (fromList l) ll ∧ q < LENGTH l ∧ EL q l = e
+Proof
+  strip_tac >>
+  ‘LTAKE q ll ≠ NONE’ by (strip_tac >> drule LTAKE_EQ_NONE_LNTH >> simp[]) >>
+  Cases_on ‘LTAKE q ll’ >> fs[] >>
+  qexists_tac ‘x ++ [e]’ >>
+  ‘LTAKE (SUC q) ll = SOME (x ++ [e])’ by simp[LTAKE_SNOC_LNTH] >>
+  drule LTAKE_LENGTH >> drule LTAKE_SOME_LAPPEND >> rpt strip_tac >>
+  ‘q = LENGTH x’ by fs[] >> simp[LPREFIX_APPEND, EL_APPEND2] >> metis_tac[]
+QED
+
+Theorem LPREFIX_io:
+  LPREFIX (fromList l) ll ⇒
+  (∀p. p < LENGTH l ⇒ LNTH p ll = SOME (EL p l)) ∧
+  (∀p. p ≤ LENGTH l ⇒ LTAKE p ll = SOME (TAKE p l))
+Proof
+  simp[LPREFIX_APPEND] >> strip_tac >> rpt BasicProvers.VAR_EQ_TAC >> conj_tac >> rpt strip_tac
+  >- simp[LNTH_LAPPEND, LNTH_fromList] >>
+  irule LTAKE_TAKE_LESS >> qexists_tac ‘LENGTH l’ >> simp[] >>
+  qspecl_then [‘ll'’, ‘l’, ‘0’] mp_tac LTAKE_LAPPEND_fromList >> simp[]
+QED
+
+(* The start's events are no episodes *)
+Theorem proxy_start_pre:
+  proxy_start a w0 pre w4 k ⇒ EVERY (λe. ev_new e = NONE) pre
+Proof
+  simp[proxy_start_def, honestL1ModelTheory.l0_do_def, AllCaseEqs()] >> rw[] >>
+  simp[ev_new_def]
+QED
+
+Theorem ep_conn_nonew:
+  ∀pre. EVERY (λe. ev_new e = NONE) pre ⇒ ep_conn (pre ++ l) = ep_conn l
+Proof
+  Induct >> simp[ep_conn_def]
+QED
+
+(* ------------------------------------------------------------------------
+   A front's episode: an accept at position p of the run's trace is raw
+   episode j of some round prefix, without a peer address
+   ------------------------------------------------------------------------ *)
+
+Theorem front_episode:
+  io = LAPPEND (fromList pre)
+         (LFLATTEN (LGENLIST (λi. fromList (eround_evs lfd pol ifds m ws0 i)) NONE)) ∧
+  EVERY (λe. ev_new e = NONE) pre ∧ (∀i. erounds lfd pol ifds m ws0 i ≠ NONE) ∧
+  LPREFIX (fromList evs) io ∧ p < LENGTH evs ∧ ev_new (EL p evs) = SOME (f, INR l) ⇒
+  ∃n h ws EV logs.
+    erounds lfd pol ifds m ws0 n = SOME (h, ws, EV, logs) ∧
+    LPREFIX (fromList (pre ++ EV)) io ∧ p < LENGTH (pre ++ EV) ∧
+    io_ep_at io p ∧ io_ep_idx io p < LENGTH (ep_conn EV) ∧ ¬EL (io_ep_idx io p) (ep_conn EV)
+Proof
+  strip_tac >>
+  qpat_assum ‘LPREFIX (fromList evs) io’ mp_tac >>
+  qpat_assum ‘io = _’ (fn th => REWRITE_TAC [th]) >> strip_tac >>
+  drule e1_lprefix_rounds >> strip_tac >>
+  Cases_on ‘erounds lfd pol ifds m ws0 n’
+  >- (qpat_x_assum ‘∀i. _ ≠ NONE’ (qspec_then ‘n’ mp_tac) >> simp[]) >>
+  rename1 ‘_ = SOME r0’ >> PairCases_on ‘r0’ >>
+  qexistsl_tac [‘n’, ‘r00’, ‘(r01, r02)’, ‘r03’, ‘r04’] >>
+  ‘r03 = FLAT (GENLIST (eround_evs lfd pol ifds m ws0) n)’
+    by (mp_tac erounds_evs_genlist >> impl_tac >- first_assum ACCEPT_TAC >>
+        disch_then (qspecl_then [‘n’, ‘r00’, ‘(r01, r02)’, ‘r03’, ‘r04’] mp_tac) >>
+        impl_tac >- first_assum ACCEPT_TAC >> simp[]) >>
+  ‘LPREFIX (fromList (pre ++ r03)) io’
+    by (qspecl_then [‘eround_evs lfd pol ifds m ws0’, ‘n’] mp_tac
+          (Q.GENL [‘f’, ‘n’] rounds_LPREFIX) >>
+        qpat_x_assum ‘r03 = _’ (SUBST1_TAC o SYM) >>
+        simp[LPREFIX_APPEND] >> strip_tac >>
+        qpat_x_assum ‘io = _’ SUBST1_TAC >> qpat_x_assum ‘LFLATTEN _ = _’ SUBST1_TAC >>
+        qexists_tac ‘ll’ >> simp[GSYM LAPPEND_fromList, LAPPEND_ASSOC]) >>
+  qpat_x_assum ‘r03 = _’ (SUBST_ALL_TAC o SYM) >>
+  qpat_x_assum ‘isPREFIX _ _’ (strip_assume_tac o REWRITE_RULE [IS_PREFIX_APPEND]) >>
+  rename1 ‘pre ++ r03 = evs ++ rest’ >>
+  ‘p < LENGTH (pre ++ r03) ∧ EL p (pre ++ r03) = EL p evs’
+    by (qpat_x_assum ‘pre ++ r03 = _’ SUBST1_TAC >> simp[EL_APPEND1]) >>
+  ‘LENGTH pre ≤ p’
+    by (CCONTR_TAC >>
+        ‘EL p (pre ++ r03) = EL p pre’ by (irule EL_APPEND1 >> fs[]) >>
+        qpat_x_assum ‘EVERY _ pre’ (mp_tac o REWRITE_RULE [EVERY_EL]) >>
+        disch_then (qspec_then ‘p’ mp_tac) >> fs[]) >>
+  ‘p - LENGTH pre < LENGTH r03 ∧ EL (p - LENGTH pre) r03 = EL p evs’
+    by (fs[] >> qpat_x_assum ‘EL p (pre ++ r03) = _’ (SUBST1_TAC o SYM) >>
+        simp[EL_APPEND2]) >>
+  qpat_assum ‘LPREFIX (fromList (pre ++ _)) io’ (strip_assume_tac o MATCH_MP LPREFIX_io) >>
+  ‘io_ep_idx io p = LENGTH (ep_conn (TAKE (p - LENGTH pre) r03))’
+    by (REWRITE_TAC [io_ep_idx_def] >>
+        qpat_x_assum ‘∀p. p ≤ _ ⇒ LTAKE p io = _’ (qspec_then ‘p’ mp_tac) >>
+        impl_tac >- (irule LESS_IMP_LESS_OR_EQ >> first_assum ACCEPT_TAC) >>
+        disch_then SUBST1_TAC >> simp_tac (srw_ss()) [ep_fds_conn_LENGTH] >>
+        REWRITE_TAC [TAKE_APPEND] >>
+        ‘TAKE p pre = pre’ by (irule TAKE_LENGTH_TOO_LONG >> first_assum ACCEPT_TAC) >>
+        pop_assum SUBST1_TAC >>
+        qpat_x_assum ‘EVERY _ pre’ (fn th => REWRITE_TAC [MATCH_MP ep_conn_nonew th])) >>
+  qspecl_then [‘p - LENGTH pre’, ‘r03’, ‘f’, ‘INR l’] mp_tac
+    (Q.GENL [‘i’, ‘evs’, ‘f’, ‘x’] ep_conn_at) >>
+  impl_tac >- simp[] >> strip_tac >>
+  qpat_x_assum ‘io = _’ (fn th => REWRITE_TAC [SYM th]) >> qpat_x_assum ‘pre ++ r03 = _’ kall_tac >>
+  qpat_x_assum ‘LPREFIX (fromList evs) (_ ++ₗ _)’ kall_tac >>
+  rpt conj_tac >> TRY (first_assum ACCEPT_TAC) >> simp[io_ep_at_def]
+QED
+
+(* The proxy performs every round's actions *)
+Theorem proxy_ehacts:
+  proxy_world lfd a W0 ⇒
+  ehacts lfd lv n 0 (ehst lfd lv (pifds lfd b hw) (pprog lfd b hw) W0 n)
+    (new_actions (log_of (pprog lfd b hw)) (ehhist lfd lv (pifds lfd b hw) (pprog lfd b hw) W0 n))
+    ≠ NONE
+Proof
+  strip_tac >> drule PS_round >> disch_then (qspecl_then [‘n’, ‘lv’, ‘hw’, ‘b’] strip_assume_tac) >>
+  rewrite_tac [pprog_new_actions] >> asm_rewrite_tac [] >> simp[]
+QED
+
+(* A front's channel gets bound: the program accepts it, or the accept cap
+   is closed, so more than 2^62 fronts were accepted *)
+Theorem front_bound:
+  l0_rely w0 ∧ honestL0WorldProps$fds_lt w0 ∧ MEM lfd (l0_used w0) ∧ MEM 0w (l0_used w0) ∧
+  (∀n. erounds lfd pol_never (pifds lfd b hw) (pprog lfd b hw) (w0, einit) n ≠ NONE) ∧
+  erounds lfd pol_never (pifds lfd b hw) (pprog lfd b hw) (w0, einit) n = SOME (h, ws, evs, logs) ∧
+  j < LENGTH (ep_conn evs) ∧ ¬EL j (ep_conn evs) ∧
+  LENGTH (FILTER $¬ (ep_conn evs)) ≤ 2 ** 62 ⇒
+  ∃n'. MEM j (MAP FST (ehbinds lfd (elv lfd pol_never (pifds lfd b hw) (pprog lfd b hw) w0)
+                         (pifds lfd b hw) (pprog lfd b hw)
+                         (pew lfd a pol_never (pifds lfd b hw) (pprog lfd b hw) w0 calls) n'))
+Proof
+  strip_tac >>
+  ‘∀n. SND (ecm lfd pol_never (pifds lfd b hw) (pprog lfd b hw) w0 n) + 1 < dimword (:64)’
+    by (irule proxy_ecm_bound >> rpt conj_tac >> first_assum ACCEPT_TAC) >>
+  ‘proxy_world lfd a (pew lfd a pol_never (pifds lfd b hw) (pprog lfd b hw) w0 calls)’
+    by REWRITE_TAC [pew_proxy_world] >>
+  ‘∀n. ehacts lfd (elv lfd pol_never (pifds lfd b hw) (pprog lfd b hw) w0) n 0
+         (ehst lfd (elv lfd pol_never (pifds lfd b hw) (pprog lfd b hw) w0) (pifds lfd b hw)
+            (pprog lfd b hw) (pew lfd a pol_never (pifds lfd b hw) (pprog lfd b hw) w0 calls) n)
+         (new_actions (log_of (pprog lfd b hw))
+            (ehhist lfd (elv lfd pol_never (pifds lfd b hw) (pprog lfd b hw) w0) (pifds lfd b hw)
+               (pprog lfd b hw) (pew lfd a pol_never (pifds lfd b hw) (pprog lfd b hw) w0 calls) n))
+       ≠ NONE’
+    by (gen_tac >> irule proxy_ehacts >> qexists_tac ‘a’ >> first_assum ACCEPT_TAC) >>
+  drule_all e1_acc_queued >> strip_tac
+  >- (qexists_tac ‘n’ >> first_assum ACCEPT_TAC) >>
+  qabbrev_tac ‘lv = elv lfd pol_never (pifds lfd b hw) (pprog lfd b hw) w0’ >>
+  qabbrev_tac ‘EW = pew lfd a pol_never (pifds lfd b hw) (pprog lfd b hw) w0 calls’ >>
+  Cases_on ‘2 * LENGTH (PS lfd b hw lv EW n).pc + 2 ≤ cbound’
+  >- (qexists_tac ‘SUC n’ >> irule proxy_queued_bound >> rpt conj_tac
+      >- first_assum ACCEPT_TAC
+      >- (qexistsl_tac [‘a’, ‘[]’] >> first_assum ACCEPT_TAC) >>
+      qexists_tac ‘a’ >> first_assum ACCEPT_TAC) >>
+  (* the cap is closed: the pairs' fronts and the queued one are accepted *)
+  ‘MAP cpa (FST (ehst lfd lv (pifds lfd b hw) (pprog lfd b hw) EW n)).chans = ep_conn evs’
+    by (qunabbrev_tac ‘lv’ >> qunabbrev_tac ‘EW’ >> drule_all e1_roles >>
+        disch_then (qspecl_then [‘calls’, ‘a’] ACCEPT_TAC)) >>
+  drule PS_prel_n >> disch_then (qspecl_then [‘n’, ‘lv’, ‘hw’, ‘b’] assume_tac) >>
+  qpat_assum ‘proxy_world _ _ _’ (strip_assume_tac o REWRITE_RULE [proxy_world_def]) >>
+  ‘gchinv lfd (ehbinds lfd lv (pifds lfd b hw) (pprog lfd b hw) EW n)
+     (hl_pairs (pprog lfd b hw) (ehhist lfd lv (pifds lfd b hw) (pprog lfd b hw) EW n))
+     (ehst lfd lv (pifds lfd b hw) (pprog lfd b hw) EW n)’
+    by (irule ehrounds_gchinv >> asm_rewrite_tac [] >> simp[]) >>
+  ‘kinv (ehbinds lfd lv (pifds lfd b hw) (pprog lfd b hw) EW n)
+     (hl_pairs (pprog lfd b hw) (ehhist lfd lv (pifds lfd b hw) (pprog lfd b hw) EW n))
+     (FST (ehst lfd lv (pifds lfd b hw) (pprog lfd b hw) EW n))’
+    by (irule ehrounds_kinv >> asm_rewrite_tac [] >> simp[]) >>
+  qabbrev_tac ‘X = ehst lfd lv (pifds lfd b hw) (pprog lfd b hw) EW n’ >> PairCases_on ‘X’ >>
+  RULE_ASSUM_TAC (REWRITE_RULE [pairTheory.FST, pairTheory.SND]) >>
+  qpat_assum ‘prel _ _ _ _ _ _’ (fn p => qpat_assum ‘gchinv _ _ _ _’ (fn g =>
+    qpat_assum ‘kinv _ _ _’ (fn k => qpat_assum ‘X0.listening = _’ (fn l =>
+      assume_tac (MATCH_MP cap_count (LIST_CONJ [p, g, k, l])))))) >>
+  ‘LENGTH (FILTER (λc. ¬cpa c) X0.chans) = LENGTH (FILTER $¬ (ep_conn evs))’
+    by (qpat_x_assum ‘MAP cpa _ = _’ (SUBST1_TAC o SYM) >>
+        simp_tac (srw_ss()) [FILTER_MAP, combinTheory.o_DEF]) >>
+  ‘F’ suffices_by REWRITE_TAC [] >>
+  qpat_x_assum ‘LENGTH (FILTER (λc. _) _) = _’ (fn eq =>
+    qpat_x_assum ‘LENGTH _.pc + 1 ≤ _’ (mp_tac o REWRITE_RULE [eq])) >>
+  qpat_x_assum ‘LENGTH (FILTER $¬ _) ≤ _’ mp_tac >>
+  qpat_x_assum ‘¬(2 * _ + 2 ≤ cbound)’ mp_tac >>
+  REWRITE_TAC [cbound_def] >> simp_tac (srw_ss() ++ ARITH_ss) []
 QED
 
 (* The run and the live block's hypotheses *)

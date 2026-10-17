@@ -565,3 +565,69 @@ Proof
   impl_tac >- (rpt conj_tac >> TRY (first_assum ACCEPT_TAC) >> simp[]) >>
   disch_then ACCEPT_TAC
 QED
+
+(* ------------------------------------------------------------------------
+   Read before up: a front is read only once its backend answered a read
+   ------------------------------------------------------------------------ *)
+
+Theorem pacts_read_open:
+  MEM (ERead h k) (MAP SND (pacts lfd b hw st rdy)) ⇒
+  ∃i c. i < LENGTH st.pc ∧ (EL i st.pc).bh = SOME c ∧ (EL i st.pc).fo ∧ (EL i st.pc).bo ∧
+        (h = (EL i st.pc).fh ∧ (EL i st.pc).bup ∨ h = c)
+Proof
+  ONCE_REWRITE_TAC [pacts_SND] >> simp[MEM_FLAT, MEM_MAP, PULL_EXISTS] >>
+  rw[] >> gvs[plevels_def, MEM_MAP] >>
+  qpat_x_assum ‘MEM _ st.pc’ (strip_assume_tac o REWRITE_RULE [MEM_EL]) >> gvs[] >>
+  qexists_tac ‘n’ >> simp[] >>
+  gvs[pone_def, pconnects_def, pwrites_def, preads_def, AllCaseEqs()] >>
+  every_case_tac >> gvs[]
+QED
+
+Theorem PS_read_open:
+  MEM (ERead h k) (MAP SND (PS lfd b hw lv W0 n).last) ⇒
+  ∃i c. i < LENGTH (PS lfd b hw lv W0 n).pc ∧ (EL i (PS lfd b hw lv W0 n).pc).bh = SOME c ∧
+        (EL i (PS lfd b hw lv W0 n).pc).fo ∧ (EL i (PS lfd b hw lv W0 n).pc).bo ∧
+        (h = (EL i (PS lfd b hw lv W0 n).pc).fh ∧ (EL i (PS lfd b hw lv W0 n).pc).bup ∨ h = c)
+Proof
+  Cases_on ‘n’
+  >- (‘PS lfd b hw lv W0 0 = pinit lfd b hw’ by simp[ehhist_def, ehrounds_def, pstate_def] >>
+      simp[pinit_def] >> strip_tac >> drule pacts_read_open >> simp[]) >>
+  rename1 ‘SUC m’ >>
+  qspecl_then [‘lfd’, ‘b’, ‘hw’, ‘lv’, ‘W0’, ‘m’] strip_assume_tac
+    (Q.GENL [‘lfd’, ‘b’, ‘hw’, ‘lv’, ‘W0’, ‘n’] PS_SUC_fields) >>
+  qpat_x_assum ‘ehhist _ _ _ _ _ (SUC m) = _’ kall_tac >>
+  qpat_x_assum ‘pst_pc _ = _’ (fn th => REWRITE_TAC [th]) >>
+  qpat_x_assum ‘pst_last _ = _’ (fn th => REWRITE_TAC [th]) >>
+  MATCH_ACCEPT_TAC pacts_read_open
+QED
+
+(* MAIN (read before up) *)
+Theorem proxy_read_up:
+  proxy_world lfd a W0 ⇒
+  ∀n hd k. MEM (ERead hd k) (new_actions (log_of (pprog lfd b hw)) (PH lfd b hw lv W0 n)) ∧
+           MEM hd (hl_acc_handles (hl_pairs (pprog lfd b hw) (PH lfd b hw lv W0 n))) ⇒
+    ∃c. ppair lfd b hw lv W0 hd = SOME c ∧
+        hl_up c (hl_pairs (pprog lfd b hw) (PH lfd b hw lv W0 n)) ∧
+        ever_up lfd lv (pifds lfd b hw) (pprog lfd b hw) W0 n c
+Proof
+  strip_tac >> rpt gen_tac >> strip_tac >>
+  qpat_x_assum ‘MEM (ERead _ _) _’ (strip_assume_tac o MATCH_MP PS_read_open o
+                                    REWRITE_RULE [pprog_new_actions]) >>
+  drule PS_prel_n >> disch_then (assume_tac o SPEC_ALL)
+  >- (qexists_tac ‘c’ >> rpt conj_tac
+      >- (drule ppair_SOME >> simp[] >> disch_then kall_tac >> qexistsl_tac [‘n’, ‘i’] >> simp[])
+      >> ‘pok (FST (ehst lfd lv (pifds lfd b hw) (pprog lfd b hw) W0 n))
+              (SND (ehst lfd lv (pifds lfd b hw) (pprog lfd b hw) W0 n))
+              (hl_pairs (pprog lfd b hw) (PH lfd b hw lv W0 n)) (prdy (PH lfd b hw lv W0 n))
+              (EL i (PS lfd b hw lv W0 n).pc)’
+           by (irule prel_pok >> simp[] >> qexists_tac ‘lfd’ >> first_assum ACCEPT_TAC) >>
+      gvs[pok_def]
+      >- (gvs[ever_up_def, up_at_def, hch_def] >> qexists_tac ‘n’ >>
+          simp[chan_status_def, ep_chan_of_def])) >>
+  (* a backend is never an accepted handle *)
+  drule_all prel_acc_slot >> strip_tac >>
+  ‘MEM hd (phds (EL i (PS lfd b hw lv W0 n).pc)) ∧
+   MEM hd (phds (EL i' (PS lfd b hw lv W0 n).pc))’ by simp[phds_def] >>
+  ‘i = i'’ by (drule prel_distinct >> disch_then irule >> simp[] >> qexists_tac ‘hd’ >> simp[]) >>
+  gvs[] >> drule_all prel_fh_bh >> simp[]
+QED

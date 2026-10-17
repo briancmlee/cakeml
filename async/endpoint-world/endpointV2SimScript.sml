@@ -309,6 +309,15 @@ Proof
   qpat_x_assum ‘∀j. j = h ∨ _ ⇒ _’ (qspec_then ‘h’ mp_tac) >> simp[]
 QED
 
+(* All channels are up: no refused channel's error to report *)
+Theorem core_conn_err:
+  core lfd a sk w ⇒ ep_conn_err f w = NONE
+Proof
+  rw[ep_conn_err_def] >> CASE_TAC >> imp_res_tac core_all_up >>
+  ‘x < LENGTH w.chans’ by gvs[ep_chan_of_def, AllCaseEqs()] >>
+  fs[EVERY_EL]
+QED
+
 Theorem v2rel_read:
   v2rel lfd a sk w ⇒
   (v2_call «sock_read» conf bytes sk = NONE ∧ ep_call «sock_read» conf bytes w = NONE) ∨
@@ -319,6 +328,8 @@ Proof
   simp[v2_call_def, socket2_fn_def, ffi_sock_read2_def, ep_call_def] >>
   Cases_on ‘LENGTH conf = 8 ∧ 9 < LENGTH bytes’ >> simp[] >>
   ‘core lfd a sk w’ by fs[v2rel_def] >>
+  ‘ep_conn_err (bytes_fd conf) w = NONE’ by metis_tac[core_conn_err] >>
+  pop_assum (fn th => REWRITE_TAC[th]) >>
   drule core_chan_of >> disch_then (qspec_then ‘bytes_fd conf’ assume_tac) >>
   simp[sock_read2_def, ep_read_def] >>
   Cases_on ‘ep_chan_of w (bytes_fd conf)’ >> simp[] >>
@@ -517,6 +528,7 @@ Proof
   rw[ep_ffi_fn_def, ep_call_def, AllCaseEqs()] >>
   gvs[ep_tick_def, ep_deliver_fields, settle_def, ep_accept_def, ep_connect_def,
       ep_alloc_def, ep_read_def, ep_send_def, ep_shutdown_def, ep_close_def,
+      ep_conn_err_def,
       upd_chan_def, AllCaseEqs()] >>
   rpt (pairarg_tac >> gvs[]) >> gvs[AllCaseEqs()]
 QED

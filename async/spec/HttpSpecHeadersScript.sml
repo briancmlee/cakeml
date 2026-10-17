@@ -10,9 +10,10 @@
      <name>: <value>\r\n          (any number of header lines)
      \r\n
 
-  with version 1.0 or 1.1 and arbitrary well-formed headers, which the
-  server IGNORES: the response depends only on the path, exactly as in
-  HttpSpec (same print_response, same handle).  The statement keeps
+  with version 1.0 or 1.1 and arbitrary well-formed headers, except the
+  body-framing ones (Content-Length, Transfer-Encoding: there are no
+  request bodies in this subset), which the server IGNORES: the response
+  depends only on the path, exactly as in HttpSpec (same print_response, same handle).  The statement keeps
   HttpSpec's printer-based style: the spec quantifies over printed valid
   requests with ANY header lists, and never mentions a parser.
 
@@ -43,11 +44,24 @@ Definition valid_version_def:
   valid_version v ⇔ v = "1.0" ∨ v = "1.1"
 End
 
-(* Header lines: a non-empty name without colon, space, CR or LF; a value
-   without CR or LF (so a request is unambiguous) *)
+(* Header names that frame a request body.  This subset has NO request
+   bodies, so a request carrying one of these headers is not a valid
+   request: otherwise its body bytes would be read as the start of the
+   next request, and liveness would oblige the server to answer them.
+   Header names are case-insensitive (RFC 9110, section 5.1), so they are
+   compared after ASCII lowercasing. *)
+Definition body_header_def:
+  body_header n ⇔
+    MAP toLower n = "content-length" ∨ MAP toLower n = "transfer-encoding"
+End
+
+(* Header lines: a non-empty name without colon, space, CR or LF, and not
+   a body-framing name; a value without CR or LF (so a request is
+   unambiguous) *)
 Definition valid_header_def:
   valid_header (n, v) ⇔
     n ≠ [] ∧ EVERY (λc. c ≠ #":" ∧ c ≠ #" " ∧ c ≠ #"\r" ∧ c ≠ #"\n") n ∧
+    ¬body_header n ∧
     EVERY (λc. c ≠ #"\r" ∧ c ≠ #"\n") v
 End
 

@@ -34,6 +34,19 @@ Definition poll_flag_def:
     then 1w else 0w
 End
 
+(* The same from a revents field (D20) *)
+Definition abi_flag_def:
+  abi_flag (bs : word8 list) : word8 =
+    if (abi_revents bs).rin ∨ (abi_revents bs).rhup ∨ (abi_revents bs).rerr
+    then 1w else 0w
+End
+
+Theorem abi_flag_abi_rev[simp]:
+  abi_flag (abi_rev b) = poll_flag b
+Proof
+  simp[abi_flag_def, poll_flag_def]
+QED
+
 (* An L0 event as the version-2 event it stands for *)
 Definition l0_v2_event_def:
   l0_v2_event (IO_event (ExtCall n) conf bs) =
@@ -47,10 +60,10 @@ Definition l0_v2_event_def:
          (Accepted (case l0_res_of out of Ok f => SOME (n2w f) | Fail _ _ => NONE))
      else if n = «sys_close» then close_event (bytes_fd conf)
      else if n = «sys_poll» then
-       (let fes = poll_entries (DROP 1 conf) in
-          IO_event (ExtCall «sock_poll») (fds_bytes (MAP FST fes))
-            (ZIP (REPLICATE (LENGTH fes) 0w,
-                  MAP poll_flag (TAKE (LENGTH fes) (DROP 13 out)))))
+       (let ents = pollfd_entries (DROP 16 (MAP FST bs)) in
+          IO_event (ExtCall «sock_poll») (fds_bytes (MAP pe_fd ents))
+            (ZIP (REPLICATE (LENGTH ents) 0w,
+                  MAP (λe. abi_flag (DROP 6 e)) (pollfd_entries (DROP 16 out)))))
      else IO_event (ExtCall n) conf bs) ∧
   l0_v2_event ev = ev
 End
@@ -223,10 +236,13 @@ Theorem ops_env:
   (l0_recv f n w = (r, d, w') ⇒ w'.env = w.env) ∧
   (l0_send f bs w = (r, w') ⇒ w'.env = w.env) ∧
   (l0_shutdown f w = (r, w') ⇒ w'.env = w.env) ∧
-  (l0_close f w = (r, w') ⇒ w'.env = w.env)
+  (l0_close f w = (r, w') ⇒ w'.env = w.env) ∧
+  (l0_connect p w = (r, v, w') ⇒ w'.env = w.env) ∧
+  (l0_connerr f w = (y, w') ⇒ w'.env = w.env)
 Proof
   rpt conj_tac >> rw[l0_listen_def, l0_accept_def, l0_recv_def, l0_send_def,
-                     l0_shutdown_def, l0_close_def, AllCaseEqs()] >> gvs[]
+                     l0_shutdown_def, l0_close_def, l0_connect_def, l0_connerr_def,
+                     AllCaseEqs()] >> gvs[]
 QED
 
 Theorem l0_call_env:
@@ -241,6 +257,14 @@ Theorem l0_do_env:
   w'.fd_limit = w.fd_limit
 Proof
   rw[l0_do_def, l0_ffi_fn_def, AllCaseEqs()] >>
+  imp_res_tac l0_call_ch >> imp_res_tac l0_call_env >> gvs[]
+QED
+
+Theorem l0_do_buf_env:
+  l0_do_buf n conf bs w = SOME (out, w', ev) ⇒ w'.env = w.env ∧ w'.ch = w.ch ∧
+  w'.fd_limit = w.fd_limit
+Proof
+  rw[l0_do_buf_def, l0_ffi_fn_def, AllCaseEqs()] >>
   imp_res_tac l0_call_ch >> imp_res_tac l0_call_env >> gvs[]
 QED
 
@@ -464,7 +488,8 @@ Proof
     by (gvs[l1v2_rel_def, core_rel_def] >> Cases_on ‘ALOOKUP s.open_fds f’ >>
         gvs[] >> metis_tac[]) >>
   ‘chan_rel (EL j w.chans) (EL j s.clients)’ by gvs[l1v2_rel_def, core_rel_def, LIST_REL_EL_EQN] >>
-  ‘¬(EL j w.chans).broken ∧ ¬(EL j w.chans).shut’ by gvs[chan_rel_def] >>
+  ‘¬(EL j w.chans).broken ∧ ¬(EL j w.chans).shut ∧ ¬(EL j w.chans).connecting’
+    by gvs[chan_rel_def] >>
   ‘l0_tick «sys_send» w = w with clock := w.clock + 1’
     by (drule tick_simple_v2 >> disch_then irule >> EVAL_TAC) >>
   ‘outbox_of st f = []’ by simp[outbox_of_def] >>
@@ -508,12 +533,14 @@ QED
 Theorem tbl_open_chan:
   l1v2_rel p lfd sched (w, st) (s, hs) ∧ ALOOKUP st.tbl h = SOME f ⇒
   ∃j. ALOOKUP w.open_fds f = SOME j ∧ j < LENGTH w.chans ∧ ¬(EL j w.chans).closed ∧
-      chan_rel (EL j w.chans) (EL j s.clients) ∧ client_of s f = SOME j
+      chan_rel (EL j w.chans) (EL j s.clients) ∧ client_of s f = SOME j ∧
+      ¬(EL j w.chans).connecting
 Proof
   rw[l1v2_rel_def, core_rel_def] >>
   ‘ALOOKUP s.open_fds f ≠ NONE’ by metis_tac[] >>
   Cases_on ‘ALOOKUP s.open_fds f’ >> gvs[] >>
-  imp_res_tac LIST_REL_LENGTH >> gvs[LIST_REL_EL_EQN, client_of_def] >> metis_tac[]
+  imp_res_tac LIST_REL_LENGTH >> gvs[LIST_REL_EL_EQN, client_of_def] >>
+  metis_tac[chan_rel_def]
 QED
 
 (* A polled handle whose fd was not readable: L1 makes no call; the handle
@@ -723,35 +750,10 @@ QED
    Every fd in use stays below the limit
    ------------------------------------------------------------------------ *)
 
-Definition fds_lt_def:
-  fds_lt (w : l0world) ⇔ ∀x. MEM x (l0_used w) ⇒ w2n x < w.fd_limit
-End
-
 Theorem fds_lt_small:
   fds_lt w ∧ l0_rely w ⇒ fds_small w
 Proof
   rw[fds_lt_def, fds_small_def, l0_rely_def] >> res_tac >> decide_tac
-QED
-
-Theorem used_deliver[simp]:
-  l0_used (l0_deliver w a) = l0_used w ∧ (l0_deliver w a).fd_limit = w.fd_limit
-Proof
-  Cases_on ‘a’ >> rw[l0_deliver_def, l0_used_def, upd_lchan_def] >>
-  every_case_tac >> gvs[] >>
-  simp[AFUPDKEY_def] >> rpt (pop_assum mp_tac) >>
-  qid_spec_tac ‘w.listeners’ >> Induct >> simp[AFUPDKEY_def, FORALL_PROD] >> rw[]
-QED
-
-Theorem used_FOLDL_deliver[simp]:
-  ∀as w. l0_used (FOLDL l0_deliver w as) = l0_used w
-Proof
-  Induct >> simp[]
-QED
-
-Theorem fds_lt_tick[simp]:
-  fds_lt (l0_tick nm w) ⇔ fds_lt w
-Proof
-  simp[fds_lt_def, l0_tick_def]
 QED
 
 Theorem AFUPDKEY_MAP_FST:
@@ -856,3 +858,52 @@ Proof
   qexistsl_tac [‘Wrote’, ‘w'’, ‘st'’, ‘s'’, ‘hs'’, ‘evs’, ‘MAP l0_v2_event evs’] >>
   gvs[fds_lt_def] >> metis_tac[]
 QED
+
+(* The poll buffer read back (D20) *)
+Theorem pollfd_entries_FLAT:
+  ∀l. EVERY (λx. LENGTH x = 8) l ⇒ pollfd_entries (FLAT l) = l
+Proof
+  Induct >- simp[Once pollfd_entries_def] >>
+  rw[] >> simp[Once pollfd_entries_def] >>
+  simp[TAKE_APPEND1, DROP_APPEND1, TAKE_LENGTH_ID_rwt, DROP_LENGTH_NIL_rwt]
+QED
+
+Theorem DROP_16_poll_buf[simp]:
+  DROP 16 (poll_buf fes) = FLAT (MAP pfd_bytes fes)
+Proof
+  simp[poll_buf_def, DROP_APPEND]
+QED
+
+Theorem poll_out_entries:
+  EVERY (λ(f, e). small f ∧ e < 4) fes ⇒
+  pollfd_entries (DROP 16 (poll_out w (poll_buf fes))) =
+  MAP (λfe. TAKE 6 (pfd_bytes fe) ++ abi_rev (fd_revents w fe)) fes
+Proof
+  strip_tac >> simp[poll_out_def, pollfd_entries_buf] >>
+  ‘LENGTH (TAKE 3 (DROP 13 (poll_buf fes))) = 3’ by simp[poll_buf_def] >>
+  simp[DROP_APPEND, MAP_MAP_o, o_DEF] >>
+  ‘DROP 16 (enc_res (Ok (LENGTH (FILTER (λe. pfd_revents w (pe_fe e) ≠ 0w)
+             (MAP pfd_bytes fes)))) ++ TAKE 3 (DROP 13 (poll_buf fes))) = []’
+    by simp[DROP_LENGTH_TOO_LONG] >>
+  ‘DROP 3 (TAKE 3 (DROP 13 (poll_buf fes))) = []’ by fs[DROP_LENGTH_TOO_LONG] >>
+  simp[DROP_LENGTH_TOO_LONG] >>
+  ‘EVERY (λx. LENGTH x = 8)
+     (MAP (λx. TAKE 6 (pfd_bytes x) ++ abi_rev (pfd_revents w (pe_fe (pfd_bytes x)))) fes)’
+    by simp[EVERY_MAP, abi_rev_def] >>
+  drule pollfd_entries_FLAT >> simp[] >> strip_tac >>
+  irule MAP_CONG >> simp[FORALL_PROD] >> rw[] >>
+  gvs[EVERY_MEM] >> first_x_assum drule >> simp[] >> strip_tac >>
+  drule_all pe_pfd_bytes >> simp[pfd_revents_def] >> fs[small_def]
+QED
+
+Theorem poll_revents_ok:
+  EVERY (λ(f, e). small f ∧ e < 4) fes ∧ l0_res_of (poll_out w (poll_buf fes)) = Ok k ⇒
+  poll_revents fes (poll_out w (poll_buf fes)) =
+  ZIP (MAP FST fes, MAP (λfe. byte_revents (fd_revents w fe)) fes)
+Proof
+  strip_tac >> simp[poll_revents_def] >> drule poll_out_entries >>
+  disch_then (qspec_then ‘w’ SUBST1_TAC) >> simp[MAP_MAP_o, o_DEF] >>
+  ‘∀fe. DROP 6 (TAKE 6 (pfd_bytes fe) ++ abi_rev (fd_revents w fe)) = abi_rev (fd_revents w fe)’
+    by simp[DROP_APPEND] >> simp[]
+QED
+

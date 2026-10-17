@@ -192,6 +192,7 @@ Proof
   rw[ep_ffi_fn_def, ep_call_def, AllCaseEqs()] >>
   gvs[ep_tick_def, ep_deliver_fields, settle_def, ep_accept_def, ep_connect_def,
       ep_alloc_def, ep_read_def, ep_send_def, ep_shutdown_def, ep_close_def,
+      ep_conn_err_def,
       upd_chan_def, AllCaseEqs()] >>
   rpt (pairarg_tac >> gvs[]) >> gvs[AllCaseEqs()]
 QED
@@ -606,7 +607,7 @@ Proof
   strip_tac >> qpat_x_assum ‘ep_call _ _ _ _ = _’ mp_tac >>
   simp[ep_call_def, v2_calls_def, v1_calls_def] >>
   rw[AllCaseEqs()] >>
-  gvs[ep_read_def, ep_send_def, ep_close_def, AllCaseEqs()]
+  gvs[ep_read_def, ep_send_def, ep_close_def, ep_conn_err_def, AllCaseEqs()]
 QED
 
 Theorem call_accept_effect:

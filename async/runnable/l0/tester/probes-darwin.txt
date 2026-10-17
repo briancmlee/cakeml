@@ -73,6 +73,35 @@ accept on fd 0 (not a socket): EINVAL(errno 22, value 0)
 listen on the same port again: EADDRINUSE(errno 48, value 3)
 close fd 40: EBADF(errno 9, value 0)
 
+## P11 connect to a listening peer
+connect: EINPROGRESS(errno 36, value 4)
+poll IN|OUT at once: -
+poll IN|OUT later: OUT ; connerr: OK 0
+send: OK 5
+peer got: b'hello'
+poll: IN|OUT ; recv: b'world'
+after peer FIN: poll IN|HUP ; recv: OK 0
+close: OK 0
+
+## P12 connect to a closed port (refused)
+connect: EINPROGRESS(errno 36, value 4)
+poll IN|OUT at once: IN|HUP
+poll IN|OUT later: IN|HUP
+connerr: ECONNREFUSED(errno 61, value 1) ; again: OK 0
+recv: OK 0 ; send: EPIPE(errno 32, value 0)
+poll after: IN|HUP
+close: OK 0
+
+## P13 calls on a pending connect (the peer's backlog full)
+connect 0: EINPROGRESS(errno 36, value 4)
+connect 1: EINPROGRESS(errno 36, value 5)
+connect 2: EINPROGRESS(errno 36, value 6)
+connect 3: EINPROGRESS(errno 36, value 7)
+connect 4: EINPROGRESS(errno 36, value 8)
+connect 5: EINPROGRESS(errno 36, value 9)
+polls: ['OUT', 'OUT', 'OUT', 'OUT', 'OUT', 'OUT']
+on the last: recv EAGAIN(errno 35, value 0) ; send OK 1 ; shutdown OK 0 ; connerr OK 0
+
 # Conformance (l0check: is each run a behaviour of the L0 world?)
 P1_partial_send              conforms
 P2_reset                     conforms
@@ -84,3 +113,6 @@ P7_arrivals_between_calls    conforms
 P8_aborted_pending           conforms
 P9_hup                       conforms
 P10_misc                     conforms
+P11_connect                  conforms
+P12_refused                  conforms
+P13_pending                  conforms

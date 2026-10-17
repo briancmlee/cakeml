@@ -14,9 +14,10 @@
 
   The other names:
    - a connect's conf has 2 bytes, so its F1_io key bytes_fd (TAKE 8 conf)
-     is w82n of a 2-byte list (unspecified): F1_connect_sys (keyed by
-     port) applies when all of k's connects have one conf (the client's
-     conns_only a; KV makes no connect);
+     is w82n of a 2-byte list: one unspecified value for every connect
+     (w82n_short).  F1_connect_sys is keyed by port (w22n conf < 65536), so
+     some port is connected to infinitely often (io_pigeon) and
+     F1_connect_sys at that port gives the unretried connects;
    - a listen is never retried unless one failed (listen_failed, in
      sys_excuse);
    - an fdok's answer is one byte, never a result dec_res decodes, so it
@@ -222,9 +223,54 @@ Proof
   qpat_x_assum ‘∀n conf bts out. _ ⇒ dec_res _ ≠ NONE’ irule >> metis_tac[]
 QED
 
+(* w82n is unspecified (one ARB) off 8-byte lists, so every connect has
+   the same F1_io key *)
+Theorem w82n_short:
+  w82n [x1; x2] = w82n [y1; y2]
+Proof
+  ONCE_REWRITE_TAC [w82n_def_primitive] >>
+  ‘WF (@R. WF (R : word8 list -> word8 list -> bool))’ by (SELECT_ELIM_TAC >> metis_tac[relationTheory.WF_EMPTY_REL]) >>
+  pop_assum (fn th => ONCE_REWRITE_TAC [MATCH_MP relationTheory.WFREC_THM th]) >> simp[]
+QED
+
+Theorem w22n_lt:
+  w22n [x1; x2] < 65536
+Proof
+  simp[w22n_def] >>
+  ‘w2n x1 < 256 ∧ w2n x2 < 256’ by (conj_tac >> irule (INST_TYPE [alpha |-> “:8”] w2n_lt_256)) >>
+  simp[]
+QED
+
+Theorem connect_conf2:
+  l0sys_irun ps ss rs ∧ rs n = Call k «sys_connect» conf bts out ⇒ ∃x1 x2. conf = [x1; x2]
+Proof
+  strip_tac >> drule_all irun_call >> strip_tac >>
+  fs[l0_call_def, unblock_def] >> gvs[AllCaseEqs(), LET_THM, UNCURRY] >>
+  rename1 ‘LENGTH conf = 2’ >> Cases_on ‘conf’ >> fs[] >> Cases_on ‘t’ >> fs[]
+QED
+
+(* Pigeonhole: infinitely often with a value below M ⇒ one value infinitely often *)
+Theorem io_pigeon:
+  ∀M P. io P ∧ (∀n. P n ⇒ (g : num -> num) n < M) ⇒ ∃p. io (λn. P n ∧ g n = p)
+Proof
+  Induct
+  >- (rpt strip_tac >> fs[io_def] >> first_x_assum (qspec_then ‘0’ strip_assume_tac) >> res_tac >> fs[]) >>
+  rpt strip_tac >>
+  Cases_on ‘io (λn. P n ∧ g n = M)’ >- (qexists_tac ‘M’ >> first_assum ACCEPT_TAC) >>
+  pop_assum (strip_assume_tac o SIMP_RULE bool_ss [io_def, NOT_FORALL_THM, NOT_EXISTS_THM, DE_MORGAN_THM]) >>
+  first_x_assum (qspec_then ‘λn. P n ∧ n0 ≤ n’ mp_tac) >> impl_tac
+  >- (conj_tac
+      >- (fs[io_def] >> gen_tac >> qpat_x_assum ‘∀n0. ∃n. n0 ≤ n ∧ P n’ (qspec_then ‘MAX n0 n0'’ strip_assume_tac) >>
+          qexists_tac ‘n’ >> fs[MAX_LE]) >>
+      rpt strip_tac >> fs[] >> res_tac >>
+      ‘g n ≠ M’ by (first_x_assum (qspec_then ‘n’ mp_tac) >> simp[]) >> simp[]) >>
+  strip_tac >> qexists_tac ‘p’ >> irule io_mono >> qexists_tac ‘λn. (P n ∧ n0 ≤ n) ∧ g n = p’ >>
+  fs[]
+QED
+
 Theorem F1_lab_connect:
   F1_connect_sys ps rs ∧ k < LENGTH ps ∧
-  (∀n conf bts out. rs n = Call k «sys_connect» conf bts out ⇒ conf = cf) ∧
+  (∀n conf bts out. rs n = Call k «sys_connect» conf bts out ⇒ ∃x1 x2. conf = [x1; x2]) ∧
   io (λn. ∃conf bts out. rs n = Call k «sys_connect» conf bts out ∧
                          MEM f (call_fds «sys_connect» conf bts)) ⇒
   io (λn. ∃conf bts out. rs n = Call k «sys_connect» conf bts out ∧
@@ -232,23 +278,33 @@ Theorem F1_lab_connect:
                          ¬retried_lab (rs n) ∧ ¬(«sys_connect» = «sys_poll» ∧ dec_res out = NONE))
 Proof
   simp[F1_connect_sys_def, call_fds_def] >> strip_tac >>
-  ‘f = bytes_fd (TAKE 8 cf)’
-    by (qpat_assum ‘io _’ (mp_tac o SIMP_RULE bool_ss [io_def]) >>
-        disch_then (qspec_then ‘0’ strip_assume_tac) >>
-        qpat_x_assum ‘∀n conf bts out. _ ⇒ conf = cf’ drule >> strip_tac >> gvs[]) >>
-  qpat_x_assum ‘∀k p. _’ (qspecl_then [‘k’, ‘w22n cf’] mp_tac) >> impl_tac
+  ‘∀n conf bts out. rs n = Call k «sys_connect» conf bts out ⇒
+                    bytes_fd (TAKE 8 conf) = bytes_fd [0w; 0w] ∧ w22n conf < 65536’
+    by (rpt gen_tac >> strip_tac >>
+        qpat_x_assum ‘∀n conf bts out. _ ⇒ ∃x1 x2. _’ drule >> strip_tac >>
+        simp[ffiSpikeSocketFFITheory.bytes_fd_def, w22n_lt] >> AP_THM_TAC >> AP_TERM_TAC >> MATCH_ACCEPT_TAC w82n_short) >>
+  qabbrev_tac ‘g = λn. case rs n of Call _ _ conf _ _ => w22n conf | _ => 0’ >>
+  qspecl_then [‘65536’, ‘λn. ∃conf bts out. rs n = Call k «sys_connect» conf bts out ∧
+                                 f = bytes_fd (TAKE 8 conf)’]
+    mp_tac (Q.GEN ‘g’ io_pigeon |> Q.SPEC ‘g’) >>
+  impl_tac
+  >- (conj_tac >- (BETA_TAC >> first_assum ACCEPT_TAC) >>
+      simp[Abbr ‘g’] >> rpt strip_tac >> simp[] >> res_tac) >>
+  disch_then (qx_choose_then ‘p’ (assume_tac o BETA_RULE)) >>
+  qpat_x_assum ‘∀k p. _’ (qspecl_then [‘k’, ‘p’] mp_tac) >> impl_tac
   >- (conj_tac >- first_assum ACCEPT_TAC >>
-      simp[io_def] >> gen_tac >>
-      qpat_assum ‘io _’ (mp_tac o SIMP_RULE bool_ss [io_def]) >>
-      disch_then (qspec_then ‘n0’ strip_assume_tac) >>
-      qexists_tac ‘n’ >> conj_tac >- first_assum ACCEPT_TAC >>
-      qexistsl_tac [‘conf’, ‘bts’, ‘out’] >> conj_tac >- first_assum ACCEPT_TAC >>
-      qpat_x_assum ‘∀n conf bts out. _ ⇒ conf = cf’ drule >> simp[]) >>
-  simp[io_def] >> strip_tac >> gen_tac >>
-  first_x_assum (qspec_then ‘n0’ strip_assume_tac) >>
-  qexists_tac ‘n’ >> conj_tac >- first_assum ACCEPT_TAC >>
-  qexistsl_tac [‘conf’, ‘b’, ‘out’] >> asm_rewrite_tac[] >>
-  qpat_x_assum ‘∀n conf bts out. _ ⇒ conf = cf’ drule >> simp[]
+      irule io_mono >> qexists_tac ‘λn. (∃conf bts out. rs n = Call k «sys_connect» conf bts out ∧
+                                         f = bytes_fd (TAKE 8 conf)) ∧ g n = p’ >>
+      reverse conj_tac >- first_assum ACCEPT_TAC >>
+      simp[Abbr ‘g’] >> rpt strip_tac >> gvs[] >> metis_tac[]) >>
+  strip_tac >> irule io_mono >>
+  qexists_tac ‘λn. ∃conf b out. rs n = Call k «sys_connect» conf b out ∧ w22n conf = p ∧ ¬retried_lab (rs n)’ >>
+  reverse conj_tac >- first_assum ACCEPT_TAC >>
+  simp[] >> rpt strip_tac >> qexistsl_tac [‘conf’, ‘b’, ‘out’] >> simp[] >>
+  ‘∃n'. ∃conf' bts' out'. rs n' = Call k «sys_connect» conf' bts' out' ∧ f = bytes_fd (TAKE 8 conf')’
+    by (qpat_x_assum ‘io (λn. (∃conf bts out. _) ∧ _)’ (strip_assume_tac o SIMP_RULE bool_ss [io_def]) >>
+        pop_assum (qspec_then ‘0’ strip_assume_tac) >> metis_tac[]) >>
+  metis_tac[]
 QED
 
 Theorem F1_lab_noretry:
@@ -282,7 +338,6 @@ QED
 Theorem F1_io_of_sys:
   l0sys_irun ps ss rs ∧ k < LENGTH ps ∧
   F1_sys ps rs ∧ F1_connect_sys ps rs ∧ F1_poll_sys ps rs ∧ ¬listen_failed rs k ∧
-  (∀n conf bts out. rs n = Call k «sys_connect» conf bts out ⇒ conf = cf) ∧
   (∀t. ∃t'. t ≤ t' ∧ is_kcall k (rs t')) ∧ (∀t. LPREFIX (fromList (ptr rs k t)) tr) ⇒
   F1_io tr
 Proof
@@ -327,9 +382,8 @@ Proof
   Cases_on ‘nm = «sys_connect»’
   >- (pop_assum SUBST_ALL_TAC >> irule F1_lab_connect >> rpt conj_tac >>
       FIRST [first_assum ACCEPT_TAC, qexists_tac ‘ps’ >> rpt conj_tac >> first_assum ACCEPT_TAC,
-             qexistsl_tac [‘cf’, ‘ps’] >> rpt conj_tac >> first_assum ACCEPT_TAC,
-             qexistsl_tac [‘ps’, ‘cf’] >> rpt conj_tac >> first_assum ACCEPT_TAC,
-             qexists_tac ‘cf’ >> first_assum ACCEPT_TAC]) >>
+             rpt gen_tac >> strip_tac >> qpat_x_assum ‘l0sys_irun _ _ _’ mp_tac >> qpat_x_assum ‘rs n = _’ mp_tac >>
+             rpt (pop_assum kall_tac) >> metis_tac[connect_conf2]]) >>
   Cases_on ‘nm = «sys_listen»’
   >- (pop_assum SUBST_ALL_TAC >> irule F1_lab_noretry >> rpt conj_tac >>
       FIRST [first_assum ACCEPT_TAC, simp[] >> NO_TAC,

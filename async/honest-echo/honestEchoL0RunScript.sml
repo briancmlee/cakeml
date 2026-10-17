@@ -288,3 +288,60 @@ Proof
       qpat_assum ‘trans _ _ = _’ (fn th => REWRITE_TAC [th]) >> simp[haccepted_APPEND]) >>
   rw[] >> gvs[]
 QED
+
+(* The actions receive nothing: the server's reads in a round are answered
+   from input L1 held before it *)
+Theorem pdo_no_recv:
+  pdo lfd (w, ps) a = SOME (r, (w', ps'), evs) ∧ l0_rely w ⇒ ∀j s. ep_rd j s evs = []
+Proof
+  strip_tac >> Cases_on ‘a’
+  >- gvs[pdo_def, AllCaseEqs(), ep_fold_def]
+  >- (qpat_x_assum ‘pdo _ _ _ = _’ mp_tac >> simp[pdo_def] >>
+      rw[AllCaseEqs()] >> gvs[ep_fold_def] >>
+      PairCases_on ‘z’ >> gvs[] >>
+      drule l1_close_shape >> strip_tac >> gvs[] >>
+      drule_all sys_close_event >> strip_tac >> simp[ep_fold_def]) >>
+  qpat_x_assum ‘pdo _ _ _ = _’ mp_tac >> simp[pdo_def, PULL_EXISTS] >> rpt gen_tac >>
+  PairCases_on ‘z’ >> simp[] >> strip_tac >> gvs[] >>
+  qpat_x_assum ‘l1do _ _ _ = _’ mp_tac >> simp[l1do_def] >>
+  rw[AllCaseEqs()] >> gvs[ep_fold_def] >>
+  drule_all sys_send_event >> strip_tac >> simp[ep_fold_def]
+QED
+
+Theorem pacts_no_recv:
+  ∀acts w ps rs evs w' ps'.
+    pacts lfd (w, ps) acts = SOME (rs, evs, (w', ps')) ∧ l0_rely w ⇒ ∀j s. ep_rd j s evs = []
+Proof
+  Induct >> simp[pacts_def, ep_fold_def] >> rpt gen_tac >> strip_tac >>
+  gvs[AllCaseEqs()] >>
+  rename1 ‘pdo lfd (w, ps) a = SOME (r, ws1, evs1)’ >> PairCases_on ‘ws1’ >>
+  drule_all pdo_no_recv >> strip_tac >>
+  ‘l0_rely ws10’ by metis_tac[pdo_rely] >>
+  first_x_assum drule_all >> simp[ep_fold_APPEND]
+QED
+
+Theorem pround_hread:
+  pround lfd hw hs (w, ps) acts = SOME (sn, (w', ps'), log, evs) ∧
+  wown lfd w ps ∧ own_ok lfd (k, opn) ps ∧ LENGTH ps.acq ≤ 1 ∧
+  l1hdln (w2n lfd) (ps.b.nxt + LENGTH acts + 1) < dimword (:64) ∧
+  hdln (w2n lfd) j < dimword (:64) ⇒
+  hread (l1hdl lfd j) (ZIP (acts, MAP SOME sn.results)) ≼ inbp lfd ps j
+Proof
+  strip_tac >> qpat_x_assum ‘pround _ _ _ _ _ = _’ mp_tac >>
+  simp[pround_def, AllCaseEqs(), PULL_EXISTS] >> rpt gen_tac >> strip_tac >>
+  rename1 ‘pacts _ _ _ = SOME (rs, evs1, ws1)’ >> PairCases_on ‘ws1’ >>
+  gvs[ssnap_def] >>
+  ‘l0_rely w’ by gvs[wown_def] >>
+  ‘k ≤ ps.b.nxt + 1’ by gvs[own_ok_def] >>
+  ‘l1hdln (w2n lfd) k < dimword (:64)’
+    by (fs[] >> irule hdln_mono >> qexists_tac ‘ps.b.nxt + (LENGTH acts + 1)’ >> simp[]) >>
+  Cases_on ‘j < k’
+  >- (drule_all pacts_in >> strip_tac >>
+      drule_all pacts_no_recv >> strip_tac >>
+      qpat_x_assum ‘∀j. j < k ⇒ _’ (qspec_then ‘j’ mp_tac) >> simp[] >>
+      qpat_x_assum ‘∀s. ep_rd j s evs1 = []’ (fn th => simp[th]) >> strip_tac >>
+      simp[rich_listTheory.IS_PREFIX_APPEND] >> qexists_tac ‘inbp lfd ws11 j’ >> simp[]) >>
+  ‘hread (l1hdl lfd j) (ZIP (acts, MAP SOME rs)) = []’
+    by (irule pacts_fresh >> conj_tac >- fs[] >> qexistsl [‘evs1’, ‘k’, ‘opn’, ‘ps’, ‘ws11’, ‘w’, ‘ws10’] >> fs[]) >>
+  fs[]
+QED

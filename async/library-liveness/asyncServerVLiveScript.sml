@@ -235,14 +235,31 @@ Proof
   rw[bytes_def] >> metis_tac[gen_rounds_bytes]
 QED
 
+(* The loop polls every handed-out fd that has not read end-of-file (the
+   live interest lists, asyncM4LiveInterest, drop an fd only then) *)
+Definition interest_covers_e_def:
+  interest_covers_e ifds m s0 ⇔
+    ∀k c. MEM c (wacc (gperf ifds m s0 k)) ∧
+          (∀kk. ¬MEM (asyncM3World$Read c kk, Got (SOME [])) (gperf ifds m s0 k)) ⇒
+          MEM c (ifds (ghist ifds m s0 k))
+End
+
+Theorem interest_covers_e_covers:
+  interest_covers ifds m s0 ⇒ interest_covers_e ifds m s0
+Proof
+  simp[interest_covers_def, interest_covers_e_def]
+QED
+
 (* MAIN: an accepted connection c, served by a view (g, t) from round a,
    gets its environment from the socket world: henv_t for any prefix D of
    what was sent on c by round n; and what t writes is what the loop's
-   events write to c (sw_view_henv, for any M and t) *)
-Theorem m_view_henv:
+   events write to c (sw_view_henv, for any M and t).  Its interest
+   hypothesis is interest_covers_e: once c has read end-of-file, nothing
+   more arrives on it *)
+Theorem m_view_henv_e:
   uses_ok lfdn (M : 'mx smach) ∧
   s0.listeners = [(n2w lfdn, [])] ∧ s0.conns = [] ∧ sched_wf s0 ∧
-  interest_covers ifds (srelabel M) s0 ∧
+  interest_covers_e ifds (srelabel M) s0 ∧
   MEM c (wacc (SPg M ifds s0 n)) ∧ bytes D ≼ sent_upto c n s0 ∧
   a ≤ n ∧ LENGTH g + a = N ∧
   (∀i. i < LENGTH g ⇒
@@ -301,18 +318,30 @@ Proof
   >- (‘a + j < N ∧ j + 1 ≤ LENGTH g ∧ j0 ≤ j + 1’ by fs[] >>
       ‘MEM c (wacc (SPg M ifds s0 (a + j)))’
         by (irule wacc_mono >> qexists_tac ‘n’ >> fs[Abbr ‘j0’]) >>
-      ‘MEM c (ifds (ghist ifds (srelabel M) s0 (a + j)))’
-        by fs[interest_covers_def] >>
-      ‘¬is_ready (gstate ifds (srelabel M) s0 (a + (j + 1))) c’
-        by (strip_tac >> qpat_x_assum ‘Readable fd ∉ _’ mp_tac >>
-            qpat_x_assum ‘∀i. i < LENGTH g ⇒ _’ (qspec_then ‘j’ mp_tac) >>
-            impl_tac >- simp[] >> disch_then SUBST1_TAC >>
-            simp[EL_MAP, snap_map_def, sfe_def, ready_EL_ghist, MEM_FILTER] >>
-            qexists_tac ‘c’ >> fs[Abbr ‘fd’, ADD1]) >>
       qpat_x_assum ‘∀j. j ≤ LENGTH g ⇒ ∃inc. _’ (qspec_then ‘j + 1’ mp_tac) >>
       impl_tac >- simp[] >> strip_tac >>
       ‘inc = []’
-        by (Cases_on ‘ALOOKUP (gstate ifds (srelabel M) s0 (a + (j + 1))).conns c’ >> fs[] >>
+        by (Cases_on ‘∃kk. MEM (asyncM3World$Read c kk, Got (SOME [])) (SPg M ifds s0 (a + j))’
+            (* c read end-of-file: nothing is unread on it for good *)
+            >- (pop_assum strip_assume_tac >>
+                ‘MEM (asyncM3World$Read c kk, Got (SOME [])) (SPg M ifds s0 (a + (j + 1)))’
+                  by (‘a + (j + 1) = SUC (a + j)’ by simp[] >> pop_assum SUBST1_TAC >>
+                      simp[gperf_SUC]) >>
+                qpat_assum ‘grun_ok _ _ _’ (fn th => drule_then strip_assume_tac
+                  (MATCH_MP grounds_eof th)) >>
+                qpat_x_assum ‘∀cn. ALOOKUP _ _ = SOME cn ⇒ inc = _’ drule >>
+                disch_then SUBST1_TAC >> first_assum ACCEPT_TAC) >>
+            ‘MEM c (ifds (ghist ifds (srelabel M) s0 (a + j)))’
+              by (qpat_x_assum ‘interest_covers_e _ _ _’
+                    (irule o REWRITE_RULE [interest_covers_e_def]) >>
+                  fs[]) >>
+            ‘¬is_ready (gstate ifds (srelabel M) s0 (a + (j + 1))) c’
+              by (strip_tac >> qpat_x_assum ‘Readable fd ∉ _’ mp_tac >>
+                  qpat_x_assum ‘∀i. i < LENGTH g ⇒ _’ (qspec_then ‘j’ mp_tac) >>
+                  impl_tac >- simp[] >> disch_then SUBST1_TAC >>
+                  simp[EL_MAP, snap_map_def, sfe_def, ready_EL_ghist, MEM_FILTER] >>
+                  qexists_tac ‘c’ >> fs[Abbr ‘fd’, ADD1]) >>
+            Cases_on ‘ALOOKUP (gstate ifds (srelabel M) s0 (a + (j + 1))).conns c’ >> fs[] >>
             fs[is_ready_def] >> gvs[]) >>
       qpat_x_assum ‘∀j. j0 ≤ j ⇒ bytes D ≼ _’ (qspec_then ‘j + 1’ mp_tac) >>
       impl_tac >- simp[] >>
@@ -377,6 +406,29 @@ Proof
   qpat_x_assum ‘sent_upto _ _ _ = _’ SUBST1_TAC >>
   qpat_x_assum ‘inc = []’ SUBST1_TAC >>
   REWRITE_TAC[APPEND_NIL, bytes_prefix_sw]
+QED
+
+(* MAIN: m_view_henv_e, for an interest list that keeps every handed-out fd *)
+Theorem m_view_henv:
+  uses_ok lfdn (M : 'mx smach) ∧
+  s0.listeners = [(n2w lfdn, [])] ∧ s0.conns = [] ∧ sched_wf s0 ∧
+  interest_covers ifds (srelabel M) s0 ∧
+  MEM c (wacc (SPg M ifds s0 n)) ∧ bytes D ≼ sent_upto c n s0 ∧
+  a ≤ n ∧ LENGTH g + a = N ∧
+  (∀i. i < LENGTH g ⇒
+       (EL i g).ready = (EL (a + i) (MAP sfs (ghist ifds (srelabel M) s0 N))).ready) ∧
+  (∀j. j ≤ LENGTH g ⇒ FILTER (on_fd (w2n c)) (TSg M ifds s0 (a + j)) = t (TAKE j g)) ⇒
+  henv_t (w2n c) t g (n − a) D ∧
+  ∀j. j ≤ LENGTH g ⇒
+    bytes (FLAT (written (w2n c) (t (TAKE j g)))) =
+      bytes_written_to c (FLAT (GENLIST (grounds_events ifds (srelabel M) s0) (SUC (a + j))))
+Proof
+  strip_tac >> irule m_view_henv_e >>
+  rpt conj_tac >>
+  FIRST [first_assum ACCEPT_TAC,
+         qexists_tac ‘N’ >> conj_tac >> first_assum ACCEPT_TAC,
+         qexists_tac ‘lfdn’ >> conj_tac >> first_assum ACCEPT_TAC,
+         irule interest_covers_e_covers >> first_assum ACCEPT_TAC]
 QED
 
 (* ------------------------------------------------------------------------

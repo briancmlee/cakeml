@@ -278,7 +278,7 @@ Definition cok_def:
     case c of
     | CPend hd =>
         ch.sent = [] ∧ sent = [] ∧ ¬ch.shut ∧
-        (ch.status = Connecting ∧ sett ∧ ¬rd ∨
+        (ch.status = Connecting ∧ ch.inbox = [] ∧ ¬ch.peer_eof ∧ sett ∧ ¬rd ∨
          (ch.status = Up ∨ ch.status = Refused) ∧ (sett ∨ rd))
     | CUp hd rest => ch.status = Up ∧ ¬ch.shut ∧ ch.sent ++ rest = b ∧ sent = ch.sent
     | _ => T
@@ -987,7 +987,7 @@ Theorem crel_write:
   ∃r w1 hs1. ehdo lfd (w, hs) (EWrite hd rest) = SOME (r, (w1, hs1)) ∧
      crel a N rqs lfd (cupd rqs st [(k, EWrite hd rest)] [r]) rdyf
        (ps ++ [(EWrite hd rest, r)]) w1 hs1 ∧ wkeep w w1 ∧
-     EL k (cupd rqs st [(k, EWrite hd rest)] [r]).cs = CUp hd []
+     EL k (cupd rqs st [(k, EWrite hd rest)] [r]).cs = CUp hd [] ∧ new_hd r = NONE
 Proof
   strip_tac >> ‘MEM hd (chd (EL k st.cs))’ by simp[chd_def] >>
   drule_all crel_handle >> strip_tac >> drule crel_takes >> strip_tac >>
@@ -1007,4 +1007,108 @@ Proof
       qexistsl_tac [‘j’, ‘ps’, ‘rdyf’, ‘w’] >> simp[chd_def] >> rw[] >>
       gvs[hl_one, Abbr ‘w1’, upd_chan_def, EL_LUPDATE]) >>
   simp[wkeep_def, Abbr ‘w1’, upd_chan_def, EL_LUPDATE] >> rw[]
+QED
+
+Theorem wkeep_trans:
+  wkeep w1 w2 ∧ wkeep w2 w3 ⇒ wkeep w1 w3
+Proof
+  rw[wkeep_def] >> rpt (first_x_assum (qspec_then ‘j’ mp_tac)) >> rw[] >> gvs[]
+QED
+
+Theorem ehacts_one:
+  ehdo lfd st x = SOME (r, st1) ⇒ ehacts lfd st [x] = SOME ([r], st1)
+Proof
+  simp[ehacts_def]
+QED
+
+Theorem ehacts_two:
+  ehdo lfd st x = SOME (r, st1) ∧ ehdo lfd st1 y = SOME (r', st2) ⇒
+  ehacts lfd st [x; y] = SOME ([r; r'], st2)
+Proof
+  simp[ehacts_def]
+QED
+
+(* The goal and the assumptions in the same normal form, without using the
+   assumptions *)
+val norm_tac = RULE_ASSUM_TAC (SIMP_RULE (srw_ss()) []) >> SIMP_TAC (srw_ss()) [] >>
+               rpt conj_tac >> TRY (first_assum ACCEPT_TAC);
+
+(* Connection k's actions of the round (started with nh0 handles used):
+   the relation holds after them, k's ready set used up; the others'
+   states are untouched; at most one handle is issued *)
+Theorem crel_conn:
+  crel a N rqs lfd st rdyf ps w hs ∧ k < N ∧ N < dimword (:64) ∧
+  (nh0 < cbound ⇒ st.nh + 2 < dimword (:64)) ⇒
+  ∃rs w1 hs1.
+    ehacts lfd (w, hs) (cact1 a nh0 (EL k st.cs) (rdyf k)) = SOME (rs, (w1, hs1)) ∧
+    crel a N rqs lfd (cupd rqs st (MAP (λx. (k, x)) (cact1 a nh0 (EL k st.cs) (rdyf k))) rs)
+      ((k =+ ∅) rdyf) (ps ++ ZIP (cact1 a nh0 (EL k st.cs) (rdyf k), rs)) w1 hs1 ∧
+    wkeep w w1 ∧ LENGTH rs = LENGTH (cact1 a nh0 (EL k st.cs) (rdyf k)) ∧
+    (∀i. i ≠ k ⇒ EL i (cupd rqs st (MAP (λx. (k, x)) (cact1 a nh0 (EL k st.cs) (rdyf k))) rs).cs =
+                 EL i st.cs) ∧
+    (cupd rqs st (MAP (λx. (k, x)) (cact1 a nh0 (EL k st.cs) (rdyf k))) rs).nh ≤ st.nh + 1
+Proof
+  strip_tac >> ‘LENGTH st.cs = N ∧ st.nh = hs.nxt’ by fs[crel_def] >>
+  (* no action: only the ready set changes *)
+  ‘(∀hd. MEM hd (chd (EL k st.cs)) ⇒ hd ∉ rdyf k) ⇒
+   crel a N rqs lfd st ((k =+ ∅) rdyf) ps w hs’
+    by (strip_tac >> irule crel_rdyf >> qexists_tac ‘rdyf’ >>
+        rw[combinTheory.APPLY_UPDATE_THM] >> metis_tac[]) >>
+  Cases_on ‘EL k st.cs’ >> simp[cact1_def]
+  >~ [‘EL k st.cs = CIdle’]
+  >- (IF_CASES_TAC
+      >- (‘hs.nxt + 2 < dimword (:64)’ by gvs[] >>
+          drule_all crel_connect >> strip_tac >> drule ehacts_one >> strip_tac >>
+          qexistsl_tac [‘[r]’, ‘w1’, ‘hs1’] >> norm_tac >> rw[EL_LUPDATE]) >>
+      simp[ehacts_def, cupd_def] >>
+      first_x_assum irule >> simp[chd_def])
+  >~ [‘EL k st.cs = CDone’]
+  >- (simp[ehacts_def, cupd_def] >>
+      first_x_assum irule >> simp[chd_def])
+  >~ [‘EL k st.cs = CPend hd’]
+  >- (IF_CASES_TAC
+      >- (‘MEM hd (chd (EL k st.cs)) ∧ ∀h. EL k st.cs = CPend h ⇒ hd ∈ rdyf k’ by simp[chd_def] >>
+          drule_all crel_read >> strip_tac >> drule ehacts_one >> strip_tac >>
+          qexistsl_tac [‘[r]’, ‘w1’, ‘hs1’] >> norm_tac >> rw[EL_LUPDATE]) >>
+      simp[ehacts_def, cupd_def] >>
+      first_x_assum irule >> simp[chd_def]) >>
+  rename1 ‘EL k st.cs = CUp hd rest’ >>
+  Cases_on ‘rest = []’ >> simp[]
+  >- (IF_CASES_TAC
+      >- (‘MEM hd (chd (EL k st.cs)) ∧ ∀h. EL k st.cs = CPend h ⇒ hd ∈ rdyf k’ by simp[chd_def] >>
+          drule_all crel_read >> strip_tac >> drule ehacts_one >> strip_tac >>
+          qexistsl_tac [‘[r]’, ‘w1’, ‘hs1’] >> norm_tac >> rw[EL_LUPDATE]) >>
+      simp[ehacts_def, cupd_def] >>
+      first_x_assum irule >> simp[chd_def]) >>
+  drule_all crel_write >> strip_tac >>
+  qabbrev_tac ‘st1 = cupd rqs st [(k, EWrite hd rest)] [r]’ >>
+  ‘LENGTH st1.cs = N ∧ st1.nh = st.nh ∧ ∀i. i ≠ k ⇒ EL i st1.cs = EL i st.cs’
+    by (simp[Abbr ‘st1’, EL_LUPDATE] >> fs[]) >>
+  ‘∀r'. cupd rqs st [(k, EWrite hd rest); (k, ERead hd cread)] [r; r'] =
+        cupd rqs st1 [(k, ERead hd cread)] [r']’
+    by (rpt (qpat_x_assum ‘_ = _’ kall_tac) >> qunabbrev_tac ‘st1’ >>
+        simp_tac (srw_ss()) [cupd_def]) >>
+  ‘cupd rqs st [(k, EWrite hd rest)] [r] = st1’ by fs[markerTheory.Abbrev_def] >>
+  IF_CASES_TAC
+  >- (‘MEM hd (chd (EL k st1.cs)) ∧ ∀h. EL k st1.cs = CPend h ⇒ hd ∈ rdyf k’ by simp[chd_def] >>
+      drule_all crel_read >> strip_tac >>
+      ‘ehacts lfd (w, hs) [EWrite hd rest; ERead hd cread] = SOME ([r; r'], (w1', hs1'))’
+        by (irule ehacts_two >> metis_tac[]) >>
+      qexistsl_tac [‘[r; r']’, ‘w1'’, ‘hs1'’] >>
+      SIMP_TAC list_ss [] >>
+      qpat_x_assum ‘ehacts _ _ _ = _’ (fn th => REWRITE_TAC [th]) >>
+      qpat_x_assum ‘∀r'. cupd _ _ [_; _] _ = _’ (fn th => REWRITE_TAC [th]) >>
+      ‘ps ++ [(EWrite hd rest, r); (ERead hd cread, r')] =
+       ps ++ [(EWrite hd rest, r)] ++ [(ERead hd cread, r')]’ by simp[] >>
+      pop_assum SUBST1_TAC >> rpt conj_tac
+      >- first_assum ACCEPT_TAC
+      >- (irule wkeep_trans >> qexists_tac ‘w1’ >> conj_tac >> first_assum ACCEPT_TAC)
+      >- (rpt strip_tac >> asm_simp_tac (srw_ss()) [EL_LUPDATE])
+      >> SIMP_TAC (srw_ss()) [] >> qpat_x_assum ‘st1.nh = _’ SUBST1_TAC >> rw[]) >>
+  qexistsl_tac [‘[r]’, ‘w1’, ‘hs1’] >> drule ehacts_one >> disch_then (fn th => REWRITE_TAC [th]) >>
+  SIMP_TAC list_ss [] >> qpat_x_assum ‘cupd _ _ [_] _ = st1’ (fn th => REWRITE_TAC [th]) >>
+  rpt conj_tac >> TRY (first_assum ACCEPT_TAC)
+  >- (irule crel_rdyf >> qexists_tac ‘rdyf’ >> conj_tac >> TRY (first_assum ACCEPT_TAC) >>
+      rw[combinTheory.APPLY_UPDATE_THM] >> gvs[chd_def]) >>
+  simp[]
 QED

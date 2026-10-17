@@ -84,11 +84,13 @@ Definition client_safe_l0_def:
 End
 
 (* The claim, for the client binary cprog a c N rqs: in every world of B1's
-   class, a behaviour that is not Fail, and safe unless the listen failed *)
+   class, a behaviour that is not Fail, and safe unless the listen failed.
+   N < 2^63 (D42, "for now"): the client's E1 run counts its logical
+   connections in 64-bit words (moonshotClientSpec's cbound) *)
 Definition l0_client_claim_def:
   l0_client_claim cprog ⇔
     ∀a c N rqs w0.
-      2 ≤ N ∧ (∀i. EVERY valid_brequest (rqs i)) ∧
+      2 ≤ N ∧ N < 2 ** 63 ∧ (∀i. EVERY valid_brequest (rqs i)) ∧
       a < 65536 ∧ c < 65536 ∧ c ≠ a ∧
       l0_rely w0 ∧ l0_fresh w0 ∧ fds_lt w0 ⇒
       ∃beh. semantics_prog (init_state (l0_ffi w0)) init_env (cprog a c N rqs) beh ∧

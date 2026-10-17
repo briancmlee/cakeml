@@ -10,7 +10,7 @@
 *)
 Theory e1TraceEvents
 Ancestors
-  moonshotSentGlue honestL1EPModel honestL1PFConnRun honestL1PFRound honestL1Model
+  moonshotSentGlue honestL1EPModel honestL1PFConnRun honestL1PFRound honestL1PFModel honestL1Model
   l0sysEpisodes
 Libs
   preamble
@@ -170,4 +170,106 @@ Proof
   simp[l0_ep_role_def] >>
   qpat_x_assum ‘ep_roles [] _ = _’ (fn th => REWRITE_TAC[th]) >> Cases_on ‘j < LENGTH (ep_roles [] xs)’ >> simp[] >>
   gvs[LIST_REL_EL_EQN] >> first_x_assum drule >> simp[rkind_def]
+QED
+
+(* ------------------------------------------------------------------------
+   No accept: a run whose interest never has the listener, and whose L1
+   table never holds it, accepts nothing; then no episode is Accepted
+   ------------------------------------------------------------------------ *)
+
+Theorem pf_fetch_noaccept:
+  ∀fs w ps w' ps' log evs.
+    pf_fetch lfd pol fs (w, ps) = SOME ((w', ps'), log, evs) ∧ ¬MEM lfd fs ⇒
+    EVERY (λev. ev_name ev ≠ ExtCall «sys_accept») evs
+Proof
+  Induct >> simp[pf_fetch_def] >> rpt gen_tac >> rw[] >>
+  TRY (first_x_assum drule >> simp[] >> NO_TAC) >>
+  gvs[AllCaseEqs()] >> pairarg_tac >> gvs[AllCaseEqs()] >>
+  first_x_assum drule >> simp[] >>
+  gvs[sys_recv_def] >> drule l0_do_cases >> rw[] >> simp[ev_name_def]
+QED
+
+Theorem poll_set_lfd:
+  MEM lfd (in_fds (pf_poll_set lfd pol ps hs ++ MAP (λf. (f, 2n)) pfs)) ⇒
+  MEM lfd hs ∨ MEM lfd (MAP SND ps.b.tbl)
+Proof
+  simp[in_fds_def, pf_poll_set_def, MEM_MAP, MEM_FILTER, MEM_FLAT, PULL_EXISTS,
+       FORALL_PROD, EXISTS_PROD] >>
+  rw[] >> every_case_tac >> gvs[] >> imp_res_tac ALOOKUP_MEM >> metis_tac[]
+QED
+
+Theorem etail_noaccept:
+  etail lfd pol hs (w, es) = SOME (rdy, ws', log, tevs) ∧ ¬MEM lfd hs ∧
+  ¬MEM lfd (MAP SND es.p.b.tbl) ⇒
+  EVERY (λev. ev_name ev ≠ ExtCall «sys_accept») tevs
+Proof
+  simp[etail_def, AllCaseEqs(), PULL_EXISTS] >> rpt gen_tac >> strip_tac >>
+  qpat_x_assum ‘_ = tevs’ (SUBST1_TAC o SYM) >> simp[] >>
+  rpt conj_tac
+  >- (drule l1_polls_names >> simp[EVERY_MEM] >> rpt strip_tac >> res_tac >> gvs[])
+  >- (drule l1_flush_names >> simp[EVERY_MEM] >> rpt strip_tac >> res_tac >> gvs[])
+  >- (qpat_x_assum ‘pf_fetch _ _ _ _ = _’ assume_tac >>
+      drule pf_fetch_noaccept >> disch_then irule >>
+      simp[MEM_FILTER] >> disj1_tac >> strip_tac >> drule poll_set_lfd >> simp[])
+  >- (qpat_x_assum ‘l1_reap _ _ = _’ assume_tac >>
+      drule l1_reap_names >> simp[EVERY_MEM] >> rpt strip_tac >> res_tac >> gvs[]) >>
+  drule settle_fds_names >> simp[EVERY_MEM] >> rpt strip_tac >> res_tac >> gvs[]
+QED
+
+Theorem eacts_noaccept:
+  ∀acts ws rs evs ws'.
+    eacts lfd pol ws acts = SOME (rs, evs, ws') ⇒
+    EVERY (λev. ev_name ev ≠ ExtCall «sys_accept») evs
+Proof
+  Induct >> simp[eacts_def] >> rpt gen_tac >> simp[AllCaseEqs()] >> strip_tac >> gvs[] >>
+  first_x_assum drule >> simp[] >> disch_then kall_tac >>
+  PairCases_on ‘ws’ >> PairCases_on ‘ws1’ >>
+  Cases_on ‘∃p. h = EConnect p’
+  >- (gvs[edo_def, AllCaseEqs(), sys_connect_def] >> drule l0_do_cases >> rw[] >>
+      simp[ev_name_def]) >>
+  drule edo_names >> impl_tac >- metis_tac[] >>
+  simp[EVERY_MEM] >> rpt strip_tac >> res_tac >> gvs[]
+QED
+
+Theorem erounds_noaccept:
+  (∀n h ws evs logs rs evs1 ws1.
+     erounds lfd pol ifds m ws0 n = SOME (h, ws, evs, logs) ∧
+     eacts lfd pol ws (new_actions (log_of m) h) = SOME (rs, evs1, ws1) ⇒
+     ¬MEM lfd (ifds h) ∧ ¬MEM lfd (MAP SND (SND ws1).p.b.tbl)) ⇒
+  ∀n h ws evs logs.
+    erounds lfd pol ifds m ws0 n = SOME (h, ws, evs, logs) ⇒
+    EVERY (λev. ev_name ev ≠ ExtCall «sys_accept») evs
+Proof
+  strip_tac >> Induct >> simp[erounds_def] >> rpt gen_tac >>
+  simp[AllCaseEqs()] >> strip_tac >> gvs[] >>
+  qpat_x_assum ‘eround _ _ _ _ _ = _’ mp_tac >> simp[eround_def, AllCaseEqs()] >>
+  strip_tac >> gvs[] >>
+  first_x_assum drule_all >> strip_tac >>
+  rename1 ‘etail _ _ _ ws1 = _’ >> PairCases_on ‘ws1’ >>
+  drule eacts_noaccept >> simp[] >> disch_then kall_tac >>
+  drule etail_noaccept >> gvs[]
+QED
+
+Theorem new_inr:
+  ev_new ev = SOME (f, INR l) ⇒ ev_name ev = ExtCall «sys_accept»
+Proof
+  Cases_on ‘ev’ >> rename1 ‘IO_event n _ _’ >> Cases_on ‘n’ >>
+  simp[ev_new_def, ev_name_def] >> rw[] >> every_case_tac >> gvs[]
+QED
+
+Theorem noaccept_roles:
+  ∀evs lst. EVERY (λev. ev_name ev ≠ ExtCall «sys_accept») evs ⇒
+            ∀p. ¬MEM (Accepted p) (ep_roles lst evs)
+Proof
+  Induct >> simp[ep_roles_def] >> rpt gen_tac >> strip_tac >>
+  Cases_on ‘ev_new h’ >> simp[] >> PairCases_on ‘x’ >> Cases_on ‘x1’ >> simp[] >>
+  imp_res_tac new_inr >> gvs[]
+QED
+
+Theorem noaccept_role:
+  EVERY (λev. ev_name ev ≠ ExtCall «sys_accept») evs ⇒ l0_ep_role j evs ≠ SOME (Accepted p)
+Proof
+  rw[l0_ep_role_def] >> strip_tac >>
+  drule noaccept_roles >> disch_then (qspecl_then [‘[]’, ‘p’] mp_tac) >>
+  simp[MEM_EL] >> metis_tac[]
 QED

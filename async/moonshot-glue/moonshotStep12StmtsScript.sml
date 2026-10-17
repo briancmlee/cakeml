@@ -230,13 +230,13 @@ End
 
 (* In every run with no outsider on a or b, the client observes one
    sequential store: its view of its connections to the proxy is
-   linearizable against KV *)
+   linearizable against KV (N < 2^63: D42, as in l0_client_claim) *)
 Definition moonshot_safe_stmt_def:
   moonshot_safe_stmt kt hw cprog pprog kprog ⇔
     l0_client_claim cprog ∧ proxy_claim_safe kt hw pprog ∧ kv_claim_safe kprog ⇒
     ∀a b c N rqs rs.
       a < 65536 ∧ b < 65536 ∧ c < 65536 ∧ a ≠ b ∧ c ≠ a ∧ c ≠ b ∧
-      2 ≤ N ∧ (∀i. EVERY valid_brequest (rqs i)) ∧
+      2 ≤ N ∧ N < 2 ** 63 ∧ (∀i. EVERY valid_brequest (rqs i)) ∧
       l0sys_iso_run (moonshot_sys cprog pprog kprog a b c N rqs) a b rs ⇒
       kv_client_safe (conn_only l0_ep_sent) (conn_only l0_ep_recvd)
                      (fromList (proc_events client_ix rs))

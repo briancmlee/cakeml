@@ -1206,14 +1206,14 @@ Proof
   first_x_assum irule >> simp[] >> irule okeys_drop >> simp[]
 QED
 
-Theorem hup_out:
-  (hup_step hfs ob log ps).acq = ps.acq ∧
-  (hup_step hfs ob log ps).b.tbl = ps.b.tbl ∧
-  (hup_step hfs ob log ps).b.closing = ps.b.closing ∧
-  (∀w f c out. acct w ps.b f c out ⇒ acct w (hup_step hfs ob log ps).b f c out) ∧
-  (okeys ps.b ⇒ okeys (hup_step hfs ob log ps).b)
+Theorem stall_out:
+  (stall_step hfs ob log ps).acq = ps.acq ∧
+  (stall_step hfs ob log ps).b.tbl = ps.b.tbl ∧
+  (stall_step hfs ob log ps).b.closing = ps.b.closing ∧
+  (∀w f c out. acct w ps.b f c out ⇒ acct w (stall_step hfs ob log ps).b f c out) ∧
+  (okeys ps.b ⇒ okeys (stall_step hfs ob log ps).b)
 Proof
-  simp[hup_step_def] >>
+  simp[stall_step_def] >>
   qmatch_goalsub_abbrev_tac ‘FOLDL drop_out ps.b dl’ >>
   qspecl_then [‘dl’, ‘ps.b’] strip_assume_tac FOLDL_drop_out >> simp[] >>
   strip_tac >> first_x_assum irule >> simp[] >>
@@ -1396,7 +1396,7 @@ Proof
   qmatch_asmsub_abbrev_tac ‘pf_fetch _ _ fs (w2, ps2)’ >>
   Cases_on ‘pf_fetch lfd pol fs (w2, ps2)’ >> gvs[] >> rename1 ‘_ = SOME z’ >>
   PairCases_on ‘z’ >> rename1 ‘pf_fetch _ _ _ _ = SOME ((w3, ps3f), log3, gevs)’ >> gvs[] >>
-  qabbrev_tac ‘ps3 = hup_step (hup_fds rv) (outbox_of ps.b) log3 ps3f’ >>
+  qabbrev_tac ‘ps3 = stall_step (pf_held ps3f) (outbox_of ps.b) log3 ps3f’ >>
   ‘ps3f.b.closing = ps3.b.closing ∧ ps3f.pause = ps3.pause’ by simp[Abbr ‘ps3’] >>
   pop_assum (fn th => RULE_ASSUM_TAC (REWRITE_RULE [th]) >> REWRITE_TAC [th]) >>
   Cases_on ‘l1_reap ps3.b.closing (w3, ps3.b)’ >> gvs[] >> rename1 ‘_ = SOME u’ >>
@@ -1412,8 +1412,8 @@ Proof
   drule_all pf_fetch_out >> strip_tac >>
   drule_all l1_flush_keys >> strip_tac >>
   ‘ps2.b = b2 ∧ ps2.acq = ps.acq’ by simp[Abbr ‘ps2’] >>
-  qspecl_then [‘hup_fds rv’, ‘outbox_of ps.b’, ‘log’, ‘ps3f’] mp_tac
-    (Q.GENL [‘hfs’, ‘ob’, ‘log’, ‘ps’] hup_out) >>
+  qspecl_then [‘pf_held ps3f’, ‘outbox_of ps.b’, ‘log’, ‘ps3f’] mp_tac
+    (Q.GENL [‘hfs’, ‘ob’, ‘log’, ‘ps’] stall_out) >>
   qpat_x_assum ‘Abbrev (ps3 = _)’
     (fn th => REWRITE_TAC [GSYM (REWRITE_RULE [markerTheory.Abbrev_def] th)] >>
               assume_tac th) >>
@@ -1807,12 +1807,12 @@ Proof
   simp[drop_out_def, outbox_of_set_outbox, MEM_FILTER]
 QED
 
-Theorem hup_other:
+Theorem stall_other:
   ¬MEM f (MAP SND ps.b.tbl) ∧ ¬MEM f ps.b.closing ⇒
-  outbox_of (hup_step hfs ob log ps).b f = outbox_of ps.b f ∧
-  (MEM f (hup_step hfs ob log ps).b.gone ⇔ MEM f ps.b.gone)
+  outbox_of (stall_step hfs ob log ps).b f = outbox_of ps.b f ∧
+  (MEM f (stall_step hfs ob log ps).b.gone ⇔ MEM f ps.b.gone)
 Proof
-  strip_tac >> simp[hup_step_def] >>
+  strip_tac >> simp[stall_step_def] >>
   qmatch_goalsub_abbrev_tac ‘FOLDL drop_out ps.b dl’ >>
   ‘EVERY (λg. MEM g (MAP SND ps.b.tbl) ∨ MEM g ps.b.closing) dl’
     by (simp[Abbr ‘dl’, EVERY_MAP, EVERY_FILTER, EVERY_MEM, FORALL_PROD] >>
@@ -1915,7 +1915,7 @@ Proof
   qmatch_asmsub_abbrev_tac ‘pf_fetch _ _ fs (w2, ps2)’ >>
   Cases_on ‘pf_fetch lfd pol fs (w2, ps2)’ >> gvs[] >> rename1 ‘_ = SOME z’ >>
   PairCases_on ‘z’ >> rename1 ‘pf_fetch _ _ _ _ = SOME ((w3, ps3f), log3, gevs)’ >> gvs[] >>
-  qabbrev_tac ‘ps3 = hup_step (hup_fds rv) (outbox_of ps.b) log3 ps3f’ >>
+  qabbrev_tac ‘ps3 = stall_step (pf_held ps3f) (outbox_of ps.b) log3 ps3f’ >>
   ‘ps3f.b.closing = ps3.b.closing ∧ ps3f.pause = ps3.pause’ by simp[Abbr ‘ps3’] >>
   pop_assum (fn th => RULE_ASSUM_TAC (REWRITE_RULE [th]) >> REWRITE_TAC [th]) >>
   Cases_on ‘l1_reap ps3.b.closing (w3, ps3.b)’ >> gvs[] >> rename1 ‘_ = SOME u’ >>
@@ -1927,8 +1927,8 @@ Proof
   ‘winv w3’ by (drule_all pf_fetch_winv >> simp[]) >>
   drule_all pf_fetch_out >> strip_tac >>
   ‘ps2.b = b2 ∧ ps2.acq = ps.acq’ by simp[Abbr ‘ps2’] >>
-  qspecl_then [‘hup_fds rv’, ‘outbox_of ps.b’, ‘log’, ‘ps3f’] mp_tac
-    (Q.GENL [‘hfs’, ‘ob’, ‘log’, ‘ps’] hup_out) >>
+  qspecl_then [‘pf_held ps3f’, ‘outbox_of ps.b’, ‘log’, ‘ps3f’] mp_tac
+    (Q.GENL [‘hfs’, ‘ob’, ‘log’, ‘ps’] stall_out) >>
   qpat_x_assum ‘Abbrev (ps3 = _)’
     (fn th => REWRITE_TAC [GSYM (REWRITE_RULE [markerTheory.Abbrev_def] th)] >>
               assume_tac th) >>
@@ -1999,8 +1999,8 @@ Proof
   ‘¬MEM f (MAP SND ps3f.b.tbl) ∧ ¬MEM f ps3f.b.closing’
     by (qpat_x_assum ‘ps3f.b = b2’ SUBST1_TAC >> qpat_x_assum ‘b2.tbl = _’ SUBST1_TAC >>
         qpat_x_assum ‘b2.closing = _’ SUBST1_TAC >> conj_tac >> first_assum ACCEPT_TAC) >>
-  qspecl_then [‘f’, ‘ps3f’, ‘hup_fds rv’, ‘outbox_of ps.b’, ‘log’] mp_tac
-    (Q.GENL [‘f’, ‘ps’, ‘hfs’, ‘ob’, ‘log’] hup_other) >>
+  qspecl_then [‘f’, ‘ps3f’, ‘pf_held ps3f’, ‘outbox_of ps.b’, ‘log’] mp_tac
+    (Q.GENL [‘f’, ‘ps’, ‘hfs’, ‘ob’, ‘log’] stall_other) >>
   impl_tac >- (conj_tac >> first_assum ACCEPT_TAC) >>
   qpat_x_assum ‘Abbrev (ps3 = _)’
     (fn th => REWRITE_TAC [GSYM (REWRITE_RULE [markerTheory.Abbrev_def] th)] >>

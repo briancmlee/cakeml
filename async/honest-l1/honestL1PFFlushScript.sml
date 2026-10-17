@@ -656,15 +656,15 @@ Proof
   Cases_on ‘f = h’ >> gvs[MEM_FILTER]
 QED
 
-Theorem hup_f:
-  ps' = hup_step hfs ob log ps ⇒
+Theorem stall_f:
+  ps' = stall_step hfs ob log ps ⇒
   ps'.b.tbl = ps.b.tbl ∧ ps'.b.closing = ps.b.closing ∧ ps'.acq = ps.acq ∧
   ps'.b.nxt = ps.b.nxt ∧
   LENGTH (outbox_of ps'.b f) ≤ LENGTH (outbox_of ps.b f) ∧
   ((MEM f ps.b.gone ⇒ outbox_of ps.b f = []) ⇒
    MEM f ps'.b.gone ⇒ outbox_of ps'.b f = [])
 Proof
-  strip_tac >> gvs[hup_out] >> simp[hup_step_def] >> metis_tac[drop_out_f]
+  strip_tac >> gvs[stall_out] >> simp[stall_step_def] >> metis_tac[drop_out_f]
 QED
 
 Theorem drop_out_kept:
@@ -677,11 +677,11 @@ Proof
   Cases_on ‘f = h’ >> gvs[]
 QED
 
-Theorem hup_kept:
-  ps' = hup_step hfs ob log ps ∧ ¬MEM f ps'.b.gone ⇒
+Theorem stall_kept:
+  ps' = stall_step hfs ob log ps ∧ ¬MEM f ps'.b.gone ⇒
   ¬MEM f ps.b.gone ∧ outbox_of ps'.b f = outbox_of ps.b f
 Proof
-  strip_tac >> gvs[hup_step_def] >> drule drop_out_kept >> simp[]
+  strip_tac >> gvs[stall_step_def] >> drule drop_out_kept >> simp[]
 QED
 
 Theorem l1_reap_live:
@@ -833,18 +833,18 @@ Proof
   drule pf_fetch_b >> strip_tac >>
   drule pf_fetch_names >> strip_tac >>
   (* the hang-up policy: a drop empties f's outbox *)
-  qabbrev_tac ‘ps3 = hup_step (hup_fds (poll_revents fes out)) (outbox_of pa.b) log ps3'’ >>
+  qabbrev_tac ‘ps3 = stall_step (pf_held ps3') (outbox_of pa.b) log ps3'’ >>
   ‘¬MEM f ps3'.b.gone ∧ outbox_of ps3'.b f = outbox_of pa.b f’ by gvs[olive_def] >>
   Cases_on ‘MEM f ps3.b.gone’
   >- ((* dropped (D19): f's outbox is empty, and stays so *)
       disj2_tac >> disj1_tac >>
       ‘outbox_of ps3.b f = []’
-        by (qspecl_then [‘hup_fds (poll_revents fes out)’, ‘outbox_of pa.b’, ‘log’, ‘ps3'’,
-                         ‘ps3’, ‘f’] mp_tac (Q.GENL [‘hfs’, ‘ob’, ‘log’, ‘ps’, ‘ps'’, ‘f’] hup_f) >>
+        by (qspecl_then [‘pf_held ps3'’, ‘outbox_of pa.b’, ‘log’, ‘ps3'’,
+                         ‘ps3’, ‘f’] mp_tac (Q.GENL [‘hfs’, ‘ob’, ‘log’, ‘ps’, ‘ps'’, ‘f’] stall_f) >>
             simp[Abbr ‘ps3’]) >>
       metis_tac[l1_reap_empty]) >>
   ‘¬MEM f ps3'.b.gone ∧ outbox_of ps3.b f = outbox_of ps3'.b f’
-    by (irule hup_kept >> simp[Abbr ‘ps3’] >> metis_tac[]) >>
+    by (irule stall_kept >> simp[Abbr ‘ps3’] >> metis_tac[]) >>
   ‘outbox_of ps3.b f ≠ []’ by gvs[olive_def] >>
   drule_all l1_reap_live >> strip_tac >>
   drule l1_reap_names >> strip_tac >>

@@ -109,12 +109,12 @@ Proof
   rw[] >> metis_tac[]
 QED
 
-Theorem psmall_hup:
-  psmall lfd ps ⇒ psmall lfd (hup_step hfs ob log ps)
+Theorem psmall_stall:
+  psmall lfd ps ⇒ psmall lfd (stall_step hfs ob log ps)
 Proof
   rw[psmall_def, small_fds_def] >>
   qspecl_then [‘hfs’, ‘ob’, ‘log’, ‘ps’] strip_assume_tac
-    (Q.GENL [‘hfs’, ‘ob’, ‘log’, ‘ps’] hup_step_outbox) >>
+    (Q.GENL [‘hfs’, ‘ob’, ‘log’, ‘ps’] stall_step_outbox) >>
   gvs[EVERY_MEM] >> rw[] >> metis_tac[]
 QED
 
@@ -138,9 +138,9 @@ Proof
     by gvs[EVERY_MEM, MEM_FILTER] >>
   drule_all pf_fetch_ok >> disch_then (qspec_then ‘pol’ strip_assume_tac) >> simp[] >>
   rename1 ‘pf_fetch _ _ _ _ = SOME ((w3, ps3'), log, gevs)’ >>
-  qabbrev_tac ‘ps3 = hup_step (hup_fds rv) (outbox_of ps.b) log ps3'’ >>
+  qabbrev_tac ‘ps3 = stall_step (pf_held ps3') (outbox_of ps.b) log ps3'’ >>
   ‘psmall lfd ps3 ∧ ps3.b.nxt = ps3'.b.nxt ∧ ps3'.b.closing = ps3.b.closing ∧
-   ps3'.pause = ps3.pause’ by simp[Abbr ‘ps3’, psmall_hup] >>
+   ps3'.pause = ps3.pause’ by simp[Abbr ‘ps3’, psmall_stall] >>
   ntac 2 (pop_assum (fn th => REWRITE_TAC [th])) >>
   ‘small_fds lfd ps3.b ∧ EVERY small ps3.b.closing’ by gvs[psmall_def, small_fds_def] >>
   qspecl_then [‘ps3.b.closing’, ‘w3’, ‘ps3.b’] mp_tac l1_reap_ok >> simp[] >> strip_tac >>

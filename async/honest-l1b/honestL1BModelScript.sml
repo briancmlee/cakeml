@@ -89,9 +89,18 @@ End
 Definition pf_idle_def:
   pf_idle lfd hw ps hs ⇔
     ps.pause = 0 ∧ pf_ready lfd ps hs = [] ∧ ps.b.closing = [] ∧
-    EVERY (λf. outbox_of ps.b f = [] ∧ MEM f (MAP FST ps.stalls)) (pf_held ps) ∧
+    EVERY (λ(f, bs). bs = []) ps.b.outbox ∧
+    EVERY (λf. MEM f (MAP FST ps.stalls)) (pf_held ps) ∧
     EVERY (λ(f, n). n = 0 ∧ MEM f (pf_held ps)) ps.stalls
 End
+
+(* With no outbox entry holding bytes, no fd has bytes to send *)
+Theorem outbox_entries_nil:
+  EVERY (λ(f, bs). bs = []) b.outbox ⇒ outbox_of b f = []
+Proof
+  rw[outbox_of_def] >> CASE_TAC >> imp_res_tac ALOOKUP_MEM >>
+  fs[EVERY_MEM, FORALL_PROD] >> res_tac
+QED
 
 Datatype:
   bstep = BRound ((word64, sresp) snapshot) (l0world # l1p) (fetched list) (io_event list)
@@ -184,6 +193,8 @@ Theorem pf_after_idle:
   pf_after lfd hw hs ps fes (rv, w1, pevs) = SOME ([], (w1, ps), [], pevs)
 Proof
   rw[pf_idle_def, pf_after_def] >>
+  ‘EVERY (λf. outbox_of ps.b f = [] ∧ MEM f (MAP FST ps.stalls)) (pf_held ps)’
+    by (fs[EVERY_MEM] >> metis_tac[outbox_entries_nil, EVERY_MEM]) >>
   ‘writable_fds rv = [] ∧ readable_fds rv = []’
     by (simp[writable_fds_def, readable_fds_def, FILTER_EQ_NIL] >>
         fs[EVERY_MEM, FORALL_PROD] >> metis_tac[]) >>

@@ -11,7 +11,7 @@
 *)
 Theory honestL1BStable
 Ancestors
-  honestL1BSettleState honestL1BCallsStop honestL1BFetchStop honestL1BSettle
+  honestL1PFOutLive honestL1PFOut honestL1BGone honestL1BSettleState honestL1BCallsStop honestL1BFetchStop honestL1BSettle
   honestL1BQuietWorld honestL1BModel honestL1PFConnRun honestL1PFLive honestL1PFModel
   honestL1Model honestL0World
 Libs
@@ -30,9 +30,22 @@ Definition SQ_def:
               pf_ready lfd (rstate lfd pol ifds m w0 n) (ifds (rhist lfd pol ifds m w0 n)) = []
 End
 
+(* No outbox entry holds bytes when the held fds' outboxes are empty: the
+   outbox has one entry per fd and none empty (obwf), and only held fds
+   have one (okeys) *)
+Theorem held_out_entries[local]:
+  EVERY (λf. outbox_of b f = [] ∧ P f) (MAP SND b.tbl ++ b.closing) ∧ obwf b ∧ okeys b ⇒
+  EVERY (λ(f, bs). bs = []) b.outbox
+Proof
+  rw[EVERY_MEM, FORALL_PROD] >> CCONTR_TAC >>
+  ‘outbox_of b p_1 = p_2’ by (irule obwf_outbox_of >> simp[]) >>
+  ‘MEM p_1 (MAP SND b.tbl) ∨ MEM p_1 b.closing’ by (fs[okeys_def] >> first_x_assum irule >> simp[]) >>
+  res_tac >> fs[]
+QED
+
 (* MAIN, (S4) *)
 Theorem l1pf_stable:
-  run_ok lfd pol ifds m w0 ∧ winv w0 ∧ linv lfd w0 ∧ MEM lfd (l0_used w0) ∧
+  run_ok lfd pol ifds m w0 ∧ winv w0 ∧ linv lfd w0 ∧ qfresh w0 ∧ MEM lfd (l0_used w0) ∧
   (∀n. SND (pcm lfd pol ifds m w0 n) + 1 < dimword (:64)) ∧
   F1 lfd pol ifds m w0 ∧ S1 lfd pol ifds m w0 ∧ S2 lfd pol ifds m w0 ∧
   ¬accepts_fail lfd pol ifds m w0 ∧ SQ lfd pol ifds bz m w0 ∧ quiet_after N w0 ⇒
@@ -70,5 +83,11 @@ Proof
   qpat_x_assum ‘∀n. Ks ≤ n ⇒ _’ (qspec_then ‘n’ mp_tac) >> impl_tac >- simp[] >> strip_tac >>
   qpat_x_assum ‘∀k. K0 + Kp ≤ k ⇒ _’ (qspec_then ‘n’ mp_tac) >> impl_tac >- simp[] >> strip_tac >>
   qpat_x_assum ‘∀k. K0 ≤ k ⇒ _’ (qspec_then ‘n’ mp_tac) >> impl_tac >- simp[] >> strip_tac >>
-  simp[pf_idle_def]
+  ‘oassm lfd pol ifds m w0’ by simp[oassm_def] >>
+  drule run_rel >> disch_then (qspec_then ‘n’ strip_assume_tac) >>
+  ‘okeys (rstate lfd pol ifds m w0 n).b’ by fs[out_rel_def] >>
+  ‘obwf (rstate lfd pol ifds m w0 n).b’ by metis_tac[obwf_run] >>
+  ‘EVERY (λ(f, bs). bs = []) (rstate lfd pol ifds m w0 n).b.outbox’
+    by (irule held_out_entries >> fs[pf_held_def] >> metis_tac[]) >>
+  fs[pf_idle_def, EVERY_MEM]
 QED

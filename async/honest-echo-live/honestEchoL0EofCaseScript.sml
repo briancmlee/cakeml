@@ -5,6 +5,9 @@
   since f's connect (eof_final), which reaches the kernel (fetched_out) --
   or FReset f, a hard recv error of f's episode.
 
+  The peer's data is final then, so the conclusion is about peer_sent at
+  any later round N.
+
   MAIN: eof_data_out.
 *)
 Theory honestEchoL0EofCase
@@ -65,8 +68,8 @@ Theorem eof_data_out:
   (∀i. a < i ∧ i < n ⇒ ¬MEM (FConn f) (rlog (n2w lfdn) pol EI ES w0 i)) ∧ a < n ∧
   MEM f (rstate (n2w lfdn) pol EI ES w0 n).eof ∧
   l0_chan_of (rworld (n2w lfdn) pol EI ES w0 n) f = SOME c ∧
-  ALOOKUP (SND (l0_ep_st (0, []) (revs (n2w lfdn) pol EI ES w0 n))) f = SOME j0 ⇒
-  (∃n'. (EL c (rworld (n2w lfdn) pol EI ES w0 n).chans).peer_sent ≼
+  ALOOKUP (SND (l0_ep_st (0, []) (revs (n2w lfdn) pol EI ES w0 n))) f = SOME j0 ∧ n ≤ N ⇒
+  (∃n'. (EL c (rworld (n2w lfdn) pol EI ES w0 N).chans).peer_sent ≼
         csent (rworld (n2w lfdn) pol EI ES w0 n') c) ∨
   (∃k. k ≤ n ∧ flushed (rworld (n2w lfdn) pol EI ES w0 k) f ∧
        l0_chan_of (rworld (n2w lfdn) pol EI ES w0 k) f = SOME c) ∨
@@ -136,9 +139,9 @@ Proof
       ‘j = c’ by fs[] >> rveq >>
       TRY (disj2_tac >> disj1_tac >> qexists_tac ‘SUC k’ >> fs[] >> NO_TAC) >>
       ((* the peer's data is final at SUC k *)
-          ‘(EL c (rworld (n2w lfdn) pol EI ES w0 n).chans).peer_sent =
+          ‘(EL c (rworld (n2w lfdn) pol EI ES w0 N).chans).peer_sent =
            (EL c (rworld (n2w lfdn) pol EI ES w0 (SUC k)).chans).peer_sent’
-            by (‘SUC k ≤ n’ by decide_tac >>
+            by (‘SUC k ≤ N’ by decide_tac >>
                 drule_all run_psmono >> disch_then (qspec_then ‘c’ mp_tac) >>
                 simp[psmono_def] >> impl_tac >- metis_tac[chan_lt] >> simp[]) >>
           ‘ALOOKUP (SND (l0_ep_st (0, []) (revs (n2w lfdn) pol EI ES w0 (SUC k)))) f = SOME j0’
@@ -146,7 +149,7 @@ Proof
                 ‘i = SUC k’ by decide_tac >>
                 qpat_x_assum ‘∀i. k < i ∧ i ≤ n ⇒ MEM f (MAP SND _)’ (qspec_then ‘i’ mp_tac) >>
                 simp[]) >>
-          ‘∃n'. (EL c (rworld (n2w lfdn) pol EI ES w0 n).chans).peer_sent ≼
+          ‘∃n'. (EL c (rworld (n2w lfdn) pol EI ES w0 N).chans).peer_sent ≼
                   csent (rworld (n2w lfdn) pol EI ES w0 n') c ∨
                 ep_hard_err j0 io ∨ ep_timed_out pf_sendwait j0 io’
             by (irule fetched_out >> rpt conj_tac >> TRY (first_assum ACCEPT_TAC) >>

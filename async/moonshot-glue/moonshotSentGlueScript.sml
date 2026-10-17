@@ -13,7 +13,7 @@
 Theory moonshotSentGlue
 Ancestors
   honestL1EPRefine honestL1EPOut honestL1EPModel honestL1PFOut honestL1PFModel honestL1Model
-  honestL1PFRefine honestL0WorldProps honestL0Rely honestL0World honestL0 Marshalling
+  honestL1PFConnRun honestL1PFConn honestL1PFRound honestL1PFRefine honestL0WorldProps honestL0Rely honestL0World honestL0 Marshalling
   l0sysEpisodes
 Libs
   preamble
@@ -356,4 +356,80 @@ Proof
   ‘∀f. MEM f (MAP SND (promote es5).ctbl) ⇒ MEM f (MAP SND es5.ctbl)’
     by (simp[promote_def, MEM_MAP, MEM_FILTER] >> metis_tac[]) >>
   gvs[] >> rpt strip_tac >> res_tac >> gvs[MEM_FILTER]
+QED
+
+(* ------------------------------------------------------------------------
+   A round's actions: episodes are its connects that got a socket, in
+   order (rfds); sends are credited as by the map before the round, since
+   a fd that got a new episode in the round is not live, so sends nothing
+   ------------------------------------------------------------------------ *)
+
+Theorem name_new:
+  ev_name ev ≠ ExtCall «sys_connect» ∧ ev_name ev ≠ ExtCall «sys_accept» ⇒ ev_new ev = NONE
+Proof
+  Cases_on ‘ev’ >> rename1 ‘IO_event n _ _’ >> Cases_on ‘n’ >> simp[ev_name_def, ev_new_def]
+QED
+
+Theorem name_sent:
+  ev_name ev ≠ ExtCall «sys_send» ⇒ l0sysEpisodes$ev_sent ev = NONE
+Proof
+  Cases_on ‘ev’ >> rename1 ‘IO_event n _ _’ >> Cases_on ‘n’ >>
+  simp[ev_name_def, l0sysEpisodesTheory.ev_sent_def]
+QED
+
+Theorem edo_names:
+  edo lfd pol (w, es) a = SOME (r, (w', es'), evs) ∧ (∀p. a ≠ EConnect p) ⇒
+  EVERY (λev. ev_name ev = ExtCall «sys_send» ∨ ev_name ev = ExtCall «sys_close») evs
+Proof
+  Cases_on ‘a’ >> simp[edo_def, AllCaseEqs()] >> rw[] >> TRY (PairCases_on ‘z’) >> gvs[] >>
+  TRY (drule pdo_names >> simp[] >> NO_TAC) >>
+  gvs[l1_close_def, AllCaseEqs(), sys_close_def] >> drule l0_do_cases >> rw[] >>
+  simp[ev_name_def]
+QED
+
+Theorem nonew_names:
+  EVERY (λev. ev_name ev = ExtCall «sys_send» ∨ ev_name ev = ExtCall «sys_close») evs ⇒
+  EVERY (λev. ev_new ev = NONE) evs
+Proof
+  rw[EVERY_MEM] >> res_tac >> irule name_new >> simp[]
+QED
+
+Theorem edo_ep:
+  edo lfd pol (w, es) a = SOME (r1, (w1, es1), evs1) ∧ oown lfd es ∧ eown lfd es1 ∧
+  okeys es.p.b ∧ l0_rely w ∧ fds_lt w ∧ fd0_ok w es ∧
+  (∀g. ALOOKUP opn g ≠ ALOOKUP cm g ⇒ ¬live es g) ⇒
+  ep_io l0sysEpisodes$ev_sent j opn kk evs1 = credit cm j evs1 ∧
+  FOLDL ep_next (opn, kk) evs1 = (cnew kk (rfds es1 [r1]) ++ opn, kk + LENGTH (rfds es1 [r1])) ∧
+  (∀g. ALOOKUP (cnew kk (rfds es1 [r1]) ++ opn) g ≠ ALOOKUP cm g ⇒ ¬live es1 g)
+Proof
+  strip_tac >> drule_all edo_live >> strip_tac >>
+  Cases_on ‘∃p. a = EConnect p’
+  >- (gvs[] >> qpat_x_assum ‘edo _ _ _ _ = _’ mp_tac >> simp[edo_def, AllCaseEqs()] >>
+      strip_tac >> gvs[] >>
+      ‘MEM 0w (l0_used w) ∧ p < 65536’ by fs[fd0_ok_def] >>
+      drule_all sys_connect_new >> strip_tac >>
+      Cases_on ‘honestL1EPModel$res_val out = 0’ >>
+      gvs[rfds_def, conn_hdls_def, cnew_thm, ep_io_def, credit_def, ep_next_def] >>
+      TRY (rpt strip_tac >> qpat_x_assum ‘∀g. ALOOKUP opn g ≠ _ ⇒ _’ irule >> fs[] >>
+           NO_TAC) >>
+      ‘honestL1EPModel$res_val out < 18446744073709551616’
+        by (drule_all sys_connect_out >> strip_tac >> gvs[] >>
+            TRY (drule dec_err_val >> simp[res_val_same] >> NO_TAC) >>
+            simp[res_val_enc]) >>
+      ‘(n2w (honestL1EPModel$res_val out) : word64) ≠ 0w’
+        by (drule_all sys_connect_l0 >> rpt strip_tac >>
+            qpat_x_assum ‘n2w _ = 0w’ (fn th => RULE_ASSUM_TAC (REWRITE_RULE [th])) >>
+            fs[]) >>
+      simp[LESS_MOD] >> gen_tac >> Cases_on ‘g = n2w (honestL1EPModel$res_val out)’
+      >- (simp[] >> strip_tac >> drule eown_ctbl_unlive >> simp[]) >>
+      simp[] >> strip_tac >>
+      ‘¬live es g’ by (qpat_x_assum ‘∀g. ALOOKUP opn g ≠ _ ⇒ _’ irule >> fs[]) >>
+      qpat_x_assum ‘∀f. (live es f ⇒ _) ∧ _’ (qspec_then ‘g’ mp_tac) >> simp[]) >>
+  fs[] >>
+  ‘EVERY (λev. ev_new ev = NONE) evs1’ by (irule nonew_names >> metis_tac[edo_names]) >>
+  qspecl_then [‘evs1’, ‘opn’, ‘kk’] mp_tac ep_io_nonew >> impl_tac >- simp[] >>
+  strip_tac >> simp[] >>
+  ‘conn_hdls [r1] = []’ by (drule edo_conn_hdls >> metis_tac[]) >>
+  simp[rfds_def, cnew_thm] >>
+  rpt conj_tac >> TRY (irule credit_cong >> metis_tac[] >> NO_TAC) >> metis_tac[]
 QED

@@ -432,3 +432,61 @@ Proof
   ‘outbox_of es'.p.b f = [] ∧ ¬MEM f es'.p.b.gone’ by (gvs[okeys_def, held_def] >> metis_tac[]) >>
   simp[]
 QED
+
+(* ------------------------------------------------------------------------
+   A round's actions
+   ------------------------------------------------------------------------ *)
+
+(* What the actions wrote on fd f, each in the state the ones before left *)
+Definition eawbytes_def:
+  eawbytes lfd pol f ws [] = [] ∧
+  eawbytes lfd pol f ws (a :: acts) =
+    ewbytes f (SND ws) a ++
+    (case edo lfd pol ws a of
+     | SOME (_, ws1, _) => eawbytes lfd pol f ws1 acts
+     | NONE => [])
+End
+
+Theorem ostep_refl:
+  ostep f b b [] []
+Proof
+  simp[ostep_def]
+QED
+
+(* The actions, given L1's own invariant before each (E1 has it: eown) *)
+Theorem eacts_live:
+  ∀acts w es rs evs w' es'.
+    eacts lfd pol (w, es) acts = SOME (rs, evs, (w', es')) ∧
+    (∀i rs0 evs0 wi esi.
+       i < LENGTH acts ∧ eacts lfd pol (w, es) (TAKE i acts) = SOME (rs0, evs0, (wi, esi)) ⇒
+       oown lfd esi) ∧
+    okeys es.p.b ∧ l0_rely w ⇒
+    l0_rely w' ∧ okeys es'.p.b ∧
+    ∀f. (live es f ⇒
+           (live es' f ⇒ ostep f es.p.b es'.p.b evs (eawbytes lfd pol f (w, es) acts)) ∧
+           ostepc f es.p.b evs (eawbytes lfd pol f (w, es) acts)) ∧
+        (¬live es f ⇒
+           evs_sent f evs = [] ∧ eawbytes lfd pol f (w, es) acts = [] ∧ ¬live es' f)
+Proof
+  Induct
+  >- (simp[eacts_def, eawbytes_def] >> rpt strip_tac >> gvs[ostep_refl, ostepc_def]) >>
+  rpt gen_tac >> rename1 ‘a :: acts’ >> strip_tac >>
+  qpat_x_assum ‘eacts _ _ _ _ = _’ mp_tac >> simp[Once eacts_def, AllCaseEqs(), PULL_EXISTS] >>
+  rpt gen_tac >> rename1 ‘edo _ _ _ _ = SOME (r1, ws1, evs1)’ >> PairCases_on ‘ws1’ >>
+  rename1 ‘edo _ _ _ _ = SOME (r1, (w1, es1), evs1)’ >> strip_tac >> gvs[] >>
+  ‘oown lfd es’
+    by (first_x_assum (qspecl_then [‘0’, ‘[]’, ‘[]’, ‘w’, ‘es’] mp_tac) >> simp[eacts_def]) >>
+  drule_all edo_live >> strip_tac >>
+  first_x_assum (qspecl_then [‘w1’, ‘es1’] mp_tac) >> simp[] >>
+  impl_tac
+  >- (rpt strip_tac >>
+      first_x_assum (qspecl_then [‘SUC i’, ‘r1 :: rs0’, ‘evs1 ++ evs0’, ‘wi’, ‘esi’] mp_tac) >>
+      simp[eacts_def]) >>
+  strip_tac >> simp[eawbytes_def] >> gen_tac >>
+  last_x_assum (qspec_then ‘f’ strip_assume_tac) >>
+  first_x_assum (qspec_then ‘f’ strip_assume_tac) >>
+  Cases_on ‘live es f’ >> gvs[] >>
+  Cases_on ‘live es1 f’ >> gvs[]
+  >- metis_tac[ostep_trans, ostep_ostepc_trans] >>
+  metis_tac[ostepc_quiet, APPEND_NIL]
+QED

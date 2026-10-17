@@ -1,8 +1,4 @@
-# DRAFT (moonshot step 9).  Typechecks in a checkout of spike/moonshot-client
-# @151ab274a with this directory copied to async/moonshot-step9/hl (its
-# INCLUDES are that branch's async/moonshot/Holmakefile's, plus ../../moonshot).
-# (Named Holmakefile.draft so that this branch's project scan ignores it: rename
-# it to Holmakefile in the base checkout.)
+# moonshot step 9: the proxy program and its proof
 INCLUDES = ../../model ../../ffi-spike ../../m3-assembly ../../m4-server ../../m4-common \
            ../../spec ../../socket-v2 ../../quiet/ffi ../../cf-spike ../../cf-actions \
            ../../cf-reactive ../../m4-safety ../../runnable ../../machine-code ../../http-model \
@@ -10,7 +6,7 @@ INCLUDES = ../../model ../../ffi-spike ../../m3-assembly ../../m4-server ../../m
            ../../http-liveness ../../http-liveness-h ../../http-bodies \
            ../../socket-v2-cf ../../close-v2-loop ../../endpoint-world \
            ../../honest-l1-ep ../../honest-l1 ../../endpoint-hl ../../honest-l0 ../../honest-ffi \
-           ../../moonshot
+           ../../moonshot ../hl
 ifdef POLY
 HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
 endif

@@ -31,15 +31,18 @@ runs in the world w3 after the three sys_fdok checks (`stdio_prefix w0 w3`).
 
 | Conjunct | Owner | Status |
 |---|---|---|
-| `run_ok`, `winv`, `linv`, `qfresh`, `MEM lfd (l0_used …)`, pcm bound | async-spike / honest-ffi (PF standing facts; design/47 for reindexing) | open |
+| `run_ok`, pcm bound | async-spike / r3-close (with D25′) | open |
 | `pl2_room` (D40: every PF round has nxt + naccepts + 2 < 2^64, so the loop's guard never fires) | async-spike (program link) | open; false in worlds with endless connects, as run_ok's room: goes with D25′ |
-| `S1`, `S2` | async-spike (`S1_interest`, `echo_S2`) | available for `interest`; needs re-pointing to `epfw` |
 | `∀io_p. ptrace … io_p ⇒ (∀evs. LPREFIX (fromList evs) io_p ⇒ no_close_stdio evs) ∧ echo2_guar_l0 KK (epfw k w1) io_p` | async-spike (liveness), KV worker (safety, `echo_run_nostdio` for D37) | open |
 
 These are already discharged, so they are no longer premises:
 - `bquiet`: `echo_bquiet` (honest-l1b-cf/honestEchoL0BStutterScript.sml);
-- `l0wf` and `lone` after the listen: `listen_l0wf`, `listen_lone` (honestEchoL0BQuietScript.sml);
-- `SQ` on the live list: `echo_SQ` (honest-l1b-cf/honestEchoL0BSQScript.sml), from the facts above.
+- `l0wf` and `lone` after the listen: `listen_l0wf`, `listen_lone` (honest-l1b-cf/honestEchoL0SetupScript.sml);
+- `winv`, `linv`, `qfresh`, `MEM lfd (l0_used …)` (and `qinb`, `nshut`) in the PF world:
+  `post_listen_facts_reindexed` (honest-l1b-cf/honestEchoL0SetupScript.sml), from `l0_server_world w0`,
+  `stdio_prefix w0 w3` and the listen; `post_listen_facts` is the same at w4, for L3-08;
+- `SQ` on the live list: `echo_SQ` (honest-l1b-cf/honestEchoL0BSQScript.sml), from echo_run;
+- `S1`, `S2`: `echo_S1`, `echo_S2` (honestEchoL0Obl), from echo_run.
 
 ### SQ status
 

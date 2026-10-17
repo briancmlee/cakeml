@@ -82,13 +82,6 @@ Definition hl_conn_handles_def:
     FLAT (MAP (λ(p, r). case r of EConnected (SOME hd) => [hd] | _ => []) (hl_connects ps))
 End
 
-(* A connect handle has settled Up: reported ready while settling, and not
-   refused *)
-Definition hl_up_def:
-  hl_up hd ps ⇔ MEM hd (hl_conn_handles ps) ∧ ¬hl_refused hd ps ∧
-                (hl_sent hd ps ≠ [] ∨ hl_read hd ps ≠ [] ∨ hl_eof hd ps)
-End
-
 Definition inf_often_def:
   inf_often (P : num -> bool) ⇔ ∀n. ∃n'. n ≤ n' ∧ P n'
 End
@@ -98,7 +91,8 @@ End
    ------------------------------------------------------------------------ *)
 
 (* A client world: as the run-built world pew is (pew_props), with the
-   listener L1 needs on a private port c (question Q1 of the note) *)
+   listener L1 needs on a private port c (until L1/E1's listener is
+   optional) *)
 Definition client_world_def:
   client_world lfd c (W : eworld) ⇔
     W.listening = [(lfd, c, [])] ∧ W.chans = [] ∧ W.open_fds = [] ∧ W.reserved = [] ∧
@@ -110,31 +104,52 @@ Definition run_rely_def:
   run_rely lfd ifds m W ⇔ ∀n. eh_round_ok lfd ifds m W n
 End
 
-(* World fairness for connects, the handle layer's form of [F4]: if the
-   client attempts connects in infinitely many rounds, infinitely many of
-   them settle Up *)
+(* Handle hd is up at round n: open, its channel Up (the world's truth,
+   which the settle report announces); and has been up by round n *)
+Definition up_at_def:
+  up_at lfd ifds m W n hd ⇔
+    ∃f. ALOOKUP (SND (ehst lfd ifds m W n)).tbl hd = SOME f ∧
+        chan_status (FST (ehst lfd ifds m W n)) f = SOME Up
+End
+
+Definition ever_up_def:
+  ever_up lfd ifds m W n hd ⇔ ∃n'. n' ≤ n ∧ up_at lfd ifds m W n' hd
+End
+
+(* World fairness for connects, the handle layer's forms of [F0] and [F4]:
+   every pending connect eventually settles; and if the client attempts
+   connects in infinitely many rounds, a new handle comes up in infinitely
+   many rounds *)
 Definition conn_fair_def:
   conn_fair lfd ifds m W ⇔
-    inf_often (λn. ∃p. MEM (EConnect p) (new_actions (log_of m) (ehhist lfd ifds m W n))) ⇒
-    inf_often (λn. ∃hd. MEM hd (hl_conn_handles (hl_pairs m (ehhist lfd ifds m W n))) ∧
-                        hl_up hd (hl_pairs m (ehhist lfd ifds m W n)) ∧
-                        ¬hl_up hd (hl_pairs m (ehhist lfd ifds m W (n - 1))))
+    (∀n hd f. ALOOKUP (SND (ehst lfd ifds m W n)).tbl hd = SOME f ∧
+              chan_status (FST (ehst lfd ifds m W n)) f = SOME Connecting ⇒
+              ∃n'. n < n' ∧ chan_status (FST (ehst lfd ifds m W n')) f ≠ SOME Connecting) ∧
+    (inf_often (λn. ∃p. MEM (EConnect p) (new_actions (log_of m) (ehhist lfd ifds m W n))) ⇒
+     inf_often (λn. ∃hd. up_at lfd ifds m W n hd ∧ ∀n'. n' < n ⇒ ¬up_at lfd ifds m W n' hd))
+End
+
+(* The client stops connecting after this many handles (the handle counter
+   must not overflow: design/46's decision (A)) *)
+Definition cbound_def:
+  cbound = (2:num) ** 63
 End
 
 (* The guarantee, over the run H n = ehhist lfd ifds m W n (S n its state);
-   lc: each handle's logical connection *)
+   lc: each connect handle's logical connection *)
 Definition client_guar'_def:
-  client_guar' a N rqs lfd ifds m W ⇔
+  client_guar' a (N:num) rqs lfd ifds m W ⇔
     ∃lc. let H = ehhist lfd ifds m W; S = ehst lfd ifds m W; ps = (λn. hl_pairs m (H n)) in
       (* no misuse: every round's actions are performed *)
       (∀n. ehacts lfd (S n) (new_actions (log_of m) (H n)) ≠ NONE) ∧
       (* it connects only to a, and never accepts *)
       (∀n x r. MEM (x, r) (ps n) ⇒ (∀p. x = EConnect p ⇒ p = a) ∧ ∀l. x ≠ EAccept l) ∧
-      (* each logical connection i < N sends a prefix of its requests, on
-         at most one handle *)
-      (∀n hd. hl_sent hd (ps n) ≠ [] ⇒
-              lc hd < N ∧ hl_sent hd (ps n) ≼ brequests (rqs (lc hd)) ∧
-              ∀hd'. hl_sent hd' (ps n) ≠ [] ∧ lc hd' = lc hd ⇒ hd' = hd) ∧
+      (* every connect handle serves a logical connection i < N; each sends
+         a prefix of its requests, on at most one handle *)
+      (∀n hd. MEM hd (hl_conn_handles (ps n)) ⇒ lc hd < N) ∧
+      (∀n hd. hl_sent hd (ps n) ≼ brequests (rqs (lc hd))) ∧
+      (∀n hd hd'. hl_sent hd (ps n) ≠ [] ∧ hl_sent hd' (ps n) ≠ [] ∧ lc hd' = lc hd ⇒
+                  hd' = hd) ∧
       (* the sink: every open handle is in the interest, and a ready one is
          read in the next round *)
       (∀n hd. MEM hd (MAP FST (SND (S n)).tbl) ⇒ MEM hd (ifds (H n))) ∧
@@ -142,18 +157,19 @@ Definition client_guar'_def:
               ∃k. MEM (ERead hd k) (new_actions (log_of m) (H (SUC n)))) ∧
       (* it does not take a refusal for an empty answer *)
       (∀n hd. ¬(hl_refused hd (ps n) ∧ hl_eof hd (ps n))) ∧
-      (* RETRY: while fewer than N connections are up, it keeps connecting
-         (a connect with no socket, or refused, is followed by another) *)
-      (∀n. CARD {hd | hl_up hd (ps n)} < N ⇒
-           ∃n'. n ≤ n' ∧ ∃p. MEM (EConnect p) (new_actions (log_of m) (H n'))) ∧
-      (* LIVENESS, under connect fairness: every logical connection gets up
-         and sends all of its requests (the world takes every write: no
-         backpressure) *)
+      (* LIVENESS (D16: unless an observed failure), under connect fairness:
+         every logical connection gets a handle up that sends all of its
+         requests, UNLESS one of its handles broke (read EOF before all was
+         sent), or the client ran out of handles *)
       (conn_fair lfd ifds m W ⇒
-       ∃n. ∀i. i < N ⇒ ∃hd. lc hd = i ∧ hl_sent hd (ps n) = brequests (rqs i)) ∧
-      (* TERMINATION: once every up connection has read its EOF, the client
-         finishes *)
-      (∀n. (∀hd. hl_up hd (ps n) ⇒ hl_eof hd (ps n)) ∧ CARD {hd | hl_up hd (ps n)} = N ⇒
+       ∀i. i < N ⇒ ∃n.
+         (∃hd. lc hd = i ∧ ever_up lfd ifds m W n hd ∧ hl_sent hd (ps n) = brequests (rqs i)) ∨
+         (∃hd. MEM hd (hl_conn_handles (ps n)) ∧ lc hd = i ∧ hl_eof hd (ps n) ∧
+               hl_sent hd (ps n) ≠ brequests (rqs i)) ∨
+         cbound ≤ LENGTH (hl_conn_handles (ps n))) ∧
+      (* TERMINATION: once every logical connection has a handle that came
+         up and read its EOF, the client finishes *)
+      (∀n. (∀i. i < N ⇒ ∃hd. lc hd = i ∧ ever_up lfd ifds m W n hd ∧ hl_eof hd (ps n)) ⇒
            ∃n' x. n ≤ n' ∧ (m (H n')).result = SOME x)
 End
 
@@ -167,7 +183,7 @@ End
 Definition client_hl_claim_def:
   client_hl_claim cprog cifds ⇔
     ∀a N rqs lfd c W.
-      2 ≤ N ∧ (∀i. EVERY valid_brequest (rqs i)) ∧
+      2 ≤ (N:num) ∧ N < cbound ∧ (∀i. EVERY valid_brequest (rqs i)) ∧
       client_world lfd c W ∧ run_rely lfd cifds (cprog a N rqs) W ⇒
       client_guar' a N rqs lfd cifds (cprog a N rqs) W
 End
@@ -179,7 +195,7 @@ End
 Definition client_l1_claim_def:
   client_l1_claim cprog cifds ⇔
     ∀a N rqs lfd c hw w0 calls.
-      2 ≤ N ∧ (∀i. EVERY valid_brequest (rqs i)) ∧
+      2 ≤ (N:num) ∧ N < cbound ∧ (∀i. EVERY valid_brequest (rqs i)) ∧
       l0_rely w0 ∧ fds_lt w0 ∧ MEM lfd (l0_used w0) ∧
       (∀n. SND (ecm lfd hw cifds (cprog a N rqs) w0 n) + 1 < dimword (:64)) ∧
       (* the client's L1 run never fails (no misuse, no handle overflow) *)

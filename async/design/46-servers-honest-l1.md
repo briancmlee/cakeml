@@ -58,6 +58,8 @@ Echo's output half is proved locally in `honest-echo/honestEchoL0Inv`: per episo
 
 KV needs that key bridge anyway (moonshot step 11, the R4-style transfer). **Once the bridge exists, re-derive echo through `out_rel` and delete the local output half.**
 
+**Superseded (2026-10-17, coordinator):** Inv/Out is not deleted. It becomes the shared raw ↔ handle layer for echo, KV and HTTP; move it to a shared directory later. The key bridge is the identity. L1's acq grows only at its tail (pf_fetch) and only pdo Accept pops its head, so raw episode j = client j = handle l1hdl lfd j = v2 episode j. KV goes raw → handle j by ri (generalised as honestKvL0Run's ri_gen, under `writes_accepted m`) and handle j → v2 episode j by asyncKv2Bridge's kv2_rounds_bytes and R1's hhist. Route (b), out_rel and a client key bridge, was rejected: it costs several theories and re-proves what ri gives.
+
 ## P4 plan: HTTP and KV by the generic route (draft, 2026-10-17)
 
 The claims are fixed (`honestHttpKvL0Spec`). The route goes from the version-2 handle-layer safety
@@ -108,7 +110,7 @@ order is extended with those at the end, episode by episode:
 It also needs request-parse monotonicity: from brequests rs ++ rest ≼ brequests rs' ++ rest' with
 both rests `no_full`, conclude rs ≼ rs'. HTTP's transfer is the per-episode special case.
 
-**Episode key bridge.** e j = the v2 episode whose handle is the client `cl (pcm a) f` of raw
+**Episode key bridge** (superseded: identity, see above). e j = the v2 episode whose handle is the client `cl (pcm a) f` of raw
 episode j. Expected: e j = SOME j whenever the fd reached the server, because acq is FIFO and
 listening = MAP (cl cm) acq. Raw episodes dropped in acq (broken / EMFILE) have e j = NONE; they
 sent nothing, by out_rel's acq clause.

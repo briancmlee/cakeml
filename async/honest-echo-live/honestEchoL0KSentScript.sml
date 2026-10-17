@@ -85,3 +85,34 @@ Proof
   drule_all l0_accept_chan >> strip_tac >> qexists_tac ‘c’ >>
   gvs[l0_chan_of_def, csent_def]
 QED
+
+(* A faithful prefix replays, keeping winv and qfresh *)
+Theorem faithful_APPEND_inv:
+  ∀pre w. faithful w (pre ++ rest) ∧ winv w ∧ qfresh w ⇒
+          ∃u. FOLDL l0_step (SOME w) (MAP ev_lcall pre) = SOME u ∧
+              faithful u rest ∧ winv u ∧ qfresh u
+Proof
+  Induct >> simp[] >> rpt gen_tac >> strip_tac >>
+  drule faithful_CONS_buf >> strip_tac >>
+  ‘n ≠ «sys_connect»’ by (strip_tac >> gvs[l1_names_def]) >>
+  ‘winv u ∧ qfresh u’ by metis_tac[winv_do_buf, qfresh_do_buf] >>
+  simp[] >> first_x_assum irule >> simp[]
+QED
+
+(* MAIN: while episode j is open on f and f has not been closed, the
+   kernel's sent bytes on f's channel are l0_sent j *)
+Theorem episode_csent:
+  faithful w0 evs ∧ winv w0 ∧ qfresh w0 ∧
+  evs = pre ++ [ev] ++ post ∧ LENGTH (l0_accepted pre) = j ∧
+  l0_event_accepted ev = SOME f ∧ EVERY (λe. ¬ep_ends f e) post ∧
+  EVERY (λe. ¬closes_fd f e) post ⇒
+  ∃w c. world_at w0 evs = SOME w ∧ l0_chan_of w f = SOME c ∧ csent w c = l0_sent j evs
+Proof
+  strip_tac >> gvs[] >>
+  ‘faithful w0 (pre ++ (ev :: post))’ by full_simp_tac std_ss [GSYM APPEND_ASSOC, APPEND] >>
+  drule_all faithful_APPEND_inv >> strip_tac >>
+  drule_all faithful_accept_csent >> strip_tac >>
+  drule_all faithful_csent >> strip_tac >>
+  simp[world_at_def, l0_replay_def, FOLDL_APPEND] >>
+  irule (GSYM l0_sent_open) >> simp[]
+QED

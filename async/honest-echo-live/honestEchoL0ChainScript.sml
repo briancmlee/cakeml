@@ -131,3 +131,29 @@ Proof
       >> disj2_tac >> disj2_tac >> metis_tac[]) >>
   disj2_tac >> disj1_tac >> qexists_tac ‘n’ >> simp[]
 QED
+
+Theorem prefix_append_cases:
+  ∀a l b. l ≼ a ++ b ⇒ l ≼ a ∨ ∃c. l = a ++ c ∧ c ≼ b
+Proof
+  Induct >> simp[] >> rpt gen_tac >> Cases_on ‘l’ >> simp[] >> strip_tac >>
+  first_x_assum drule >> strip_tac >> simp[]
+QED
+
+(* MAIN: a prefix of the run's events lies within one round *)
+Theorem locate:
+  run_ok lfd pol ifds m w0 ⇒
+  ∀N evs. evs ≼ revs lfd pol ifds m w0 N ⇒
+          ∃r pre post. evs = revs lfd pol ifds m w0 r ++ pre ∧
+                       rrev lfd pol ifds m w0 r = pre ++ post ∧ r ≤ N
+Proof
+  strip_tac >> Induct
+  >- (simp[] >> rpt strip_tac >> qexistsl_tac [‘0’, ‘[]’, ‘rrev lfd pol ifds m w0 0’] >>
+      simp[]) >>
+  rpt strip_tac >>
+  ‘revs lfd pol ifds m w0 (SUC N) = revs lfd pol ifds m w0 N ++ rrev lfd pol ifds m w0 N’
+    by metis_tac[prun_round'] >>
+  pop_assum (fn th => fs[th]) >>
+  drule prefix_append_cases >> strip_tac
+  >- (first_x_assum drule >> strip_tac >> qexistsl_tac [‘r’, ‘pre’, ‘post’] >> simp[]) >>
+  gvs[IS_PREFIX_APPEND] >> qexistsl_tac [‘N’, ‘c’, ‘l’] >> simp[]
+QED

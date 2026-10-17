@@ -282,6 +282,18 @@ Proof
   ‘fds_lt (l0_tick n w)’ by simp[] >> gvs[fds_lt_def, l0_rely_def]
 QED
 
+Theorem fl_do_buf:
+  winv w ∧ fl w f R ∧ n ≠ «sys_connect» ∧
+  ¬((n = «sys_recv» ∨ n = «sys_close») ∧ bytes_fd conf = f) ∧
+  l0_do_buf n conf bs w = SOME (out, w', ev) ⇒ fl w' f R
+Proof
+  strip_tac >> drule l0_do_buf_cases >> strip_tac >> gvs[] >>
+  irule fl_call >> qexistsl_tac [‘bs’, ‘out’, ‘conf’, ‘n’] >>
+  simp[] >> qexists_tac ‘l0_tick n w’ >>
+  gvs[winv_def, l0wf_tick, fl_tick] >>
+  ‘fds_lt (l0_tick n w)’ by simp[] >> gvs[fds_lt_def, l0_rely_def]
+QED
+
 Theorem recv_res_ok:
   l0_rely w ∧ l0_recv f n w = (r, d, w') ∧ n < 256 ** 8 ⇒ l0_res_ok r
 Proof
@@ -331,6 +343,7 @@ Theorem sys_fl:
   (winv w ∧ fl w f R ∧ sys_poll fes w = SOME (out, w', ev) ⇒ fl w' f R)
 Proof
   rw[sys_close_def, sys_send_def, sys_recv_def, sys_accept_def, sys_poll_def] >>
+  TRY (drule_at (Pos last) fl_do_buf >> simp[] >> NO_TAC) >>
   drule_at (Pos last) fl_do >> simp[]
 QED
 

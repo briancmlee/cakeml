@@ -189,6 +189,13 @@ Proof
 QED
 
 (* The world invariant holds along the run *)
+Theorem psmall_run:
+  run_ok lfd hw ifds m w0 ⇒ ∀n. psmall lfd (rstate lfd hw ifds m w0 n)
+Proof
+  rw[run_ok_def] >> drule_all prounds_ok >> disch_then (qspec_then ‘n’ strip_assume_tac) >>
+  simp[rstate_def, prun_def]
+QED
+
 Theorem winv_run:
   run_ok lfd hw ifds m w0 ∧ winv w0 ⇒ ∀n. winv (rworld lfd hw ifds m w0 n)
 Proof
@@ -357,6 +364,7 @@ Proof
   strip_tac >>
   drule prun_round' >> disch_then (qspecl_then [‘f’, ‘n + d’] strip_assume_tac) >>
   ‘winv (rworld lfd hw ifds m w0 (n + d))’ by simp[] >>
+  ‘psmall lfd (rstate lfd hw ifds m w0 (n + d))’ by metis_tac[psmall_run] >>
   drule_all pround_f >> strip_tac >> gvs[ADD_CLAUSES]
 QED
 
@@ -422,6 +430,7 @@ Proof
     by (qpat_assum ‘∀k. n ≤ k ⇒ _’ (qspec_then ‘k’ mp_tac) >> simp[]) >>
   drule prun_round' >> disch_then (qspecl_then [‘f’, ‘k’] strip_assume_tac) >>
   ‘winv (rworld lfd hw ifds m w0 k)’ by simp[] >>
+  ‘psmall lfd (rstate lfd hw ifds m w0 k)’ by metis_tac[psmall_run] >>
   drule_all pround_f >> strip_tac >>
   qpat_x_assum ‘inb_of _ _ = [] ∧ _ ⇒ _’ mp_tac >> impl_tac >- simp[] >> strip_tac >>
   ‘N + e = k’ by simp[] >> pop_assum SUBST_ALL_TAC >>

@@ -25,8 +25,8 @@
    - pausing: an fd whose outbox holds more than hw bytes is not polled for
      input (so L2 is not told it is readable).
 
-  A round: perform the computation's new actions; poll (no wait; in chunks
-  of at most 4096 fds, the C's limit per call); flush
+  A round: perform the computation's new actions; poll (no wait; one
+  call over all fds, D20); flush
   the outboxes of the fds the poll found writable; close the closing fds
   whose outboxes are empty; give the computation the snapshot.
 
@@ -55,6 +55,15 @@ Definition l0_do_def:
     | _ => NONE
 End
 
+(* A call whose buffer carries data in (sys_poll's struct pollfd entries,
+   D20) *)
+Definition l0_do_buf_def:
+  l0_do_buf n conf (bytes : word8 list) w =
+    case l0_ffi_fn n conf bytes w of
+    | SOME (FFIreturn out w') => SOME (out, w', IO_event (ExtCall n) conf (ZIP (bytes, out)))
+    | _ => NONE
+End
+
 (* The decoded result of a call; a result that cannot be decoded is
    treated as an error (cannot happen: honestL0's dec_enc_res) *)
 Definition l0_res_of_def:
@@ -77,14 +86,21 @@ Definition sys_close_def:
   sys_close f w = l0_do «sys_close» (fd_bytes f) 13 w
 End
 
-(* A non-blocking poll of (fd, events) entries: events 1 IN, 2 OUT *)
-Definition poll_conf_def:
-  poll_conf (fes : (word64 # num) list) =
-    0w :: FLAT (MAP (λ(f, e). fd_bytes f ++ [n2w e]) fes)
+(* A non-blocking poll of (fd, events) entries (events 1 IN, 2 OUT): the
+   buffer is 16 bytes (header, pad) and one struct pollfd per entry (fd
+   int32 little-endian, events int16: POLLIN 1, POLLOUT 4; revents 0) *)
+Definition pfd_bytes_def:
+  pfd_bytes ((f : word64), (e : num)) =
+    [w2w f; w2w (f >>> 8); w2w (f >>> 16); w2w (f >>> 24);
+     n2w ((if ODD e then 1 else 0) + (if 2 ≤ e then 4 else 0)); 0w; 0w; 0w] : word8 list
+End
+
+Definition poll_buf_def:
+  poll_buf (fes : (word64 # num) list) = REPLICATE 16 0w ++ FLAT (MAP pfd_bytes fes)
 End
 
 Definition sys_poll_def:
-  sys_poll fes w = l0_do «sys_poll» (poll_conf fes) (13 + LENGTH fes) w
+  sys_poll fes w = l0_do_buf «sys_poll» [0w] (poll_buf fes) w
 End
 
 (* ------------------------------------------------------------------------
@@ -259,22 +275,12 @@ Definition l1_poll_set_def:
                (FILTER (λ(f, bs). bs ≠ [] ∧ ¬MEM f (MAP FST ins)) st.outbox)
 End
 
-(* The C polls at most 4096 fds per call (MAX_FDS; more is misuse), so L1
-   polls in chunks of at most 4096 entries; always at least one poll per
-   round, even of no fds, so that time passes every round as in the
-   handle layer *)
-Definition poll_chunks_def:
-  poll_chunks (l : 'a list) =
-    if LENGTH l ≤ 4096 then [l] else TAKE 4096 l :: poll_chunks (DROP 4096 l)
-Termination
-  WF_REL_TAC ‘measure LENGTH’ >> rw[LENGTH_DROP]
-End
-
 (* The revents of the poll's entries; none if the poll failed *)
 Definition poll_revents_def:
   poll_revents fes out =
     case l0_res_of out of
-    | Ok _ => ZIP (MAP FST fes, MAP byte_revents (TAKE (LENGTH fes) (DROP 13 out)))
+    | Ok _ => ZIP (MAP FST fes,
+                   MAP (λe. abi_revents (DROP 6 e)) (pollfd_entries (DROP 16 out)))
     | Fail _ _ => []
 End
 
@@ -342,7 +348,7 @@ End
    and the events *)
 Definition l1_tail_def:
   l1_tail lfd hw hs (w, st) =
-    case l1_polls (poll_chunks (l1_poll_set lfd hw st hs)) w of
+    case l1_polls [l1_poll_set lfd hw st hs] w of
     | NONE => NONE
     | SOME (rv, w1, pevs) =>
         let rdy = readable_fds rv;

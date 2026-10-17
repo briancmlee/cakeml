@@ -173,7 +173,7 @@ End
 Definition etail_def:
   etail lfd hw hs (w, es) =
     let fes = pf_poll_set lfd hw es.p hs ++ MAP (λf. (f, 2n)) (pend_fds es) in
-    case l1_polls (poll_chunks fes) w of
+    case l1_polls [fes] w of
     | NONE => NONE
     | SOME (rv, w1, pevs) =>
         case l1_flush (writable_fds rv) (w1, es.p.b) of

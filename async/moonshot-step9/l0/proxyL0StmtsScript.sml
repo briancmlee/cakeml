@@ -167,14 +167,24 @@ Definition proxy_live_l0_def:
          ∃evs'. LPREFIX (fromList evs') io ∧ (EL c' w.chans).peer_sent ≼ pos_sent p evs')
 End
 
-(* Every front gets a backend: a connect to b that is accepted or refused
-   is attempted, unless the front ended first.  (Under [F4]; the retry of a
-   socketless connect, option (b), is the program's: stated here as
-   "eventually paired".) *)
+(* Every front gets a backend: a connect to b, that came up or was refused,
+   unless an observed excuse on the front (rev 6: closing an unpaired front
+   is no way out).  (Under [F4]; the retry of a socketless connect, option
+   (b), is the program's: stated here as "eventually paired".) *)
 Definition proxy_pairs_l0_def:
-  proxy_pairs_l0 pr io ⇔
+  proxy_pairs_l0 K pr io ⇔
     ∀evs p. LPREFIX (fromList evs) io ∧ is_front p evs ⇒
-      ∃evs'. LPREFIX (fromList evs') io ∧ (pr p ≠ NONE ∨ ¬pos_open p evs')
+      pos_excuse K p io ∨
+      ∃evs' q. LPREFIX (fromList evs') io ∧ pr p = SOME q ∧ q < LENGTH evs'
+End
+
+(* Fewer than N accepts on every prefix.  The proxy accepts while it holds
+   fewer than cbound / 2 = 2^62 pairs (2 · pairs + 2 ≤ cbound), and its pairs
+   never end until closing lands ([R3]); so new connections are owed only
+   below 2^62 accepts.  Once [R3] closing lands this becomes an observed
+   excuse ("open fronts at the cap") instead of a hypothesis *)
+Definition accepts_lt_def:
+  accepts_lt N io ⇔ ∀evs. LPREFIX (fromList evs) io ⇒ LENGTH (l0_accepted evs) < N
 End
 
 (* R4′ for the proxy: on the honest L0 FFI, K = pf_sendwait (D23),
@@ -188,5 +198,6 @@ Definition l0_proxy_claim_def:
           (listen_failed beh ∨
            ∃io pr. beh = Diverge io ∧ proxy_safe_l0 Bnd a b pr io ∧
                    (F1_io io ∧ F2 w0 ∧ accepts_below io ⇒
-                    proxy_live_l0 K pr w0 io ∧ proxy_pairs_l0 pr io ∧ conn_live_l0 w0 io))
+                    proxy_live_l0 K pr w0 io ∧ proxy_pairs_l0 K pr io ∧
+                    (accepts_lt (2 ** 62) io ⇒ conn_live_l0 w0 io)))
 End

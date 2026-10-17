@@ -3259,6 +3259,18 @@ Proof
   qpat_x_assum ‘∀f. MEM f (MAP FST new) ⇔ _’ (qspec_then ‘f’ mp_tac) >> asm_rewrite_tac[]
 QED
 
+(* L1's own invariant before each of round n's actions (for the step 12
+   glue, which follows a round action by action) *)
+Definition eround_own_def:
+  eround_own lfd pol ifds m w0 n ⇔
+    ∀h ws evs logs.
+      erounds lfd pol ifds m (w0, einit) n = SOME (h, ws, evs, logs) ⇒
+      ∀i rs0 evs0 wi esi.
+        i ≤ LENGTH (new_actions (log_of m) h) ∧
+        eacts lfd pol ws (TAKE i (new_actions (log_of m) h)) = SOME (rs0, evs0, (wi, esi)) ⇒
+        eown lfd esi
+End
+
 (* C1(ii)'s ghost: what L1 sent, on the raw trace, on channel j's fds
    before round n (each round's sends credited by the map before it) *)
 Definition ersent_def:
@@ -3302,6 +3314,7 @@ Theorem l1ep_refines_ehl_upto_sent:
     sent_inv (FST (ecm lfd pol ifds m w0 n))
       (FST (ehst lfd (elv lfd pol ifds m w0) ifds m (pew lfd a pol ifds m w0 calls) n)) (SND ws)
       (λj. ersent lfd pol ifds m w0 j n) ∧
+    (∀n'. n' < n ⇒ eround_own lfd pol ifds m w0 n') ∧
     ∀n'. n' < n ⇒ eh_round_ok lfd (elv lfd pol ifds m w0) ifds m (pew lfd a pol ifds m w0 calls) n'
 Proof
   strip_tac >> qabbrev_tac ‘lv = elv lfd pol ifds m w0’ >> Induct
@@ -3396,6 +3409,15 @@ Proof
     by (rpt strip_tac >> Cases_on ‘n' = n’ >- fs[] >> ‘n' < n’ by decide_tac >>
         qpat_x_assum ‘∀n'. n' < n ⇒ _’ drule >> simp[]) >>
   ‘nosock_of [ssnap rdy rs] = conn_outs rs’ by simp[nosock_of_def, ssnap_def] >>
+  ‘eround_own lfd pol ifds m w0 n’
+    by (simp[eround_own_def] >>
+        qpat_x_assum ‘erounds _ _ _ _ _ n = _’ (fn th => simp[th] >> assume_tac th) >>
+        rpt strip_tac >>
+        qpat_x_assum ‘∀i rs0 evs0 wi esi. _ ∧ eacts _ _ (ws'0, ws'1) _ = _ ⇒ _’ irule >>
+        qexistsl_tac [‘evs0’, ‘i’, ‘rs0’, ‘wi’] >> simp[]) >>
+  ‘∀n'. n' < SUC n ⇒ eround_own lfd pol ifds m w0 n'’
+    by (rpt strip_tac >> Cases_on ‘n' = n’ >- fs[] >> ‘n' < n’ by decide_tac >>
+        qpat_x_assum ‘∀n'. n' < n ⇒ eround_own _ _ _ _ _ _’ drule >> simp[]) >>
   (* C1(ii) *)
   ‘ALL_DISTINCT (MAP SND (cnew k fs ++ cm)) ∧
    EVERY (λj. j < LENGTH w1.chans) (MAP SND (cnew k fs ++ cm))’

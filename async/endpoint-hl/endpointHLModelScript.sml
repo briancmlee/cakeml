@@ -38,9 +38,13 @@
      work/workers/r3-close/design-r3-close.md §4): L1 answers it for a
      handle whose fd it dropped (D23's write timeout, a reset, a hard
      send error), so the program can close the pair; lv n k = NONE;
-   - EClose h / EShut h ([R3](a)): PLACEHOLDER, NONE in this layer.  The
-     HL semantics are close-v2's (to the orchestrator for review); until
-     then nothing may rely on these cases (spike/r3-close only).
+   - EClose h / EShut h ([R3](a); PROVISIONAL Q-13(a), point (3), design
+     note work/workers/close-v2/design-hl-close.md): EClose closes h's
+     channel whatever its status (ep_close) and forgets h; EShut ends its
+     write side at once (ep_shutdown: later writes take 0 bytes).  Both
+     are idempotent: on an unknown (closed, refused-and-reported) handle
+     they do nothing; a repeated EShut sets shut again.  Misuse (NONE)
+     only on the listener.
 *)
 Theory endpointHLModel
 Ancestors
@@ -125,9 +129,21 @@ Definition ehdo_def:
         else OPTION_MAP (λ(k, w'). (EWrote k, (w', hs))) (ep_send f bs w)) ∧
   ehdo lfd v (w, hs) (ELevel h) =
     SOME ((case v of SOME l => ELvl l | NONE => EGone), (w, hs)) ∧
-  (* PLACEHOLDER ([R3](a)): close-v2's HL cases replace these *)
-  ehdo lfd v (w, hs) (EClose h) = NONE ∧
-  ehdo lfd v (w, hs) (EShut h) = NONE
+  (* PROVISIONAL Q-13(a), point (3): EClose closes the channel (any status)
+     and forgets h; EShut ends its write side at once; both idempotent (an
+     unknown handle: a no-op); misuse only on the listener *)
+  ehdo lfd v (w, hs) (EClose h) =
+    (if h = lfd then NONE
+     else
+       case ALOOKUP hs.tbl h of
+       | NONE => SOME (EClosed, (w, hs))
+       | SOME f => OPTION_MAP (λw2. (EClosed, (w2, eh_del h hs))) (ep_close f w)) ∧
+  ehdo lfd v (w, hs) (EShut h) =
+    (if h = lfd then NONE
+     else
+       case ALOOKUP hs.tbl h of
+       | NONE => SOME (EShutDone, (w, hs))
+       | SOME f => OPTION_MAP (λw2. (EShutDone, (w2, hs))) (ep_shutdown f w))
 End
 
 (* The actions of round n from the k-th on (lv: the Level oracle) *)

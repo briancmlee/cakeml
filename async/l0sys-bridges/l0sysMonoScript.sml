@@ -173,7 +173,7 @@ Proof
 QED
 
 Theorem MEM_AFUPDKEY_imp:
-  ∀L. MEM (a, b) (AFUPDKEY k f L) ⇒ MEM (a, b) L ∨ ∃b0. MEM (k, b0) L ∧ b = f b0
+  ∀L. MEM (a, b) (AFUPDKEY k f L) ⇒ MEM (a, b) L ∨ a = k ∧ ∃b0. MEM (k, b0) L ∧ b = f b0
 Proof
   Induct >> simp[AFUPDKEY_def] >> Cases >> rw[AFUPDKEY_def] >> metis_tac[]
 QED
@@ -192,13 +192,14 @@ Proof
 QED
 
 Theorem queued_pop:
-  FILTER (λ(l', p, q). l' = l) w.listeners = (l1, p, j :: q') :: t ∧
-  MEM (a, p', q'') (AFUPDKEY l (K (p, q')) w.listeners) ∧ MEM c q'' ⇒ queued w c
+  FILTER (λ(l', p, q). l' = l0) w.listeners = (l1, p1, j1 :: q1) :: t1 ∧
+  MEM (a, p', q'') (AFUPDKEY l0 (K (p1, q1)) w.listeners) ∧ MEM c q'' ⇒ queued w c
 Proof
-  strip_tac >> drule MEM_AFUPDKEY_imp >> rw[queued_def]
-  >- metis_tac[] >>
-  ‘MEM (l1, p, j :: q') (FILTER (λ(l', p, q). l' = l) w.listeners)’ by simp[] >>
-  gvs[MEM_FILTER] >> metis_tac[MEM]
+  strip_tac >>
+  ‘MEM (l1, p1, j1 :: q1) (FILTER (λ(l', p, q). l' = l0) w.listeners)’ by simp[] >>
+  ‘MEM (l0, p1, j1 :: q1) w.listeners’ by gvs[MEM_FILTER] >>
+  drule MEM_AFUPDKEY_imp >> rw[queued_def] >- metis_tac[] >>
+  metis_tac[MEM]
 QED
 
 Theorem queued_call:

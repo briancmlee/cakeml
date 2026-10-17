@@ -161,16 +161,49 @@ Proof
   Induct >> simp[drop_out_def, set_outbox_def]
 QED
 
+Theorem l1do_write_closing[local]:
+  l1do lfd (w, b) (Write h bs) = SOME (r, (w', b'), evs) ⇒ b'.closing = b.closing
+Proof
+  rw[l1do_def, AllCaseEqs()] >>
+  gvs[set_outbox_def, after_send_def, AllCaseEqs()] >> rw[set_outbox_def]
+QED
+
+Theorem pdo_eof_closing[local]:
+  pdo lfd (w, ps) a = SOME (r, (w', ps'), evs) ∧
+  ¬MEM f ps.eof ∧ ¬MEM f ps.b.closing ⇒
+  ¬MEM f ps'.eof ∧ ¬MEM f ps'.b.closing
+Proof
+  Cases_on ‘a’ >> simp[pdo_def] >> strip_tac >>
+  gvs[AllCaseEqs(), set_inb_def, MEM_FILTER] >>
+  TRY (pairarg_tac >> gvs[]) >>
+  gvs[l1_close_def, AllCaseEqs(), forget_def, set_outbox_def, MEM_FILTER] >>
+  TRY (rw[] >> gvs[] >> NO_TAC) >>
+  TRY (drule l1do_write_closing >> simp[] >> NO_TAC) >>
+  metis_tac[]
+QED
+
+Theorem pacts_eof_closing[local]:
+  ∀acts w ps rs evs w' ps'.
+    pacts lfd (w, ps) acts = SOME (rs, evs, (w', ps')) ∧
+    ¬MEM f ps.eof ∧ ¬MEM f ps.b.closing ⇒
+    ¬MEM f ps'.eof ∧ ¬MEM f ps'.b.closing
+Proof
+  Induct >> simp[pacts_def] >> rpt gen_tac >> strip_tac >>
+  gvs[AllCaseEqs()] >> PairCases_on ‘ws1’ >>
+  drule_all pdo_eof_closing >> strip_tac >> first_x_assum drule_all >> simp[]
+QED
+
 (* MAIN: a round in which L1, keeping f at its start, fetches f's
    end-of-file ends with f's channel drained at end-of-file (or broken) *)
 Theorem pround_deof:
   pround lfd pol hs (w, ps) acts = SOME (snap, (w', ps'), log, evs) ∧
-  winv w ∧ qfresh w ∧ fkeep lfd h f ps ∧ MEM (FEof f) log ⇒
+  winv w ∧ qfresh w ∧ ¬MEM f ps.eof ∧ ¬MEM f ps.b.closing ∧ MEM (FEof f) log ⇒
   ∃j. l0_chan_of w' f = SOME j ∧ deof j w'
 Proof
   simp[pround_def, AllCaseEqs()] >> strip_tac >> PairCases_on ‘ws1’ >> gvs[] >>
   rename1 ‘pacts _ _ _ = SOME (rs1, aevs, (w1, ps1))’ >>
-  drule_all pacts_f >> strip_tac >>
+  drule_all pacts_eof_closing >> strip_tac >>
+  ‘winv w1’ by metis_tac[pacts_winv] >>
   ‘qfresh w1’ by metis_tac[pacts_qfresh] >>
   qpat_x_assum ‘pf_tail _ _ _ _ = _’ mp_tac >>
   simp[pf_tail_def, AllCaseEqs()] >> strip_tac >> gvs[] >>
@@ -178,7 +211,6 @@ Proof
   ‘winv w2 ∧ qfresh w2’ by metis_tac[l1_flush_winv, l1_flush_qfresh] >>
   drule_all pf_fetch_deof >> strip_tac >>
   ‘winv w3’ by metis_tac[pf_fetch_winv] >>
-  ‘¬MEM f ps1.b.closing’ by fs[fkeep_def] >>
   ‘b2.closing = ps1.b.closing’ by (drule l1_flush_f >> simp[]) >>
   ‘ps3'.b = b2’ by (drule_all pf_fetch_out >> simp[]) >>
   qexists_tac ‘j’ >> conj_tac
@@ -199,7 +231,8 @@ QED
 
 Theorem run_deof:
   run_ok lfd pol ifds m w0 ∧ winv w0 ∧ qfresh w0 ∧
-  fkeep lfd h f (rstate lfd pol ifds m w0 k) ∧ MEM (FEof f) (rlog lfd pol ifds m w0 k) ⇒
+  ¬MEM f (rstate lfd pol ifds m w0 k).eof ∧ ¬MEM f (rstate lfd pol ifds m w0 k).b.closing ∧
+  MEM (FEof f) (rlog lfd pol ifds m w0 k) ⇒
   ∃j. l0_chan_of (rworld lfd pol ifds m w0 (SUC k)) f = SOME j ∧
       deof j (rworld lfd pol ifds m w0 (SUC k))
 Proof
@@ -216,7 +249,8 @@ Theorem eof_final:
   oassm lfd pol ifds m w0 ∧ qinb w0 ∧
   MEM (FConn f) (rlog lfd pol ifds m w0 a) ∧
   (∀i. a < i ∧ i ≤ k ⇒ ¬MEM (FConn f) (rlog lfd pol ifds m w0 i)) ∧ a ≤ k ∧
-  fkeep lfd h f (rstate lfd pol ifds m w0 k) ∧ MEM (FEof f) (rlog lfd pol ifds m w0 k) ⇒
+  ¬MEM f (rstate lfd pol ifds m w0 k).eof ∧ ¬MEM f (rstate lfd pol ifds m w0 k).b.closing ∧
+  MEM (FEof f) (rlog lfd pol ifds m w0 k) ⇒
   ∃j. l0_chan_of (rworld lfd pol ifds m w0 (SUC k)) f = SOME j ∧
       ((EL j (rworld lfd pol ifds m w0 (SUC k)).chans).peer_eof ∧
        (EL j (rworld lfd pol ifds m w0 (SUC k)).chans).peer_sent =

@@ -17,7 +17,7 @@ Ancestors
   asyncHLModel honestL1Model honestL1Steps honestL1PFModel
   asyncM3World honestEchoL0Spec honestEchoL0Trace honestEchoL0Events
   honestEchoL0Model honestEchoL0Inv honestEchoL0Round honestEchoL0Out
-  asyncCore asyncLevel1 asyncTranscript honestL1PFProg
+  asyncCore asyncLevel1 asyncTranscript honestL1PFProg honestL1PFSpec
   asyncServer asyncServerSafety asyncM4Relabel asyncM4RelabelDist asyncM4SockModel
 Libs
   preamble
@@ -240,4 +240,49 @@ Proof
   ‘EXISTS (on_fd fd) (trans (server k) (MAP sfs h))’
     by (simp[EXISTS_MEM] >> qexists_tac ‘(Write fd d, r')’ >> simp[on_fd_def]) >>
   first_x_assum drule >> simp[MEM_MAP] >> strip_tac >> gvs[]
+QED
+
+Theorem ALL_DISTINCT_hdl:
+  hdln (w2n lfd) n < dimword (:64) ⇒ ALL_DISTINCT (GENLIST (λi. l1hdl lfd i) n)
+Proof
+  rw[ALL_DISTINCT_GENLIST] >> rename1 ‘hdl lfd a = hdl lfd b’ >>
+  ‘hdln (w2n lfd) a < dimword (:64) ∧ hdln (w2n lfd) b < dimword (:64)’
+    by (conj_tac >> irule hdln_mono >> qexists_tac ‘n’ >> fs[]) >>
+  ‘hdl lfd a = hdl lfd b ⇔ a = b’ by (irule hdl_eq_iff >> fs[]) >> gvs[]
+QED
+
+(* MAIN: the run invariant along the guarded run of the echo server *)
+Theorem ri_echo:
+  ri lfd (srelabel (server k)) ([], ws0, []) ⇒
+  ∀n h w ps evs logs.
+    prounds_t lfd hw ifds (srelabel (server k)) ws0 n = SOME (h, (w, ps), evs, logs) ⇒
+    ri lfd (srelabel (server k)) (h, (w, ps), evs)
+Proof
+  strip_tac >> Induct >- (simp[prounds_t_def] >> rw[] >> gvs[]) >>
+  rpt gen_tac >> simp[prounds_t_def] >>
+  Cases_on ‘prounds_t lfd hw ifds (srelabel (server k)) ws0 n’ >> simp[] >>
+  PairCases_on ‘x’ >> simp[] >>
+  first_x_assum (qspecl_then [‘x0’, ‘x1’, ‘x2’, ‘x3’, ‘x4’] mp_tac) >> simp[] >> strip_tac >>
+  IF_CASES_TAC >> simp[]
+  >- (simp[AllCaseEqs(), PULL_EXISTS] >> rpt gen_tac >> strip_tac >> gvs[] >>
+      irule ri_step >> simp[] >> rpt (first_assum (irule_at Any) >> simp[]) >>
+      rpt strip_tac >>
+      ‘(∀i. i < LENGTH x0 ⇒
+            LENGTH (EL i x0).results = LENGTH (new_actions (log_of (srelabel (server k))) (TAKE i x0))) ∧
+       haccepted (texec (srelabel (server k)) x0) = GENLIST (λi. l1hdl lfd i) x2.b.nxt’
+        by gvs[ri_def] >>
+      drule trans_texec >> strip_tac >>
+      ‘hdln (w2n lfd) x2.b.nxt < dimword (:64)’
+        by (gvs[hdl_room_def] >> irule hdln_mono >>
+            qexists_tac ‘x2.b.nxt + LENGTH (new_actions (log_of (srelabel (server k))) x0) + 1’ >> fs[]) >>
+      ‘MEM hd (haccepted (trans (srelabel (server k)) x0))’
+        by (irule server_writes_accepted >>
+            qpat_assum ‘trans _ _ = _’ (fn th => REWRITE_TAC [th]) >>
+            qpat_assum ‘haccepted (texec _ _) = _’
+              (fn th => REWRITE_TAC [haccepted_APPEND, haccepted_NONE, th, APPEND_NIL]) >>
+            conj_tac >- (irule ALL_DISTINCT_hdl >> simp[]) >>
+            qexistsl [‘bs’, ‘NONE’] >> simp[MEM_MAP]) >>
+      qpat_x_assum ‘MEM hd (haccepted (trans _ _))’ mp_tac >>
+      qpat_assum ‘trans _ _ = _’ (fn th => REWRITE_TAC [th]) >> simp[haccepted_APPEND]) >>
+  rw[] >> gvs[]
 QED

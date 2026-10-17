@@ -43,13 +43,6 @@ Proof
   rw[after_send_def] >> every_case_tac >> simp[set_outbox_def]
 QED
 
-Theorem set_outbox_nfields[local]:
-  (set_outbox f bs st).tbl = st.tbl ∧ (set_outbox f bs st).nxt = st.nxt ∧
-  (set_outbox f bs st).closing = st.closing
-Proof
-  simp[set_outbox_def]
-QED
-
 (* The reap closes only: it sends nothing *)
 Theorem l1_reap_sn:
   ∀fs w b w' b' evs.
@@ -91,20 +84,6 @@ Proof
     mp_tac) >>
   simp[after_send_nfields] >> strip_tac >>
   rpt strip_tac >> simp[ep_fold_def, l0_ep_step_def]
-QED
-
-(* A write keeps the outboxes on held fds *)
-Theorem pdo_write_okb:
-  pdo lfd (w, ps) (Write h bs) = SOME (r, (w', ps'), evs) ∧ okb ps.b ⇒ okb ps'.b
-Proof
-  simp[pdo_def, PULL_EXISTS] >> rpt gen_tac >> PairCases_on ‘z’ >> simp[] >>
-  strip_tac >> gvs[] >>
-  qpat_x_assum ‘l1do _ _ _ = _’ mp_tac >> simp[l1do_def] >>
-  rw[AllCaseEqs()] >> gvs[] >> rename1 ‘ALOOKUP _ h = SOME f’ >>
-  ‘MEM f (MAP SND ps.b.tbl)’
-    by (imp_res_tac ALOOKUP_MEM >> simp[MEM_MAP, EXISTS_PROD] >> metis_tac[]) >>
-  TRY (irule okb_after_send >> simp[set_outbox_nfields]) >>
-  irule okb_set_outbox >> simp[]
 QED
 
 (* One action: a send only through a handle in the table *)
@@ -154,32 +133,6 @@ Proof
       impl_tac >- fs[] >> disch_then irule >> fs[]) >>
   first_x_assum (qspecl_then [‘w1’, ‘ps1’, ‘rs'’, ‘evs'’, ‘w'’, ‘ps'’, ‘r'’] mp_tac) >>
   impl_tac >- fs[] >> disch_then irule >> fs[]
-QED
-
-(* The round's actions keep the outboxes on held fds *)
-Theorem pacts_okb:
-  ∀acts w ps rs evs w' ps' opn.
-    pacts lfd (w, ps) acts = SOME (rs, evs, (w', ps')) ∧ l0_rely w ∧
-    own_ok lfd (k, opn) ps ∧ ps.b.nxt + naccepts acts < dimword (:64) ∧ okb ps.b ⇒
-    okb ps'.b
-Proof
-  Induct >> simp[pacts_def] >> rpt gen_tac >> strip_tac >>
-  gvs[AllCaseEqs()] >>
-  PairCases_on ‘ws1’ >> rename1 ‘pdo lfd (w, ps) a = SOME (r, (w1, ps1), evs1)’ >>
-  ‘ps.b.nxt < dimword (:64)’ by simp[] >>
-  ‘ps1.b.nxt + naccepts acts < dimword (:64)’
-    by (drule pdo_nxt_acc >>
-        ‘naccepts (a :: acts) = naccepts [a] + naccepts acts’ by (Cases_on ‘a’ >> simp[]) >>
-        fs[]) >>
-  ‘okb ps1.b’
-    by (Cases_on ‘a’
-        >- (drule_all pdo_accept_out >> simp[])
-        >- (drule_all pdo_read_out >> simp[])
-        >> drule_all pdo_write_okb >> simp[]) >>
-  drule_all pdo_in >> strip_tac >>
-  drule_all pdo_rely >> strip_tac >>
-  Cases_on ‘l0_ep_st (k, opn) evs1’ >> gvs[] >>
-  first_x_assum drule_all >> simp[]
 QED
 
 Theorem l1p_b_id[local]:

@@ -577,3 +577,95 @@ Proof
   disch_then (qspec_then ‘f’ mp_tac) >> simp[] >> strip_tac >> simp[] >>
   rpt strip_tac >> ‘i = SUC n’ by simp[] >> gvs[]
 QED
+
+(* An fd with output pending, or gone, is held (tbl or closing): okeys *)
+Theorem run_okeys_held:
+  oassm lfd pol ifds m w0 ∧
+  (outbox_of (rstate lfd pol ifds m w0 n).b f ≠ [] ∨
+   MEM f (rstate lfd pol ifds m w0 n).b.gone) ⇒
+  MEM f (MAP SND (rstate lfd pol ifds m w0 n).b.tbl) ∨
+  MEM f (rstate lfd pol ifds m w0 n).b.closing
+Proof
+  strip_tac >> drule run_rel >> disch_then (qspec_then ‘n’ strip_assume_tac) >>
+  gvs[out_rel_def, okeys_def]
+QED
+
+(* ------------------------------------------------------------------------
+   flush_live with its window: the least round flush_live2 names, with f
+   held (and output pending, not gone) at every round before it
+   ------------------------------------------------------------------------ *)
+
+(* MAIN: as flush_live2, at the first round it names: n' = n if f was gone
+   at n, and n' = SUC k for the excuse at round k; at every round of
+   [n, n') f is held with output pending and not gone *)
+Theorem flush_live3:
+  oassm lfd pol ifds m w0 ∧ F1 lfd pol ifds m w0 ∧ F2 w0 ∧
+  drains lfd pol ifds m w0 c ∧ nshut w0 ∧
+  (MEM f (MAP SND (rstate lfd pol ifds m w0 n).b.tbl) ∨
+   MEM f (rstate lfd pol ifds m w0 n).b.closing) ∧
+  l0_chan_of (rworld lfd pol ifds m w0 n) f = SOME c ⇒
+  ∃n'. n ≤ n' ∧
+       (∀i. n ≤ i ∧ i < n' ⇒
+            (MEM f (MAP SND (rstate lfd pol ifds m w0 i).b.tbl) ∨
+             MEM f (rstate lfd pol ifds m w0 i).b.closing) ∧
+            outbox_of (rstate lfd pol ifds m w0 i).b f ≠ [] ∧
+            ¬MEM f (rstate lfd pol ifds m w0 i).b.gone) ∧
+       ((EL (cl (FST (pcm lfd pol ifds m w0 n)) f)
+            (FST (hst lfd ifds m (psk lfd pol ifds m w0) n)).clients).outgoing ≼
+          csent (rworld lfd pol ifds m w0 n') c ∨
+        n' = n ∧ MEM f (rstate lfd pol ifds m w0 n).b.gone ∨
+        ∃k. SUC k = n' ∧
+            (hard_send f (rrev lfd pol ifds m w0 k) ∨ rdrop lfd pol ifds m w0 k f))
+Proof
+  disch_then (fn th => MAP_EVERY assume_tac (CONJUNCTS th)) >>
+  qabbrev_tac ‘j = cl (FST (pcm lfd pol ifds m w0 n)) f’ >>
+  qabbrev_tac ‘P = λx. n ≤ x ∧
+     (oout lfd pol ifds m w0 j n ≼ csent (rworld lfd pol ifds m w0 x) c ∨
+      MEM f (rstate lfd pol ifds m w0 n).b.gone ∨
+      ∃k. n ≤ k ∧ k < x ∧
+          (hard_send f (rrev lfd pol ifds m w0 k) ∨ rdrop lfd pol ifds m w0 k f))’ >>
+  ‘∃x. P x’
+    by (drule_all flush_live2 >> strip_tac >> qexists_tac ‘n'’ >>
+        simp[Abbr ‘P’, oout_def, Abbr ‘j’] >> metis_tac[]) >>
+  qspec_then ‘P’ mp_tac WOP >> (impl_tac >- metis_tac[]) >>
+  disch_then (qx_choose_then ‘n'’ strip_assume_tac) >>
+  qexists_tac ‘n'’ >>
+  ‘n ≤ n'’ by fs[Abbr ‘P’] >> simp[] >>
+  (* the excuses, at the least round *)
+  reverse conj_tac
+  >- (‘(EL j (FST (hst lfd ifds m (psk lfd pol ifds m w0) n)).clients).outgoing =
+       oout lfd pol ifds m w0 j n’ by simp[oout_def] >>
+      pop_assum SUBST1_TAC >>
+      ‘∀y. P y ⇒ n' ≤ y’
+        by (rpt strip_tac >> spose_not_then assume_tac >> ‘y < n'’ by simp[] >> res_tac) >>
+      qpat_x_assum ‘P n'’ mp_tac >> simp[Abbr ‘P’] >> rpt strip_tac >> simp[]
+      >- (first_x_assum (qspec_then ‘n’ mp_tac) >> simp[]) >>
+      rpt disj2_tac >> qexists_tac ‘k’ >> simp[] >>
+      first_x_assum (qspec_then ‘SUC k’ mp_tac) >>
+      (impl_tac >- (simp[] >> rpt disj2_tac >> qexists_tac ‘k’ >> simp[])) >>
+      simp[]) >>
+  (* the window: no round before n' satisfies P *)
+  rpt gen_tac >> strip_tac >>
+  ‘¬P i’ by (first_x_assum irule >> simp[]) >>
+  ‘¬MEM f (rstate lfd pol ifds m w0 n).b.gone’ by (strip_tac >> fs[Abbr ‘P’]) >>
+  ‘good lfd pol ifds m w0 f c j n’ by (simp[Abbr ‘j’] >> irule good_init >> fs[]) >>
+  drule_all good_iter >> disch_then (qspec_then ‘i − n’ mp_tac) >>
+  ‘n + (i − n) = i’ by simp[] >> pop_assum SUBST1_TAC >> strip_tac
+  >- ((* an excuse before i: P i *)
+      qpat_x_assum ‘¬P i’ mp_tac >> simp[Abbr ‘P’] >> metis_tac[])
+  >- (qpat_x_assum ‘¬P i’ mp_tac >> simp[Abbr ‘P’] >> metis_tac[])
+  >- ((* everything written taken at SUC i' ≤ i: P (SUC i') *)
+      ‘P (SUC i')’ suffices_by
+        (strip_tac >> ‘SUC i' < n'’ by simp[] >> res_tac) >>
+      qunabbrev_tac ‘P’ >> BETA_TAC >> (conj_tac >- simp[]) >> disj1_tac >>
+      qpat_x_assum ‘csent _ c = _’ SUBST1_TAC >>
+      irule good_oout_mono >> simp[] >> metis_tac[]) >>
+  ‘¬MEM f (rstate lfd pol ifds m w0 i).b.gone’ by fs[good_def] >>
+  ‘outbox_of (rstate lfd pol ifds m w0 i).b f ≠ []’
+    by (strip_tac >> ‘P i’ suffices_by simp[] >>
+        qunabbrev_tac ‘P’ >> BETA_TAC >> (conj_tac >- simp[]) >> disj1_tac >>
+        ‘csent (rworld lfd pol ifds m w0 i) c = oout lfd pol ifds m w0 j i’
+          by (qpat_x_assum ‘good _ _ _ _ _ _ _ _ i’ mp_tac >> simp[good_def]) >>
+        pop_assum SUBST1_TAC >> irule good_oout_mono >> simp[] >> metis_tac[]) >>
+  simp[] >> irule run_okeys_held >> simp[]
+QED

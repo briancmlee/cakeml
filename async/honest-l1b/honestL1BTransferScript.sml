@@ -17,6 +17,10 @@ Ancestors
 Libs
   preamble
 
+(* honestL0Outcome's no_close_stdio is loaded too; the claim reads
+   honestL1BStmts's copy *)
+val _ = bring_to_front_overload "no_close_stdio" {Name = "no_close_stdio", Thy = "honestL1BStmts"};
+
 Definition btrace_def:
   btrace lfd hw ifds bz m w0 ps0 (io : io_event llist) ⇔
     ∀evs. LPREFIX (fromList evs) io ⇔ bpre lfd hw ifds bz m (w0, ps0) evs

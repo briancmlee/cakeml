@@ -30,10 +30,11 @@ Ancestors
 Libs
   preamble
 
-(* honestL0Outcome's stdio_closed is loaded too (via honestEchoL0Sem); the
-   claim reads this copy's *)
+(* honestL0Outcome's stdio_closed, stdio_open and no_close_stdio are loaded
+   too (via honestEchoL0Sem); the claim reads this copy's *)
 val _ = bring_to_front_overload "stdio_closed" {Name = "stdio_closed", Thy = "honestL1BStmts"};
 val _ = bring_to_front_overload "stdio_open" {Name = "stdio_open", Thy = "honestL1BStmts"};
+val _ = bring_to_front_overload "no_close_stdio" {Name = "no_close_stdio", Thy = "honestL1BStmts"};
 val _ = bring_to_front_overload "echo_port_conf" {Name = "echo_port_conf", Thy = "honestEchoL0Prog"};
 
 (* The claim, with amendment #3 (D29).  Since L3-00 c2b12a300 (and with
@@ -291,9 +292,9 @@ Theorem no_close_setup[local]:
   setup_ev e ∧ (∀evs. LPREFIX (fromList evs) io ⇒ no_close_stdio evs) ⇒
   ∀evs. LPREFIX (fromList evs) (LCONS e io) ⇒ no_close_stdio evs
 Proof
-  rpt strip_tac >> Cases_on ‘evs’ >- simp[no_close_stdio_def] >>
+  rpt strip_tac >> Cases_on ‘evs’ >- simp[honestL1BStmtsTheory.no_close_stdio_def] >>
   gvs[LPREFIX_LCONS] >> first_x_assum drule >>
-  gvs[no_close_stdio_def, setup_ev_def] >> metis_tac[]
+  gvs[honestL1BStmtsTheory.no_close_stdio_def, setup_ev_def] >> metis_tac[]
 QED
 
 Theorem stdio_kept_setup:

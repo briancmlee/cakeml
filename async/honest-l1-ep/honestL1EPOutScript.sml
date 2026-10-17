@@ -177,6 +177,12 @@ Proof
   fs[IS_PREFIX_APPEND] >> metis_tac[APPEND_ASSOC]
 QED
 
+Theorem l0_do_rely:
+  l0_do n conf alen w = SOME (out, w', ev) ∧ l0_rely w ⇒ l0_rely w'
+Proof
+  rw[l0_do_def, AllCaseEqs()] >> drule_all l0_ffi_fn_length >> simp[]
+QED
+
 Theorem sys_close_quiet:
   sys_close g w = SOME (out, w', ev) ⇒ ∀f. ev_sent f ev = []
 Proof
@@ -194,11 +200,12 @@ QED
 
 Theorem l1_close_ostep:
   l1_close g (w, b) = SOME ((w', b'), evs) ⇒
-  (∀f. evs_sent f evs = []) ∧ (∀f. f ≠ g ⇒ ostep f b b' evs []) ∧
+  (l0_rely w ⇒ l0_rely w') ∧ (∀f. evs_sent f evs = []) ∧ (∀f. f ≠ g ⇒ ostep f b b' evs []) ∧
   b'.tbl = b.tbl ∧ (∀f. MEM f b'.closing ⇔ MEM f b.closing ∧ f ≠ g)
 Proof
   simp[l1_close_def, AllCaseEqs(), PULL_EXISTS] >> rpt gen_tac >> strip_tac >>
   drule sys_close_quiet >> strip_tac >> gvs[] >>
+  conj_tac >- (gvs[sys_close_def] >> metis_tac[l0_do_rely]) >>
   simp[ostep_def, forget_other] >> simp[forget_def, MEM_FILTER] >> metis_tac[]
 QED
 
@@ -218,7 +225,7 @@ QED
 
 Theorem pdo_read_ostep:
   pdo lfd (w, ps) (Read h n) = SOME (r, (w', ps'), evs) ∧ pown lfd ps ⇒
-  (∀f. evs_sent f evs = []) ∧
+  (l0_rely w ⇒ l0_rely w') ∧ (∀f. evs_sent f evs = []) ∧
   ∀f. held ps.b f ⇒ (held ps'.b f ⇒ ostep f ps.b ps'.b evs []) ∧ ostepc f ps.b evs []
 Proof
   simp[pdo_def] >> rw[] >> gvs[AllCaseEqs()] >>
@@ -245,4 +252,76 @@ Theorem pdo_accept_ostep:
    ∃h. ps'.b.tbl = (h, HD ps.acq) :: ps.b.tbl ∧ ps.acq = HD ps.acq :: ps'.acq)
 Proof
   simp[pdo_def] >> rw[] >> gvs[AllCaseEqs()]
+QED
+
+Theorem sys_connect_quiet:
+  sys_connect p w = SOME (out, w', ev) ⇒ ∀f. ev_sent f ev = []
+Proof
+  rw[sys_connect_def] >> drule l0_do_cases >> rw[] >> simp[ev_sent_def]
+QED
+
+(* What an E1 action writes on fd f (a connect handle's writes take
+   nothing: pending is a misuse, refused takes 0) *)
+Definition ewbytes_def:
+  ewbytes f (es : l1e) (EWrite h bs) = (if ALOOKUP es.p.b.tbl h = SOME f then bs else []) ∧
+  ewbytes f es (ERead h n) = [] ∧ ewbytes f es (EAccept l) = [] ∧
+  ewbytes f es (EConnect a) = [] ∧ ewbytes f es (ELevel h) = []
+End
+
+Theorem eown_ctbl_held:
+  eown lfd es ∧ MEM f (MAP SND es.ctbl) ⇒ ¬held es.p.b f
+Proof
+  rw[eown_def, held_def, ALL_DISTINCT_APPEND] >> metis_tac[]
+QED
+
+Theorem eown_ctbl_lookup:
+  eown lfd es ∧ ALOOKUP es.ctbl h = SOME f0 ∧ held es.p.b g ⇒ g ≠ f0
+Proof
+  rpt strip_tac >> imp_res_tac ALOOKUP_MEM >>
+  ‘MEM f0 (MAP SND es.ctbl)’ by (simp[MEM_MAP] >> metis_tac[SND]) >>
+  metis_tac[eown_ctbl_held]
+QED
+
+Theorem edo_ostep:
+  edo lfd pol (w, es) a = SOME (r, (w', es'), evs) ∧ eown lfd es ∧ l0_rely w ⇒
+  l0_rely w' ∧
+  ∀f. held es.p.b f ⇒
+      (held es'.p.b f ⇒ ostep f es.p.b es'.p.b evs (ewbytes f es a)) ∧
+      ostepc f es.p.b evs (ewbytes f es a)
+Proof
+  strip_tac >> ‘pown lfd es.p’ by fs[eown_def] >>
+  Cases_on ‘a’ >> gvs[edo_def, AllCaseEqs()]
+  (* EAccept *)
+  >~ [‘pdo _ _ (Accept _) = _’]
+  >- (PairCases_on ‘z’ >> gvs[] >> drule pdo_accept_ostep >> strip_tac >> gvs[] >>
+      simp[ostep_def, ostepc_def, ewbytes_def, outbox_of_def])
+  (* ERead on a layer handle *)
+  >~ [‘pdo _ _ (Read _ _) = _’]
+  >- (PairCases_on ‘z’ >> gvs[] >> drule_all pdo_read_ostep >> strip_tac >>
+      simp[ewbytes_def] >> rpt strip_tac >> res_tac)
+  (* EWrite on a layer handle *)
+  >~ [‘pdo _ _ (Write _ _) = _’]
+  >- (PairCases_on ‘z’ >> gvs[] >> drule_all pdo_write_ostep >> strip_tac >>
+      simp[ewbytes_def] >> rpt strip_tac >>
+      first_x_assum (qspec_then ‘f’ assume_tac) >> gvs[wbytes_def] >>
+      metis_tac[ostep_ostepc])
+  (* a refused connect handle, read: closed *)
+  >~ [‘l1_close _ _ = _’]
+  >- (PairCases_on ‘z’ >> gvs[] >> drule l1_close_ostep >> strip_tac >>
+      simp[ec_del_def, ewbytes_def] >> rpt strip_tac >>
+      metis_tac[ostep_ostepc, eown_ctbl_lookup])
+  (* EConnect *)
+  >~ [‘sys_connect _ _ = _’]
+  >- (drule sys_connect_quiet >> strip_tac >>
+      ‘l0_rely w'’ by (gvs[sys_connect_def] >> metis_tac[l0_do_rely]) >>
+      simp[ostep_def, ostepc_def, ewbytes_def, outbox_of_def] >> rw[] >> simp[])
+  (* the rest change nothing *)
+  >> simp[ostep_def, ostepc_def, ewbytes_def] >>
+  TRY (rename1 ‘ALOOKUP es.ctbl h = SOME _’ >>
+       ‘ALOOKUP es.p.b.tbl h = NONE’
+         by (simp[ALOOKUP_NONE] >> imp_res_tac ALOOKUP_MEM >>
+             gvs[eown_def, ALL_DISTINCT_APPEND, MEM_MAP] >> metis_tac[FST]) >>
+       simp[]) >>
+  drule sys_connect_quiet >> strip_tac >>
+  ‘l0_rely w'’ by (gvs[sys_connect_def] >> metis_tac[l0_do_rely]) >> simp[]
 QED

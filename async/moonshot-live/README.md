@@ -284,4 +284,4 @@ Shared lift pieces (`moonshotLiveLiftScript.sml`, moonshot-live):
   - only the client connects to a, and only the proxy to b.
 
   World level, `world_peer_valid` (moonshotLiveRelayWorld, proved, generic in k): the system fact at every instant
-  gives `peer_valid w0 tr c`, with the hypotheses of N2's `world_drains`.
+  gives `peer_valid w0 tr c`, with the hypotheses of N2's `world_drains`. Uses a temporary copy of `peer_valid_def` (honestKvL0LiveStmts, spike/kv-live-l0 @ bbf45dfe8); remove it when the lines merge. `relay_ok_of_ep` and `csend_ok_of_client` (same theory, proved) give `relay_ok` from proxy_safe_ep's cover and relay clauses (via `proxy_safe_bridge` at ft = ptr rs 1 n) and `csend_ok` from client_safe_l0's connect clause.

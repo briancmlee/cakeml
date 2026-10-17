@@ -11,11 +11,11 @@
     what a channel's peer has sent.
 
   TEMPORARY COPY (remove at merge): peer_valid (honestKvL0LiveStmts,
-  spike/kv-live-l0).
+  spike/kv-live-l0 @ bbf45dfe8).
 *)
 Theory moonshotLiveRelayWorld
 Ancestors
-  moonshotLiveWorldDrains moonshotLiveCopy moonshotLiveProjInf moonshotLiveStmts
+  moonshotLiveRelay moonshotLiveWorldDrains moonshotLiveCopy moonshotLiveProjInf moonshotLiveStmts
   l0sysFair l0sys l0sysProj honestL0World
 Libs
   preamble
@@ -75,4 +75,38 @@ Proof
   qexists_tac ‘rqs’ >> simp[] >>
   irule IS_PREFIX_TRANS >> qexists_tac ‘(sys_chan (ss t0) (k, c)).peer_sent’ >>
   simp[sys_chan_def]
+QED
+
+(*---------------------------------------------------------------------------*)
+(* kv_peer_valid_sys's hypotheses from the proxy's and the client's claims,
+   stated on the clauses used, so the statements' parameters (proxy_safe_l0's
+   Bnd or kt hw) don't matter here *)
+
+(* relay_ok from proxy_safe_ep's cover and relay clauses (moonshotPairGlue),
+   at instant t with tr px t = ptr rs 1 n and rl px the roles at ptr rs 1 n
+   (proxy_safe_bridge with ft = ptr rs 1 n, tr px t = ptr rs 1 (MIN t n)) *)
+Theorem relay_ok_of_ep:
+  (∀c. rl c = SOME (Connected b) ⇒ ∃f. prx f = SOME c ∧ rl f = SOME (Accepted a)) ∧
+  (∀f c. prx f = SOME c ⇒ l0_ep_sent c evs ≼ l0_ep_recvd f evs) ∧
+  (∀j. rl j = l0_ep_role j (ptr rs 1 n)) ∧ evs = ptr rs 1 n ⇒
+  relay_ok a b rs n
+Proof
+  strip_tac >> rewrite_tac[relay_ok_def] >> rpt strip_tac >>
+  ‘rl i = SOME (Connected b)’ by metis_tac[] >>
+  first_x_assum drule >> strip_tac >>
+  qexists_tac ‘f’ >> conj_tac >- metis_tac[] >>
+  first_x_assum drule >> rw[]
+QED
+
+(* csend_ok from client_safe_l0's connect clause (moonshotClientL0Stmts) at
+   evs = ptr rs 0 n *)
+Theorem csend_ok_of_client:
+  (∀i. EVERY valid_brequest (rqs i)) ∧
+  (∀j p. l0_ep_role j (ptr rs 0 n) = SOME (Connected p) ⇒
+         lc j < N ∧ l0_ep_sent j (ptr rs 0 n) ≼ brequests (rqs (lc j))) ⇒
+  csend_ok a rs n
+Proof
+  strip_tac >> rewrite_tac[csend_ok_def] >> rpt strip_tac >>
+  first_x_assum drule >> strip_tac >>
+  qexists_tac ‘rqs (lc i)’ >> simp[]
 QED

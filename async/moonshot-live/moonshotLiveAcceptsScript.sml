@@ -112,6 +112,29 @@ Proof
   rw[] >> res_tac >> fs[conn_to_def] >> metis_tac[]
 QED
 
+Theorem roles_connected_ev:
+  ∀evs lst. MEM (Connected p) (ep_roles lst evs) ⇒ ∃ev f. MEM ev evs ∧ ev_new ev = SOME (f, INL p)
+Proof
+  Induct >> simp[ep_roles_def] >> rpt gen_tac >>
+  Cases_on ‘ev_new h’ >> simp[] >- metis_tac[] >>
+  rename1 ‘ev_new h = SOME x’ >> PairCases_on ‘x’ >> Cases_on ‘x1’ >> simp[] >> metis_tac[]
+QED
+
+(* Process k0 ≠ cl makes no end with target p: no Connected-p episode, and
+   no connect to p that could get a free fd 0 (tinv's two disjuncts).  A
+   process that never connects to p has it (no_conn_to_of); so has one with
+   ¬free0 whose episodes are to other ports (a proxy whose socketless
+   connects are unconstrained) *)
+Definition no_conn_to_def:
+  no_conn_to p evs ⇔ ¬MEM (Connected p) (ep_roles [] evs) ∧ (conn_to p evs ⇒ ¬free0 evs)
+End
+
+Theorem no_conn_to_of:
+  ¬conn_to p evs ⇒ no_conn_to p evs
+Proof
+  metis_tac[no_conn_to_def, roles_conn_to]
+QED
+
 Theorem acc_event:
   LENGTH (case l0_event_accepted ev of SOME f => [f] | NONE => []) =
   LENGTH (FILTER is_acc (ev_role lst ev))
@@ -846,7 +869,7 @@ QED
 Theorem acc_peer:
   sinv rs s css ∧ tinv rs s css ∧ acc_inv ports rs s css ∧ MEM p ports ∧ k < LENGTH s.procs ∧
   ¬free0 (proc_events cl rs) ∧
-  (∀k0. k0 < LENGTH s.procs ∧ k0 ≠ cl ⇒ ¬conn_to p (proc_events k0 rs)) ∧
+  (∀k0. k0 < LENGTH s.procs ∧ k0 ≠ cl ⇒ no_conn_to p (proc_events k0 rs)) ∧
   j < LENGTH (css k) ∧ EL j (ep_roles [] (proc_events k rs)) = Accepted p ⇒
   ∃i. i < LENGTH (css cl) ∧ EL i (ep_roles [] (proc_events cl rs)) = Connected p ∧
       s.peer (k, EL j (css k)) = SOME (cl, EL i (css cl))
@@ -870,11 +893,14 @@ Proof
   >- (‘pk rs s css e0’ by fs[sinv_def] >>
       ‘LENGTH (ep_roles [] (proc_events e0 rs)) = LENGTH (css e0)’
         by (qpat_x_assum ‘pk _ _ _ e0’ mp_tac >> simp[pk_def, LET_THM, pinv_def, LENGTH_ep_roles]) >>
-      ‘conn_to p (proc_events e0 rs)’
-        by (irule roles_conn_to >> qexists_tac ‘[]’ >> metis_tac[EL_MEM]) >>
-      ‘e0 = cl’ by metis_tac[] >> rveq >>
+      ‘MEM (Connected p) (ep_roles [] (proc_events e0 rs))’ by metis_tac[EL_MEM] >>
+      ‘e0 = cl’
+        by (CCONTR_TAC >> qpat_x_assum ‘∀k0. _ ∧ k0 ≠ cl ⇒ _’ (qspec_then ‘e0’ mp_tac) >>
+            asm_simp_tac (srw_ss()) [no_conn_to_def]) >> rveq >>
       qexists_tac ‘i’ >> simp[]) >>
-  ‘e0 = cl’ by metis_tac[] >> rveq >> fs[]
+  ‘e0 = cl’
+    by (CCONTR_TAC >> qpat_x_assum ‘∀k0. _ ∧ k0 ≠ cl ⇒ _’ (qspec_then ‘e0’ mp_tac) >>
+        asm_simp_tac (srw_ss()) [no_conn_to_def]) >> rveq >> fs[]
 QED
 
 Theorem card_filter:
@@ -908,7 +934,7 @@ QED
 Theorem accepts_le_state:
   ∀G. sinv rs s css ∧ tinv rs s css ∧ acc_inv ports rs s css ∧ MEM p ports ∧
   k < LENGTH s.procs ∧ cl < LENGTH s.procs ∧ ¬free0 (proc_events cl rs) ∧
-  (∀k0. k0 < LENGTH s.procs ∧ k0 ≠ cl ⇒ ¬conn_to p (proc_events k0 rs)) ∧
+  (∀k0. k0 < LENGTH s.procs ∧ k0 ≠ cl ⇒ no_conn_to p (proc_events k0 rs)) ∧
   (∀c. s.peer (cl, c) ≠ NONE ⇒ G c) ⇒
   LENGTH (FILTER ($= (Accepted p)) (ep_roles [] (proc_events k rs))) ≤
   LENGTH (FILTER (λ(r, c). r = Connected p ∧ G c) (ZIP (ep_roles [] (proc_events cl rs), css cl)))
@@ -981,7 +1007,7 @@ QED
 Theorem irun_accepts_le:
   l0sys_irun ps ss rs ∧ isolated ports ss rs ∧ MEM p ports ∧ k < LENGTH ps ∧ cl < LENGTH ps ∧
   (∀q. MEM (Accepted q) (ep_roles [] (ptr rs k n)) ⇒ q = p) ∧ ¬free0 (ptr rs cl n) ∧
-  (∀k0. k0 < LENGTH ps ∧ k0 ≠ cl ⇒ ¬conn_to p (ptr rs k0 n)) ⇒
+  (∀k0. k0 < LENGTH ps ∧ k0 ≠ cl ⇒ no_conn_to p (ptr rs k0 n)) ⇒
   LENGTH (l0_accepted (ptr rs k n)) ≤ conns_ok p ss rs cl n
 Proof
   strip_tac >> fs[ptr_def, conns_ok_def] >>
@@ -1000,7 +1026,7 @@ QED
 Theorem accepts_lt_lift:
   l0sys_irun ps ss rs ∧ isolated ports ss rs ∧ MEM p ports ∧ k < LENGTH ps ∧ cl < LENGTH ps ∧
   (∀n q. MEM (Accepted q) (ep_roles [] (ptr rs k n)) ⇒ q = p) ∧ (∀n. ¬free0 (ptr rs cl n)) ∧
-  (∀n k0. k0 < LENGTH ps ∧ k0 ≠ cl ⇒ ¬conn_to p (ptr rs k0 n)) ∧
+  (∀n k0. k0 < LENGTH ps ∧ k0 ≠ cl ⇒ no_conn_to p (ptr rs k0 n)) ∧
   (∀n. conns_ok p ss rs cl n ≤ N) ∧ N < M ∧
   (∀evs. LPREFIX (fromList evs) tr ⇒ ∃n. evs ≼ ptr rs k n) ⇒
   ∀evs. LPREFIX (fromList evs) tr ⇒ LENGTH (l0_accepted evs) < M
@@ -1022,7 +1048,7 @@ QED
 Theorem accepts_lt_irun:
   l0sys_irun ps ss rs ∧ isolated ports ss rs ∧ MEM p ports ∧ k < LENGTH ps ∧ cl < LENGTH ps ∧
   (∀n q. MEM (Accepted q) (ep_roles [] (ptr rs k n)) ⇒ q = p) ∧ (∀n. ¬free0 (ptr rs cl n)) ∧
-  (∀n k0. k0 < LENGTH ps ∧ k0 ≠ cl ⇒ ¬conn_to p (ptr rs k0 n)) ∧
+  (∀n k0. k0 < LENGTH ps ∧ k0 ≠ cl ⇒ no_conn_to p (ptr rs k0 n)) ∧
   (∀n. conns_ok p ss rs cl n ≤ N) ∧ N < M ∧
   (∀t. ∃t'. t ≤ t' ∧ is_kcall k (rs t')) ∧ (∀t. LPREFIX (fromList (ptr rs k t)) tr) ⇒
   ∀evs. LPREFIX (fromList evs) tr ⇒ LENGTH (l0_accepted evs) < M

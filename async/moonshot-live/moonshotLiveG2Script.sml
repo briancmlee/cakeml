@@ -4,8 +4,9 @@
    - ¬free0 and no_fd0 for client and proxy, from "the trace starts with
      the check of fd 0 (D33 stdio_open) and never closes fd 0" (free0_stdio;
      moonshotW2.l0sys_no_fd0 through irun_steps);
-   - the conn_to topology from "every connect is to a" (client, T4), "to b"
-     (proxy) and "no connect" (KV);
+   - the topology (no_conn_to) from "every connect is to a" (client, T4),
+     "every connect episode is to b" (proxy; with ¬free0, its socketless
+     connects may go anywhere) and "no connect" (KV);
    - relay_ok and csend_ok from the proxy's and the client's clauses
      (relay_ok_of_ep, csend_ok_of_client).
 *)
@@ -80,13 +81,40 @@ Proof
   rw[no_conns_def, conn_to_def] >> metis_tac[]
 QED
 
+(* Every connect that opened an episode was to port x (the proxy's form,
+   proxy_safe_l0 constrains only connects that got a socket; the text of
+   moonshotStep12Stmts.connects_only) *)
+Definition eps_only_def:
+  eps_only x evs ⇔ ∀ev f q. MEM ev evs ∧ ev_new ev = SOME (f, INL q) ⇒ q = x
+End
+
+Theorem eps_only_no_conn_to:
+  eps_only x evs ∧ ¬free0 evs ∧ q ≠ x ⇒ no_conn_to q evs
+Proof
+  rw[no_conn_to_def, eps_only_def] >> strip_tac >>
+  drule roles_connected_ev >> strip_tac >> res_tac
+QED
+
+Theorem conns_only_no_conn_to:
+  conns_only x evs ∧ x < 65536 ∧ q ≠ x ⇒ no_conn_to q evs
+Proof
+  rpt strip_tac >> irule no_conn_to_of >> strip_tac >>
+  drule_all conns_only_conn_to >> simp[]
+QED
+
+Theorem no_conns_no_conn_to:
+  no_conns evs ⇒ no_conn_to q evs
+Proof
+  metis_tac[no_conn_to_of, no_conns_conn_to]
+QED
+
 (* MAIN: G2 at every instant n, from the programs' clauses on ptr rs k n *)
 Theorem kv_peer_valid_run:
   l0sys_irun ps ss rs ∧ LENGTH ps = 3 ∧ isolated [a; b] ss rs ∧
   a < 65536 ∧ b < 65536 ∧ a ≠ b ∧
   (ss m).peer (2, jk) = SOME e ∧ (ss m).target e = SOME b ∧ is_end (ss n) (2, jk) ∧
   start0 (ptr rs 0 n) ∧ no_close0 (ptr rs 0 n) ∧ start0 (ptr rs 1 n) ∧ no_close0 (ptr rs 1 n) ∧
-  conns_only a (ptr rs 0 n) ∧ conns_only b (ptr rs 1 n) ∧ no_conns (ptr rs 2 n) ∧
+  conns_only a (ptr rs 0 n) ∧ eps_only b (ptr rs 1 n) ∧ no_conns (ptr rs 2 n) ∧
   (* the proxy: proxy_safe_ep's cover and relay clauses at ptr rs 1 n *)
   (∀c. l0_ep_role c (ptr rs 1 n) = SOME (Connected b) ⇒
        ∃f. prx f = SOME c ∧ l0_ep_role f (ptr rs 1 n) = SOME (Accepted a)) ∧
@@ -94,7 +122,7 @@ Theorem kv_peer_valid_run:
   (* the client: client_safe_l0's connect clause at ptr rs 0 n *)
   (∀i. EVERY valid_brequest (rqs i)) ∧
   (∀j p. l0_ep_role j (ptr rs 0 n) = SOME (Connected p) ⇒
-         lc j < N ∧ l0_ep_sent j (ptr rs 0 n) ≼ brequests (rqs (lc j))) ⇒
+         lc j < (N : num) ∧ l0_ep_sent j (ptr rs 0 n) ≼ brequests (rqs (lc j))) ⇒
   ∃rqs. EVERY valid_brequest rqs ∧ (sys_chan (ss n) (2, jk)).peer_sent ≼ brequests rqs
 Proof
   strip_tac >>
@@ -106,14 +134,16 @@ Proof
     by (conj_tac >> irule irun_no_fd0 >> simp[] >> qexistsl_tac [‘ps’, ‘ss’] >> simp[]) >>
   ‘¬free0 (ptr rs 0 n) ∧ ¬free0 (ptr rs 1 n)’
     by (conj_tac >> irule free0_stdio >> fs[start0_def]) >>
-  ‘∀k. k < 3 ∧ k ≠ 0 ⇒ ¬conn_to a (ptr rs k n)’
-    by (rpt strip_tac >> ‘k = 1 ∨ k = 2’ by decide_tac >> gvs[]
-        >- (drule_all conns_only_conn_to >> simp[]) >>
-        metis_tac[no_conns_conn_to]) >>
-  ‘∀k. k < 3 ∧ k ≠ 1 ⇒ ¬conn_to b (ptr rs k n)’
-    by (rpt strip_tac >> ‘k = 0 ∨ k = 2’ by decide_tac >> gvs[]
-        >- (drule_all conns_only_conn_to >> simp[]) >>
-        metis_tac[no_conns_conn_to]) >>
+  ‘∀k. k < 3 ∧ k ≠ 0 ⇒ no_conn_to a (ptr rs k n)’
+    by (rpt strip_tac >> ‘k = 1 ∨ k = 2’ by decide_tac >> rveq
+        >- (irule eps_only_no_conn_to >> conj_tac >- first_assum ACCEPT_TAC >>
+            qexists_tac ‘b’ >> conj_tac >> first_assum ACCEPT_TAC) >>
+        irule no_conns_no_conn_to >> first_assum ACCEPT_TAC) >>
+  ‘∀k. k < 3 ∧ k ≠ 1 ⇒ no_conn_to b (ptr rs k n)’
+    by (rpt strip_tac >> ‘k = 0 ∨ k = 2’ by decide_tac >> rveq
+        >- (irule conns_only_no_conn_to >> qexists_tac ‘a’ >> rpt conj_tac >>
+            FIRST [first_assum ACCEPT_TAC, qpat_x_assum ‘a ≠ b’ (ACCEPT_TAC o GSYM)]) >>
+        irule no_conns_no_conn_to >> first_assum ACCEPT_TAC) >>
   irule kv_peer_valid_sys >> conj_tac >- first_assum ACCEPT_TAC >>
   qexistsl_tac [‘a’, ‘b’, ‘e’, ‘m’, ‘ps’, ‘rs’] >> rpt conj_tac >> first_assum ACCEPT_TAC
 QED

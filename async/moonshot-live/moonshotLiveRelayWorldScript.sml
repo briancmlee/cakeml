@@ -103,7 +103,7 @@ QED
 Theorem csend_ok_of_client:
   (∀i. EVERY valid_brequest (rqs i)) ∧
   (∀j p. l0_ep_role j (ptr rs 0 n) = SOME (Connected p) ⇒
-         lc j < N ∧ l0_ep_sent j (ptr rs 0 n) ≼ brequests (rqs (lc j))) ⇒
+         lc j < (N : num) ∧ l0_ep_sent j (ptr rs 0 n) ≼ brequests (rqs (lc j))) ⇒
   csend_ok a rs n
 Proof
   strip_tac >> rewrite_tac[csend_ok_def] >> rpt strip_tac >>

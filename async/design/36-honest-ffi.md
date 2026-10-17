@@ -275,7 +275,7 @@ That removes `fcntl` from accept.
 | call | syscall (fixed args) | conf | out after the header | what the fixed args rule out |
 |---|---|---|---|---|
 | `sys_listen` | `socket(AF_INET, SOCK_STREAM, 0)`; `setsockopt(SO_REUSEADDR, 1)`; `bind(127.0.0.1:port)`; `listen(fd, 128)`; `fcntl(F_SETFL, O_NONBLOCK)`: a straight line that stops at the first failure and reports it (value: the failing step, 1..5) | port, 2 bytes | — (value: the listener fd) | other families, other addresses (loopback only), UDP, other backlogs. The non-blocking listener makes `accept` never block, even when a pending connection vanishes between poll and accept |
-| `sys_poll` | `poll(fds, k, block ? -1 : 0)` | 1 byte block flag; k × (fd 8 bytes ++ events 1 byte: bit0 IN, bit1 OUT) | k bytes of `revents`: bit0 IN, bit1 OUT, bit2 ERR, bit3 HUP, bit4 NVAL | priority bands, timeouts other than 0 and ∞ (no timers yet) |
+| `sys_poll` | `poll((struct pollfd *)(a + 16), k, block ? -1 : 0)`, in place on the caller's buffer (D20, §3.6) | 1 byte block flag | 3 pad bytes (untouched), then k `struct pollfd` (fd int32, events int16, revents int16, native byte order), the kernel writing `revents` | priority bands, timeouts other than 0 and ∞ (no timers yet) |
 | `sys_accept` | `accept(l, NULL, NULL)` | listener fd | — (value: the new fd) | peer addresses |
 | `sys_recv` | `recv(fd, buf, n, MSG_DONTWAIT)` | fd | value: count (0 = EOF); then the n-byte data area | blocking, MSG_PEEK, OOB, MSG_WAITALL |
 | `sys_send` | `send(fd, buf, len, MSG_DONTWAIT \| MSG_NOSIGNAL`(Linux)`)` | fd ++ data | value: the count accepted | blocking; SIGPIPE (with the startup contract on macOS); OOB |
@@ -336,7 +336,7 @@ Estimated, excluding comments:
 | the result header writer | 5 |
 | the constructor (SIGPIPE, fds 0–2 check) | 8 |
 | listen | 14 |
-| poll (marshalling loops) | 14 |
+| poll (a pass-through since D20: length and alignment checks) | 8 |
 | accept | 4 |
 | recv | 5 |
 | send | 5 |
@@ -345,7 +345,8 @@ Estimated, excluding comments:
 
 Today it is about 140 lines of code. More important than the count:
 
-- **no loops except array marshalling;**
+- **no loops** except the fixed 8-byte number codecs (since D20, poll
+  has no marshalling loop and no cap);
 - **no retries;**
 - **no decision depends on errno**, except the table.
 
@@ -392,6 +393,26 @@ dispatches on a call number) was considered and is **not recommended**:
 **Recommendation: (c).** It has the "nothing but encode/decode" property
 for about 1.5 days more than (b). (d) only moves trust from C into HOL
 constants.
+
+### 3.6 `sys_poll` on CakeML's `struct pollfd` buffer (D20)
+
+The C used to copy k × 9 bytes into a stack array of at most 4096
+`struct pollfd` (`MAX_FDS`, a `die` beyond) and copy the revents back,
+and L1 polled in chunks of 4096 (`poll_chunks`). Now CakeML lays out the
+entries itself (`poll_buf`, `pfd_bytes` in `honestL1Model`) and the C
+passes the buffer to `poll` as it is: no loop, no copy, no cap. L1 polls
+once per round.
+
+**The trusted surface for `sys_poll` after D20:**
+
+| item | what | how it is justified |
+|---|---|---|
+| ABI layout | `struct pollfd` is 8 bytes: `int fd` at 0, `short events` at 4, `short revents` at 6; little-endian; POLLIN 1, POLLOUT 4, POLLERR 8, POLLHUP 16, POLLNVAL 32 | **build-time checked**: `_Static_assert`s and an endianness `#error` in the C. Linux and macOS agree. The L0 model (`pollfd_entries`, `pe_fd`, `abi_rev`, `abi_revents`) reads the same layout |
+| alignment | `a + 16` aligned for `struct pollfd`; otherwise EINVAL without polling | **runtime checked** in the C; the model allows the failure (any error, [P 2.3]). CakeML byte arrays are word-aligned, so it never fires: `make align` runs 64 real polls from a CakeML program at varying heap positions |
+| events | each entry requests POLLIN, POLLOUT, both or nothing | **unchecked precondition** on the caller: the model's call fails (`pe_ok`) otherwise, and L1 never does it (proved: `poll_set_small`, `e < 4`, so `pfd_bytes` writes 0, 1, 4 or 5) |
+| fds | the 4-byte field is a C `int`; a negative one is ignored by poll [P poll] | model: an fd field ≥ 2^31 gets revents 0 (`pfd_revents`). L1 only polls fds < 2^31 (`psmall`, proved along runs) |
+| bytes left alone | the header's 3 pad bytes and each entry's fd and events | the model returns them unchanged; the tester checks it |
+| failed poll | revents unspecified | `poll_junk`, a world choice per byte |
 
 ## 4. L0's world model
 
@@ -554,6 +575,8 @@ The citations were checked against the primary texts. The rules:
 | POLLHUP | [P poll]: defined for devices, pipes and FIFOs; **not for sockets** | `show_hup`; **[A1]** only after the peer's EOF, a break, or our own shutdown | macOS shows it after our SHUT_WR alone (**found by the random test**; [A1] widened) |
 | POLLHUP with POLLOUT | [P poll]: "mutually-exclusive" | not excluded | **[X2]** Linux sets both after a reset (documented) |
 | POLLERR/HUP/NVAL not requested | [P poll]: reported "even if the application did not set the corresponding bit" | yes | conforms |
+| negative fd in an entry (D20) | [P poll]: "If the value of fd is less than 0, events shall be ignored, and revents shall be set to 0" | `pfd_revents`: an fd field ≥ 2^31 (negative as an `int`) gets revents 0 | not probed (L1 never polls one) |
+| revents of a failed poll (D20) | [P poll]: unspecified | `poll_junk`: any bytes | — |
 | accepted socket and O_NONBLOCK | [P accept]: implementation-defined | irrelevant: every call uses MSG_DONTWAIT | — |
 
 **Fairness assumptions (used only by R1-live, §6; approved, D11 and D12).**
@@ -622,6 +645,20 @@ candidate states. The checker now warns when the cap is reached.
 to run before a release. [X2], [X3] and Linux's EMFILE behaviour are
 expected; anything else would be a finding.
 
+**Conformance run on Linux (Sisyphus), 2026-10-17** (Linux 6.18, x86_64,
+after D20; `probes-linux.txt` / `.json`). This records a run; it is not
+a Linux platform claim.
+
+| run | result |
+|---|---|
+| the 13 probes | 11/13 conform. **P4:** after the peer's FIN and then its RST, recv returns 0 (EOF), never ECONNRESET. **P13:** the pending connect state *was* observed (no revents; recv and send EAGAIN), but shutdown on the pending socket returned OK and connerr then reported ECONNRESET |
+| mutants | 11/11 caught |
+| random test: 100 scenarios × 200 steps, 12461 calls | **80 findings**, all of P4's kind (recv → EOF after a reset); 6 warnings (accept EMFILE explained only as transient) |
+
+The pre-D20 C and tester (`41dffdd16`) give the same results on the same
+machine (the same 80 findings and the same probe findings), so neither
+comes from D20. Both are open model findings, for review.
+
 ## 5. L1: the verified wrapper layer
 
 L1 is **one CakeML module plus its loop**: the honest-world version of
@@ -674,7 +711,8 @@ the server unchanged). It sits between the event loop's `perform` and L0.
   - **Found and fixed:** the C allows at most 4096 fds per poll, and L1
     polled its whole interest in one call. A server with more than 4096
     connections would have aborted. L1 now polls in chunks of at most
-    4096 (`poll_chunks`); the C is unchanged.
+    4096 (`poll_chunks`); the C is unchanged. *Superseded by D20 (§3.6):*
+    the C has no cap and L1 polls once per round.
   - Each L0 call succeeds and keeps the rely (`sys_*_ok`).
   - `l1do_ok`, then `l1round_ok`: a round completes and keeps the rely
     and the invariant.
@@ -836,7 +874,9 @@ while building L1:
    its `future` from the environment's arrivals at successive polls.
 2. **One poll per round:** at most 4096 polled fds. L1 chunks larger
    polls, and each chunk is a step of time that the handle layer's single
-   poll does not have.
+   poll does not have. (*Old R2 only.* Since D20 L1 polls once per round;
+   the old `honestL1Round` keeps the bound because its decoding lemma
+   uses it.)
 3. **Reads within the interest.** A server Read of a handle outside the
    round's polled interest gets "would block" from L1 with no syscall, but
    possibly data from version 2. Our servers read only after waiting for
@@ -900,7 +940,8 @@ one-to-one renaming that the draft above expected.
   be reused after a close.
 - **Polling with an empty interest.** L1 must poll even when the
   interest is empty. `poll_chunks` now gives `[l]` for any l of at
-  most 4096 entries, including `[]`. Otherwise the handle layer's poll
+  most 4096 entries, including `[]` (since D20 there is no chunking:
+  `l1_polls [fes]`). Otherwise the handle layer's poll
   of no fds would tick the world's clock and L1's would not.
 - **Side conditions, `hl_ok`.** These are assumptions about the server
   running on the handle layer, round by round, in the style of
@@ -1654,6 +1695,7 @@ even if it is more work.**
 | D18 | Spurious accept errors (the analogue of D16 for the listener). **live-conn, main form (no new trust):** j0 is (a) accepted, (b) dropped (broken or aborted, or an EMFILE reset), or (c) L1's accepts on lfd fail (retried) infinitely often. **Corollary** under the explicit hypothesis "every ECONNABORTED on lfd's accept really dropped a queued connection" (on observed events plus the queue where possible; otherwise on world choices, with the reason): accepted or dropped. [F1]'s retried set for accept stays as in D11′. Rationale, for consistency with D11′/D16/D17: never add trusted kernel facts that narrow POSIX's looseness; weaken the main theorem honestly, and give the strong form as a corollary under an explicit hypothesis | **decided (user, via coordinator)** |
 
 | D19 | Hung-up fds (user decision, option 2; via async-spike's L3-00 Q-L3-1). On POLLHUP for a connection fd L1 holds, L1 fetches what is left. (a) If the input ends with a hard error (`FReset`: the connection really broke), its outbox is dropped and the fd is marked gone, so it is closed. (b) If it ends with EOF (a half-close; the fd may still be writable), L1 keeps flushing and closes when drained, but after `pf_hupwait` consecutive rounds with a non-empty outbox and no send progress (a named constant, like `pf_backoff`) the outbox is dropped. An empty outbox or any progress resets the count. Model: `hups` in the PF state, `hup_step` between the fetch and the reap. No HUP disjunct anywhere: no hung-up fd is polled forever. The cost on the output side: liveness assumes the peer reads within `pf_hupwait` rounds of the hang-up. *Correction:* the first framing said a hung-up fd is always unwritable. That is wrong for a half-close: the L0 model, like platforms, may report POLLHUP after the peer's FIN alone, and the fd stays writable, so dropping at once would lose replies to half-closing clients | **decided (user, via coordinator)** |
+| D20 | **sys_poll on CakeML's `struct pollfd` buffer** (§3.6). The C is a pass-through: `poll` runs in place on the caller's buffer from offset 16, with no copy loop and no cap (`MAX_FDS` 4096 is gone, and with it `poll_chunks`: L1 polls once per round). The layout is a **build-time-checked ABI assumption** (static asserts); a misaligned buffer gets EINVAL (runtime check); events other than POLLIN/POLLOUT are an **unchecked precondition** on callers, which L1 meets (proved). The L0 model reads the entries (`pollfd_entries`), allows fds ≥ 2^31 (revents 0), and has `poll_junk` for a failed poll's revents. Conformance rerun on Linux (§4.3). R1/R1-live are unchanged in wording; internally, `psmall` (polled fds < 2^31) is a new invariant along runs | **decided (user, via coordinator)** |
 
 **Principle (user):** OS assumptions are justified by POSIX and the RFCs
 only, never by any platform's behaviour. The probes are tests, not

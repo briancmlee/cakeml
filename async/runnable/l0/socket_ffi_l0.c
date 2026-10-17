@@ -3,8 +3,8 @@
 
   Each entry point is one syscall (sys_listen: a fixed straight-line
   sequence) with some arguments FIXED, and an honest encoding of its
-  result.  There is no retry, no loop other than array marshalling, and
-  no decision that depends on errno except the error table.  Everything
+  result.  There is no retry, no loop other than the fixed 8-byte number
+  codecs, and no decision that depends on errno except the error table.  Everything
   else (write loops, retries, what to do on reset or when out of fds)
   is verified CakeML (L1).
 

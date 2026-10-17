@@ -103,6 +103,44 @@ locating a trace prefix in the run; the excuse mapping; the close step
 close failure, per the coordinator, pending the user's ruling on the
 interrupted-close finding); assembly.
 
+### D progress (2026-10-17, evening): the round-level chain is done
+
+Proved (Holmake, no cheats), honest-echo-live/:
+- `released_frozen` (Frozen): once L1 releases f, client j's outgoing is
+  final (the echo writes only through table handles; handles are fresh).
+- `out_chain_any` (OutAny): for every N ≥ n, client j's outgoing at N
+  reaches csent c, or ep_hard_err j0 ∨ ep_timed_out j0.
+- `fetched_out` (DataOut): L1's fetches on f since its connect → server →
+  kernel.
+- `conn_data_out` (DataIn): from a round with f in L1's table (no EOF):
+  peer_sent c ≼ csent c later ∨ flushed ∨ ep_hard_err j0 ∨ ep_timed_out j0.
+  `fkeep_noconn`: no re-connect in a round where L1 keeps f.
+- `echo_read_soon_eof` (EofRead): an fd held at EOF is read within three
+  rounds (cf-actions' M4 read_soon_eof_s, lifted; `eof_gone` invariant).
+- `drains_round` (Drains): L3's drains w0 io c ⇒ the round-level drains.
+
+### D trace assembly plan (2026-10-17, evening)
+
+For evs ≼ io with ep_open j evs, f = EL j (l0_accepted evs), w =
+world_at evs, c = f's channel at w:
+1. Locate evs = revs r ++ pre (`locate`); D := peer_sent c at w ≼
+   peer_sent c at round SUC r (arrivals only append).
+2. f's connect round a (`last_conn`, from pcm: entries come only from
+   FConn).
+3. Cases on round SUC r:
+   - episode j ended in the rest of round r: a hard error (excuse) or an
+     L1 close (EOF seen ⇒ the EOF case below at an earlier round);
+   - f in tbl, no EOF: `conn_data_out`;
+   - f at EOF (in tbl or closing): EOF case: at the fetch round k of FEof,
+     run_peer_sent at k + 1 with an empty inbox (recv returned 0; LData is
+     dropped after peer_eof), so peer_sent is final and = L1's fetches
+     since a; then `fetched_out`;
+   - f in acq: the echo accepts it (M4 queue_progress lifted), then the
+     cases above at that round.
+4. csent c at n' ≼ l0_sent j evs' (`episode_csent` while open; after the
+   close both are frozen).
+5. flushed (rworld k) f ⇒ flushed_ch w0 io c (ruling #4's X).
+
 ### D assembly plan (2026-10-17, after flush_live2 / run_gone_cause)
 
 Target: for a prefix evs with ep_open j0 evs, f = EL j0 (l0_accepted evs),

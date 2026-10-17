@@ -365,3 +365,203 @@ Proof
   asm_rewrite_tac[] >> conj_tac >> qexists_tac ‘EL i (PS lfd b hw lv W0 n).pc’ >>
   simp[EL_MEM]
 QED
+
+(* ------------------------------------------------------------------------
+   The credit gate
+   ------------------------------------------------------------------------ *)
+
+(* The Level answers a state holds came from the results it took in *)
+Theorem pupd_lv:
+  ∀xs st rs h l. ALOOKUP (pupd st xs rs).lv h = SOME l ⇒
+    MEM (ELevel h, ELvl l) (ZIP (MAP SND xs, rs)) ∨ ALOOKUP st.lv h = SOME l
+Proof
+  Induct >- simp[pupd_def] >> rpt gen_tac >> Cases_on ‘rs’ >- simp[pupd_def] >>
+  PairCases_on ‘h’ >> rename1 ‘pupd st ((i, x) :: xs) (r :: rs)’ >>
+  ONCE_REWRITE_TAC [pupd_def] >> strip_tac >>
+  first_x_assum drule >> strip_tac >> simp[] >>
+  Cases_on ‘x’ >> Cases_on ‘r’ >> gvs[] >> every_case_tac >> gvs[]
+QED
+
+(* A read in a round's actions is a pair's, behind its partner's gate *)
+Theorem pupd_lv0:
+  ALOOKUP (pupd (st with lv := []) xs rs).lv x = SOME l ⇒
+  MEM (ELevel x, ELvl l) (ZIP (MAP SND xs, rs))
+Proof
+  strip_tac >> drule pupd_lv >> simp[]
+QED
+
+Theorem pacts_read:
+  MEM (ERead h k) (MAP SND (pacts lfd b hw st rdy)) ⇒
+  ∃i c. i < LENGTH st.pc ∧ (EL i st.pc).bh = SOME c ∧
+        (h = (EL i st.pc).fh ∧ pgate hw st.lv (MAP SND st.last) (FLAT (MAP pwrites st.pc)) c ∨
+         h = c ∧ pgate hw st.lv (MAP SND st.last) (FLAT (MAP pwrites st.pc)) (EL i st.pc).fh)
+Proof
+  ONCE_REWRITE_TAC [pacts_SND] >> simp[MEM_FLAT, MEM_MAP, PULL_EXISTS] >>
+  rw[] >> gvs[plevels_def, MEM_MAP] >>
+  qpat_x_assum ‘MEM _ st.pc’ (strip_assume_tac o REWRITE_RULE [MEM_EL]) >> gvs[] >>
+  qexists_tac ‘n’ >> simp[] >>
+  gvs[pone_def, pconnects_def, pwrites_def, preads_def, AllCaseEqs()] >>
+  every_case_tac >> gvs[]
+QED
+
+Theorem pupd_last:
+  ∀xs st rs. (pupd st xs rs).last = st.last
+Proof
+  Induct >- simp[pupd_def] >> rpt gen_tac >> Cases_on ‘rs’ >- simp[pupd_def] >>
+  PairCases_on ‘h’ >> ONCE_REWRITE_TAC [pupd_def] >> simp[] >> every_case_tac >> simp[]
+QED
+
+Theorem PS_SUC:
+  ∃s. PH lfd b hw lv W0 (SUC n) = PH lfd b hw lv W0 n ++ [s] ∧
+      PS lfd b hw lv W0 (SUC n) =
+        pupd (PS lfd b hw lv W0 n with lv := []) (PS lfd b hw lv W0 n).last s.results with
+          last := pacts lfd b hw
+                    (pupd (PS lfd b hw lv W0 n with lv := []) (PS lfd b hw lv W0 n).last s.results)
+                    s.ready
+Proof
+  qspecl_then [‘lfd’, ‘lv’, ‘pifds lfd b hw’, ‘pprog lfd b hw’, ‘W0’, ‘n’] strip_assume_tac
+    ehhist_SUC >>
+  qexists_tac ‘s’ >> asm_rewrite_tac [pstate_SNOC] >> simp[pstep_def]
+QED
+
+Theorem PS_SUC_fields:
+  ∃s. PH lfd b hw lv W0 (SUC n) = PH lfd b hw lv W0 n ++ [s] ∧
+      (PS lfd b hw lv W0 (SUC n)).pc =
+        (pupd (PS lfd b hw lv W0 n with lv := []) (PS lfd b hw lv W0 n).last s.results).pc ∧
+      (PS lfd b hw lv W0 (SUC n)).last =
+        pacts lfd b hw
+          (pupd (PS lfd b hw lv W0 n with lv := []) (PS lfd b hw lv W0 n).last s.results)
+          s.ready
+Proof
+  qspecl_then [‘lfd’, ‘b’, ‘hw’, ‘lv’, ‘W0’, ‘n’] strip_assume_tac
+    (Q.GENL [‘lfd’, ‘b’, ‘hw’, ‘lv’, ‘W0’, ‘n’] PS_SUC) >>
+  qexists_tac ‘s’ >> asm_rewrite_tac [] >> simp[]
+QED
+
+Theorem hl_round_SUC:
+  PH lfd b hw lv W0 (SUC n) = PH lfd b hw lv W0 n ++ [s] ⇒
+  hl_round (pprog lfd b hw) (PH lfd b hw lv W0 (SUC n)) n =
+  ZIP (MAP SND (PS lfd b hw lv W0 n).last, s.results)
+Proof
+  strip_tac >>
+  ‘TAKE n (PH lfd b hw lv W0 (SUC n)) = PH lfd b hw lv W0 n ∧
+   EL n (PH lfd b hw lv W0 (SUC n)) = s’
+    by (conj_tac >- simp[ehhist_TAKE] >>
+        asm_rewrite_tac [] >> simp[EL_APPEND2, ehhist_LENGTH]) >>
+  simp[hl_round_def, pprog_new_actions]
+QED
+
+(* Pair i0 with backend c0 against the slot i of the pair hd–c *)
+Theorem slot_pair:
+  (∀j h. j < LENGTH pc ∧ MEM h (phds (EL j pc)) ∧ (h = hd ∨ h = c) ⇒ j = i) ∧
+  (i < LENGTH pc ⇒ (EL i pc).fh = hd ∧ ((EL i pc).bh = NONE ∨ (EL i pc).bh = SOME c)) ∧
+  c ≠ hd ∧ i0 < LENGTH pc ∧ (EL i0 pc).bh = SOME c0 ⇒
+  ((EL i0 pc).fh = hd ⇒ i0 = i ∧ c0 = c) ∧ (EL i0 pc).fh ≠ c ∧ c0 ≠ hd ∧
+  (c0 = c ⇒ i0 = i ∧ (EL i0 pc).fh = hd)
+Proof
+  strip_tac >>
+  ‘∀h. MEM h (phds (EL i0 pc)) ∧ (h = hd ∨ h = c) ⇒ i0 = i’
+    by (rpt strip_tac >> first_x_assum irule >> simp[] >> qexists_tac ‘h’ >> simp[]) >>
+  qpat_x_assum ‘∀j h. _’ kall_tac >>
+  ‘MEM (EL i0 pc).fh (phds (EL i0 pc)) ∧ MEM c0 (phds (EL i0 pc))’ by simp[phds_def] >>
+  rpt conj_tac >> rpt strip_tac
+  >- (first_x_assum (qspec_then ‘(EL i0 pc).fh’ mp_tac) >> simp[])
+  >- (‘i0 = i’ by (first_x_assum (qspec_then ‘(EL i0 pc).fh’ mp_tac) >> simp[]) >>
+      pop_assum SUBST_ALL_TAC >> fs[])
+  >- (‘i0 = i’ by (first_x_assum (qspec_then ‘(EL i0 pc).fh’ mp_tac) >> simp[]) >>
+      pop_assum SUBST_ALL_TAC >> fs[])
+  >- (‘i0 = i’ by (first_x_assum (qspec_then ‘c0’ mp_tac) >> simp[]) >>
+      pop_assum SUBST_ALL_TAC >> fs[])
+  >- (first_x_assum (qspec_then ‘c0’ mp_tac) >> simp[])
+  >> ‘i0 = i’ by (first_x_assum (qspec_then ‘c0’ mp_tac) >> simp[]) >>
+  pop_assum SUBST_ALL_TAC >> fs[]
+QED
+
+Theorem gate_state:
+  (∀j h. j < LENGTH st.pc ∧ MEM h (phds (EL j st.pc)) ∧ (h = hd ∨ h = c) ⇒ j = i) ∧
+  (i < LENGTH st.pc ⇒ (EL i st.pc).fh = hd ∧
+                      ((EL i st.pc).bh = NONE ∨ (EL i st.pc).bh = SOME c)) ∧
+  c ≠ hd ∧ MEM (ERead x k) (MAP SND (pacts lfd b hw st rdy)) ∧
+  (x = hd ∧ y = c ∨ x = c ∧ y = hd) ⇒
+  pgate hw st.lv (MAP SND st.last) (FLAT (MAP pwrites st.pc)) y
+Proof
+  strip_tac >> qpat_x_assum ‘MEM _ _’ (strip_assume_tac o MATCH_MP pacts_read) >>
+  rename1 ‘(EL i0 st.pc).bh = SOME c0’ >>
+  drule_all slot_pair >> strip_tac >> qpat_x_assum ‘∀j h. _’ kall_tac >>
+  qpat_x_assum ‘i < _ ⇒ _’ kall_tac >> rpt BasicProvers.VAR_EQ_TAC >> fs[] >> rfs[]
+QED
+
+(* The gate, both ways: a read of h (one side of pair hd–c) in round n
+   follows the Level of its partner g answered in round n − 1 *)
+Theorem proxy_gate:
+  proxy_world lfd a W0 ∧ ppair lfd b hw lv W0 hd = SOME c ∧
+  MEM (ERead h k) (new_actions (log_of (pprog lfd b hw)) (PH lfd b hw lv W0 n)) ∧
+  (h = hd ∧ g = c ∨ h = c ∧ g = hd) ⇒
+  0 < n ∧
+  ∃l. MEM (ELevel g, ELvl l) (hl_round (pprog lfd b hw) (PH lfd b hw lv W0 n) (n − 1)) ∧
+      l + wreq g (new_actions (log_of (pprog lfd b hw)) (PH lfd b hw lv W0 (n − 1))) +
+          wreq g (new_actions (log_of (pprog lfd b hw)) (PH lfd b hw lv W0 n)) ≤ hw
+Proof
+  disch_then (fn th => MAP_EVERY assume_tac (CONJUNCTS th)) >>
+  qpat_x_assum ‘MEM _ _’ (assume_tac o REWRITE_RULE [pprog_new_actions]) >>
+  REWRITE_TAC [pprog_new_actions] >>
+  Cases_on ‘n’
+  >- (‘PS lfd b hw lv W0 0 = pinit lfd b hw’ by simp[ehhist_def, ehrounds_def, pstate_def] >>
+      fs[pinit_def] >> drule pacts_read >> simp[]) >>
+  rename1 ‘SUC m’ >> REWRITE_TAC [prim_recTheory.LESS_0, SUC_SUB1] >>
+  drule_all pslot >> strip_tac >> first_x_assum (qspec_then ‘SUC m’ strip_assume_tac) >>
+  qspecl_then [‘lfd’, ‘b’, ‘hw’, ‘lv’, ‘W0’, ‘m’] strip_assume_tac
+    (Q.GENL [‘lfd’, ‘b’, ‘hw’, ‘lv’, ‘W0’, ‘n’] PS_SUC_fields) >>
+  drule hl_round_SUC >> disch_then SUBST1_TAC >>
+  qpat_x_assum ‘ehhist _ _ _ _ _ (SUC m) = _’ kall_tac >>
+  qabbrev_tac ‘st1 = pupd (PS lfd b hw lv W0 m with lv := []) (PS lfd b hw lv W0 m).last s.results’ >>
+  qpat_x_assum ‘pst_pc _ = _’ (fn th => RULE_ASSUM_TAC (REWRITE_RULE [th])) >>
+  qpat_x_assum ‘pst_last _ = _’ (fn th => RULE_ASSUM_TAC (REWRITE_RULE [th]) >> REWRITE_TAC [th]) >>
+  ‘st1.last = (PS lfd b hw lv W0 m).last’
+    by (qpat_x_assum ‘Abbrev _’ (SUBST1_TAC o REWRITE_RULE [markerTheory.Abbrev_def]) >>
+        REWRITE_TAC [pupd_last] >> simp[]) >>
+  REWRITE_TAC [wreq_pacts] >>
+  ‘∀x l. ALOOKUP st1.lv x = SOME l ⇒
+         MEM (ELevel x, ELvl l) (ZIP (MAP SND (PS lfd b hw lv W0 m).last, s.results))’
+    by (rpt strip_tac >> irule pupd_lv0 >> qexists_tac ‘PS lfd b hw lv W0 m’ >>
+        qpat_x_assum ‘Abbrev _’
+          (fn th => REWRITE_TAC [GSYM (REWRITE_RULE [markerTheory.Abbrev_def] th)]) >>
+        first_assum ACCEPT_TAC) >>
+  qpat_x_assum ‘Abbrev _’ kall_tac >>
+  drule_all gate_state >>
+  REWRITE_TAC [pgate_def] >> Cases_on ‘ALOOKUP st1.lv g’ >> REWRITE_TAC [optionTheory.option_case_def] >>
+  strip_tac >> rename1 ‘ALOOKUP st1.lv _ = SOME l0’ >> qexists_tac ‘l0’ >> conj_tac
+  >- (first_x_assum irule >> first_assum ACCEPT_TAC) >>
+  qpat_x_assum ‘(λl. _) _’ mp_tac >>
+  qpat_x_assum ‘pst_last st1 = _’ (fn th => REWRITE_TAC [th]) >> BETA_TAC >> REWRITE_TAC []
+QED
+
+(* MAIN (the credit gate, front read) *)
+Theorem proxy_gate_front:
+  proxy_world lfd a W0 ⇒
+  ∀n hd c k. ppair lfd b hw lv W0 hd = SOME c ∧
+             MEM (ERead hd k) (new_actions (log_of (pprog lfd b hw)) (PH lfd b hw lv W0 n)) ⇒
+    0 < n ∧
+    ∃l. MEM (ELevel c, ELvl l) (hl_round (pprog lfd b hw) (PH lfd b hw lv W0 n) (n − 1)) ∧
+        l + wreq c (new_actions (log_of (pprog lfd b hw)) (PH lfd b hw lv W0 (n − 1))) +
+            wreq c (new_actions (log_of (pprog lfd b hw)) (PH lfd b hw lv W0 n)) ≤ hw
+Proof
+  strip_tac >> rpt gen_tac >> strip_tac >> mp_tac (Q.INST [‘h’ |-> ‘hd’, ‘g’ |-> ‘c’] (SPEC_ALL proxy_gate)) >>
+  impl_tac >- (rpt conj_tac >> TRY (first_assum ACCEPT_TAC) >> simp[]) >>
+  disch_then ACCEPT_TAC
+QED
+
+(* MAIN (the credit gate, backend read) *)
+Theorem proxy_gate_back:
+  proxy_world lfd a W0 ⇒
+  ∀n hd c k. ppair lfd b hw lv W0 hd = SOME c ∧
+             MEM (ERead c k) (new_actions (log_of (pprog lfd b hw)) (PH lfd b hw lv W0 n)) ⇒
+    0 < n ∧
+    ∃l. MEM (ELevel hd, ELvl l) (hl_round (pprog lfd b hw) (PH lfd b hw lv W0 n) (n − 1)) ∧
+        l + wreq hd (new_actions (log_of (pprog lfd b hw)) (PH lfd b hw lv W0 (n − 1))) +
+            wreq hd (new_actions (log_of (pprog lfd b hw)) (PH lfd b hw lv W0 n)) ≤ hw
+Proof
+  strip_tac >> rpt gen_tac >> strip_tac >> mp_tac (Q.INST [‘h’ |-> ‘c’, ‘g’ |-> ‘hd’] (SPEC_ALL proxy_gate)) >>
+  impl_tac >- (rpt conj_tac >> TRY (first_assum ACCEPT_TAC) >> simp[]) >>
+  disch_then ACCEPT_TAC
+QED

@@ -622,7 +622,7 @@ L2's names are final (provisional, as accepted by the user); `design/NAMES.md` m
 
 | headline | reaches the kernel? | form | needs |
 |---|---|---|---|
-| `echo_episodes_prog_spec` (L1) | planned | safety; liveness *eventually* | R1/R4 under the fairness assumptions F1, F2, D(c), S1–S4, F3 and D16; a startup contract for the listener fd; fewer than 2^64 connections; a "listen failed" disjunct |
+| `echo_episodes_prog_spec` (L1) | planned | safety; liveness *eventually* | R1/R4 under the fairness assumptions F1, F2, D(c), S1–S4, F3 and D16; a startup contract for the listener fd; fewer than 2^64 − 3 accepted connections (D40); a "listen failed" disjunct |
 | HTTP and KV on the lifetimes world | planned, once their L1 proofs exist | the same | the same |
 | L0 headlines (`echo_prog_spec`, `http_prog_spec`, `kv_spec`, `echo_blocking_quiet`, `http_blocking_quiet`) | **no** | — | the core-world runnables are retired (D5′); `echo_live` in the core world is false at a 256-fd limit |
 | round bounds (`chat_spec_timely`, `kv_live_rounds`, `server_v_live` within N rounds) | only as *eventually* | — | the delay from kernel arrival to L1's fetch is unbounded |
@@ -635,9 +635,41 @@ L2's names are final (provisional, as accepted by the user); `design/NAMES.md` m
 
 **Statements to write first** (from the transfer-claim review):
 1. `l1pf_simple`, the new R2 for the prefetching L1. In simple worlds with at most one connect per tick and small data, the abstract world equals `sk_of w0`; otherwise it is an explicit *delay* of it. The trace relation is a fetch-placement relation, not a renaming.
-2. `l0_echo2_spec`, the R4 template for the echo with close and fd reuse. It includes the hypotheses `reserved_ok`, fewer than 2^64 connections, and a listen-failure disjunct.
+2. `l0_echo2_spec`, the R4 template for the echo with close and fd reuse. It includes the hypotheses `reserved_ok`, fewer than 2^64 − 3 accepted connections (D40; see the count-bounds table below), and a listen-failure disjunct.
 3. `quiet_on_kernel`: the blocking-variant transfer, with its side condition on paused, closing and HUP fds, or an L1 change that keeps such fds out of the blocking set. Plus its bite, `hup_spin_bite`.
 4. The class stated in each L2 headline (above), and this table kept current.
+
+<a id="8-bounds"></a>
+### Count bounds in the headlines (D43)
+
+Each headline states the **exact** count bound its program delivers: the number evident from the program (D25), not a round margin. The bounds differ because they come from different counters and models. This table says where each one comes from.
+
+The columns:
+- **Kind** is PROGRAM (a counter or guard in the program) or MODEL (the capacity of a model the proof passes through).
+- **Exact** means the claim would be false with the next larger number.
+- **Years** is the time to reach the bound at 10^6 events per second.
+
+A change to any of these numbers is a change to a headline, so it goes to the user.
+
+| headline (bound) | bound | kind and source | exact? | years at 10^6/s |
+|---|---|---|---|---|
+| `l0_echo2_claim`, `l0_echo2_strong_claim`, `echo2_guar_l0` (hypothesis `accepts_below io`); `quiet_on_kernel_claim` and its strong form (excuse `¬accepts_below io`, D29) | `LENGTH (l0_accepted evs) < 2^64 − 3` | PROGRAM: L1's handle counter `ps.b.nxt` and the loop guard `hdl_room ps n ⇔ ps.b.nxt + n + 2 < 2^64` (D40). **The +2 is a model-driven margin.** The v2 socket model holds at most 2^64 − 2 clients; the pending pre-accepted connection takes one slot and the `+ 1` in the `pcm` bound (next row) the other | **yes**, for the program: after 2^64 − 3 accepts, the next round with an accept fails the guard (`echo_guard_stop`), so liveness really stops there. It is 2 below what a word64 counter allows | ≈ 584,542 |
+| R2′ `l1pf_simple_claim`, `l1pf_simple_eq_claim` | `∀n. SND (pcm …) + 1 < 2^64` | MODEL: v2's capacity, a hypothesis on the whole run. For the CakeML loop, D40's guard discharges it | yes, for v2 | ≈ 584,542 |
+| moonshot client: `moonshot_safe_stmt`, `l0_client_claim` | `N < 2^63` (D42, decided; not yet in the statement files) | PROGRAM: the client's `cbound = 2^63`. Its per-round guard is `nh < cbound`, so a round can start at `cbound − 1` and connect all N slots. `cbound` is itself a round constant, half the word64 handle space | **yes**, for the program (D42) | ≈ 292,271 |
+| `client_l1_claim` | `N < cbound`; `∀n. SND (ecm …) + 1 < 2^64` | `N < cbound`: PROGRAM. The `ecm` bound: MODEL (v2's capacity, as R2′) | `N < cbound`: yes. The `ecm` bound is a hypothesis | ≈ 292,271 / ≈ 584,542 |
+| proxy: `l0_proxy_claim` | `accepts_lt (2^62) io` | PROGRAM: the proxy's pair cap `2 · LENGTH st.pc + 2 ≤ cbound`. It reuses the client's 2^63, at 2 handles per pair | **open** (D43 follow-up): the program holds up to 2^62 pairs, while the statement's comment says "fewer than" | ≈ 146,136 |
+| `moonshot_live` | `N < 2^62` | PROGRAM: the proxy's pair cap (as above) | **open** (D43 follow-up): possibly one tighter than the program, which appears to serve N = 2^62 | ≈ 146,136 |
+| `echo_safe_l0`, `echo_l0_safe`; HTTP and KV safety | none | D31 removed the connection-count bound from safety | — | — |
+| HTTP and KV liveness (not stated yet) | will inherit the echo row's 2^64 − 3 | PROGRAM: the same L1 loop and guard | — | ≈ 584,542 |
+| L2 simple class `nonsat1` | fewer than 2^64 − reserved − 4 connections in all | MODEL: the core world's fd space; far above any real `fd_limit` | a permanent idealisation (section 7) | ≈ 584,542 |
+
+**Not count bounds.** The write timeout `K = pf_sendwait = 8` rounds (D23) is a parameter of the liveness claims: the program's drop criterion, not a limit that is reached by running longer. Some bounds are fixed-width fields of the C encoding or the trusted rely, and so are not reached over time either:
+- ports `< 65536`;
+- fds `< 2^31` (C `int`, `fd_limit ≤ 2^31`);
+- per-call send and recv counts `< 2^64` (D24);
+- the listen step's error range.
+
+**Coming change.** D25′ (serve-on) will remove `accepts_below` from the connection-level liveness clauses and from the quiet excuse. It stays only as the excuse for "a pending connection is eventually accepted". So the echo row will change shape, not just number.
 
 <a id="9-trusted"></a>
 ## 9. What is trusted

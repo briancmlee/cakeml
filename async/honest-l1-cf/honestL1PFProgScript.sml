@@ -203,8 +203,41 @@ val r = tr inb_of_def;
 val r = tr set_inb_def;
 val r = tr pf_chunk_def;
 val r = tr pf_backoff_def;
-val r = tr wants_input_def;
-val r = tr pf_poll_set_def;
+(* The servers' pause policy, pol_self hw (moonshot step 5), as the loop
+   computes it: by the high-water mark *)
+Definition wants_input_hw_def:
+  wants_input_hw lfd hw ps f ⇔
+    if f = lfd then ps.acq = [] ∧ ps.pause = 0
+    else inb_of ps f = [] ∧ ¬MEM f ps.eof ∧ LENGTH (outbox_of ps.b f) ≤ hw
+End
+
+Theorem wants_input_hw:
+  wants_input_hw lfd hw ps f ⇔ wants_input lfd (pol_self hw) ps f
+Proof
+  rw[wants_input_hw_def, wants_input_def, pol_self_def, NOT_LESS]
+QED
+
+Definition pf_poll_set_hw_def:
+  pf_poll_set_hw lfd hw ps (hs : word64 list) =
+    let ins = FLAT (MAP (λh. case ALOOKUP ps.b.tbl h of
+                             | SOME f =>
+                                 let i = (if wants_input_hw lfd hw ps f then 1n else 0);
+                                     ou = (if outbox_of ps.b f = [] then 0 else 2n) in
+                                   if i + ou = 0 then [] else [(f, i + ou)]
+                             | NONE => if h = lfd ∧ wants_input_hw lfd hw ps lfd
+                                       then [(lfd, 1n)] else []) hs) in
+      ins ++ MAP (λ(f, bs). (f, 2n))
+               (FILTER (λ(f, bs). bs ≠ [] ∧ ¬MEM f (MAP FST ins)) ps.b.outbox)
+End
+
+Theorem pf_poll_set_hw:
+  pf_poll_set_hw lfd hw ps hs = pf_poll_set lfd (pol_self hw) ps hs
+Proof
+  simp[pf_poll_set_hw_def, pf_poll_set_def, wants_input_hw]
+QED
+
+val r = tr wants_input_hw_def;
+val r = tr pf_poll_set_hw_def;
 val r = tr in_fds_def;
 val r = tr pf_ready_def;
 
@@ -469,7 +502,7 @@ Quote add_cakeml:
     case fs of
       [] => (ps, [])
     | f :: rest =>
-        if not (wants_input lfd hw ps f) then pf_fetch lfd hw rest ps
+        if not (wants_input_hw lfd hw ps f) then pf_fetch lfd hw rest ps
         else if f = lfd then
           let val out = c_accept lfd in
             case pf_fetch lfd hw rest (fetch_acc_upd ps out) of
@@ -491,7 +524,7 @@ Quote add_cakeml:
 
   fun pf_tail lfd hw hs ps =
     let
-      val fes = pf_poll_set lfd hw ps hs
+      val fes = pf_poll_set_hw lfd hw ps hs
       val rv = l1_polls [fes]
       val b2 = l1_flush (writable_fds rv) (l1p_b ps)
       val fl = pf_fetch lfd hw (filter_in (in_fds fes) (readable_fds rv)) (set_b ps b2)

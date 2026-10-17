@@ -282,7 +282,7 @@ fun fetch_tail_tac log_def =
 
 Theorem pf_fetch_spec:
   ∀fs w ps w' ps' log evs1 fsv psv evs.
-    pf_fetch lfd hw fs (w, ps) = SOME ((w', ps'), log, evs1) ∧
+    pf_fetch lfd (pol_self hw) fs (w, ps) = SOME ((w', ps'), log, evs1) ∧
     WORD lfd lfdv ∧ NUM hw hwv ∧ LIST_TYPE WORD fs fsv ∧ L1P ps psv ⇒
     app (p:'ffi ffi_proj) pf_fetch_v [lfdv; hwv; fsv; psv] (L0_EV w0 w evs)
       (POSTv v. &(∃psv' lv. v = Conv NONE [psv'; lv] ∧ L1P ps' psv' ∧ LIST_TYPE FLOG log lv) *
@@ -290,7 +290,7 @@ Theorem pf_fetch_spec:
 Proof
   Induct >> rpt strip_tac >>
   xcf_with_def (fetch "honestL1PFProg" "pf_fetch_v_def") >>
-  gvs[LIST_TYPE_def, pf_fetch_def] >> xmatch
+  gvs[LIST_TYPE_def, pf_fetch_def, GSYM wants_input_hw] >> xmatch
   >- (rpt (xlet_auto >- (TRY xcon >> xsimpl)) >> xcon >> xsimpl >> simp[LIST_TYPE_def]) >>
   rpt (xlet_auto >- xsimpl) >> xif
   >- (gvs[] >> first_x_assum drule >> strip_tac >> xapp >> fs[]) >>
@@ -338,7 +338,7 @@ Proof
 QED
 
 Theorem pf_tail_spec:
-  pf_tail lfd hw hs (w, ps) = SOME (rdy, (w', ps'), log, evs1) ∧
+  pf_tail lfd (pol_self hw) hs (w, ps) = SOME (rdy, (w', ps'), log, evs1) ∧
   WORD lfd lfdv ∧ NUM hw hwv ∧ LIST_TYPE WORD hs hsv ∧ L1P ps psv ⇒
   app (p:'ffi ffi_proj) pf_tail_v [lfdv; hwv; hsv; psv] (L0_EV w0 w evs)
     (POSTv v. &(∃rdyv psv'. v = Conv NONE [rdyv; psv'] ∧
@@ -347,13 +347,13 @@ Theorem pf_tail_spec:
 Proof
   rpt strip_tac >>
   xcf_with_def (fetch "honestL1PFProg" "pf_tail_v_def") >>
-  gvs[pf_tail_def, AllCaseEqs()] >>
+  gvs[pf_tail_def, AllCaseEqs(), GSYM pf_poll_set_hw] >>
   rpt (xlet_auto >- xsimpl) >>
   xlet ‘POSTv v. &LIST_TYPE (LIST_TYPE (PAIR_TYPE WORD NUM))
                    ([] : (word64 # num) list list) v * L0_EV w0 w evs’
   >- (xcon >> xsimpl >> simp[LIST_TYPE_def]) >>
   xlet ‘POSTv v. &LIST_TYPE (LIST_TYPE (PAIR_TYPE WORD NUM))
-                   [pf_poll_set lfd hw ps hs] v * L0_EV w0 w evs’
+                   [pf_poll_set_hw lfd hw ps hs] v * L0_EV w0 w evs’
   >- (xcon >> xsimpl >> fs[LIST_TYPE_def]) >>
   xlet ‘POSTv v. &LIST_TYPE (PAIR_TYPE WORD REV) rv v * L0_EV w0 w1 (evs ++ pevs)’
   >- (xapp_spec l1_polls_spec >> xsimpl >> metis_tac[]) >>
@@ -385,7 +385,7 @@ Theorem step_pf_spec:
   COMP p SACT A (SNAPSHOT SREADY SRESP) m cv ∧ WORD lfd lfdv ∧ NUM hw hwv ∧
   LIST_TYPE NUM (MAP w2n fds) fdsv ∧ L1P ps psv ∧
   hdl_room lfd ps (LENGTH (m []).actions) ∧
-  pround lfd hw fds (w, ps) (m []).actions = SOME (snap, (w', ps'), log, evs1) ⇒
+  pround lfd (pol_self hw) fds (w, ps) (m []).actions = SOME (snap, (w', ps'), log, evs1) ⇒
   app (p:'ffi ffi_proj) step_pf_v [Conv NONE [lfdv; hwv; fdsv; psv; cv]]
     (L0_EV w0 w evs)
     (POSTv v.
@@ -461,7 +461,7 @@ Definition prounds_t_def:
     | NONE => NONE
     | SOME (h, ws, evs, logs) =>
         if hdl_room lfd (SND ws) (LENGTH (new_actions (log_of m) h)) then
-          case pround lfd hw (ifds h) ws (new_actions (log_of m) h) of
+          case pround lfd (pol_self hw) (ifds h) ws (new_actions (log_of m) h) of
           | NONE => NONE
           | SOME (snap, ws', log, revs) =>
               SOME (h ++ [snap], ws', evs ++ revs, logs ++ [log])
@@ -477,7 +477,7 @@ End
 
 Theorem pround_ok_room[local]:
   l0_rely w ∧ psmall lfd ps ∧ EVERY (pact_ok lfd) acts ∧ hdl_room lfd ps (LENGTH acts) ⇒
-  ∃snap w' ps' log evs. pround lfd hw hs (w, ps) acts = SOME (snap, (w', ps'), log, evs) ∧
+  ∃snap w' ps' log evs. pround lfd (pol_self hw) hs (w, ps) acts = SOME (snap, (w', ps'), log, evs) ∧
                         l0_rely w' ∧ psmall lfd ps'
 Proof
   strip_tac >>
@@ -523,7 +523,7 @@ Theorem prun_SUC:
   if hdl_room lfd (SND (FST (SND (prun lfd hw ifds m ws0 n))))
        (LENGTH (new_actions (log_of m) (FST (prun lfd hw ifds m ws0 n)))) then
     ∃snap ws' log revs.
-      pround lfd hw (ifds (FST (prun lfd hw ifds m ws0 n)))
+      pround lfd (pol_self hw) (ifds (FST (prun lfd hw ifds m ws0 n)))
         (FST (SND (prun lfd hw ifds m ws0 n)))
         (new_actions (log_of m) (FST (prun lfd hw ifds m ws0 n))) =
         SOME (snap, ws', log, revs) ∧
@@ -542,7 +542,7 @@ Proof
   Cases_on ‘prounds_t lfd hw ifds m ws0 n’ >> simp[] >>
   rename1 ‘SOME x’ >> PairCases_on ‘x’ >> simp[] >>
   Cases_on ‘hdl_room lfd x2 (LENGTH (new_actions (log_of m) x0))’ >> simp[] >>
-  Cases_on ‘pround lfd hw (ifds x0) (x1,x2) (new_actions (log_of m) x0)’ >> simp[] >>
+  Cases_on ‘pround lfd (pol_self hw) (ifds x0) (x1,x2) (new_actions (log_of m) x0)’ >> simp[] >>
   rename1 ‘SOME y’ >> PairCases_on ‘y’ >> simp[rich_listTheory.DROP_LENGTH_APPEND]
 QED
 
@@ -551,14 +551,14 @@ QED
 Theorem prounds_t_prounds:
   ∀n. (∀i h ws evs logs. i < n ∧ prounds_t lfd hw ifds m ws0 i = SOME (h, ws, evs, logs) ⇒
                          hdl_room lfd (SND ws) (LENGTH (new_actions (log_of m) h))) ⇒
-      prounds_t lfd hw ifds m ws0 n = prounds lfd hw ifds m ws0 n
+      prounds_t lfd hw ifds m ws0 n = prounds lfd (pol_self hw) ifds m ws0 n
 Proof
   Induct >> simp[prounds_t_def, prounds_def] >> strip_tac >>
-  ‘prounds_t lfd hw ifds m ws0 n = prounds lfd hw ifds m ws0 n’
+  ‘prounds_t lfd hw ifds m ws0 n = prounds lfd (pol_self hw) ifds m ws0 n’
     by (first_x_assum irule >> rpt strip_tac >>
         metis_tac[DECIDE “i < n ⇒ i < SUC n”]) >>
   pop_assum (fn th => REWRITE_TAC [th] >> assume_tac th) >>
-  Cases_on ‘prounds lfd hw ifds m ws0 n’ >> simp[] >>
+  Cases_on ‘prounds lfd (pol_self hw) ifds m ws0 n’ >> simp[] >>
   PairCases_on ‘x’ >> simp[] >>
   first_x_assum (qspecl_then [‘n’, ‘x0’, ‘(x1, x2)’, ‘x3’, ‘x4’] mp_tac) >> gvs[]
 QED

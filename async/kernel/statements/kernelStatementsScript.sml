@@ -27,7 +27,8 @@
     rounds), and per episode it assumes the peer reads (D(c));
     l0_echo2_strong_claim is the corollary form under explicit hypotheses
     (D16's HD16, D18's H1 and H3, D23's stall_drains: the peer reads within
-    K output polls; no [F3], design/36 §6, 2026-10-17).
+    K output polls; no [F3], design/36 §6, 2026-10-17), excused only
+    where the episode's channel broke while it was open (D34).
   - quiet_on_kernel_claim: quiescence on the kernel, through a blocking
     variant of L1: with finitely many arrivals the program eventually
     sleeps in a blocking poll, unless [F1] fails.  It relies on D23 (user
@@ -374,6 +375,26 @@ Definition flushed_open_def:
       c < LENGTH w.chans ∧ (EL c w.chans).broken ∧ (EL c w.chans).inbox = []
 End
 
+(* D34 (user decision): the strong form's excuse.  Channel c broke while
+   episode j was open, before any close call on the episode's fd (its
+   unread input may remain: a peer that resets while the server has paused
+   input and has nothing in flight may never see its echo, POLLOUT being
+   the kernel's choice on a broken channel) *)
+Definition broken_open_def:
+  broken_open w0 io j c ⇔
+    ∃pre ev post f w.
+      LPREFIX (fromList (pre ++ [ev] ++ post)) io ∧ LENGTH (l0_accepted pre) = j ∧
+      l0_event_accepted ev = SOME f ∧ ¬EXISTS (l0_close_call f) post ∧
+      world_at w0 (pre ++ [ev] ++ post) = SOME w ∧
+      c < LENGTH w.chans ∧ (EL c w.chans).broken
+End
+
+Theorem flushed_broken_open:
+  flushed_open w0 io j c ⇒ broken_open w0 io j c
+Proof
+  rw[flushed_open_def, broken_open_def] >> metis_tac[]
+QED
+
 (* D32 is strictly stronger than D28's excuse *)
 Theorem flushed_open_ch:
   flushed_open w0 io j c ⇒ flushed_ch w0 io c
@@ -494,7 +515,7 @@ Definition l0_echo2_strong_claim_def:
           (stdio_closed b ∨ listen_failed b ∨
            ∃io. b = Diverge io ∧
                 (F1_io io ∧ F2 w0 ∧ accepts_below io ∧ HD16_io w0 io ⇒
-                 echo_live_unless (λj c. stall_drains K w0 io j c) (λj c. flushed_open w0 io j c)
+                 echo_live_unless (λj c. stall_drains K w0 io j c) (λj c. broken_open w0 io j c)
                    w0 io) ∧
                 (F1_io io ∧ accepts_below io ∧ H1_io w0 io ∧ H3_io io ⇒
                  conn_live_unless F w0 io))

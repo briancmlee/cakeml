@@ -1,0 +1,24 @@
+# L3 live: R1-live (design/36 §6): the prefetching L1 fetches pending input (PFRound, PFLive), in order (PFStream), as the right client's data (PFClient), accepts pending connections (PFConn, PFConnRun), the D16 corollary (PFD16); and the output-side link (PFOut).
+INCLUDES = ../../cakeml/approx \
+           ../../cakeml/library \
+           ../link \
+           ../surface \
+           ../world \
+           ../wrappers \
+           ../../lifetimes/loop \
+           ../../lifetimes/world \
+           ../../lifetimes/world-cf \
+           ../../loop/polling \
+           ../../model/core \
+           ../../model/level2 \
+           ../../programs/echo \
+           ../../servers/echo \
+           ../../servers/relabel \
+           ../../world/clock \
+           ../../world/composed \
+           ../../world/sockets \
+           ../../world/sockets-cf \
+           $(CAKEMLDIR)/semantics
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

@@ -213,21 +213,24 @@ Proof
 QED
 
 Theorem hup_fd_wait:
-  hup_fd w f ∧ MEM (f, ev) fes ⇒ l0_wait fes w = SOME 0
+  hup_fd w f ∧ w2n f < 2 ** 31 ∧ MEM (f, ev) fes ⇒ l0_wait fes w = SOME 0
 Proof
   strip_tac >>
   ‘any_revents (l0_ticks «sys_poll» 0 w) fes’
     by (simp[l0_ticks_def, any_revents_def, EXISTS_MEM] >>
-        qexists_tac ‘(f, ev)’ >> simp[] >> metis_tac[hup_fd_revents]) >>
+        qexists_tac ‘(f, ev)’ >> gs[pfd_revents_def] >> metis_tac[hup_fd_revents]) >>
   simp[l0_wait_def] >> conj_tac >- metis_tac[] >>
   numLib.LEAST_ELIM_TAC >> conj_tac >- metis_tac[] >>
   rpt strip_tac >> Cases_on ‘n’ >> gvs[]
 QED
 
 (* MAIN (the bite): in a world where f is hung up, every blocking poll that
-   lists f returns at once, now and after any number of steps of time *)
+   lists f returns at once, now and after any number of steps of time.  f
+   is non-negative as an int32: [P poll] ignores an entry with a negative
+   fd (D20's pfd_revents), and L1's fds are all below 2^31 (psmall) *)
 Theorem hup_wakes_forever:
-  hup_fd w f ∧ MEM (f, ev) fes ⇒ ∀n. l0_wait fes (l0_ticks nm n w) = SOME 0
+  hup_fd w f ∧ w2n f < 2 ** 31 ∧ MEM (f, ev) fes ⇒
+  ∀n. l0_wait fes (l0_ticks nm n w) = SOME 0
 Proof
   metis_tac[hup_fd_ticks, hup_fd_wait]
 QED
@@ -236,12 +239,12 @@ QED
    so a program that keeps a hung-up fd in its blocking set is never
    asleep_l0 there *)
 Theorem hup_spin_bite:
-  hup_fd w f ∧ MEM (f, ev) (poll_entries (DROP 1 conf)) ⇒
+  hup_fd w f ∧ w2n f < 2 ** 31 ∧ MEM (f, ev) (MAP pe_fe (pollfd_entries (DROP 16 bytes))) ⇒
   l0_ffi_fn «sys_poll» conf bytes w ≠ SOME FFIdiverge
 Proof
   strip_tac >>
   ‘hup_fd (l0_tick «sys_poll» w) f’ by metis_tac[hup_fd_tick] >>
-  ‘l0_wait (poll_entries (DROP 1 conf)) (l0_tick «sys_poll» w) = SOME 0’
+  ‘l0_wait (MAP pe_fe (pollfd_entries (DROP 16 bytes))) (l0_tick «sys_poll» w) = SOME 0’
     by metis_tac[hup_fd_wait] >>
   simp[l0_ffi_fn_def, l0_call_def] >> rw[] >> every_case_tac >> gvs[]
 QED

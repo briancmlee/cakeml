@@ -19,7 +19,12 @@ unchanged):
 
 Both files typecheck and build (no cheats; `grep -c cheat` on the `.dat`
 files is 0) against the spike theories, merged on `scratch/l3-stmts`
-(7159bd537: `spike/servers-honest-l1` with `spike/honest-connect`). There
+(06948b621: `spike/servers-honest-l1` with `spike/honest-connect` and D20's
+`spike/d20-poll` @e282d1996). The poll readings (`poll_hup`,
+`n_out_polls`, `hup_spin_bite`) use D20's encoding: struct pollfd
+records after a 16-byte header, revents at byte 6 of each. `poll_hup`
+also requires the poll to succeed, since a failed poll's revents bytes
+are unspecified. There
 is no Holmakefile here: the honest L0/L1 theories enter the series in the
 later L3 layers. The names are the spike names, as in L2-00; L3-06 renames
 them when Core first builds in the series.
@@ -51,7 +56,7 @@ them when Core first builds in the series.
 | `l0_echo2_claim K prog` (R4′, the template) | the echo server with close on the honest L0 FFI, in every `l0_server_world`: either the listen failed and the program stopped, or it diverges with raw safety `echo_safe_l0` and raw liveness: per episode (`echo_live_l0`: what the peer sent is eventually sent back, and a peer EOF eventually closes the episode) and per connection (`conn_live_l0`: a queued connection is eventually accepted or dropped) | liveness only: [F1] on the trace (`F1_io`), [F2], fewer than 2^64 − 1 accepts in the run (`accepts_below`), and per episode D(c) (`drains`: the peer reads) and D19's `hup_drains K` (after a hang-up, the peer empties what is in flight within K − 1 polls that list the fd for output while episode j holds it, i.e. before L1's first close call on the fd (whatever its result: an interrupted close may still free it), since the fd number may be reused (user-approved form b″: D19's count runs only while the outbox is not empty); K is L1's `pf_hupwait`; with [F2] this gives D19's per-round send progress). **Weakened** (main form): "unless a hard error was observed on the episode" (D16), and "unless accepts on the listener fail infinitely often" (D18) | stated; safety ⏳ KV worker (`echo_l0_safe`, in progress), liveness ⏳ after R1-live |
 | `l0_echo2_strong_claim K prog` | the corollary form. Echo: the only excuse left is a genuine reset that discarded the unread input (`flushed_ch`). Connections: accepted or dropped, with no "accepts fail" disjunct | additionally `HD16_io` (a hard recv error only on a channel that broke and lost its input), `H1_io` (an accept error L1 does not keep really dropped a queued connection) and `H3_io` (the joint weak form over `kept_err`: retried, EMFILE, ENFILE). All are explicit and none is trusted; no [F3] (dropped in design/36 §6, 2026-10-17: L0's transient failure may be a spurious EMFILE) | stated; the model-level D18 corollary `live_conn_cor` is **proved** (honest-ffi) |
 | `quiet_on_kernel_claim guar prog` | quiescence on the kernel, through a blocking L1 variant: `guar` holds whether the program runs forever or sleeps; **with finitely many arrivals it ends asleep in a blocking `sys_poll`**, unless [F1] fails. **No POLLHUP disjunct:** under D19 (user decision Q-L3-1) no hung-up fd stays in the blocking set | `l0_server_world`; for sleeping, `arrivals_finite_l0`. The `echo2_guar_l0` instance is the echo's | stated; ⏳ needs the blocking L1 variant and D19 (honest-ffi) |
-| `hup_spin_bite` (with `hup_wakes_forever`) | in the L0 model, if fd f's channel is hung up (the peer closed, or it broke) and the world reports POLLHUP for it, which [P poll] allows, then every blocking poll that lists f returns at once, now and after any number of steps, **whatever events it asks for on f** (a paused fd's, too), so the poll call never returns `FFIdiverge` | none beyond the world state | **proved** |
+| `hup_spin_bite` (with `hup_wakes_forever`) | in the L0 model, if fd f's channel is hung up (the peer closed, or it broke) and the world reports POLLHUP for it, which [P poll] allows, then every blocking poll that lists f returns at once, now and after any number of steps, **whatever events it asks for on f** (a paused fd's, too), so the poll call never returns `FFIdiverge` | f non-negative as an int32 (`w2n f < 2^31`: [P poll] ignores negative fds; L1's are all below, `psmall`) | **proved** |
 
 **The 2^64 bound.** After 2^64 − 1 accepted connections the L1 loop stops
 making calls; it spins, which was coordinator decision (A), chosen over

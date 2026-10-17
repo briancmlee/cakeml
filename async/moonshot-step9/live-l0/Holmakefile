@@ -1,0 +1,11 @@
+# proxy_asks_claim and the proxy's liveness lifts on the raw L0 trace (step 9):
+# the EP run lemmas (honest-l1-ep) on e1-driver's io (proxySem), with the shared
+# E1 trace layer (e1-trace).
+INCLUDES = ../../e1-trace ../../e1-driver ../../honest-l1-ep ../../honest-l1-cf ../../honest-l0-cf \
+           ../../honest-l1 ../../endpoint-hl ../../endpoint-world ../../honest-l0 ../../honest-ffi \
+           ../../ffi-spike ../../model ../../cf-actions ../../m3-assembly ../../socket-v2 \
+           ../../close-v2-loop ../../m4-safety ../../m4-common ../../m4-server ../../cf-spike \
+           ../../cf-reactive ../../spec ../../moonshot $(CAKEMLDIR)/characteristic
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

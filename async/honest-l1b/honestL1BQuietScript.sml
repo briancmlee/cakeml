@@ -8,6 +8,9 @@
      [F1] fails or accepts fail infinitely often on its trace.
   (S5) instantiates this for the CakeML echo program.
 
+  D32's flush_ok is proved (honestL1BFlushOk) from the standing facts and
+  a policy premise: an empty outbox is never write-wanted.
+
   The only step that reads an episode's close is (S3)'s sent_transfer,
   through ep_closed_nopoll: a change of the close conjunct (a close call
   in place of a successful close) is local to that lemma.
@@ -17,7 +20,7 @@
 Theory honestL1BQuiet
 Ancestors
   honestL1BTimeout honestL1BSleep honestL1BStable honestL1BNoFail honestL1BGuar
-  honestL1BTransfer honestL1BModel honestL1BStmts honestL1BQuietWorld
+  honestL1BTransfer honestL1BModel honestL1BStmts honestL1BQuietWorld honestL1BFlushOk
   honestL1PFOut honestL1PFConnRun honestL1PFLive honestL1PFModel honestL0World
 Libs
   preamble
@@ -42,6 +45,7 @@ Theorem l1b_quiet:
   S1 lfd hw ifds m (reindex (btr lfd hw ifds bz m (w0, pinit)) w0) ∧
   S2 lfd hw ifds m (reindex (btr lfd hw ifds bz m (w0, pinit)) w0) ∧
   SQ lfd hw ifds bz m (reindex (btr lfd hw ifds bz m (w0, pinit)) w0) ∧
+  (∀ps f. outbox_of ps.b f = [] ⇒ ¬hw ps f) ∧
   echo2_guar_l0 KK (reindex (btr lfd hw ifds bz m (w0, pinit)) w0) io_p ⇒
   (∀n. brounds lfd hw ifds bz m (w0, pinit) n ≠ NONE) ∧
   echo2_guar_l0 KK w0 io_b ∧
@@ -49,8 +53,12 @@ Theorem l1b_quiet:
    ¬F1_io io_b ∨ accepts_fail_io io_b ∨
    ∃n h evs cb. brounds lfd hw ifds bz m (w0, pinit) n = SOME (BSlept h evs cb))
 Proof
-  strip_tac >> rpt conj_tac
-  >- (irule brounds_ok >> simp[])
+  strip_tac >>
+  ‘∀n. brounds lfd hw ifds bz m (w0, pinit) n ≠ NONE’ by (irule brounds_ok >> simp[]) >>
+  ‘flush_ok lfd hw ifds bz m w0 pinit’
+    by (irule flush_ok_holds >> rpt conj_tac >> first_assum ACCEPT_TAC) >>
+  rpt conj_tac
+  >- first_assum ACCEPT_TAC
   >- (drule_all echo2_guar_transfer_full >> simp[])
   >> rw[arrivals_quiet] >>
   Cases_on ‘F1_io io_b’ >> simp[] >> Cases_on ‘accepts_fail_io io_b’ >> simp[] >>

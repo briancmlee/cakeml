@@ -183,6 +183,7 @@ Theorem echo2_guar_transfer_full:
   (∀n. SND (pcm lfd hw ifds m (reindex (btr lfd hw ifds bz m (w0, pinit)) w0) n) + 1 <
        dimword (:64)) ∧
   S1 lfd hw ifds m (reindex (btr lfd hw ifds bz m (w0, pinit)) w0) ∧
+  flush_ok lfd hw ifds bz m w0 pinit ∧
   echo2_guar_l0 KK (reindex (btr lfd hw ifds bz m (w0, pinit)) w0) io_p ⇒
   echo2_guar_l0 KK w0 io_b
 Proof

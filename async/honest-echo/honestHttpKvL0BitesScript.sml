@@ -400,3 +400,28 @@ Proof
         drule_at (Pos last) kv_ideal_rt >> simp[] >> EVAL_TAC >> NO_TAC) >>
    gen_tac >> Cases_on ‘j = 0’ >> Cases_on ‘j = 1’ >> gvs[] >> EVAL_TAC)
 QED
+
+(* ------------------------------------------------------------------------
+   Topology (T7, T8)
+   ------------------------------------------------------------------------ *)
+
+Theorem topo_bite_connect:
+  ¬l0_topo_ev port (IO_event (ExtCall «sys_connect») cf bs)
+Proof
+  simp[l0_topo_ev_def]
+QED
+
+Theorem topo_bite_other_port:
+  l0_ev_res bs = SOME (Ok k) ∧ w22n cf ≠ port ⇒
+  ¬l0_topo_ev port (IO_event (ExtCall «sys_listen») cf bs)
+Proof
+  rw[l0_topo_ev_def] >> metis_tac[]
+QED
+
+(* The stop branch's one event, a failed listen, is within the topology *)
+Theorem topo_listen_failed:
+  l0_listen_failed ev ⇒ l0_topo_ev port ev
+Proof
+  Cases_on ‘ev’ >> rename1 ‘IO_event n cf bs’ >> Cases_on ‘n’ >>
+  rw[l0_listen_failed_def, l0_topo_ev_def] >> gvs[]
+QED

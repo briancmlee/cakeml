@@ -1,7 +1,10 @@
-# KV on the kernel, liveness (moonshot-live's kv_ob): the statement
-# kv_live_claim / kv_live_l0, and (to come) its proof on the PF trace, on
-# the echo's template (honest-echo-live).
-INCLUDES = ../honest-echo-live ../honest-l1b ../honest-l1 ../honest-echo ../honest-l0-cf ../honest-l0 ../honest-ffi ../ffi-spike ../model ../cf-actions ../m3-assembly ../m4-common ../m4-liveness ../socket-v2 ../close-v2-loop ../close-v2-sim ../spec
+# KV's raw liveness (kv_live_l0): the statement, KV's obligations on the
+# PF run, and the assembly.
+INCLUDES = ../honest-echo-live ../honest-l1b ../honest-l1 ../honest-echo ../honest-l0-cf \
+           ../honest-l0 ../honest-ffi ../ffi-spike ../model ../cf-actions ../m3-assembly \
+           ../m4-common ../m4-liveness ../socket-v2 ../close-v2-loop ../close-v2-sim ../spec \
+           ../m4-server ../http-model ../http-safety ../http-bodies ../http-kv ../kv-live \
+           ../library-liveness ../http-proto ../http-proto-inst ../proto-v2-sim
 ifdef POLY
 HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
 endif

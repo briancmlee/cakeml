@@ -7,8 +7,8 @@
   kv_l0_claim, and the same hypothesis block as the echo's
   l0_echo2_claim (F1_io, F2, accepts_below).  kv_l0_claim is unchanged.
 
-  It is what moonshot-live's kv_ob (moonshotLiveObs @45bcdb9b0) needs from
-  KV, per accepted episode j on channel c (fd f), on the program's own
+  Besides the accept clause conn_live_l0 (decision 8), it is what
+  moonshot-live's kv_ob (moonshotLiveObs @45bcdb9b0) needs from KV, per accepted episode j on channel c (fd f), on the program's own
   trace (the lift to the system forms is shared work, N1 + N2, as for the
   other programs):
    - K-answers (kv_answers): once c drains, for every list of valid
@@ -74,6 +74,15 @@
      ([R3], joint, pending close/shutdown).
   7. No port parameter: nothing in the claim reads it (kv_l0_claim's port
      is for l0_topology, which this claim does not repeat).
+  8. Accept clause (orchestrator, from moonshot-live's lift scoping G1):
+     every connection queued at KV's listener is eventually accepted or
+     breaks, unless accepts keep failing: conn_live_l0, exactly the
+     echo's (l0_echo2_claim) and the proxy's, under the same hypotheses
+     (F1_io, F2, accepts_below).  No new excuse kind.  Ruled out: a
+     KV-specific accept form (moonshot-live's lift reads conn_live_l0).
+     Proof plan: honestL1PFConnRun's pf_conn_live with KV's S1 (kv_S1),
+     S2 (queue progress for the live interest, from cf-actions' port) and
+     F1 (F1_io_F1), as honestEchoL0Live.echo_conn_live(_trace).
 *)
 Theory honestKvL0LiveStmts
 Ancestors
@@ -152,12 +161,13 @@ Definition kv_live_l0_def:
 End
 
 (* The claim: KV on the honest L0 FFI, K = L1's write timeout pf_sendwait
-   (D23); same world class and outcome shape as kv_l0_claim *)
+   (D23); same world class and outcome shape as kv_l0_claim; with the
+   echo's accept clause conn_live_l0 (decision 8) *)
 Definition kv_live_claim_def:
   kv_live_claim K (prog : dec list) ⇔
     ∀w0. l0_server_world w0 ⇒
       ∃io. (semantics_prog (init_state (l0_ffi w0)) init_env prog (Diverge io) ∧
-            (F1_io io ∧ F2 w0 ∧ accepts_below io ⇒ kv_live_l0 K w0 io)) ∨
+            (F1_io io ∧ F2 w0 ∧ accepts_below io ⇒ kv_live_l0 K w0 io ∧ conn_live_l0 w0 io)) ∨
            (∃pre ev. stdio_open (fromList pre) ∧ LENGTH pre = 3 ∧ l0_listen_failed_ev ev ∧
                      io = fromList (pre ++ [ev]) ∧
                      semantics_prog (init_state (l0_ffi w0)) init_env prog

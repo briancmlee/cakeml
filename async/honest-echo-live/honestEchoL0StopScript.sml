@@ -10,11 +10,11 @@
   connection behind f's handle has input only if f's inbox does, which
   stays empty once S3w has emptied it.
 
-  MAIN: echo_writes_stop.
+  MAIN: echo_writes_stop, and with honest-ffi's S4w_of_stop, echo_S4w.
 *)
 Theory honestEchoL0Stop
 Ancestors
-  honestEchoL0Obl honestL1PFObl honestL1PFFlush honestL1PFLive honestL1PFRefine honestL1PFModel
+  honestEchoL0Obl honestL1PFObl honestL1PFS4w honestL1PFOutLive honestL1PFFlush honestL1PFLive honestL1PFRefine honestL1PFModel
   honestL1Steps honestL1Model asyncHLSimWorld asyncHLModel asyncM4EchoSafe
   asyncM4Account asyncM4LiveWorld asyncM4GTrans asyncM4GRounds asyncM4EchoRunOk
   asyncM3World ffiSpikeSocketFFI asyncCore
@@ -291,4 +291,13 @@ Proof
    pread_all h (ZIP (gacts EI ES V1 k0, gres EI ES V1 k0))’
     by (irule echo_round_written_read >> simp[]) >>
   gvs[]
+QED
+
+(* MAIN: the PF echo meets S4w on every fd (honest-ffi's S4w_of_stop) *)
+Theorem echo_S4w:
+  echo_run lfdn pol w0 ∧ qfresh w0 ⇒ S4w (n2w lfdn) pol hw EI ES w0 f
+Proof
+  strip_tac >> irule S4w_of_stop >> conj_tac
+  >- (rpt strip_tac >> drule_all echo_writes_stop >> simp[])
+  >> fs[oassm_def, echo_run_def]
 QED

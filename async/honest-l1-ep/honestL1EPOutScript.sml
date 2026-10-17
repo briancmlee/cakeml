@@ -718,3 +718,49 @@ Proof
   ‘MEM f ps3.b.closing’ by (fs[held_def] >> metis_tac[]) >>
   qpat_x_assum ‘l1_reap _ _ = _’ assume_tac >> drule_all l1_reap_closed >> fs[]
 QED
+
+(* ------------------------------------------------------------------------
+   A round: an fd that lives through it keeps its account; one that ends
+   (closed in the actions, or reaped) sent a prefix; one that starts (a
+   connect that came up, an accepted connection, FConn) starts empty
+   ------------------------------------------------------------------------ *)
+
+Theorem eround_live:
+  eround lfd pol hs (w, es) acts = SOME (snap, (w', es'), log, evs) ∧
+  (∀i rs0 evs0 wi esi.
+     i ≤ LENGTH acts ∧ eacts lfd pol (w, es) (TAKE i acts) = SOME (rs0, evs0, (wi, esi)) ⇒
+     oown lfd esi) ∧
+  pown lfd es'.p ∧ okeys es.p.b ∧ l0_rely w ⇒
+  ∃rs aevs w1 es1.
+    eacts lfd pol (w, es) acts = SOME (rs, aevs, (w1, es1)) ∧
+    l0_rely w' ∧ okeys es'.p.b ∧
+    ∀f. (live es f ⇒ ostepc f es.p.b evs (eawbytes lfd pol f (w, es) acts)) ∧
+        (live es f ∧ live es1 f ∧ live es' f ∧ ¬MEM (FConn f) log ⇒
+         ostep f es.p.b es'.p.b evs (eawbytes lfd pol f (w, es) acts)) ∧
+        (¬live es f ⇒ evs_sent f evs = [] ∧ eawbytes lfd pol f (w, es) acts = []) ∧
+        (live es' f ∧ (¬live es1 f ∨ MEM (FConn f) log) ⇒
+         outbox_of es'.p.b f = [] ∧ ¬MEM f es'.p.b.gone)
+Proof
+  simp[eround_def, AllCaseEqs(), PULL_EXISTS] >> rpt gen_tac >> strip_tac >>
+  rename1 ‘eacts _ _ _ _ = SOME (rs, aevs, ws1)’ >> PairCases_on ‘ws1’ >>
+  rename1 ‘eacts _ _ _ _ = SOME (rs, aevs, (w1, es1))’ >>
+  gvs[] >>
+  ‘oown lfd es1’
+    by (first_x_assum (qspec_then ‘LENGTH acts’ mp_tac) >> simp[TAKE_LENGTH_ID_rwt]) >>
+  drule eacts_live >> impl_tac >- (simp[] >> metis_tac[LESS_IMP_LESS_OR_EQ]) >> strip_tac >>
+  qpat_x_assum ‘etail _ _ _ _ = _’ assume_tac >> drule etail_live >>
+  impl_tac >- fs[] >> strip_tac >> simp[] >> gen_tac >>
+  last_x_assum (qspec_then ‘f’ strip_assume_tac) >>
+  first_x_assum (qspec_then ‘f’ strip_assume_tac) >>
+  qabbrev_tac ‘aw = eawbytes lfd pol f (w, es) acts’ >>
+  Cases_on ‘live es f’ >> fs[]
+  >- (Cases_on ‘live es1 f’ >> fs[]
+      >- (conj_tac
+          >- (‘ostepc f es.p.b (aevs ++ tevs) (aw ++ [])’ by metis_tac[ostep_ostepc_trans] >>
+              fs[])
+          >> rpt strip_tac >>
+          ‘ostep f es.p.b es'.p.b (aevs ++ tevs) (aw ++ [])’ by metis_tac[ostep_trans] >>
+          fs[])
+      >> ‘ostepc f es.p.b (aevs ++ tevs) (aw ++ [])’ by metis_tac[ostepc_quiet] >> fs[]) >>
+  rpt strip_tac >> fs[]
+QED

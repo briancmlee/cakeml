@@ -2,8 +2,8 @@
   The CakeML side of the honest L0 FFI (design/36 §3.2): a module L0 with
   one function per C entry point,
 
-     L0.listen, L0.accept, L0.recv, L0.send, L0.shutdown, L0.close
-        : string -> int -> string
+     L0.listen, L0.accept, L0.recv, L0.send, L0.shutdown, L0.close,
+     L0.fdok (D33) : string -> int -> string
      L0.poll : string -> string -> string
 
   Each makes exactly one FFI call: L0.x conf n calls «sys_x» with the
@@ -78,6 +78,13 @@ Quote add_cakeml:
     let
       val a = Word8Array.array n (Word8.fromInt 0)
       val u = #(sys_close) conf a
+    in
+      Word8Array.substring a 0 n
+    end;
+  fun fdok conf n =
+    let
+      val a = Word8Array.array n (Word8.fromInt 0)
+      val u = #(sys_fdok) conf a
     in
       Word8Array.substring a 0 n
     end;

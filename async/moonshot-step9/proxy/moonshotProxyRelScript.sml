@@ -1429,3 +1429,123 @@ Proof
   >- simp[]
   >> simp[]
 QED
+
+Theorem ehdo_level:
+  ehdo lfd v st (ELevel h) = SOME (ELvl v, st)
+Proof
+  PairCases_on ‘st’ >> simp[ehdo_def]
+QED
+
+Theorem prel_levels:
+  ∀xs st ps ix.
+    EVERY (λx. ∃h. SND x = ELevel h) xs ⇒
+    ∃rs. ehacts lfd lv n ix (w, hs) (MAP SND xs) = SOME (rs, (w, hs)) ∧
+      LENGTH rs = LENGTH xs ∧
+      (prel lfd st rdy ps w hs ⇒
+       prel lfd (pupd st xs rs) rdy (ps ++ ZIP (MAP SND xs, rs)) w hs) ∧
+      (pupd st xs rs).pc = st.pc ∧ (pupd st xs rs).last = st.last
+Proof
+  Induct >- simp[ehacts_def, pupd_def] >>
+  rpt gen_tac >> PairCases_on ‘h’ >> simp[] >> strip_tac >> gvs[] >>
+  simp[ehacts_def, ehdo_level] >>
+  first_x_assum (qspecl_then [‘st with lv := (h, lv n ix) :: st.lv’,
+                           ‘ps ++ [(ELevel h, ELvl (lv n ix))]’, ‘ix + 1’] strip_assume_tac) >>
+  qexists_tac ‘ELvl (lv n ix) :: rs’ >> simp[] >>
+  ONCE_REWRITE_TAC [pupd_cons] >> simp[] >> strip_tac >>
+  qpat_x_assum ‘_ ⇒ prel _ _ _ _ _ _’ mp_tac >>
+  impl_tac >- (simp[] >> irule prel_quiet >> simp[] >> qexists_tac ‘ps’ >> simp[hsame_quiet]) >>
+  REWRITE_TAC [GSYM APPEND_ASSOC, APPEND]
+QED
+
+Theorem pall_plevels:
+  EVERY (λx. ∃h. SND x = ELevel h) (pall plevels pc)
+Proof
+  simp[pall_def, EVERY_MEM, MEM_FLAT, MEM_GENLIST, MEM_MAP, plevels_def, PULL_EXISTS] >>
+  rw[] >> simp[]
+QED
+
+(* MAIN of this part: a round's actions keep the relation *)
+Theorem prel_round_acts:
+  prel lfd st rdy ps w hs ∧ st'.pc = st.pc ⇒
+  ∃rs w1 hs1.
+    ehacts lfd lv n 0 (w, hs) (MAP SND (pacts lfd b hw st' rdy)) = SOME (rs, (w1, hs1)) ∧
+    prel lfd (pupd st (pacts lfd b hw st' rdy) rs) rdy
+      (ps ++ ZIP (MAP SND (pacts lfd b hw st' rdy), rs)) w1 hs1 ∧
+    (pupd st (pacts lfd b hw st' rdy) rs).last = st.last
+Proof
+  strip_tac >>
+  qabbrev_tac ‘L = pall plevels st'.pc’ >>
+  qabbrev_tac ‘Acc = if 2 * LENGTH st'.pc + 2 ≤ cbound then [(0n, EAccept lfd)] else []’ >>
+  qabbrev_tac ‘F' = pone b hw st'.lv (MAP SND st'.last) (FLAT (MAP pwrites st'.pc)) rdy’ >>
+  ‘pacts lfd b hw st' rdy = L ++ Acc ++ pupto F' st'.pc (LENGTH st'.pc)’
+    by simp[pacts_def, Abbr ‘L’, Abbr ‘Acc’, Abbr ‘F'’, pall_pupto] >>
+  pop_assum SUBST1_TAC >>
+  (* the Levels *)
+  ‘EVERY (λx. ∃h. SND x = ELevel h) L’ by simp[Abbr ‘L’, pall_plevels] >>
+  drule prel_levels >>
+  disch_then (qspecl_then [‘w’, ‘rdy’, ‘n’, ‘lv’, ‘lfd’, ‘hs’, ‘st’, ‘ps’, ‘0’] strip_assume_tac) >>
+  qabbrev_tac ‘st1 = pupd st L rs’ >>
+  ‘prel lfd st1 rdy (ps ++ ZIP (MAP SND L, rs)) w hs’ by simp[Abbr ‘st1’] >>
+  (* the accept *)
+  ‘∃rs2 w2 hs2.
+     ehacts lfd lv n (LENGTH L) (w, hs) (MAP SND Acc) = SOME (rs2, (w2, hs2)) ∧
+     LENGTH rs2 = LENGTH Acc ∧
+     prel lfd (pupd st1 Acc rs2) rdy (ps ++ ZIP (MAP SND L, rs) ++ ZIP (MAP SND Acc, rs2)) w2 hs2 ∧
+     (∃new. (pupd st1 Acc rs2).pc = st1.pc ++ new) ∧ (pupd st1 Acc rs2).last = st1.last’
+    by (simp[Abbr ‘Acc’] >> IF_CASES_TAC
+        >- (‘2 * LENGTH st1.pc + 2 ≤ cbound’ by fs[Abbr ‘st1’] >>
+            drule_all prel_accept >>
+            disch_then (qspecl_then [‘lv n (LENGTH L)’, ‘0’] strip_assume_tac) >>
+            qexistsl_tac [‘[r]’, ‘w1’, ‘hs1’] >> REWRITE_TAC [MAP, ZIP_def, SND, LENGTH] >>
+            rpt conj_tac >> TRY (first_assum ACCEPT_TAC >> NO_TAC) >>
+            TRY (simp[ehacts_def] >> NO_TAC) >>
+            qexists_tac ‘new’ >> first_assum ACCEPT_TAC)
+        >> simp[ehacts_def, pupd_def]) >>
+  qabbrev_tac ‘st2 = pupd st1 Acc rs2’ >>
+  (* the pairs *)
+  ‘LENGTH st'.pc ≤ LENGTH st2.pc ∧ ∀j. j < LENGTH st'.pc ⇒ EL j st2.pc = EL j st'.pc’
+    by (fs[Abbr ‘st1’] >> simp[EL_APPEND1]) >>
+  qabbrev_tac ‘ps2 = ps ++ ZIP (MAP SND L, rs) ++ ZIP (MAP SND Acc, rs2)’ >>
+  mp_tac (Q.INST [‘st’ |-> ‘st2’, ‘pc0’ |-> ‘(st' : pst).pc’, ‘ps’ |-> ‘ps2’, ‘w’ |-> ‘w2’,
+                  ‘hs’ |-> ‘hs2’,
+                  ‘ix’ |-> ‘LENGTH (L : (num # eact) list) + LENGTH (Acc : (num # eact) list)’,
+                  ‘lvs’ |-> ‘(st' : pst).lv’,
+                  ‘lw’ |-> ‘MAP SND (st' : pst).last’,
+                  ‘nw’ |-> ‘FLAT (MAP pwrites (st' : pst).pc)’] prel_pairs) >>
+  impl_tac >- simp[Abbr ‘st2’, Abbr ‘ps2’] >>
+  disch_then (qspec_then ‘LENGTH (st' : pst).pc’ mp_tac) >> simp[] >> strip_tac >>
+  qabbrev_tac ‘P = pupto F' st'.pc (LENGTH st'.pc)’ >>
+  qexistsl_tac [‘rs ++ rs2 ++ rs'’, ‘w1’, ‘hs1’] >>
+  ‘LENGTH (MAP SND L) = LENGTH rs ∧ LENGTH (MAP SND Acc) = LENGTH rs2’ by simp[] >>
+  rpt conj_tac
+  >- (REWRITE_TAC [MAP_APPEND] >> irule ehacts_APPEND >> qexists_tac ‘(w2, hs2)’ >>
+      conj_tac
+      >- (irule ehacts_APPEND >> qexists_tac ‘(w, hs)’ >> simp[])
+      >> ‘0 + LENGTH (MAP SND L ++ MAP SND Acc) = LENGTH Acc + LENGTH L’ by simp[] >>
+      pop_assum SUBST1_TAC >> fs[Abbr ‘P’])
+  >- (‘pupd st (L ++ Acc ++ P) (rs ++ rs2 ++ rs') = pupd st2 P rs'’
+        by (simp[Abbr ‘st2’, Abbr ‘st1’] >> REWRITE_TAC [GSYM APPEND_ASSOC] >>
+            simp[pupd_APPEND]) >>
+      ‘ZIP (MAP SND (L ++ Acc ++ P), rs ++ rs2 ++ rs') =
+       ZIP (MAP SND L, rs) ++ ZIP (MAP SND Acc, rs2) ++ ZIP (MAP SND P, rs')’
+        by (REWRITE_TAC [MAP_APPEND] >> ‘LENGTH (MAP SND P) = LENGTH rs'’ by fs[Abbr ‘P’] >>
+            ‘ZIP (MAP SND L ++ MAP SND Acc ++ MAP SND P, rs ++ rs2 ++ rs') =
+             ZIP (MAP SND L ++ MAP SND Acc, rs ++ rs2) ++ ZIP (MAP SND P, rs')’
+              by (irule (GSYM ZIP_APPEND) >> simp[]) >>
+            pop_assum SUBST1_TAC >>
+            ‘ZIP (MAP SND L ++ MAP SND Acc, rs ++ rs2) =
+             ZIP (MAP SND L, rs) ++ ZIP (MAP SND Acc, rs2)’
+              by (irule (GSYM ZIP_APPEND) >> simp[]) >>
+            simp[]) >>
+      ‘P = pupto F' st.pc (LENGTH st.pc)’ by simp[Abbr ‘P’] >>
+      pop_assum (fn th => RULE_ASSUM_TAC (REWRITE_RULE [GSYM th]) >> REWRITE_TAC [GSYM th]) >>
+      qpat_x_assum ‘ZIP _ = _’ mp_tac >> REWRITE_TAC [MAP_APPEND] >> disch_then SUBST1_TAC >>
+      qpat_x_assum ‘pupd st _ _ = _’ SUBST1_TAC >>
+      fs[Abbr ‘ps2’, APPEND_ASSOC])
+  >> ‘pupd st (L ++ Acc ++ P) (rs ++ rs2 ++ rs') = pupd st2 P rs'’
+       by (simp[Abbr ‘st2’, Abbr ‘st1’] >> REWRITE_TAC [GSYM APPEND_ASSOC] >>
+           simp[pupd_APPEND]) >>
+  ‘P = pupto F' st.pc (LENGTH st.pc)’ by simp[Abbr ‘P’] >>
+  pop_assum (fn th => RULE_ASSUM_TAC (REWRITE_RULE [GSYM th]) >> REWRITE_TAC [GSYM th]) >>
+  qpat_x_assum ‘pupd st _ _ = _’ SUBST1_TAC >> first_assum ACCEPT_TAC
+QED

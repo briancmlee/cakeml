@@ -1,6 +1,9 @@
 (*
   The HTTP server in CakeML, in the socket vocabulary of M3's event loop
-  (the program of asyncM4SockServer, extended).
+  (the program of asyncM4SockServer, extended; the translation state is
+  honestL1MainProg's, which adds the version-2 handle loop, the honest L0
+  wrappers, the prefetching L1 loop and the generic L1 main, so that the
+  servers can run on L1).
 
   The pure functions (parse_request and its helpers, respond) are
   translated again in this translation chain (asyncHttpImplProg translated
@@ -37,12 +40,12 @@ Ancestors
   asyncCore asyncLevel1 asyncChoose asyncServer asyncCfActModel
   asyncCfActProg asyncM4Approx asyncM3World asyncM3Prog asyncM3Loop
   asyncM4Relabel asyncM4RelabelDist asyncM4SockModel asyncM4SockApprox
-  asyncM4SockServer asyncHLProg HttpSpec asyncHttpParse asyncHttpImplProg
+  asyncM4SockServer asyncHLProg honestL1MainProg HttpSpec asyncHttpParse asyncHttpImplProg
   ml_translator mlstring std_prelude ListProg
 Libs
   preamble basis ml_translatorLib cfTacticsLib ml_progLib basisFunctionsLib
 
-val _ = translation_extends "asyncHLProg"
+val _ = translation_extends "honestL1MainProg"
 
 val _ = register_type “:HttpSpec$request”;
 val _ = register_type “:asyncHttpParse$parse_result”;

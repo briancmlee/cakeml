@@ -17,17 +17,22 @@
   sys_* / l0_do) builds the configurations and decodes the results, and
   its code is pure (translated).
 
-  Appended to the version-1 echo program's translation state
-  (asyncM4SockServer: the basis, the Async library and the socket-vocabulary
-  echo server), the chain the servers live in.
+  Appended to the version-2 handle loop's translation state (asyncHLProg:
+  the basis, the Async library, the socket-vocabulary echo server,
+  SocketClose and the handle loop), the chain the servers live in.  The
+  version-2 servers (asyncHttpSockProg and after) are translated after
+  the L1 loop (honestL1PFProg) and the generic L1 main (honestL1MainProg),
+  so an L1 program can use the L1 loop's spec and theirs; the L1 programs
+  carry the version-2 loop's declarations unused, the version-2 programs
+  the L0/L1 declarations.
 *)
 Theory honestL0Prog
 Ancestors
-  ml_translator asyncM4SockServer
+  ml_translator asyncM4SockServer asyncHLProg
 Libs
   preamble ml_translatorLib ml_progLib basisFunctionsLib
 
-val _ = translation_extends "asyncM4SockServer";
+val _ = translation_extends "asyncHLProg";
 
 val _ = ml_prog_update (open_module "L0");
 

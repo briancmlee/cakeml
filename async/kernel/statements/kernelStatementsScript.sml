@@ -18,7 +18,9 @@
     and a prompt server it is that world.
   - l0_echo2_claim (R4′, the template): the echo server with close, on
     the honest L0 FFI, in every L0 server world: one of fds 0-2 is closed
-    (D33) or the listen fails, and the program stops, or it runs forever with raw safety (echo_safe_l0, the
+    (D33) or the listen on the echo's port fails (D38), and the program
+    stops, or it runs forever, with fds 0-2 open and never closed
+    (stdio_kept, D37 amendment) and with raw safety (echo_safe_l0, the
     approved statement) and raw liveness under [F1] (D11′, on observed
     outcomes) and [F2] (D12).  Liveness is WEAKENED honestly where POSIX is
     loose (D16: unless a hard error was observed on the episode; D18:
@@ -130,16 +132,51 @@ Definition stdio_closed_def:
       MEM 0w [r0; r1; r2]
 End
 
-(* The listen failed and the program stopped (after the three sys_fdok
-   calls found fds 0, 1 and 2 open, D33) *)
-Definition listen_failed_def:
-  listen_failed b ⇔
-    ∃i0 i1 i2 conf bs.
+(* The listen on conf failed and the program stopped (after the three
+   sys_fdok calls found fds 0, 1 and 2 open, D33) *)
+Definition listen_failed_on_def:
+  listen_failed_on conf b ⇔
+    ∃i0 i1 i2 bs.
       b = Terminate Success [IO_event (ExtCall «sys_fdok») [0w] [(i0, 1w)];
                              IO_event (ExtCall «sys_fdok») [1w] [(i1, 1w)];
                              IO_event (ExtCall «sys_fdok») [2w] [(i2, 1w)];
                              IO_event (ExtCall «sys_listen») conf bs] ∧
       ∀k. l0_ev_res bs ≠ SOME (Ok k)
+End
+
+(* The listen failed, on whatever port *)
+Definition listen_failed_def:
+  listen_failed b ⇔ ∃conf. listen_failed_on conf b
+End
+
+(* The echo's port, 8080 (as the KV worker's honestEchoL0Prog's
+   echo_port_conf).  D38 (user decision Q-6 (b)): the echo claims' listen
+   failure is the listen on this port *)
+Definition echo_port_conf_def:
+  echo_port_conf : word8 list = [31w; 144w]
+End
+
+(* D37 amendment (user decision Q-5, completing D33): a run past the
+   stdio check begins with it, all three fds open (stdio_open), and never
+   closes fds 0-2 (no_close_stdio, of every finite prefix: stdio_kept).
+   As honestL0Outcome's stdio_open and no_close_stdio (spike/servers-honest-l1
+   4d6f1fb09) *)
+Definition stdio_open_def:
+  stdio_open io ⇔
+    ∃i0 i1 i2 rest.
+      io = LAPPEND (fromList [IO_event (ExtCall «sys_fdok») [0w] [(i0, 1w)];
+                              IO_event (ExtCall «sys_fdok») [1w] [(i1, 1w)];
+                              IO_event (ExtCall «sys_fdok») [2w] [(i2, 1w)]]) rest
+End
+
+Definition no_close_stdio_def:
+  no_close_stdio evs ⇔
+    ∀conf bs. MEM (IO_event (ExtCall «sys_close») conf bs) evs ∧ LENGTH conf = 8 ⇒
+              bytes_fd conf ≠ 0w ∧ bytes_fd conf ≠ 1w ∧ bytes_fd conf ≠ 2w
+End
+
+Definition stdio_kept_def:
+  stdio_kept io ⇔ stdio_open io ∧ ∀evs. LPREFIX (fromList evs) io ⇒ no_close_stdio evs
 End
 
 (* Episode j (the j-th accepted connection) is open after evs, or has
@@ -473,8 +510,8 @@ Definition l0_echo2_claim_def:
   l0_echo2_claim K prog ⇔
     ∀w0. l0_server_world w0 ⇒
       ∃b. semantics_prog (init_state (l0_ffi w0)) init_env prog b ∧
-          (stdio_closed b ∨ listen_failed b ∨
-           ∃io. b = Diverge io ∧ echo_safe_l0 io ∧
+          (stdio_closed b ∨ listen_failed_on echo_port_conf b ∨
+           ∃io. b = Diverge io ∧ stdio_kept io ∧ echo_safe_l0 io ∧
                 (F1_io io ∧ F2 w0 ∧ accepts_below io ⇒ echo_live_l0 K w0 io ∧ conn_live_l0 w0 io))
 End
 
@@ -525,8 +562,8 @@ Definition l0_echo2_strong_claim_def:
   l0_echo2_strong_claim K prog ⇔
     ∀w0. l0_server_world w0 ⇒
       ∃b. semantics_prog (init_state (l0_ffi w0)) init_env prog b ∧
-          (stdio_closed b ∨ listen_failed b ∨
-           ∃io. b = Diverge io ∧
+          (stdio_closed b ∨ listen_failed_on echo_port_conf b ∨
+           ∃io. b = Diverge io ∧ stdio_kept io ∧
                 (F1_io io ∧ F2 w0 ∧ accepts_below io ∧ HD16_io w0 io ⇒
                  echo_live_unless (λj c. stall_drains K w0 io j c) (λj c. broken_open w0 io j c)
                    w0 io) ∧
@@ -568,8 +605,8 @@ Definition quiet_on_kernel_claim_def:
     ∀w0. l0_server_world w0 ⇒
       ∃b. semantics_prog (init_state (l0_ffi w0)) init_env prog b ∧
           (stdio_closed b ∨ listen_failed b ∨
-           (∃io. b = Diverge io ∧ guar w0 io) ∨
-           (∃io. asleep_l0 b io ∧ guar w0 (fromList io))) ∧
+           (∃io. b = Diverge io ∧ stdio_kept io ∧ guar w0 io) ∨
+           (∃io. asleep_l0 b io ∧ stdio_kept (fromList io) ∧ guar w0 (fromList io))) ∧
           (arrivals_finite_l0 w0 ⇒
            stdio_closed b ∨ listen_failed b ∨ (∃io. asleep_l0 b io) ∨
            ∃io. b = Diverge io ∧ (¬F1_io io ∨ accepts_fail_io io ∨ ¬accepts_below io))
@@ -585,8 +622,8 @@ Definition quiet_on_kernel_strong_claim_def:
     ∀w0. l0_server_world w0 ⇒
       ∃b. semantics_prog (init_state (l0_ffi w0)) init_env prog b ∧
           (stdio_closed b ∨ listen_failed b ∨
-           (∃io. b = Diverge io ∧ guar w0 io) ∨
-           (∃io. asleep_l0 b io ∧ guar w0 (fromList io))) ∧
+           (∃io. b = Diverge io ∧ stdio_kept io ∧ guar w0 io) ∨
+           (∃io. asleep_l0 b io ∧ stdio_kept (fromList io) ∧ guar w0 (fromList io))) ∧
           (arrivals_finite_l0 w0 ⇒
            stdio_closed b ∨ listen_failed b ∨ (∃io. asleep_l0 b io) ∨
            ∃io. b = Diverge io ∧ (H1_io w0 io ∧ H3_io io ⇒ ¬F1_io io ∨ ¬accepts_below io))

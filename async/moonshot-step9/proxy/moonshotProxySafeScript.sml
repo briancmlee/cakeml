@@ -1016,3 +1016,106 @@ Proof
   asm_rewrite_tac [] >> Cases_on ‘j = i ∧ pnl x’ >> asm_rewrite_tac [] >>
   simp[presf_def]
 QED
+
+Theorem hl_read_cons:
+  hl_read g ((x, r) :: ps) =
+  (case (x, r) of (ERead h' n, EGot (SOME d)) => if h' = g then d else [] | _ => []) ++
+  hl_read g ps
+Proof
+  simp[hl_read_def]
+QED
+
+(* The round's reads of g are pair i's, when only pair i reads g *)
+Theorem hl_read_sel:
+  ∀ts rs. LENGTH rs = LENGTH ts ∧ EVERY (λ(j, x). ∀k. x = ERead g k ⇒ j = i) ts ⇒
+    hl_read g (ZIP (MAP SND ts, rs)) = hl_read g (ZIP (MAP SND (seltag i ts), selres i ts rs))
+Proof
+  Induct >- simp[] >> rpt gen_tac >> PairCases_on ‘h’ >> Cases_on ‘rs’ >> simp[] >>
+  strip_tac >>
+  Cases_on ‘h0 = i ∧ pnl h1’ >> asm_rewrite_tac [] >> simp[hl_read_cons] >>
+  ‘∀k. h1 ≠ ERead g k’ by (rpt strip_tac >> fs[pnl_def]) >>
+  Cases_on ‘h1’ >> fs[] >> every_case_tac >> fs[]
+QED
+
+Theorem seltag_APPEND[simp]:
+  seltag i (xs ++ ys) = seltag i xs ++ seltag i ys
+Proof
+  simp[seltag_def, FILTER_APPEND]
+QED
+
+Theorem selres_APPEND:
+  ∀xs rs. LENGTH rs = LENGTH xs ⇒
+  selres i (xs ++ ys) (rs ++ qs) = selres i xs rs ++ selres i ys qs
+Proof
+  Induct >- simp[] >> rpt strip_tac >> PairCases_on ‘h’ >> Cases_on ‘rs’ >> fs[] >> rw[]
+QED
+
+Theorem seltag_MAP:
+  ∀l. seltag i (MAP (λx. (m, x)) l) = if m = i then MAP (λx. (i, x)) (FILTER pnl l) else []
+Proof
+  Induct >> rw[] >> fs[]
+QED
+
+Theorem seltag_pupto:
+  ∀m. seltag i (pupto f pc m) = if i < m then MAP (λx. (i, x)) (FILTER pnl (f (EL i pc))) else []
+Proof
+  Induct >- simp[pupto_def] >> simp[pupto_SUC, seltag_MAP] >> rw[] >> fs[]
+QED
+
+Theorem seltag_pacts:
+  i < LENGTH st.pc ⇒
+  seltag i (pacts lfd b hw st rdy) =
+  MAP (λx. (i, x)) (pone b hw st.lv (MAP SND st.last) (FLAT (MAP pwrites st.pc)) rdy (EL i st.pc))
+Proof
+  strip_tac >> simp[pacts_def, pall_pupto, seltag_pupto] >>
+  ‘FILTER pnl (plevels (EL i st.pc)) = []’
+    by simp[FILTER_EQ_NIL, plevels_def, EVERY_MAP, pnl_def] >>
+  ‘FILTER pnl (pone b hw st.lv (MAP SND st.last) (FLAT (MAP pwrites st.pc)) rdy (EL i st.pc)) =
+   pone b hw st.lv (MAP SND st.last) (FLAT (MAP pwrites st.pc)) rdy (EL i st.pc)’
+    by (simp[FILTER_EQ_ID] >>
+        assume_tac (Q.INST [‘lvs’ |-> ‘(st : pst).lv’, ‘lw’ |-> ‘MAP SND (st : pst).last’,
+                            ‘nw’ |-> ‘FLAT (MAP pwrites (st : pst).pc)’,
+                            ‘p’ |-> ‘EL i (st : pst).pc’] pone_noLevel) >>
+        fs[EVERY_MEM, pnl_def]) >>
+  rw[pnl_def]
+QED
+
+Theorem pacts_read_tag:
+  MEM (j, ERead g k) (pacts lfd b hw st rdy) ⇒ j < LENGTH st.pc ∧ MEM g (phds (EL j st.pc))
+Proof
+  simp[pacts_def, pall_def, MEM_FLAT, MEM_GENLIST, MEM_MAP, PULL_EXISTS] >> rw[] >>
+  gvs[plevels_def, MEM_MAP, pone_def, pconnects_def, pwrites_def, preads_def, AllCaseEqs()] >>
+  every_case_tac >> gvs[phds_def]
+QED
+
+Theorem fold_reads:
+  ∀ys rs p. LENGTH rs = LENGTH ys ∧ EVERY (λx. ∃k. x = ERead p.fh k ∨ x = ERead c k) ys ∧
+            p.bh = SOME c ∧ c ≠ p.fh ⇒
+    (FOLDL presf p (ZIP (ys, rs))).fh = p.fh ∧ (FOLDL presf p (ZIP (ys, rs))).bh = p.bh ∧
+    (FOLDL presf p (ZIP (ys, rs))).fq = p.fq ++ hl_read p.fh (ZIP (ys, rs)) ∧
+    (FOLDL presf p (ZIP (ys, rs))).bq = p.bq ++ hl_read c (ZIP (ys, rs))
+Proof
+  Induct >- simp[hl_read_def] >> rpt gen_tac >> Cases_on ‘rs’ >> simp[] >> strip_tac >>
+  ‘(presf p (h, h')).fh = p.fh ∧ (presf p (h, h')).bh = p.bh ∧
+   (presf p (h, h')).fq = p.fq ++ hl_read p.fh [(h, h')] ∧
+   (presf p (h, h')).bq = p.bq ++ hl_read c [(h, h')]’
+    by (fs[presf_def, hl_read_cons, hl_read_def] >> Cases_on ‘h'’ >> simp[pres_def] >>
+        every_case_tac >> gvs[]) >>
+  first_x_assum (qspecl_then [‘t’, ‘presf p (h, h')’] mp_tac) >> impl_tac >- gvs[] >>
+  strip_tac >> asm_rewrite_tac [] >> ONCE_REWRITE_TAC [hl_read_cons] >>
+  qpat_x_assum ‘_.fq = _’ mp_tac >> qpat_x_assum ‘_.bq = _’ mp_tac >>
+  simp[hl_read_cons, hl_read_def]
+QED
+
+Theorem fold_pwrites:
+  p.bh = SOME c ∧ c ≠ p.fh ∧ LENGTH rs = LENGTH (pwrites p) ∧ wfull (pwrites p) rs ⇒
+  (FOLDL presf p (ZIP (pwrites p, rs))).fh = p.fh ∧
+  (FOLDL presf p (ZIP (pwrites p, rs))).bh = p.bh ∧
+  (p.bo ⇒ (FOLDL presf p (ZIP (pwrites p, rs))).fq = []) ∧
+  (p.fo ⇒ (FOLDL presf p (ZIP (pwrites p, rs))).bq = []) ∧
+  hl_read g (ZIP (pwrites p, rs)) = []
+Proof
+  strip_tac >> fs[pwrites_def] >>
+  Cases_on ‘p.fo ∧ p.bq ≠ []’ >> Cases_on ‘p.bo ∧ p.fq ≠ []’ >> fs[] >>
+  gvs[LENGTH_EQ_NUM_compute, wfull_def, presf_def, pres_def, hl_read_def]
+QED

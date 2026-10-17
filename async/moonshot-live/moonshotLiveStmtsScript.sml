@@ -9,9 +9,10 @@
    - the scheduler is fair (sched_fair) and the kernel is fair in the
      OBSERVED form (kernel_fair_obs), both from honest-ffi's l0sysFair
      (step 17, approved);
-   - [F1] and [F2] per process (F1_sys, F2_sys, l0sysFair).  Connect
-     fairness [F4] is NOT assumed (user ruling: with failures as excuses it
-     is not needed);
+   - [F1] and [F2] per process (F1_sys, F2_sys, l0sysFair), and [F1] on
+     connect, keyed by (process, target port) (F1_connect_sys, D41 (2)).
+     Connect fairness [F4] is NOT assumed (user ruling: with failures as
+     excuses it is not needed);
    - `isolated`: no outside process uses ports a or b (Q6, as the safety
      headline; the client's private port c is not covered, and the
      conclusion is about the client's CONNECT episodes only);
@@ -22,8 +23,11 @@
 
   The excuses are all events of the run (no world-level facts):
    - a connection of ours broke (Kern Break; design/45 §9 (b)), or a
-     connect of ours failed (ConnFail, or a hard error from sys_connect);
-   - a listen of ours failed;
+     connect of ours failed (ConnFail, or a hard error from sys_connect;
+     EINPROGRESS is not one, D41 (1));
+   - a listen of ours failed (any error, D41 (2));
+   - an accept of ours failed with a hard error (EMFILE: it may drop a
+     queued connection with no kernel label, D17 emfile_drops; D41 (3));
    - a process of ours exited before its program finished (OOM, a signal:
      Exit is the kernel's, design/45 Q9);
    - L1 timed out an fd (D23, the write timeout);
@@ -120,11 +124,21 @@ Definition accepts_fail_sys_def:
                                 dec_res out = SOME (Fail e v)
 End
 
-(* A call nm of process k failed with a hard (not retried) error *)
+(* A call nm of process k failed with a hard (not retried) error.  A
+   pending connect (EINPROGRESS) is not a failure: it settles by kernel
+   fairness (C), D41 (1) *)
 Definition hard_fail_def:
   hard_fail (rs : num -> syslabel) k nm ⇔
     ∃n conf bytes out e v. rs n = Call k nm conf bytes out ∧
-                           dec_res out = SOME (Fail e v) ∧ ¬l1_transient e
+                           dec_res out = SOME (Fail e v) ∧ ¬l1_transient e ∧ e ≠ E_INPROGRESS
+End
+
+(* A listen of process k failed, with any error (programs listen once and
+   exit on failure, so [F1] on listen would be vacuous; D41 (2)) *)
+Definition listen_failed_def:
+  listen_failed (rs : num -> syslabel) k ⇔
+    ∃n conf bytes out e v. rs n = Call k «sys_listen» conf bytes out ∧
+                           dec_res out = SOME (Fail e v)
 End
 
 (* The kernel broke one of k's connections, or failed one of its connects *)
@@ -141,7 +155,8 @@ End
 Definition sys_excuse_def:
   sys_excuse K S ss rs ⇔
     ∃k. k < LENGTH S ∧
-        (kern_broke rs k ∨ hard_fail rs k «sys_connect» ∨ hard_fail rs k «sys_listen» ∨
+        (kern_broke rs k ∨ hard_fail rs k «sys_connect» ∨ listen_failed rs k ∨
+         hard_fail rs k «sys_accept» ∨
          crashed S rs k ∨ timed_out_sys K rs k ∨ accepts_fail_sys rs k)
 End
 
@@ -183,12 +198,25 @@ Definition moonshot_sys_def:
     [cprog a c N rqs; pprog a b; kprog b]
 End
 
+(* [F1] on connect (D41 (2)), keyed by (process, target port), since each
+   retry is a new socket fd: if process k connects to port p infinitely
+   often, infinitely often such a connect has a non-transient outcome
+   (success, EINPROGRESS or a hard error).  The weak observed "i.o. ⇒ i.o."
+   form of [F1] (D11′); F1_sys's fd key does not apply to connect *)
+Definition F1_connect_sys_def:
+  F1_connect_sys (S : dec list list) (rs : num -> syslabel) ⇔
+    ∀k p. k < LENGTH S ∧
+          io (λn. ∃conf b out. rs n = Call k «sys_connect» conf b out ∧ w22n conf = p) ⇒
+          io (λn. ∃conf b out. rs n = Call k «sys_connect» conf b out ∧ w22n conf = p ∧
+                               ¬retried_lab (rs n))
+End
+
 Definition moonshot_live_hyps_def:
   moonshot_live_hyps (a : num) (b : num) (c : num) (N : num) (rqs : num -> brequest list)
                      S ss rs ⇔
     (* the run, fair *)
     l0sys_irun S ss rs ∧ sched_fair S ss rs ∧ kernel_fair_obs ss rs ∧
-    F1_sys S rs ∧ F2_sys S ss ∧
+    F1_sys S rs ∧ F1_connect_sys S rs ∧ F2_sys S ss ∧
     (* no strangers on our ports *)
     isolated [a; b] ss rs ∧
     (* the configuration *)

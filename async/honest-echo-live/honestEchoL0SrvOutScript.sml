@@ -22,7 +22,7 @@ Ancestors
   asyncHLSimTick asyncHLSimWorld asyncHLEof asyncHLEpisodes asyncHLModel asyncHLFair
   socketV2FFI socketV2Fair EchoSpec2 EchoSpec asyncM4EchoLive asyncM4Account
   asyncM4SockInv asyncM4GTrans asyncM4GRounds asyncM4EchoRunOk asyncM3World
-  honestL1PFOut honestL1PFRefine honestL1PFClient
+  honestEchoL0Obl honestL1PFOut honestL1PFRound honestL1PFRefine honestL1PFClient
 Libs
   preamble
 
@@ -338,4 +338,86 @@ Proof
   ‘hsk.nxt ≤ LENGTH s2k.clients’ by fs[hsim0_def] >>
   qspecl_then [‘m’, ‘j’] mp_tac (Q.INST [‘lfd’ |-> ‘n2w lfdn’] hdl_inj) >>
   impl_tac >- fs[] >> fs[]
+QED
+
+(* MAIN (version-2 form): what client j sends in the first d steps of the
+   world's schedule is eventually in its outgoing stream *)
+Theorem echo_out_live2:
+  s2.listening = [(n2w lfdn, [])] ∧ s2.clients = [] ∧ s2.open_fds = [] ∧
+  alloc_ok s2.alloc ∧ sched_wf2 s2 ∧ lfdn < dimword (:64) ⇒
+  ∀j d. sent2_upto j d s2 = [] ∨
+        ∃N. j < LENGTH (FST (hst (n2w lfdn) EI ES s2 N)).clients ∧
+            sent2_upto j d s2 ≼ (EL j (FST (hst (n2w lfdn) EI ES s2 N)).clients).outgoing
+Proof
+  rpt strip_tac >> Cases_on ‘sent2_upto j d s2 = []’ >> simp[] >>
+  ‘j < dimword (:64) − 1’
+    by (drule_all hsim_init >> strip_tac >>
+        mp_tac (Q.SPECL [‘d’, ‘v1of (n2w lfdn) s2’, ‘s2’, ‘hinit’]
+                 (Q.INST [‘lfd’ |-> ‘n2w lfdn’] data_bound)) >>
+        impl_tac >- (conj_tac >> first_assum ACCEPT_TAC) >> strip_tac >>
+        gvs[sent2_upto_def, FLAT_EQ_NIL, EVERY_MEM, MEM_MAP] >>
+        rename1 ‘MEM y (arrivals2_upto _ _)’ >> Cases_on ‘y’ >> gvs[] >>
+        Cases_on ‘n = j’ >> gvs[] >> res_tac) >>
+  drule_all sent2_rn >> disch_then (qspec_then ‘d’ SUBST1_TAC) >>
+  qabbrev_tac ‘s1 = v1of (n2w lfdn) s2’ >>
+  ‘s1.listeners = [(n2w lfdn, [])] ∧ s1.conns = []’ by simp[Abbr ‘s1’, v1of_def] >>
+  ‘sched_wf s1’ by (simp[Abbr ‘s1’] >> irule v1of_sched_wf >> simp[]) >>
+  ‘grun_ok EI ES s1’ by (irule echo_grun_ok >> simp[]) >>
+  qspecl_then [‘s1’, ‘lfdn’, ‘d’, ‘hdl (n2w lfdn) j’] mp_tac
+    (Q.GENL [‘s0’, ‘lfdn’, ‘n’, ‘c’] echo_comp_live) >>
+  impl_tac >- simp[] >> strip_tac >>
+  ‘bytes_written_to (hdl (n2w lfdn) j) (FLAT (GENLIST (grounds_events EI ES s1) N)) =
+   pwritten_all (hdl (n2w lfdn) j) (gperf EI ES s1 N)’
+    by simp[bytes_written_to_rounds] >>
+  ‘sent_upto (hdl (n2w lfdn) j) d s1 ≠ []’
+    by (qpat_x_assum ‘Abbrev _’ (fn th => REWRITE_TAC [REWRITE_RULE [markerTheory.Abbrev_def] th]) >>
+        drule_all sent2_rn >> disch_then (qspec_then ‘d’ (SUBST1_TAC o SYM)) >> simp[]) >>
+  ‘pwritten_all (hdl (n2w lfdn) j) (gperf EI ES s1 N) ≠ []’
+    by (strip_tac >> gvs[]) >>
+  drule_all hrun_sim >> disch_then (qspec_then ‘N’ strip_assume_tac) >>
+  ‘hsim0 (n2w lfdn) (gstate EI ES s1 N) (FST (hst (n2w lfdn) EI ES s2 N), SND (hst (n2w lfdn) EI ES s2 N))’
+    by (Cases_on ‘hst (n2w lfdn) EI ES s2 N’ >> gvs[hsim_def, Abbr ‘s1’]) >>
+  ‘acct (hdl (n2w lfdn) j) (sent_upto (hdl (n2w lfdn) j) N s1)
+     (gperf EI ES s1 N) (gstate EI ES s1 N)’
+    by (irule grounds_acct >> simp[]) >>
+  ‘j < LENGTH (FST (hst (n2w lfdn) EI ES s2 N)).clients’ by metis_tac[written_client] >>
+  qexists_tac ‘N’ >> simp[] >>
+  ‘(EL j (FST (hst (n2w lfdn) EI ES s2 N)).clients).outgoing =
+   pwritten_all (hdl (n2w lfdn) j) (gperf EI ES s1 N)’
+    by (simp[Abbr ‘s1’] >> metis_tac[hst_written]) >>
+  fs[]
+QED
+
+Theorem arrivals2_LGENLIST:
+  ∀d f. arrivals2_upto d (LGENLIST f NONE) = FLAT (GENLIST f d)
+Proof
+  Induct >> simp[arrivals2_upto_def, GENLIST_CONS] >> gen_tac >>
+  simp[combinTheory.o_DEF]
+QED
+
+(* psk's client data are its arrivals' *)
+Theorem psk_sent2:
+  sent2_upto j d (psk lfd pol ifds m w0) = cdata j (pars lfd pol ifds m w0 0 d)
+Proof
+  simp[sent2_upto_def, cdata_def, pars_def, psk_def, arrivals2_LGENLIST] >>
+  ‘(λi. parr lfd pol ifds m w0 i) = parr lfd pol ifds m w0’ by simp[FUN_EQ_THM] >>
+  simp[] >> AP_TERM_TAC >> irule MAP_CONG >> simp[] >> Cases >> simp[]
+QED
+
+(* MAIN: on the PF echo's run, everything client j of psk sends in its
+   first d steps is eventually in its outgoing stream *)
+Theorem echo_out_live:
+  echo_run lfdn pol w0 ⇒
+  ∀j d. cdata j (pars (n2w lfdn) pol EI ES w0 0 d) = [] ∨
+        ∃N. j < LENGTH (FST (hst (n2w lfdn) EI ES PSK N)).clients ∧
+            cdata j (pars (n2w lfdn) pol EI ES w0 0 d) ≼
+            (EL j (FST (hst (n2w lfdn) EI ES PSK N)).clients).outgoing
+Proof
+  strip_tac >> rpt gen_tac >>
+  ‘l0_rely w0 ∧ fds_lt w0 ∧ MEM (n2w lfdn) (l0_used w0) ∧
+   (∀n. SND (pcm (n2w lfdn) pol EI ES w0 n) + 1 < dimword (:64)) ∧ lfdn < dimword (:64)’
+    by fs[echo_run_def, winv_def] >>
+  drule_all psk_server_world >> strip_tac >>
+  drule_all echo_out_live2 >> disch_then (qspecl_then [‘j’, ‘d’] mp_tac) >>
+  simp[psk_sent2]
 QED

@@ -2,8 +2,8 @@
   L1's invariant before each action of an E1 round (ebund) and what each
   action keeps of it, split off honestL1EPTotal (whose totality part the
   per-round progress theories need on their own).
-  NOT YET BUILDING on r3-close + (A): edo_ebund, edo_nxt, edo_ctbl_old,
-  ecm_step_conns need re-proof (the client re-proof on R3).
+  On R3: what each action keeps holds for actions other than EClose/EShut
+  (noclose, as ev_act); a round's step includes its eshuts.
 *)
 Theory honestL1EPBund
 Ancestors
@@ -47,7 +47,8 @@ Proof
 QED
 
 Theorem edo_ebund:
-  ebund lfd wl es ∧ edo lfd pol (wl, es) act = SOME (r, (wl', es'), evs) ⇒ ebund lfd wl' es'
+  ebund lfd wl es ∧ edo lfd pol (wl, es) act = SOME (r, (wl', es'), evs) ∧ noclose act ⇒
+  ebund lfd wl' es'
 Proof
   simp[ebund_def] >> strip_tac >>
   qabbrev_tac
@@ -58,7 +59,7 @@ Proof
     by (irule ev_rel_choices >> qexists_tac ‘w’ >> simp[Abbr ‘w1’]) >>
   qpat_x_assum ‘ev_rel lfd a cm es w’ kall_tac >>
   drule ev_act >> rpt (disch_then drule) >>
-  disch_then (qspec_then ‘case r of ELvl x => x | _ => 0’ mp_tac) >>
+  disch_then (qspec_then ‘case r of ELvl x => SOME x | _ => NONE’ mp_tac) >>
   impl_tac
   >- (rpt conj_tac
       >- simp[Abbr ‘w1’]
@@ -67,12 +68,14 @@ Proof
           rename1 ‘EConnected oh’ >> Cases_on ‘oh’ >> gvs[conn_hdls_def])
       >- (rpt strip_tac >> gvs[edo_def, AllCaseEqs()])) >>
   strip_tac >> rpt conj_tac >> TRY (first_assum ACCEPT_TAC) >>
-  metis_tac[]
+  qexistsl_tac [‘a’, ‘cnew (LENGTH w1.chans) (rfds es' [r]) ++ cm’, ‘w'’, ‘hs'’] >>
+  conj_tac >> first_assum ACCEPT_TAC
 QED
 
 Theorem eacts_ebund:
   ∀acts wl es rs evs wl' es'.
-    ebund lfd wl es ∧ eacts lfd pol (wl, es) acts = SOME (rs, evs, (wl', es')) ⇒
+    ebund lfd wl es ∧ eacts lfd pol (wl, es) acts = SOME (rs, evs, (wl', es')) ∧
+    EVERY noclose acts ⇒
     ebund lfd wl' es'
 Proof
   Induct >> simp[eacts_def] >> rpt gen_tac >> strip_tac >>
@@ -145,16 +148,31 @@ Proof
   gvs[l1_close_def, AllCaseEqs(), forget_def, l1do_def]
 QED
 
+Theorem l1_close_nxt:
+  l1_close f (w, st) = SOME ((w', st'), evs) ⇒ st'.nxt = st.nxt
+Proof
+  rw[l1_close_def, AllCaseEqs()] >> simp[forget_def]
+QED
+
+Theorem pf_close_nxt:
+  pf_close f (w, ps) = SOME ((w', ps'), evs) ⇒ ps'.b.nxt = ps.b.nxt
+Proof
+  rw[pf_close_def] >> gvs[] >> PairCases_on ‘z’ >> gvs[] >>
+  drule l1_close_nxt >> simp[]
+QED
+
 Theorem edo_nxt:
   edo lfd pol (wl, es) act = SOME (r, (wl', es'), evs) ∧ (∀l. act ≠ EAccept l) ⇒
   es'.p.b.nxt = es.p.b.nxt + LENGTH (conn_hdls [r]) ∧
   ∀hd. MEM hd (conn_hdls [r]) ⇒ hd = hdl lfd es.p.b.nxt
 Proof
   Cases_on ‘act’ >> simp[edo_def, AllCaseEqs()] >> strip_tac >> gvs[conn_hdls_def] >>
-  TRY (PairCases_on ‘z’) >> gvs[ec_del_def, conn_hdls_def]
-  >- (‘z2.b.nxt = es.p.b.nxt’ by metis_tac[pdo_nxt] >> Cases_on ‘z0’ >> simp[conn_hdls_def])
-  >- gvs[l1_close_def, AllCaseEqs(), forget_def]
-  >- (‘z2.b.nxt = es.p.b.nxt’ by metis_tac[pdo_nxt] >> simp[conn_hdls_def])
+  TRY (PairCases_on ‘z’) >> gvs[ec_del_def, conn_hdls_def] >>
+  FIRST [
+    drule l1_close_nxt >> simp[] >> NO_TAC,
+    drule pf_close_nxt >> simp[pf_release_def, set_inb_def] >> NO_TAC,
+    ‘z2.b.nxt = es.p.b.nxt’ by metis_tac[pdo_nxt] >>
+    TRY (Cases_on ‘z0’) >> simp[conn_hdls_def]]
 QED
 
 Theorem eown_ciss:
@@ -183,12 +201,12 @@ Theorem edo_ctbl_old:
 Proof
   strip_tac >> Cases_on ‘∃p. act = EConnect p’
   >- (gvs[] >> Cases_on ‘r = EConnected NONE’
-      >- gvs[edo_def, AllCaseEqs()] >>
+      >- (gvs[edo_def, AllCaseEqs()] >> PairCases_on ‘z’ >> gvs[]) >>
       ‘∀g. es'.ctbl = (hdl lfd es.p.b.nxt, g) :: es.ctbl ⇒
            ¬MEM g (lfd :: MAP SND es.p.b.tbl ++ es.p.b.closing ++ es.p.acq ++ MAP SND es.ctbl)’
         by metis_tac[edo_connect_fresh] >>
       qpat_x_assum ‘edo _ _ _ _ = _’ mp_tac >> simp[edo_def, AllCaseEqs()] >> strip_tac >>
-      gvs[] >>
+      gvs[] >> TRY (PairCases_on ‘z’ >> gvs[] >> NO_TAC) >>
       ‘j + 1 < dimword (:64) ∧ es.p.b.nxt + 1 < dimword (:64)’
         by (‘w2n lfd < dimword (:64)’ by simp[w2n_lt] >>
             gvs[asyncHLModelTheory.hdln_def] >> every_case_tac >> gvs[]) >>
@@ -227,6 +245,7 @@ QED
 Theorem eacts_ctbl_old:
   ∀acts wl es rs evs wl' es' h f j.
     ebund lfd wl es ∧ eacts lfd pol (wl, es) acts = SOME (rs, evs, (wl', es')) ∧
+    EVERY noclose acts ∧
     ALOOKUP es'.ctbl h = SOME f ∧ j < es.p.b.nxt ∧ h = hdl lfd j ⇒
     ALOOKUP es.ctbl h = SOME f ∧ cstat_of es' f = cstat_of es f
 Proof
@@ -245,11 +264,13 @@ QED
 (* An old handle with no connect entry gets none *)
 Theorem eacts_ctbl_none:
   ebund lfd wl es ∧ eacts lfd pol (wl, es) acts = SOME (rs, evs, (wl', es')) ∧
+  EVERY noclose acts ∧
   ALOOKUP es.ctbl (hdl lfd j) = NONE ∧ j < es.p.b.nxt ⇒
   ALOOKUP es'.ctbl (hdl lfd j) = NONE
 Proof
   strip_tac >> Cases_on ‘ALOOKUP es'.ctbl (hdl lfd j)’ >> simp[] >>
   drule eacts_ctbl_old >> disch_then drule >>
+  disch_then drule >>
   disch_then (qspecl_then [‘hdl lfd j’, ‘x’, ‘j’] mp_tac) >> simp[]
 QED
 
@@ -258,7 +279,7 @@ QED
 Theorem eacts_ctbl_gone:
   ∀acts wl es rs evs wl' es' k hd n y j.
     ebund lfd wl es ∧ eacts lfd pol (wl, es) acts = SOME (rs, evs, (wl', es')) ∧
-    k < LENGTH acts ∧ EL k acts = ERead hd n ∧ EL k rs = EGot y ∧
+    EVERY noclose acts ∧ k < LENGTH acts ∧ EL k acts = ERead hd n ∧ EL k rs = EGot y ∧
     hd = hdl lfd j ∧ j < es.p.b.nxt ∧
     (∀f. ALOOKUP es.ctbl hd = SOME f ⇒ cstat_of es f = CRefused) ⇒
     ALOOKUP es'.ctbl hd = NONE
@@ -306,12 +327,13 @@ Theorem ecm_step_conns:
   erounds lfd pol ifds m (w0, einit) n = SOME (h, ws, evs, logs) ∧
   eacts lfd pol ws (new_actions (log_of m) h) = SOME (rs, aevs, ws1) ∧
   etail lfd pol (ifds h) ws1 = SOME (rdy, ws2, log, tevs) ∧
+  eshuts ws2 = SOME (ws3, shevs) ∧
   (∀g. ¬MEM (FConn g) log) ⇒
   SND (ecm lfd pol ifds m w0 (SUC n)) = SND (ecm lfd pol ifds m w0 n) + LENGTH (conn_hdls rs)
 Proof
   strip_tac >>
   ‘erounds lfd pol ifds m (w0, einit) (SUC n) =
-     SOME (h ++ [ssnap rdy rs], ws2, evs ++ (aevs ++ tevs), logs ++ [log])’
+     SOME (h ++ [ssnap rdy rs], ws3, evs ++ (aevs ++ tevs ++ shevs), logs ++ [log])’
     by simp[erounds_def, eround_def] >>
   drule erounds_logs >> strip_tac >>
   ‘LENGTH logs = n’ by gvs[] >>

@@ -189,3 +189,42 @@ Proof
   strip_tac >> irule post_listen_facts_reindex >> mp_tac post_listen_facts >>
   impl_tac >- ASM_REWRITE_TAC[] >> strip_tac >> ASM_REWRITE_TAC[]
 QED
+
+(* The world after the stdio checks keeps the rely and the fd bound *)
+Theorem stdio_prefix_lt:
+  l0_server_world w0 ∧ stdio_prefix w0 w3 ⇒ l0_rely w3 ∧ fds_lt w3 ∧ l0_fresh_world w3
+Proof
+  rewrite_tac[stdio_prefix_def] >> strip_tac >>
+  ‘l0_rely w0 ∧ fds_lt w0 ∧ l0_fresh_world w0’
+    by fs[l0_server_world_def, l0_fresh_world_def] >>
+  mp_tac stdio_worlds >>
+  ASM_REWRITE_TAC[] >> strip_tac >>
+  ‘fds_lt w1’
+    by (mp_tac (Q.INST [‘w’ |-> ‘w0’, ‘f’ |-> ‘0w’, ‘out’ |-> ‘o0’, ‘w'’ |-> ‘w1’, ‘ev’ |-> ‘e0’] fdok_fds_lt) >> ASM_REWRITE_TAC[]) >>
+  ‘fds_lt w2’
+    by (mp_tac (Q.INST [‘w’ |-> ‘w1’, ‘f’ |-> ‘1w’, ‘out’ |-> ‘o1’, ‘w'’ |-> ‘w2’, ‘ev’ |-> ‘e1’] fdok_fds_lt) >> ASM_REWRITE_TAC[]) >>
+  mp_tac (Q.INST [‘w’ |-> ‘w2’, ‘f’ |-> ‘2w’, ‘out’ |-> ‘o2’, ‘w'’ |-> ‘w3’, ‘ev’ |-> ‘e2’] fdok_fds_lt) >>
+  ASM_REWRITE_TAC[]
+QED
+
+(* The run invariant survives a reindex of its world *)
+Theorem ri_reindex:
+  ri lfd m (h, (w, ps), evs) ⇒ ri lfd m (h, (reindex tr w, ps), evs)
+Proof
+  rewrite_tac[honestEchoL0RunTheory.ri_def, honestEchoL0InvTheory.wown_def] >> strip_tac >>
+  ‘l0_rely (reindex tr w)’ by (irule l0_rely_reindex >> first_assum ACCEPT_TAC) >>
+  fs[fds_lt_def, l0_used_def] >>
+  rpt conj_tac >> first_assum ACCEPT_TAC
+QED
+
+(* MAIN: the run invariant at the start of the loop, in the world reindexed by tr *)
+Theorem post_listen_ri:
+  l0_server_world w0 ∧ stdio_prefix w0 w3 ∧
+  sys_listen_echo w3 = SOME (out, w4, ev) ∧ listen_fd out = SOME k ⇒
+  ri (n2w k) (srelabel (server k)) ([], (reindex tr w4, pinit), [])
+Proof
+  strip_tac >> irule ri_reindex >>
+  mp_tac stdio_prefix_lt >> ASM_REWRITE_TAC[] >> strip_tac >>
+  irule ri_echo_base >>
+  qexistsl [‘ev’, ‘out’, ‘w3’] >> ASM_REWRITE_TAC[]
+QED

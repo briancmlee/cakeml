@@ -82,7 +82,7 @@ the system (`isolated`) and queued at the proxy; the proxy accepts it (`conn_liv
 i.o.: excuse); the proxy connects a backend (`proxy_pairs_l0`), which settles likewise, and KV accepts it
 (`conn_live`).
 
-## 3. The kernel fairness the argument needs (for honest-ffi's `kernel_fair_obs`)
+## 3. The kernel fairness the argument needs (now honest-ffi's `l0sysFair.kernel_fair_obs`, step 17, approved)
 
 1. bytes reach a receiver that asks (recv **or poll-in**) infinitely often — a recv alone is not enough, since
    L1 recvs only what a poll showed;
@@ -125,7 +125,7 @@ could deadlock.
   environment. Options: a timeout in time rather than rounds (needs a clock); no write timeout on fds whose
   peer is one of ours (not observable to L1); count only rounds where the fd was polled with a *blocking* poll; or
   accept it. **User decision.**
-- **R2: F4 vs EMFILE.** `connect_try` counts attempts that fail with EMFILE/ENFILE (it requires only a listener
+- **R2: F4 vs EMFILE.** *(Resolved: the user ruled that `moonshot_live` does not assume F4.)* `connect_try` counts attempts that fail with EMFILE/ENFILE (it requires only a listener
   with room), so F4 forces a connect retried forever at the fd limit to get a socket: it excludes a realistic run.
   In the excuse form F4 also seems **unnecessary**: [F1] already covers a connect's transient retries (its
   `call_fds` is the port's), a hard failure is an excuse, and F-obs (4) settles a pending one. Proposal: drop F4

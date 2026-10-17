@@ -1,14 +1,17 @@
 (*
   Moonshot liveness (design/45 §4.2, steps 14–19): the statement of
-  moonshot_live, as a DRAFT for review.  Nothing here is proved; the
-  claims are definitions of propositions.
+  moonshot_live, APPROVED by the user (2026-10-17: global excuse for now,
+  no F4).  Nothing here is proved; the claims are definitions of
+  propositions.
 
   WHAT IT SAYS.  Run the client, the proxy and KV as processes 0, 1 and 2
   of an infinite l0sys run (honest-ffi's step-17 l0sys_irun).  Assume:
-   - the scheduler is fair (sched_fair, approved) and the kernel is fair in
-     the OBSERVED form (kernel_fair_obs, user ruling; honest-ffi is writing
-     it; the definition below is a PLACEHOLDER proposal);
-   - connect fairness [F4] (approved), [F1] and [F2] per process (approved);
+   - the scheduler is fair (sched_fair) and the kernel is fair in the
+     OBSERVED form (kernel_fair_obs), both from honest-ffi's l0sysFair
+     (step 17, approved);
+   - [F1] and [F2] per process (F1_sys, F2_sys, l0sysFair).  Connect
+     fairness [F4] is NOT assumed (user ruling: with failures as excuses it
+     is not needed);
    - `isolated`: no outside process uses ports a or b (Q6, as the safety
      headline; the client's private port c is not covered, and the
      conclusion is about the client's CONNECT episodes only);
@@ -27,7 +30,7 @@
    - a process's accepts failed infinitely often (D18 (c)).
   So there is no start-order, backlog, fd-limit or no-OOM hypothesis in the
   main form: a connect before the listen, a full backlog (the connect
-  settles by ConnFail: kernel fairness (4)), or EMFILE all show up as an
+  settles by ConnFail: kernel fairness (C)), or EMFILE all show up as an
   excuse.  moonshot_live_strong is the corollary under the explicit
   hypotheses that none of these happen.
 
@@ -37,80 +40,16 @@
   is a later strengthening (it would quantify the pairing from the proxy's
   claim).
 
-  TEMPORARY COPIES (remove when the originals land):
-   - l0sys_irun, can_step, sched_fair, kernel_fair, connect_try, connect_up,
-     F4: honest-ffi's step-17 draft as sent to the user (2026-10-17, not
-     committed anywhere);
-   - call_fds, poll_ev, out_poll, n_out_polls, send_took, retried:
-     honestL1PFRound / honestL1BStmts (spike/echo-live-pol), restated on
-     dec_res so that this file needs no PF-L1 theories.
+  TEMPORARY COPIES (remove at merge): poll_ev, out_poll, n_out_polls,
+  send_took (honestL1BStmts, spike/echo-live-pol), restated on dec_res so
+  that this file needs no PF-L1 theories.
 *)
 Theory moonshotLiveStmts
 Ancestors
-  l0sys l0sysEpisodes honestL0 honestL0World honestL1Model HttpSpecBodies HttpKvSpec
+  l0sysFair l0sys l0sysEpisodes honestL0 honestL0World honestL1Model HttpSpecBodies HttpKvSpec
 Libs
   preamble
 
-(* ========================================================================
-   honest-ffi's step-17 draft (TEMPORARY COPY; user-approved except
-   kernel_fair, which the main theorems replace by kernel_fair_obs)
-   ======================================================================== *)
-
-Definition l0sys_irun_def:
-  l0sys_irun S (ss : num -> sysstate) (rs : num -> syslabel) ⇔
-    sys_init S (ss 0) ∧ (∀n. sys_step (ss n) (rs n) (ss (SUC n))) ∧
-    ∀k n. k < LENGTH S ⇒ ∃more. prog_makes (EL k S) (proc_events k (GENLIST rs n) ++ more)
-End
-
-Definition can_step_def:
-  can_step S ss rs k n ⇔
-    (ss n).alive k ∧
-    ((∃nm conf bytes out s' more.
-        prog_makes (EL k S) (proc_events k (GENLIST rs n) ++
-                             [IO_event (ExtCall nm) conf (ZIP (bytes, out))] ++ more) ∧
-        sys_step (ss n) (Call k nm conf bytes out) s') ∨
-     prog_makes (EL k S) (proc_events k (GENLIST rs n)))
-End
-
-Definition sched_fair_def:
-  sched_fair S ss rs ⇔
-    ∀k. (∀n0. ∃n. n0 ≤ n ∧ can_step S ss rs k n) ⇒
-        ∀n0. ∃n. n0 ≤ n ∧ ((∃nm c b o'. rs n = Call k nm c b o') ∨ rs n = Exit k)
-End
-
-(* The INTERNAL form: kept only as the source of the sanity lemma
-   kernel_fair ⇒ kernel_fair_obs (user ruling) *)
-Definition kernel_fair_def:
-  kernel_fair ss rs ⇔
-    (∀e n0. (∀n. n0 ≤ n ⇒ is_end (ss n) e ∧ (ss n).peer e ≠ NONE ∧
-                           (ss n).moved e < LENGTH (sys_chan (ss n) e).sent) ⇒ F) ∧
-    (∀e n0. (∀n. n0 ≤ n ⇒ is_end (ss n) e ∧ (ss n).peer e ≠ NONE ∧
-                           (ss n).acked e < (ss n).moved e) ⇒ F) ∧
-    (∀e n0. (∀n. n0 ≤ n ⇒ is_end (ss n) e ∧ (ss n).peer e ≠ NONE ∧ (sys_chan (ss n) e).shut ∧
-                           ¬(ss n).finned e ∧ (ss n).moved e = LENGTH (sys_chan (ss n) e).sent) ⇒ F) ∧
-    (∀e n0. (∀n. n0 ≤ n ⇒ is_end (ss n) e ∧ (sys_chan (ss n) e).connecting ∧
-                           ¬(sys_chan (ss n) e).closed) ⇒ F)
-End
-
-Definition connect_try_def:
-  connect_try ss rs k p n ⇔
-    (∃conf b out. rs n = Call k «sys_connect» conf b out ∧ w22n conf = p) ∧
-    ∃k'. sys_room (ss n) k' p
-End
-
-Definition connect_up_def:
-  connect_up ss rs k n ⇔
-    let j = LENGTH (EL k (ss n).procs).chans in
-      j < LENGTH (EL k (ss (SUC n)).procs).chans ∧
-      ∃n'. n < n' ∧ is_end (ss n') (k, j) ∧ ¬(sys_chan (ss n') (k, j)).connecting ∧
-           ¬(sys_chan (ss n') (k, j)).broken
-End
-
-Definition F4_def:
-  F4 ss rs ⇔
-    ∀k p. (∀n0. ∃n. n0 ≤ n ∧ connect_try ss rs k p n) ⇒
-          ∀n0. ∃n. n0 ≤ n ∧ connect_try ss rs k p n ∧ connect_up ss rs k n
-End
 
 (* ========================================================================
    Vocabulary
@@ -121,85 +60,6 @@ Definition ptr_def:
   ptr (rs : num -> syslabel) k n = proc_events k (GENLIST rs n)
 End
 
-(* The fds a call involves (honestL1PFRound.call_fds, COPY) *)
-Definition call_fds_def:
-  call_fds (nm : mlstring) (conf : word8 list) (ins : word8 list) =
-    if nm = «sys_poll» then MAP pe_fd (pollfd_entries (DROP 16 ins))
-    else [bytes_fd (TAKE 8 conf)]
-End
-
-(* Label l is process k's call nm involving fd f *)
-Definition call_on_def:
-  call_on k nm f l ⇔
-    ∃conf bytes out. l = Call k nm conf bytes out ∧ MEM f (call_fds nm conf bytes)
-End
-
-(* A result L1 retries (honestL1PFRound.retried, COPY, on dec_res): any
-   failed poll; an l1_transient error of any other call *)
-Definition retried_lab_def:
-  retried_lab (Call k nm conf bytes out) =
-    (case dec_res out of
-     | SOME (Fail e _) => nm = «sys_poll» ∨ l1_transient e
-     | _ => F) ∧
-  retried_lab _ = F
-End
-
-(* [F1] (D11′) for every process of the run, on its labels *)
-Definition F1_sys_def:
-  F1_sys S (rs : num -> syslabel) ⇔
-    ∀k nm f. k < LENGTH S ∧ (∀n0. ∃n. n0 ≤ n ∧ call_on k nm f (rs n)) ⇒
-             ∀n0. ∃n. n0 ≤ n ∧ call_on k nm f (rs n) ∧ ¬retried_lab (rs n)
-End
-
-(* [F2] (D12) for every process: each process's take choices are those of
-   its initial L0 state (choices are functions of its history) *)
-Definition F2_sys_def:
-  F2_sys S (ss : num -> sysstate) ⇔
-    ∀k j h n. k < LENGTH S ∧ 0 < n ⇒ 0 < (EL k (ss 0).procs).ch.takes j h 0 n
-End
-
-(* Process k ASKS for input on its channel j at step n: a recv on j's fd,
-   or a poll listing j's fd for input (L1 recvs only what a poll showed, so
-   a recv alone is not enough) *)
-Definition asks_in_def:
-  asks_in (ss : num -> sysstate) (rs : num -> syslabel) k j n ⇔
-    ∃nm conf bytes out f.
-      rs n = Call k nm conf bytes out ∧ l0_chan_of (EL k (ss n).procs) f = SOME j ∧
-      ((nm = «sys_recv» ∧ LENGTH conf = 8 ∧ bytes_fd conf = f) ∨
-       (nm = «sys_poll» ∧ ∃e. MEM (f, e) (MAP pe_fe (pollfd_entries (DROP 16 bytes))) ∧ ODD e))
-End
-
-Definition asks_io_def:
-  asks_io ss rs k j ⇔ ∀n0:num. ∃n. n0 ≤ n ∧ asks_in ss rs k j n
-End
-
-(* PLACEHOLDER for honest-ffi's kernel_fair_obs (not yet written).  A
-   proposal of its shape, as this draft needs it: delivery and EOF are owed
-   only to a receiver that keeps ASKING.  This is what makes backpressure
-   real in the model (l0sys inboxes are unbounded, so with unconditional
-   delivery no sender could ever wait on a receiver, and the hypothesis
-   would exclude the realistic run of a reader that stops reading).
-    (1) bytes reach a receiver that asks infinitely often;
-    (2) moved bytes are eventually acknowledged (they are in the
-        receiver's kernel buffer: [T] §3.4);
-    (3) the EOF reaches a receiver that asks infinitely often;
-    (4) a pending connect settles.
-   kernel_fair ⇒ kernel_fair_obs is immediate (each part is weaker).
-   honest-ffi's version will state the conclusions on observed outcomes *)
-Definition kernel_fair_obs_def:
-  kernel_fair_obs ss rs ⇔
-    (∀e k' j' n0. (∀n. n0 ≤ n ⇒ is_end (ss n) e ∧ (ss n).peer e = SOME (k', j') ∧
-                                (ss n).moved e < LENGTH (sys_chan (ss n) e).sent) ∧
-                  asks_io ss rs k' j' ⇒ F) ∧
-    (∀e n0. (∀n. n0 ≤ n ⇒ is_end (ss n) e ∧ (ss n).peer e ≠ NONE ∧
-                           (ss n).acked e < (ss n).moved e) ⇒ F) ∧
-    (∀e k' j' n0. (∀n. n0 ≤ n ⇒ is_end (ss n) e ∧ (ss n).peer e = SOME (k', j') ∧
-                                (sys_chan (ss n) e).shut ∧ ¬(ss n).finned e ∧
-                                (ss n).moved e = LENGTH (sys_chan (ss n) e).sent) ∧
-                  asks_io ss rs k' j' ⇒ F) ∧
-    (∀e n0. (∀n. n0 ≤ n ⇒ is_end (ss n) e ∧ (sys_chan (ss n) e).connecting ∧
-                           ¬(sys_chan (ss n) e).closed) ⇒ F)
-End
 
 (* No outside process uses the ports: none connects to them, none listens
    on them (a connect to one completes only inside the system).  B2's
@@ -216,11 +76,6 @@ Definition isolated_def:
                  (ss (SUC n)).peer (k, j) ≠ NONE)
 End
 
-(* The program, answered as recorded, ends normally after the calls evs *)
-Definition finished_def:
-  finished (prog : dec list) evs ⇔
-    semantics_prog (init_state (replay_ffi evs)) init_env prog (Terminate Success evs)
-End
 
 (* ------------------------------------------------------------------------
    The observed excuses
@@ -332,7 +187,7 @@ Definition moonshot_live_hyps_def:
   moonshot_live_hyps (a : num) (b : num) (c : num) (N : num) (rqs : num -> brequest list)
                      S ss rs ⇔
     (* the run, fair *)
-    l0sys_irun S ss rs ∧ sched_fair S ss rs ∧ kernel_fair_obs ss rs ∧ F4 ss rs ∧
+    l0sys_irun S ss rs ∧ sched_fair S ss rs ∧ kernel_fair_obs ss rs ∧
     F1_sys S rs ∧ F2_sys S ss ∧
     (* no strangers on our ports *)
     isolated [a; b] ss rs ∧

@@ -12,12 +12,12 @@
   exactly the two facts it uses (delivery does not stall for ever; an
   acknowledgement does not stall for ever) as explicit premises, and
   mentions no fairness definition.  drains_of_asks is the only theorem
-  that reads kernel_fair_obs (moonshotLiveStmts' placeholder), so swapping
-  in honest-ffi's observed form is a change to that corollary alone.
+  that reads kernel_fair_obs (honest-ffi's l0sysFair, step 17), so a change
+  to its shape is a change to that corollary alone.
 *)
 Theory moonshotLiveDrains
 Ancestors
-  moonshotLiveStmts l0sys l0sysCausal l0sysStep l0sysRun l0sysInvCall
+  moonshotLiveStmts l0sysFair l0sys l0sysCausal l0sysStep l0sysRun l0sysInvCall
 Libs
   preamble
 
@@ -144,7 +144,7 @@ QED
    and acknowledged for good.  The ONLY use of kernel_fair_obs *)
 Theorem drains_of_asks:
   l0sys_irun ps ss rs ∧ kernel_fair_obs ss rs ∧
-  (ss n0).peer e = SOME (k', j') ∧ asks_io ss rs k' j' ∧
+  (ss n0).peer e = SOME (k', j') ∧ io_from n0 (asks_in ss rs k' j') ∧
   (∀n. n0 ≤ n ⇒ LENGTH (sys_chan (ss n) e).sent = L) ⇒
   ∃n2. n0 ≤ n2 ∧ ∀n. n2 ≤ n ⇒ (ss n).moved e = L ∧ (ss n).acked e = L
 Proof

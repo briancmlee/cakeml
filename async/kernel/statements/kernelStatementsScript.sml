@@ -264,10 +264,35 @@ End
 (* Raw liveness of the echo, per episode, unless X: if episode j is open on
    channel c after evs, c's peer drains, and the episode hypothesis D holds,
    then everything c's peer has sent so far is eventually sent back (taken
-   by the kernel), and if the peer has closed its side, the episode is
-   eventually closed *)
+   by the kernel), and if the peer has closed its side, the program
+   eventually calls close on the episode's fd while the episode is open.
+   (D27, user decision: a close call, not a successful close -- an
+   interrupted close (EINTR) need not end the episode, so the close the
+   program owes is the call; echo_live_unless_closed below recovers the
+   episode's end when no close call on its fd fails.) *)
 Definition echo_live_unless_def:
   echo_live_unless D X w0 io ⇔
+    ∀evs j c w.
+      LPREFIX (fromList evs) io ∧ ep_open j evs ∧ world_at w0 evs = SOME w ∧
+      l0_chan_of w (EL j (l0_accepted evs)) = SOME c ∧ drains w0 io c ∧ D j c ⇒
+      X j c ∨
+      ((∃evs'. LPREFIX (fromList evs') io ∧ (EL c w.chans).peer_sent ≼ l0_sent j evs') ∧
+       ((EL c w.chans).peer_eof ⇒
+        ∃evs' ev. LPREFIX (fromList (evs' ++ [ev])) io ∧ ep_open j evs' ∧
+                  l0_close_call (EL j (l0_accepted evs')) ev))
+End
+
+(* D27's corollary hypothesis: every close call on an fd the program has
+   accepted succeeds (no interrupted close) *)
+Definition close_calls_ok_def:
+  close_calls_ok io ⇔
+    ∀evs ev f. LPREFIX (fromList (evs ++ [ev])) io ∧ l0_close_call f ev ∧
+               MEM f (l0_accepted evs) ⇒ l0_event_closed ev = SOME f
+End
+
+(* The episode's end form (before D27) *)
+Definition echo_live_unless_closed_def:
+  echo_live_unless_closed D X w0 io ⇔
     ∀evs j c w.
       LPREFIX (fromList evs) io ∧ ep_open j evs ∧ world_at w0 evs = SOME w ∧
       l0_chan_of w (EL j (l0_accepted evs)) = SOME c ∧ drains w0 io c ∧ D j c ⇒
@@ -298,11 +323,59 @@ Definition conn_live_unless_def:
       broke w0 io j0
 End
 
-(* The main (weakened) forms *)
+(* Channel c broke and its unread input was discarded (a genuine reset).
+   D16's corollary excuse; since D28 also an excuse of the main form *)
+Definition flushed_ch_def:
+  flushed_ch w0 io c ⇔
+    ∃evs w. LPREFIX (fromList evs) io ∧ world_at w0 evs = SOME w ∧
+            c < LENGTH w.chans ∧ (EL c w.chans).broken ∧ (EL c w.chans).inbox = []
+End
+
+(* The main (weakened) forms.  D28 (user decision): echo_live_l0 is also
+   excused on a channel whose unread input the kernel discarded (it broke
+   with data the program had not read, which then is never echoed); the
+   corollary echo_live_l0_noflush below drops that excuse when no channel
+   is flushed *)
 Definition echo_live_l0_def:
   echo_live_l0 K w0 io ⇔
-    echo_live_unless (λj c. T) (λj c. ep_hard_err j io ∨ ep_timed_out K j io) w0 io
+    echo_live_unless (λj c. T)
+      (λj c. ep_hard_err j io ∨ ep_timed_out K j io ∨ flushed_ch w0 io c) w0 io
 End
+
+(* D28's corollary: with no flushed channel in the run, only the observed
+   excuses remain.  The hypothesis is a fact about the world (whether the
+   kernel discarded unread input), not observable on the trace *)
+Theorem echo_live_l0_noflush:
+  echo_live_l0 Kw w0 io ∧ (∀c. ¬flushed_ch w0 io c) ⇒
+  echo_live_unless (λj c. T) (λj c. ep_hard_err j io ∨ ep_timed_out Kw j io) w0 io
+Proof
+  rw[echo_live_l0_def, echo_live_unless_def] >> first_x_assum drule_all >> rw[] >> gvs[]
+QED
+
+(* D27's corollary: if no close call on an accepted fd fails, a close call
+   on the episode's fd while it is open ends the episode *)
+Theorem echo_live_unless_closed:
+  echo_live_unless D X w0 io ∧ close_calls_ok io ⇒ echo_live_unless_closed D X w0 io
+Proof
+  rw[echo_live_unless_closed_def] >>
+  qpat_x_assum ‘echo_live_unless _ _ _ _’ (drule_all o REWRITE_RULE [echo_live_unless_def]) >>
+  rw[] >> simp[] >> disj2_tac >> rw[] >>
+  TRY (qexists_tac ‘evs'’ >> simp[] >> NO_TAC) >>
+  qpat_x_assum ‘_ ⇒ ∃evs' ev. _’ drule >>
+  disch_then (qx_choosel_then [‘es’, ‘ev’] strip_assume_tac) >>
+  qexists_tac ‘es ++ [ev]’ >> simp[] >>
+  qpat_x_assum ‘ep_open _ es’ (strip_assume_tac o REWRITE_RULE [ep_open_def]) >> gvs[] >>
+  ‘l0_accepted (pre ++ [ev'] ++ post) = l0_accepted pre ++ [f] ++ l0_accepted post’
+    by simp[l0_accepted_def] >>
+  ‘EL (LENGTH (l0_accepted pre)) (l0_accepted (pre ++ [ev'] ++ post)) = f’
+    by simp[EL_APPEND2, EL_APPEND1] >>
+  ‘MEM f (l0_accepted (pre ++ [ev'] ++ post))’ by simp[] >>
+  ‘l0_event_closed ev = SOME f’
+    by (qpat_x_assum ‘close_calls_ok _’ (mp_tac o REWRITE_RULE [close_calls_ok_def]) >>
+        disch_then (qspecl_then [‘pre ++ [ev'] ++ post’, ‘ev’, ‘f’] mp_tac) >> gvs[]) >>
+  simp[ep_closed_def] >>
+  qexistsl_tac [‘pre’, ‘ev'’, ‘post ++ [ev]’, ‘f’] >> simp[ep_ends_def]
+QED
 
 Definition conn_live_l0_def:
   conn_live_l0 w0 io ⇔ conn_live_unless (accepts_fail_io io) w0 io
@@ -333,14 +406,6 @@ Definition HD16_io_def:
       hard_err_on f (IO_event (ExtCall «sys_recv») conf bs) ∧
       world_at w0 (evs ++ [IO_event (ExtCall «sys_recv») conf bs]) = SOME w ⇒
       flushed w f
-End
-
-(* D16's corollary excuse: channel c broke and its unread input was
-   discarded (a genuine reset) *)
-Definition flushed_ch_def:
-  flushed_ch w0 io c ⇔
-    ∃evs w. LPREFIX (fromList evs) io ∧ world_at w0 evs = SOME w ∧
-            c < LENGTH w.chans ∧ (EL c w.chans).broken ∧ (EL c w.chans).inbox = []
 End
 
 (* D18's H1, read off the trace: an accept that fails with an error L1
@@ -408,7 +473,10 @@ End
    closes it), and the blocking L1 blocks only when no fd it holds has
    output pending; D23's write timeout ends every stalled flush, so this is
    eventually the case.  hup_spin_bite below is why a fd that stays in the
-   blocking set would be fatal *)
+   blocking set would be fatal.  D29 (user decision, the handle cut-off):
+   the Diverge disjunct is also excused when the run's accepts reach the
+   handle bound (¬accepts_below io): past it L1 hands out no more handles,
+   so pending connections are never served and the program need not sleep *)
 Definition quiet_on_kernel_claim_def:
   quiet_on_kernel_claim guar prog ⇔
     ∀w0. l0_server_world w0 ⇒
@@ -418,11 +486,12 @@ Definition quiet_on_kernel_claim_def:
            (∃io. asleep_l0 b io ∧ guar w0 (fromList io))) ∧
           (arrivals_finite_l0 w0 ⇒
            listen_failed b ∨ (∃io. asleep_l0 b io) ∨
-           ∃io. b = Diverge io ∧ (¬F1_io io ∨ accepts_fail_io io))
+           ∃io. b = Diverge io ∧ (¬F1_io io ∨ accepts_fail_io io ∨ ¬accepts_below io))
 End
 
 (* The corollary form (D18, as l0_echo2_strong_claim's): under H1 and the
-   joint weak H3, read off the trace, the accepts excuse goes.  ("Accepts
+   joint weak H3, read off the trace, the accepts excuse goes (D29's
+   cut-off excuse stays).  ("Accepts
    fail only finitely often" as a premise on the trace would only restate
    the main form: ¬accepts_fail_io io ⇒ ¬F1_io io is its disjunct) *)
 Definition quiet_on_kernel_strong_claim_def:
@@ -434,7 +503,7 @@ Definition quiet_on_kernel_strong_claim_def:
            (∃io. asleep_l0 b io ∧ guar w0 (fromList io))) ∧
           (arrivals_finite_l0 w0 ⇒
            listen_failed b ∨ (∃io. asleep_l0 b io) ∨
-           ∃io. b = Diverge io ∧ (H1_io w0 io ∧ H3_io io ⇒ ¬F1_io io))
+           ∃io. b = Diverge io ∧ (H1_io w0 io ∧ H3_io io ⇒ ¬F1_io io ∨ ¬accepts_below io))
 End
 
 (* The echo's guarantee, for its quiet instance *)

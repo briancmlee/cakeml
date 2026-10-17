@@ -177,7 +177,8 @@ Theorem pf_drain:
   run_ok lfd pol ifds m w0 ∧ winv w0 ∧ linv lfd w0 ∧ MEM lfd (l0_used w0) ∧
   (∀n. SND (pcm lfd pol ifds m w0 n) + 1 < dimword (:64)) ∧
   S2 lfd pol ifds m w0 ∧ S3w lfd pol ifds m w0 ∧
-  (∀n f. MEM f (MAP SND (rstate lfd pol ifds m w0 n).b.tbl) ∧
+  (∀n f. n0 ≤ n ∧ (∀k. n ≤ k ⇒ (rstate lfd pol ifds m w0 k).acq = []) ∧
+         MEM f (MAP SND (rstate lfd pol ifds m w0 n).b.tbl) ∧
          MEM f (rstate lfd pol ifds m w0 n).eof ∧ inb_of (rstate lfd pol ifds m w0 n) f = [] ⇒
          ∃n'. n ≤ n' ∧ ¬MEM f (MAP SND (rstate lfd pol ifds m w0 n').b.tbl)) ∧
   (∀n. n0 ≤ n ⇒ rlog lfd pol ifds m w0 n = []) ⇒
@@ -224,7 +225,7 @@ Proof
         >- (first_x_assum (qspec_then ‘k − n'’ mp_tac) >> simp[]) >>
         ‘inb_of (st k) f = []’ by (first_x_assum (qspec_then ‘k − n'’ mp_tac) >> simp[]) >>
         ‘f ∈ TT k’ by simp[] >>
-        qpat_x_assum ‘∀n f. MEM f _ ∧ _ ⇒ _’ (qspecl_then [‘k’, ‘f’] mp_tac) >>
+        qpat_x_assum ‘∀n f. n0 ≤ n ∧ _ ⇒ _’ (qspecl_then [‘k’, ‘f’] mp_tac) >>
         impl_tac >- fs[Abbr ‘TT’, Abbr ‘st’] >> strip_tac >>
         ‘TT n'' = TT KK’ by simp[] >>
         fs[Abbr ‘TT’, Abbr ‘st’]) >>

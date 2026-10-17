@@ -1,0 +1,4 @@
+# L3 statements: kernelStatementsCore (R2′'s claims and vocabulary, hup_spin_bite) builds from L3-06 on.
+# kernelStatements needs honestL0Part (the CakeML layer, L3-07), so the default target is Core only.
+all: kernelStatementsCoreTheory.uo
+.PHONY: all

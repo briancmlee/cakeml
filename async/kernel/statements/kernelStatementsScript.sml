@@ -59,7 +59,7 @@ Ancestors
   kernelStatementsCore llist ffi semantics ml_prog
   honestL0 honestL0World honestL0WorldProps honestL0Rely honestL0Part
   honestL1Model honestL1Refine honestL1PFModel honestL1PFRefine
-  honestL1PFRound honestL1PFLive honestL1PFConnRun socketV2FFI socketV2Fair asyncCore
+  honestL1PFRound honestL1PFLive honestL1PFConnRun lifetimeWorld lifetimeFair asyncCore
   honestEchoL0Spec
 Libs
   preamble

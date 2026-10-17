@@ -1,0 +1,26 @@
+# L3 R2′ (design/36 §6): in simple L0 worlds the prefetching L1's version-2 world (psk) is a delay of the kernel's schedule (l1pf_simple).
+INCLUDES = ../../cakeml/approx \
+           ../../cakeml/library \
+           ../link \
+           ../live \
+           ../statements \
+           ../surface \
+           ../world \
+           ../wrappers \
+           ../../lifetimes/loop \
+           ../../lifetimes/world \
+           ../../lifetimes/world-cf \
+           ../../loop/polling \
+           ../../model/core \
+           ../../model/level2 \
+           ../../programs/echo \
+           ../../servers/echo \
+           ../../servers/relabel \
+           ../../world/clock \
+           ../../world/composed \
+           ../../world/sockets \
+           ../../world/sockets-cf \
+           $(CAKEMLDIR)/semantics
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

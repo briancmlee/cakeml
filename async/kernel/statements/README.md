@@ -24,10 +24,12 @@ files is 0) against the spike theories, merged on `scratch/l3-stmts`
 `n_out_polls`, `hup_spin_bite`) use D20's encoding: struct pollfd
 records after a 16-byte header, revents at byte 6 of each. `poll_hup`
 also requires the poll to succeed, since a failed poll's revents bytes
-are unspecified. There
-is no Holmakefile here: the honest L0/L1 theories enter the series in the
-later L3 layers. The names are the spike names, as in L2-00; L3-06 renames
-them when Core first builds in the series.
+are unspecified.
+
+In the series, Core builds from L3-06 on, against the final-series theories
+and under the final-series names (`design/names.tsv`). The Holmakefile here
+builds Core only (its default target); kernelStatements waits for
+`honestL0Part` (L3-07).
 
 **The user's policy, followed throughout:**
 - no new trusted kernel facts;
@@ -51,7 +53,7 @@ them when Core first builds in the series.
 
 | claim | what | hypotheses | status |
 |---|---|---|---|
-| `l1pf_simple_claim m` (R2′, **the headline**: user decision Q-L3-2) | in simple L0 worlds, the version-2 world that R1-safe builds from the prefetching L1's run (`psk`) is a **delay** of the kernel's schedule (`sk_of`'s): never ahead of it at each round's instant, and missing nothing | `simple_v2`, plus two simple-class conditions: `sched_wf2` of the kernel's schedule (no arrival the world would drop) and no `emfile_drops` (no reset of a queued connection under EMFILE); `winv`, a fresh listener, `run_ok`, fewer than 2^64 − 1 connections, the server obligations S1–S4, and **`fds_room`**: fewer fds in use than the limit at each round's start (a bound on connections open at once, not on all connections; with it no accept fails) | **proved** on `spike/l1pf-simple` (`l1pf_simple`: never ahead, `l1pf_never_ahead`; misses nothing, `l1pf_misses_nothing`) |
+| `l1pf_simple_claim m` (R2′, **the headline**: user decision Q-L3-2) | in simple L0 worlds, the version-2 world that R1-safe builds from the prefetching L1's run (`psk`) is a **delay** of the kernel's schedule (`sk_of`'s): never ahead of it at each round's instant, and missing nothing | `simple_v2`, plus two simple-class conditions: `lifetime_fair` of the kernel's schedule (no arrival the world would drop) and no `emfile_drops` (no reset of a queued connection under EMFILE); `winv`, a fresh listener, `run_ok`, fewer than 2^64 − 1 connections, the server obligations S1–S4, and **`fds_room`**: fewer fds in use than the limit at each round's start (a bound on connections open at once, not on all connections; with it no accept fails) | **proved** in L3-06 (`kernel/r2`: `honestL1PFSimple.l1pf_simple_claim_holds`, from `l1pf_simple`: never ahead, `l1pf_never_ahead`; misses nothing, `l1pf_misses_nothing`) |
 | `l1pf_simple_eq_claim m` (optional corollary) | with a prompt schedule and a prompt server, no delay: `psk`'s steps **equal** the kernel's | as above (with `fds_room`), plus `prompt_sched` (≤ 1 connect per step, ≤ 1 arrival per channel per step, each ≤ `pf_chunk` bytes, nothing in a channel's connect step) and `prompt_server` (one poll per round; after each round's actions, no unread input, no unaccepted connection, every outbox ≤ hw) | stated; optional |
 | `l0_echo2_claim K prog` (R4′, the template) | the echo server with close on the honest L0 FFI, in every `l0_server_world`: either the listen failed and the program stopped, or it diverges with raw safety `echo_safe_l0` and raw liveness: per episode (`echo_live_l0`: what the peer sent is eventually sent back, and a peer EOF eventually closes the episode) and per connection (`conn_live_l0`: a queued connection is eventually accepted or dropped) | liveness only: [F1] on the trace (`F1_io`), [F2], fewer than 2^64 − 1 accepts in the run (`accepts_below`), and per episode D(c) (`drains`: the peer reads) and D19's `hup_drains K` (after a hang-up, the peer empties what is in flight within K − 1 polls that list the fd for output while episode j holds it, i.e. before L1's first close call on the fd (whatever its result: an interrupted close may still free it), since the fd number may be reused (user-approved form b″: D19's count runs only while the outbox is not empty); K is L1's `pf_hupwait`; with [F2] this gives D19's per-round send progress). **Weakened** (main form): "unless a hard error was observed on the episode" (D16), and "unless accepts on the listener fail infinitely often" (D18) | stated; safety ⏳ KV worker (`echo_l0_safe`, in progress), liveness ⏳ after R1-live |
 | `l0_echo2_strong_claim K prog` | the corollary form. Echo: the only excuse left is a genuine reset that discarded the unread input (`flushed_ch`). Connections: accepted or dropped, with no "accepts fail" disjunct | additionally `HD16_io` (a hard recv error only on a channel that broke and lost its input), `H1_io` (an accept error L1 does not keep really dropped a queued connection) and `H3_io` (the joint weak form over `kept_err`: retried, EMFILE, ENFILE). All are explicit and none is trusted; no [F3] (dropped in design/36 §6, 2026-10-17: L0's transient failure may be a spurious EMFILE) | stated; the model-level D18 corollary `live_conn_cor` is **proved** (honest-ffi) |

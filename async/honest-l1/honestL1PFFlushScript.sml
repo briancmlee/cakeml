@@ -876,3 +876,224 @@ Proof
   gvs[]
 QED
 
+(* ------------------------------------------------------------------------
+   The world's choices are fixed along a run
+   ------------------------------------------------------------------------ *)
+
+Theorem sys_ch:
+  (sys_recv g k w = SOME (out, w', ev) ⇒ w'.ch = w.ch) ∧
+  (sys_accept g w = SOME (out, w', ev) ⇒ w'.ch = w.ch) ∧
+  (sys_poll fes w = SOME (out, w', ev) ⇒ w'.ch = w.ch) ∧
+  (sys_send g bs w = SOME (out, w', ev) ⇒ w'.ch = w.ch) ∧
+  (sys_close g w = SOME (out, w', ev) ⇒ w'.ch = w.ch)
+Proof
+  rw[sys_recv_def, sys_accept_def, sys_poll_def, sys_send_def, sys_close_def] >>
+  metis_tac[l0_do_env, l0_do_buf_env]
+QED
+
+Theorem l1_close_ch:
+  l1_close g (w, st) = SOME ((w', st'), evs) ⇒ w'.ch = w.ch
+Proof
+  rw[l1_close_def, AllCaseEqs()] >> metis_tac[sys_ch]
+QED
+
+Theorem pdo_ch:
+  pdo lfd (w, ps) a = SOME (r, (w', ps'), evs) ⇒ w'.ch = w.ch
+Proof
+  Cases_on ‘a’ >> simp[pdo_def] >> rw[AllCaseEqs()] >> gvs[] >>
+  TRY (PairCases_on ‘z’) >> gvs[l1do_def, AllCaseEqs()] >>
+  metis_tac[l1_close_ch, sys_ch]
+QED
+
+Theorem pacts_ch:
+  ∀acts w ps rs evs w' ps'. pacts lfd (w, ps) acts = SOME (rs, evs, (w', ps')) ⇒ w'.ch = w.ch
+Proof
+  Induct >> simp[pacts_def] >> rw[AllCaseEqs()] >> PairCases_on ‘ws1’ >>
+  metis_tac[pdo_ch]
+QED
+
+Theorem l1_polls_ch:
+  ∀chs w rv w' evs. l1_polls chs w = SOME (rv, w', evs) ⇒ w'.ch = w.ch
+Proof
+  Induct >> simp[l1_polls_def] >> rw[AllCaseEqs()] >> metis_tac[sys_ch]
+QED
+
+Theorem l1_flush_ch:
+  ∀fs w st w' st' evs. l1_flush fs (w, st) = SOME ((w', st'), evs) ⇒ w'.ch = w.ch
+Proof
+  Induct >> simp[l1_flush_def] >> rw[AllCaseEqs()] >> metis_tac[sys_ch]
+QED
+
+Theorem pf_fetch_ch:
+  ∀fs w ps w' ps' log evs.
+    pf_fetch lfd pol fs (w, ps) = SOME ((w', ps'), log, evs) ⇒ w'.ch = w.ch
+Proof
+  Induct >> simp[pf_fetch_def] >> rw[AllCaseEqs()] >>
+  TRY (pairarg_tac >> gvs[AllCaseEqs()]) >> metis_tac[sys_ch]
+QED
+
+Theorem l1_reap_ch:
+  ∀fs w st w' st' evs. l1_reap fs (w, st) = SOME ((w', st'), evs) ⇒ w'.ch = w.ch
+Proof
+  Induct >> simp[l1_reap_def] >> rw[AllCaseEqs()] >>
+  TRY (Cases_on ‘ws’) >> metis_tac[l1_close_ch]
+QED
+
+Theorem pround_ch:
+  pround lfd pol hs (w, ps) acts = SOME (snap, (w', ps'), log, evs) ⇒ w'.ch = w.ch
+Proof
+  simp[pround_def, AllCaseEqs()] >> strip_tac >> PairCases_on ‘ws1’ >>
+  gvs[pf_tail_def, AllCaseEqs()] >>
+  metis_tac[pacts_ch, l1_polls_ch, l1_flush_ch, pf_fetch_ch, l1_reap_ch]
+QED
+
+Theorem run_ch:
+  run_ok lfd pol ifds m w0 ⇒ ∀n. (rworld lfd pol ifds m w0 n).ch = w0.ch
+Proof
+  strip_tac >> Induct
+  >- simp[rworld_def, prun_0] >>
+  drule prun_round' >> disch_then (qspecl_then [‘ARB’, ‘n’] strip_assume_tac) >>
+  drule pround_ch >> simp[]
+QED
+
+Theorem cflow_steps:
+  (∀k. a ≤ k ⇒ cflow (ws k) (ws (SUC k)) c) ⇒ ∀d. cflow (ws a) (ws (a + d)) c
+Proof
+  strip_tac >> Induct >> simp[] >>
+  irule cflow_trans >> qexists_tac ‘ws (a + d)’ >> simp[ADD_CLAUSES]
+QED
+
+(* ------------------------------------------------------------------------
+   flush_progress: if f's peer drains, a send on f eventually goes
+   through (takes bytes, or fails hard), or L1 empties f's outbox itself
+   (D19), or f's channel breaks
+   ------------------------------------------------------------------------ *)
+
+Theorem flush_progress:
+  run_ok lfd pol ifds m w0 ∧ winv w0 ∧ MEM lfd (l0_used w0) ∧
+  (∀n. SND (pcm lfd pol ifds m w0 n) + 1 < dimword (:64)) ∧
+  F1 lfd pol ifds m w0 ∧ F2 w0 ∧ drains lfd pol ifds m w0 c ∧
+  olive lfd f (rstate lfd pol ifds m w0 n) ∧
+  l0_chan_of (rworld lfd pol ifds m w0 n) f = SOME c ∧
+  ¬(EL c (rworld lfd pol ifds m w0 n).chans).shut ⇒
+  ∃k. n ≤ k ∧
+      ((∃ev. MEM ev (rrev lfd pol ifds m w0 k) ∧ ev_on «sys_send» f ev ∧ ¬retried ev) ∨
+       outbox_of (rstate lfd pol ifds m w0 (SUC k)).b f = [] ∨
+       (EL c (rworld lfd pol ifds m w0 (SUC k)).chans).broken)
+Proof
+  strip_tac >> CCONTR_TAC >>
+  qpat_x_assum ‘¬∃k. _’ (strip_assume_tac o SIMP_RULE bool_ss [NOT_EXISTS_THM, DE_MORGAN_THM]) >>
+  ‘∀n. winv (rworld lfd pol ifds m w0 n)’ by metis_tac[winv_run] >>
+  ‘∀n. psmall lfd (rstate lfd pol ifds m w0 n)’ by metis_tac[psmall_run] >>
+  qabbrev_tac ‘wn = rworld lfd pol ifds m w0’ >>
+  qabbrev_tac ‘pn = rstate lfd pol ifds m w0’ >>
+  qabbrev_tac ‘en = rrev lfd pol ifds m w0’ >>
+  (* one round from n on, with f live: everything about f kept *)
+  ‘∀k. n ≤ k ∧ olive lfd f (pn k) ∧ l0_chan_of (wn k) f = SOME c ⇒
+       olive lfd f (pn (SUC k)) ∧ l0_chan_of (wn (SUC k)) f = SOME c ∧
+       cflow (wn k) (wn (SUC k)) c ∧ csent (wn (SUC k)) c = csent (wn k) c ∧
+       EXISTS (ev_on «sys_poll» f) (en k) ∧
+       ∀ev. MEM ev (en k) ∧ ev_on «sys_poll» f ev ∧ ¬retried ev ∧
+            ¬(EL c (wn (SUC k)).chans).broken ∧ ¬(EL c (wn k).chans).shut ∧
+            (EL c (wn k).chans).inflight = 0 ∧ (∀hh. 0 < (wn k).ch.takes c hh 0 1) ⇒
+            EXISTS (ev_on «sys_send» f) (en k)’
+    by (rpt gen_tac >> strip_tac >> gvs[Abbr ‘wn’, Abbr ‘pn’, Abbr ‘en’] >>
+        drule prun_round' >> disch_then (qspecl_then [‘ARB’, ‘k’] strip_assume_tac) >>
+        ‘winv (rworld lfd pol ifds m w0 k) ∧ psmall lfd (rstate lfd pol ifds m w0 k)’
+          by simp[] >>
+        drule_all pround_live >>
+        qpat_x_assum ‘∀k. ¬(n ≤ k) ∨ _’ (qspec_then ‘k’ mp_tac) >>
+        simp[] >> metis_tac[]) >>
+  ‘∀d. olive lfd f (pn (n + d)) ∧ l0_chan_of (wn (n + d)) f = SOME c ∧
+       csent (wn (n + d)) c = csent (wn n) c’
+    by (Induct >> gvs[Abbr ‘wn’, Abbr ‘pn’] >>
+        first_x_assum (qspec_then ‘n + d’ mp_tac) >> simp[ADD_CLAUSES]) >>
+  ‘∀k. n ≤ k ⇒ olive lfd f (pn k) ∧ l0_chan_of (wn k) f = SOME c ∧ csent (wn k) c = csent (wn n) c’
+    by (rpt strip_tac >> first_x_assum (qspec_then ‘k - n’ mp_tac) >> simp[]) >>
+  ‘∀k. n ≤ k ⇒ cflow (wn k) (wn (SUC k)) c’ by metis_tac[] >>
+  (* nothing more is sent: the peer drains c *)
+  ‘∃n1. n ≤ n1 ∧ (EL c (wn n1).chans).inflight = 0’
+    by (qpat_x_assum ‘drains _ _ _ _ _ _’ (mp_tac o REWRITE_RULE [drains_def]) >>
+        disch_then (qspec_then ‘n’ mp_tac) >> simp[Abbr ‘wn’] >> metis_tac[]) >>
+  ‘∀k. n1 ≤ k ⇒ (EL c (wn k).chans).inflight = 0 ∧ ¬(EL c (wn k).chans).shut ∧
+                (∀hh. 0 < (wn k).ch.takes c hh 0 1)’
+    by (gen_tac >> strip_tac >>
+        ‘∀a. n ≤ a ∧ a ≤ k ⇒ cflow (wn a) (wn k) c’
+          by (rpt strip_tac >>
+              qspecl_then [‘wn’, ‘c’, ‘a’] mp_tac (Q.GENL [‘ws’, ‘c’, ‘a’] cflow_steps) >>
+              impl_tac
+              >- (rpt strip_tac >> qpat_assum ‘∀k. n ≤ k ⇒ cflow _ _ _’ irule >> simp[]) >>
+              disch_then (qspec_then ‘k - a’ mp_tac) >> simp[]) >>
+        ‘cflow (wn n1) (wn k) c ∧ cflow (wn n) (wn k) c’ by simp[] >>
+        ‘csent (wn k) c = csent (wn n1) c’ by metis_tac[LESS_EQ_TRANS] >>
+        ‘(wn k).ch = w0.ch’ by simp[Abbr ‘wn’, run_ch] >>
+        gvs[cflow_def, F2_def] >>
+        ‘n ≤ k’ by decide_tac >>
+        ‘¬(EL c (wn k).chans).shut’
+          by (qpat_assum ‘∀a. n ≤ a ∧ a ≤ k ⇒ _’ (qspec_then ‘n’ mp_tac) >>
+              impl_tac >- simp[] >> strip_tac >> fs[]) >>
+        ‘(wn k).ch = w0.ch’
+          by (qpat_assum ‘∀a. n ≤ a ∧ a ≤ k ⇒ _’ (qspec_then ‘k’ mp_tac) >>
+              impl_tac >- simp[] >> strip_tac >> fs[]) >>
+        simp[] >> rw[] >> qpat_x_assum ‘∀j h k. _’ irule >> simp[]) >>
+  (* polls on f, every round: some go through, each such leads to a send on f *)
+  ‘∀k. n ≤ k ⇒ EXISTS (ev_on «sys_poll» f) (en k)’
+    by (rpt strip_tac >>
+        qpat_assum ‘∀k. n ≤ k ⇒ olive _ _ _ ∧ _’ (qspec_then ‘k’ mp_tac) >>
+        impl_tac >- simp[] >> strip_tac >>
+        qpat_assum ‘∀k. n ≤ k ∧ olive _ _ _ ∧ _ ⇒ _’ (qspec_then ‘k’ mp_tac) >>
+        impl_tac >- simp[] >> simp[]) >>
+  ‘∀k. n1 ≤ k ⇒ en k ≠ []’
+    by (rpt strip_tac >> ‘n ≤ k’ by decide_tac >>
+        qpat_x_assum ‘∀k. n ≤ k ⇒ EXISTS _ _’ (qspec_then ‘k’ mp_tac) >> simp[]) >>
+  ‘∀k. n1 ≤ k ⇒ rrev lfd pol ifds m w0 k ≠ []’
+    by (rpt strip_tac >> qpat_x_assum ‘∀k. n1 ≤ k ⇒ en k ≠ []’ (qspec_then ‘k’ mp_tac) >>
+        simp[Abbr ‘en’]) >>
+  drule_all revs_long >> strip_tac >>
+  ‘∀i. ∃i'. i ≤ i' ∧ call_at lfd pol ifds m w0 i' «sys_poll» f’
+    by (gen_tac >>
+        ‘n ≤ n1 + i’ by simp[] >>
+        ‘EXISTS (ev_on «sys_poll» f) (en (n1 + i))’
+          by (qpat_assum ‘∀k. n ≤ k ⇒ EXISTS _ _’ irule >> simp[]) >>
+        pop_assum (strip_assume_tac o REWRITE_RULE [EXISTS_MEM]) >>
+        qpat_x_assum ‘MEM _ (en _)’ mp_tac >> simp[Abbr ‘en’] >> strip_tac >>
+        drule_all call_at_round >> strip_tac >>
+        qexists_tac ‘i'’ >> simp[] >>
+        qpat_assum ‘∀d. d ≤ _’ (qspec_then ‘i’ assume_tac) >>
+        metis_tac[LESS_EQ_TRANS, ADD_COMM]) >>
+  ‘∀i. ∃i'. i ≤ i' ∧ call_at lfd pol ifds m w0 i' «sys_poll» f ∧ call_ok_at lfd pol ifds m w0 i'’
+    by (qpat_assum ‘F1 _ _ _ _ _’ (mp_tac o REWRITE_RULE [F1_def]) >>
+        disch_then (qspecl_then [‘«sys_poll»’, ‘f’] mp_tac) >> metis_tac[]) >>
+  ‘∀i. ∃j. i ≤ j ∧ call_at lfd pol ifds m w0 j «sys_send» f’
+    by (gen_tac >>
+        qpat_assum ‘∀i. ∃i'. i ≤ i' ∧ _ ∧ call_ok_at _ _ _ _ _ _’
+          (qspec_then ‘LENGTH (revs lfd pol ifds m w0 (n1 + i))’ strip_assume_tac) >>
+        drule_all call_ok_round >> strip_tac >>
+        ‘n ≤ k’ by simp[] >>
+        ‘EXISTS (ev_on «sys_send» f) (en k)’
+          by (qpat_assum ‘∀k. n ≤ k ∧ olive _ _ _ ∧ _ ⇒ _’ (qspec_then ‘k’ mp_tac) >>
+              impl_tac
+              >- (qpat_assum ‘∀k. n ≤ k ⇒ olive _ _ _ ∧ _’ (qspec_then ‘k’ mp_tac) >> simp[]) >>
+              strip_tac >> pop_assum (qspec_then ‘ev’ mp_tac) >> disch_then irule >>
+              ‘¬(EL c (wn (SUC k)).chans).broken’
+                by (qpat_assum ‘∀k. ¬(n ≤ k) ∨ _’ (qspec_then ‘k’ strip_assume_tac) >> gvs[]) >>
+              ‘(EL c (wn k).chans).inflight = 0 ∧ ¬(EL c (wn k).chans).shut ∧
+               ∀hh. 0 < (wn k).ch.takes c hh 0 1’
+                by (qpat_assum ‘∀k. n1 ≤ k ⇒ _ ∧ _ ∧ _’ irule >> simp[]) >>
+              fs[Abbr ‘en’]) >>
+        pop_assum (strip_assume_tac o REWRITE_RULE [EXISTS_MEM]) >>
+        qpat_x_assum ‘MEM _ (en k)’ mp_tac >> simp[Abbr ‘en’] >> strip_tac >>
+        drule_all call_at_round >> strip_tac >>
+        rename1 ‘call_at _ _ _ _ _ j «sys_send» f’ >>
+        qexists_tac ‘j’ >> simp[] >>
+        ‘LENGTH (revs lfd pol ifds m w0 (n1 + i)) ≤ LENGTH (revs lfd pol ifds m w0 k)’
+          by (irule revs_len_mono >> simp[]) >>
+        qpat_assum ‘∀d. d ≤ _’ (qspec_then ‘i’ assume_tac) >> decide_tac) >>
+  (* [F1] on sends: one on f goes through, from round n on *)
+  qpat_assum ‘F1 _ _ _ _ _’ (mp_tac o REWRITE_RULE [F1_def]) >>
+  disch_then (qspecl_then [‘«sys_send»’, ‘f’] mp_tac) >> impl_tac >- metis_tac[] >>
+  disch_then (qspec_then ‘LENGTH (revs lfd pol ifds m w0 n)’ strip_assume_tac) >>
+  drule_all call_ok_round >> strip_tac >>
+  qpat_x_assum ‘∀k. ¬(n ≤ k) ∨ _’ (qspec_then ‘k’ mp_tac) >> simp[Abbr ‘en’] >>
+  metis_tac[]
+QED

@@ -631,3 +631,325 @@ Proof
   ‘i = i'’ by (drule prel_distinct >> disch_then irule >> simp[] >> qexists_tac ‘hd’ >> simp[]) >>
   gvs[] >> drule_all prel_fh_bh >> simp[]
 QED
+
+(* ------------------------------------------------------------------------
+   The gate is evaluated every round: every open handle's Level is queried
+   ------------------------------------------------------------------------ *)
+
+Theorem pacts_level:
+  MEM p st.pc ∧ MEM h (popen p) ⇒ MEM (ELevel h) (MAP SND (pacts lfd b hw st rdy))
+Proof
+  strip_tac >> ONCE_REWRITE_TAC [pacts_SND] >> simp[MEM_FLAT, MEM_MAP, PULL_EXISTS] >>
+  disj1_tac >> qexists_tac ‘p’ >> simp[plevels_def, MEM_MAP]
+QED
+
+Theorem PS_level:
+  MEM p (PS lfd b hw lv W0 n).pc ∧ MEM h (popen p) ⇒
+  MEM (ELevel h) (MAP SND (PS lfd b hw lv W0 n).last)
+Proof
+  Cases_on ‘n’
+  >- (‘PS lfd b hw lv W0 0 = pinit lfd b hw’ by simp[ehhist_def, ehrounds_def, pstate_def] >>
+      simp[pinit_def]) >>
+  rename1 ‘SUC m’ >>
+  qspecl_then [‘lfd’, ‘b’, ‘hw’, ‘lv’, ‘W0’, ‘m’] strip_assume_tac
+    (Q.GENL [‘lfd’, ‘b’, ‘hw’, ‘lv’, ‘W0’, ‘n’] PS_SUC_fields) >>
+  qpat_x_assum ‘ehhist _ _ _ _ _ (SUC m) = _’ kall_tac >>
+  qpat_x_assum ‘pst_pc _ = _’ (fn th => REWRITE_TAC [th]) >>
+  qpat_x_assum ‘pst_last _ = _’ (fn th => REWRITE_TAC [th]) >>
+  MATCH_ACCEPT_TAC pacts_level
+QED
+
+(* MAIN (an open handle's Level is queried every round; in particular an
+   open pair's, both ways) *)
+Theorem proxy_levels_every:
+  proxy_world lfd a W0 ⇒
+  ∀n h. MEM h (MAP FST (SND (ehst lfd lv (pifds lfd b hw) (pprog lfd b hw) W0 n)).tbl) ⇒
+        MEM (ELevel h) (new_actions (log_of (pprog lfd b hw)) (PH lfd b hw lv W0 n))
+Proof
+  strip_tac >> rpt gen_tac >> strip_tac >> REWRITE_TAC [pprog_new_actions] >>
+  drule PS_prel_n >> disch_then (assume_tac o SPEC_ALL) >>
+  ‘∃p. MEM p (PS lfd b hw lv W0 n).pc ∧ MEM h (popen p)’
+    by (qpat_x_assum ‘prel _ _ _ _ _ _’ mp_tac >> rewrite_tac [prel_def] >> strip_tac >>
+        first_x_assum irule >> first_assum ACCEPT_TAC) >>
+  drule_all PS_level >> simp[]
+QED
+
+(* ------------------------------------------------------------------------
+   Read liveness (program side): with the gate open and the handle ready,
+   the read is issued.  The Level answer the gate uses is the one in the
+   last round (each handle's Level is asked once a round)
+   ------------------------------------------------------------------------ *)
+
+Theorem PH_SUC_len:
+  proxy_world lfd a W0 ⇒
+  ∃s. PH lfd b hw lv W0 (SUC n) = PH lfd b hw lv W0 n ++ [s] ∧
+      LENGTH s.results = LENGTH (PS lfd b hw lv W0 n).last
+Proof
+  strip_tac >> drule proxy_no_misuse >> disch_then (mp_tac o SPEC_ALL) >>
+  qmatch_goalsub_abbrev_tac ‘ehacts lfd lv n 0 st0 acts’ >>
+  Cases_on ‘ehacts lfd lv n 0 st0 acts’ >> simp[] >> PairCases_on ‘x’ >>
+  rename1 ‘_ = SOME (rs, w1, hs1)’ >> drule ehacts_LENGTH >> strip_tac >>
+  ‘ehacts_tot lfd lv n st0 acts = (rs, (w1, hs1))’ by simp[ehacts_tot_def] >>
+  Cases_on ‘ehpoll lfd hs1 (pifds lfd b hw (PH lfd b hw lv W0 n)) w1’ >>
+  rename1 ‘_ = (rdy, r2)’ >> PairCases_on ‘r2’ >>
+  qspecl_then [‘lfd’, ‘lv’, ‘pifds lfd b hw’, ‘pprog lfd b hw’, ‘W0’, ‘n’, ‘rs’, ‘w1’, ‘hs1’,
+               ‘rdy’, ‘r20’, ‘r21’] mp_tac
+    (Q.GENL [‘lfd’, ‘lv’, ‘ifds’, ‘m’, ‘w0’, ‘n’, ‘rs’, ‘w1’, ‘hs1’, ‘rdy’, ‘w2’, ‘hs2’]
+       honestL1EPRefineTheory.ehround_step) >>
+  impl_tac >- gvs[Abbr ‘st0’, Abbr ‘acts’] >>
+  strip_tac >> qexists_tac ‘ssnap rdy rs’ >>
+  gvs[asyncM3WorldTheory.ssnap_def, Abbr ‘acts’, pprog_new_actions]
+QED
+
+Definition plevs_def:
+  plevs (xs : eact list) = FLAT (MAP (λx. case x of ELevel h => [h] | _ => []) xs)
+End
+
+Theorem plevs_simps[simp]:
+  plevs [] = [] ∧ plevs (x :: xs) = (case x of ELevel h => [h] | _ => []) ++ plevs xs ∧
+  plevs (xs ++ ys) = plevs xs ++ plevs ys ∧
+  plevs (FLAT xss) = FLAT (MAP plevs xss)
+Proof
+  simp[plevs_def, MAP_FLAT, FLAT_FLAT, MAP_MAP_o, combinTheory.o_DEF] >>
+  AP_TERM_TAC >> simp[MAP_EQ_f, plevs_def]
+QED
+
+Theorem plevs_none:
+  EVERY (λx. ∀l. x ≠ ELevel l) xs ⇒ plevs xs = []
+Proof
+  Induct_on ‘xs’ >> simp[] >> Cases >> simp[]
+QED
+
+Theorem plevs_pacts:
+  plevs (MAP SND (pacts lfd b hw st rdy)) = FLAT (MAP popen st.pc)
+Proof
+  ONCE_REWRITE_TAC [pacts_SND] >> simp[] >>
+  ‘∀p. plevs (pone b hw st.lv (MAP SND st.last) (FLAT (MAP pwrites st.pc)) rdy p) = []’
+    by (gen_tac >> irule plevs_none >>
+        assume_tac (Q.INST [‘lvs’ |-> ‘(st : pst).lv’, ‘lw’ |-> ‘MAP SND (st : pst).last’,
+                            ‘nw’ |-> ‘FLAT (MAP pwrites (st : pst).pc)’] pone_noLevel) >>
+        fs[EVERY_MEM]) >>
+  ‘∀p. plevs (plevels p) = popen p’
+    by (simp[plevels_def] >> gen_tac >> qspec_tac (‘popen p’, ‘l’) >> Induct >> simp[]) >>
+  rw[] >> fs[MAP_MAP_o, combinTheory.o_DEF, FLAT_EQ_NIL, EVERY_MAP] >>
+  simp[ETA_AX] >> qspec_tac (‘st.pc’, ‘l’) >> Induct >> simp[]
+QED
+
+Theorem pupd_lv_out:
+  ∀xs st rs. ¬MEM c (plevs (MAP SND xs)) ⇒ ALOOKUP (pupd st xs rs).lv c = ALOOKUP st.lv c
+Proof
+  Induct >- simp[pupd_def] >> rpt gen_tac >> Cases_on ‘rs’ >- simp[pupd_def] >>
+  PairCases_on ‘h’ >> rename1 ‘pupd st ((i, x) :: xs) (r :: rs)’ >>
+  ONCE_REWRITE_TAC [pupd_def] >> strip_tac >>
+  ‘¬MEM c (plevs (MAP SND xs))’ by fs[] >>
+  first_x_assum (drule_then (fn th => REWRITE_TAC [th])) >>
+  Cases_on ‘x’ >> Cases_on ‘r’ >> fs[] >> every_case_tac >> fs[]
+QED
+
+Theorem pupd_lv_in:
+  ∀xs st rs. LENGTH rs = LENGTH xs ∧ ALL_DISTINCT (plevs (MAP SND xs)) ∧
+             MEM (ELevel c, ELvl l) (ZIP (MAP SND xs, rs)) ⇒
+             ALOOKUP (pupd st xs rs).lv c = SOME l
+Proof
+  Induct >- simp[] >> rpt gen_tac >> Cases_on ‘rs’ >- simp[] >>
+  PairCases_on ‘h’ >> rename1 ‘pupd st ((i, x) :: xs) (r :: rs)’ >>
+  ONCE_REWRITE_TAC [pupd_def] >> simp[] >> strip_tac
+  >- (gvs[ALL_DISTINCT_APPEND] >> simp[pupd_lv_out]) >>
+  first_x_assum irule >> fs[ALL_DISTINCT_APPEND]
+QED
+
+Theorem popen_distinct:
+  ∀pc. ALL_DISTINCT (FLAT (MAP phds pc)) ⇒ ALL_DISTINCT (FLAT (MAP popen pc))
+Proof
+  Induct >> simp[ALL_DISTINCT_APPEND] >> rpt strip_tac
+  >- (fs[popen_def, phds_def] >> every_case_tac >> fs[] >> rw[])
+  >> fs[MEM_FLAT, MEM_MAP] >> metis_tac[popen_phds]
+QED
+
+Theorem PS_levs:
+  plevs (MAP SND (PS lfd b hw lv W0 n).last) = FLAT (MAP popen (PS lfd b hw lv W0 n).pc)
+Proof
+  Cases_on ‘n’
+  >- (‘PS lfd b hw lv W0 0 = pinit lfd b hw’ by simp[ehhist_def, ehrounds_def, pstate_def] >>
+      simp[pinit_def, plevs_pacts]) >>
+  rename1 ‘SUC m’ >>
+  qspecl_then [‘lfd’, ‘b’, ‘hw’, ‘lv’, ‘W0’, ‘m’] strip_assume_tac
+    (Q.GENL [‘lfd’, ‘b’, ‘hw’, ‘lv’, ‘W0’, ‘n’] PS_SUC_fields) >>
+  qpat_x_assum ‘ehhist _ _ _ _ _ (SUC m) = _’ kall_tac >>
+  qpat_x_assum ‘pst_pc _ = _’ (fn th => REWRITE_TAC [th]) >>
+  qpat_x_assum ‘pst_last _ = _’ (fn th => REWRITE_TAC [th]) >>
+  MATCH_ACCEPT_TAC plevs_pacts
+QED
+
+Theorem pacts_issue:
+  i < LENGTH st.pc ∧ (EL i st.pc).bh = SOME c ∧ (EL i st.pc).fo ∧ (EL i st.pc).bo ⇒
+  ((EL i st.pc).bup ∧ (EL i st.pc).fh ∈ rdy ∧
+   pgate hw st.lv (MAP SND st.last) (FLAT (MAP pwrites st.pc)) c ⇒
+   MEM (ERead (EL i st.pc).fh pread) (MAP SND (pacts lfd b hw st rdy))) ∧
+  (c ∈ rdy ∧ pgate hw st.lv (MAP SND st.last) (FLAT (MAP pwrites st.pc)) (EL i st.pc).fh ⇒
+   MEM (ERead c pread) (MAP SND (pacts lfd b hw st rdy)))
+Proof
+  strip_tac >> ONCE_REWRITE_TAC [pacts_SND] >> simp[MEM_FLAT, MEM_MAP, PULL_EXISTS] >>
+  rpt strip_tac >> disj2_tac >> disj2_tac >> qexists_tac ‘EL i st.pc’ >> simp[EL_MEM] >>
+  simp[pone_def, preads_def]
+QED
+
+(* Round SUC n's state from round n's, with the Level answers it holds *)
+Theorem proxy_issue:
+  proxy_world lfd a W0 ∧
+  PH lfd b hw lv W0 (SUC n) = PH lfd b hw lv W0 n ++ [s] ∧
+  LENGTH s.results = LENGTH (PS lfd b hw lv W0 n).last ∧
+  i < LENGTH (PS lfd b hw lv W0 (SUC n)).pc ∧
+  (EL i (PS lfd b hw lv W0 (SUC n)).pc).bh = SOME c ∧
+  (EL i (PS lfd b hw lv W0 (SUC n)).pc).fo ∧ (EL i (PS lfd b hw lv W0 (SUC n)).pc).bo ∧
+  MEM (ELevel g, ELvl l) (ZIP (MAP SND (PS lfd b hw lv W0 n).last, s.results)) ∧
+  l + wreq g (MAP SND (PS lfd b hw lv W0 n).last) +
+      wreq g (MAP SND (PS lfd b hw lv W0 (SUC n)).last) ≤ hw ⇒
+  (g = c ∧ (EL i (PS lfd b hw lv W0 (SUC n)).pc).bup ∧
+   (EL i (PS lfd b hw lv W0 (SUC n)).pc).fh ∈ s.ready ⇒
+   MEM (ERead (EL i (PS lfd b hw lv W0 (SUC n)).pc).fh pread)
+       (MAP SND (PS lfd b hw lv W0 (SUC n)).last)) ∧
+  (g = (EL i (PS lfd b hw lv W0 (SUC n)).pc).fh ∧ c ∈ s.ready ⇒
+   MEM (ERead c pread) (MAP SND (PS lfd b hw lv W0 (SUC n)).last))
+Proof
+  strip_tac >>
+  ‘ALL_DISTINCT (plevs (MAP SND (PS lfd b hw lv W0 n).last))’
+    by (REWRITE_TAC [PS_levs] >> irule popen_distinct >>
+        drule PS_prel_n >> disch_then (qspecl_then [‘n’, ‘lv’, ‘hw’, ‘b’] mp_tac) >>
+        simp[prel_def]) >>
+  qspecl_then [‘lfd’, ‘b’, ‘hw’, ‘lv’, ‘W0’, ‘n’] strip_assume_tac
+    (Q.GENL [‘lfd’, ‘b’, ‘hw’, ‘lv’, ‘W0’, ‘n’] PS_SUC_fields) >>
+  ‘s' = s’ by (qpat_x_assum ‘ehhist _ _ _ _ _ (SUC n) = _ ++ [s']’ mp_tac >> asm_rewrite_tac [] >>
+               simp[]) >>
+  pop_assum SUBST_ALL_TAC >>
+  qabbrev_tac ‘st1 = pupd (PS lfd b hw lv W0 n with lv := []) (PS lfd b hw lv W0 n).last s.results’ >>
+  ‘ALOOKUP st1.lv g = SOME l’
+    by (qunabbrev_tac ‘st1’ >> irule pupd_lv_in >> simp[]) >>
+  ‘st1.last = (PS lfd b hw lv W0 n).last’
+    by (qunabbrev_tac ‘st1’ >> REWRITE_TAC [pupd_last] >> simp[]) >>
+  ‘pgate hw st1.lv (MAP SND st1.last) (FLAT (MAP pwrites st1.pc)) g’
+    by (simp[pgate_def] >>
+        qpat_x_assum ‘_ ≤ hw’ mp_tac >>
+        qpat_x_assum ‘pst_last (PS _ _ _ _ _ (SUC n)) = _’ (fn th => REWRITE_TAC [th]) >>
+        simp[wreq_pacts]) >>
+  qpat_x_assum ‘pst_pc _ = _’ (fn th => RULE_ASSUM_TAC (REWRITE_RULE [th]) >> REWRITE_TAC [th]) >>
+  qpat_x_assum ‘pst_last (PS _ _ _ _ _ (SUC n)) = _’ (fn th => REWRITE_TAC [th]) >>
+  drule_all pacts_issue >> strip_tac >> rpt strip_tac >> gvs[] >>
+  first_x_assum irule >> simp[]
+QED
+
+Theorem slot_open:
+  (∀j h. j < LENGTH pc ∧ MEM h (phds (EL j pc)) ∧ (h = hd ∨ h = c) ⇒ j = i) ∧
+  MEM p pc ∧ MEM h (popen p) ∧ (h = hd ∨ h = c) ⇒
+  i < LENGTH pc ∧ MEM h (popen (EL i pc))
+Proof
+  disch_then (fn th => MAP_EVERY assume_tac (CONJUNCTS th)) >>
+  qpat_x_assum ‘MEM p _’ (strip_assume_tac o REWRITE_RULE [MEM_EL]) >>
+  qpat_x_assum ‘p = _’ SUBST_ALL_TAC >>
+  ‘n = i’ by (first_x_assum irule >> conj_tac >- first_assum ACCEPT_TAC >>
+              qexists_tac ‘h’ >> asm_rewrite_tac [] >>
+              irule popen_phds >> first_assum ACCEPT_TAC) >>
+  pop_assum SUBST_ALL_TAC >> asm_rewrite_tac []
+QED
+
+(* An open pair's slot *)
+Theorem proxy_open_slot:
+  proxy_world lfd a W0 ∧ ppair lfd b hw lv W0 hd = SOME c ∧
+  MEM hd (MAP FST (SND (ehst lfd lv (pifds lfd b hw) (pprog lfd b hw) W0 n)).tbl) ∧
+  MEM c (MAP FST (SND (ehst lfd lv (pifds lfd b hw) (pprog lfd b hw) W0 n)).tbl) ⇒
+  ∃i. i < LENGTH (PS lfd b hw lv W0 n).pc ∧ (EL i (PS lfd b hw lv W0 n).pc).fh = hd ∧
+      (EL i (PS lfd b hw lv W0 n).pc).bh = SOME c ∧
+      (EL i (PS lfd b hw lv W0 n).pc).fo ∧ (EL i (PS lfd b hw lv W0 n).pc).bo ∧
+      ((EL i (PS lfd b hw lv W0 n).pc).bup ⇔
+       hl_up c (hl_pairs (pprog lfd b hw) (PH lfd b hw lv W0 n)))
+Proof
+  strip_tac >> drule_all pslot >> strip_tac >>
+  first_x_assum (qspec_then ‘n’ strip_assume_tac) >>
+  drule PS_prel_n >> disch_then (assume_tac o SPEC_ALL) >>
+  ‘∀h. MEM h (MAP FST (SND (ehst lfd lv (pifds lfd b hw) (pprog lfd b hw) W0 n)).tbl) ∧
+       (h = hd ∨ h = c) ⇒ i < LENGTH (PS lfd b hw lv W0 n).pc ∧
+                          MEM h (popen (EL i (PS lfd b hw lv W0 n).pc))’
+    by (rpt gen_tac >> disch_then (fn th => MAP_EVERY assume_tac (CONJUNCTS th)) >>
+        ‘∃p. MEM p (PS lfd b hw lv W0 n).pc ∧ MEM h (popen p)’
+          by (qpat_x_assum ‘prel _ _ _ _ _ _’ mp_tac >> rewrite_tac [prel_def] >> strip_tac >>
+              first_x_assum irule >> first_assum ACCEPT_TAC) >>
+        irule slot_open >> conj_tac >- (qexists_tac ‘p’ >> asm_rewrite_tac []) >>
+        qexistsl_tac [‘c’, ‘hd’] >> asm_rewrite_tac []) >>
+  qpat_x_assum ‘∀j h. _’ kall_tac >>
+  ‘i < LENGTH (PS lfd b hw lv W0 n).pc ∧ MEM hd (popen (EL i (PS lfd b hw lv W0 n).pc))’
+    by (qpat_assum ‘∀h. _’ (qspec_then ‘hd’ mp_tac) >>
+        impl_tac >- (conj_tac >- first_assum ACCEPT_TAC >> simp[]) >> simp[]) >>
+  ‘MEM c (popen (EL i (PS lfd b hw lv W0 n).pc))’
+    by (qpat_assum ‘∀h. _’ (qspec_then ‘c’ mp_tac) >>
+        impl_tac >- (conj_tac >- first_assum ACCEPT_TAC >> simp[]) >> simp[]) >>
+  qpat_x_assum ‘∀h. _’ kall_tac >>
+  ‘pok (FST (ehst lfd lv (pifds lfd b hw) (pprog lfd b hw) W0 n))
+       (SND (ehst lfd lv (pifds lfd b hw) (pprog lfd b hw) W0 n))
+       (hl_pairs (pprog lfd b hw) (PH lfd b hw lv W0 n)) (prdy (PH lfd b hw lv W0 n))
+       (EL i (PS lfd b hw lv W0 n).pc)’
+    by (irule prel_pok >> simp[] >> qexists_tac ‘lfd’ >> first_assum ACCEPT_TAC) >>
+  qexists_tac ‘i’ >> fs[] >>
+  Cases_on ‘(EL i (PS lfd b hw lv W0 n).pc).bh’ >> fs[popen_def, pok_def] >>
+  every_case_tac >> gvs[]
+QED
+
+Theorem LAST_SNOC'[local]:
+  LAST (l ++ [x]) = x
+Proof
+  simp[LAST_APPEND_CONS]
+QED
+
+(* MAIN (read liveness, program side: the front) *)
+Theorem proxy_read_live_front:
+  proxy_world lfd a W0 ⇒
+  ∀n hd c l.
+    ppair lfd b hw lv W0 hd = SOME c ∧
+    MEM hd (MAP FST (SND (ehst lfd lv (pifds lfd b hw) (pprog lfd b hw) W0 (SUC n))).tbl) ∧
+    MEM c (MAP FST (SND (ehst lfd lv (pifds lfd b hw) (pprog lfd b hw) W0 (SUC n))).tbl) ∧
+    hl_up c (hl_pairs (pprog lfd b hw) (PH lfd b hw lv W0 (SUC n))) ∧
+    hd ∈ (LAST (PH lfd b hw lv W0 (SUC n))).ready ∧
+    MEM (ELevel c, ELvl l) (hl_round (pprog lfd b hw) (PH lfd b hw lv W0 (SUC n)) n) ∧
+    l + wreq c (new_actions (log_of (pprog lfd b hw)) (PH lfd b hw lv W0 n)) +
+        wreq c (new_actions (log_of (pprog lfd b hw)) (PH lfd b hw lv W0 (SUC n))) ≤ hw ⇒
+    ∃k. MEM (ERead hd k) (new_actions (log_of (pprog lfd b hw)) (PH lfd b hw lv W0 (SUC n)))
+Proof
+  strip_tac >> rpt gen_tac >> strip_tac >>
+  drule_all proxy_open_slot >> strip_tac >>
+  drule PH_SUC_len >> disch_then (strip_assume_tac o SPEC_ALL) >>
+  qpat_x_assum ‘MEM (ELevel _, _) _’
+    (assume_tac o REWRITE_RULE [MATCH_MP hl_round_SUC (ASSUME “PH lfd b hw lv W0 (SUC n) =
+                                                               PH lfd b hw lv W0 n ++ [s]”)]) >>
+  qpat_x_assum ‘hd ∈ _’ (fn th0 => qpat_assum ‘ehhist _ _ _ _ _ (SUC n) = _’
+    (fn th => assume_tac (REWRITE_RULE [th, LAST_SNOC'] th0))) >>
+  qpat_x_assum ‘_ ≤ hw’ (assume_tac o REWRITE_RULE [pprog_new_actions]) >>
+  REWRITE_TAC [pprog_new_actions] >>
+  drule_all proxy_issue >> strip_tac >> qexists_tac ‘pread’ >>
+  qpat_x_assum ‘(EL i _).fh = hd’ (SUBST_ALL_TAC o SYM) >> fs[]
+QED
+
+(* MAIN (read liveness, program side: the backend) *)
+Theorem proxy_read_live_back:
+  proxy_world lfd a W0 ⇒
+  ∀n hd c l.
+    ppair lfd b hw lv W0 hd = SOME c ∧
+    MEM hd (MAP FST (SND (ehst lfd lv (pifds lfd b hw) (pprog lfd b hw) W0 (SUC n))).tbl) ∧
+    MEM c (MAP FST (SND (ehst lfd lv (pifds lfd b hw) (pprog lfd b hw) W0 (SUC n))).tbl) ∧
+    c ∈ (LAST (PH lfd b hw lv W0 (SUC n))).ready ∧
+    MEM (ELevel hd, ELvl l) (hl_round (pprog lfd b hw) (PH lfd b hw lv W0 (SUC n)) n) ∧
+    l + wreq hd (new_actions (log_of (pprog lfd b hw)) (PH lfd b hw lv W0 n)) +
+        wreq hd (new_actions (log_of (pprog lfd b hw)) (PH lfd b hw lv W0 (SUC n))) ≤ hw ⇒
+    ∃k. MEM (ERead c k) (new_actions (log_of (pprog lfd b hw)) (PH lfd b hw lv W0 (SUC n)))
+Proof
+  strip_tac >> rpt gen_tac >> strip_tac >>
+  drule_all proxy_open_slot >> strip_tac >>
+  drule PH_SUC_len >> disch_then (strip_assume_tac o SPEC_ALL) >>
+  qpat_x_assum ‘MEM (ELevel _, _) _’
+    (assume_tac o REWRITE_RULE [MATCH_MP hl_round_SUC (ASSUME “PH lfd b hw lv W0 (SUC n) =
+                                                               PH lfd b hw lv W0 n ++ [s]”)]) >>
+  qpat_x_assum ‘c ∈ _’ (fn th0 => qpat_assum ‘ehhist _ _ _ _ _ (SUC n) = _’
+    (fn th => assume_tac (REWRITE_RULE [th, LAST_SNOC'] th0))) >>
+  qpat_x_assum ‘_ ≤ hw’ (assume_tac o REWRITE_RULE [pprog_new_actions]) >>
+  REWRITE_TAC [pprog_new_actions] >>
+  drule_all proxy_issue >> strip_tac >> qexists_tac ‘pread’ >>
+  qpat_x_assum ‘(EL i _).fh = hd’ (SUBST_ALL_TAC o SYM) >> fs[]
+QED

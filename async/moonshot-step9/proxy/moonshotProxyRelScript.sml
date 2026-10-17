@@ -1227,24 +1227,42 @@ Proof
   Cases_on ‘x’ >> simp[]
 QED
 
+(* Every write takes all its bytes *)
+Definition wfull_def:
+  wfull xs rs ⇔ LIST_REL (λx r. ∀h d. x = EWrite h d ⇒ r = EWrote (LENGTH d)) xs rs
+End
+
+Theorem wfull_APPEND:
+  wfull xs rs ∧ wfull ys qs ⇒ wfull (xs ++ ys) (rs ++ qs)
+Proof
+  simp[wfull_def, LIST_REL_APPEND_suff]
+QED
+
+Theorem wfull_nowrite:
+  ∀xs rs. EVERY (λx. ∀h d. x ≠ EWrite h d) xs ∧ LENGTH rs = LENGTH xs ⇒ wfull xs rs
+Proof
+  Induct >> Cases_on ‘rs’ >> simp[wfull_def] >> rpt strip_tac >> fs[wfull_def]
+QED
+
 Theorem prel_step:
   prel lfd st rdy ps w hs ∧ pstep_ok b rdy st k x ⇒
   ∃r w1 hs1. ehdo lfd v (w, hs) x = SOME (r, (w1, hs1)) ∧
-    prel lfd (pupd st [(k, x)] [r]) rdy (ps ++ [(x, r)]) w1 hs1
+    prel lfd (pupd st [(k, x)] [r]) rdy (ps ++ [(x, r)]) w1 hs1 ∧
+    (∀h d. x = EWrite h d ⇒ r = EWrote (LENGTH d))
 Proof
   strip_tac >>
   qpat_x_assum ‘pstep_ok _ _ _ _ _’ (strip_assume_tac o SIMP_RULE bool_ss [pstep_ok_def, LET_THM]) >>
   rveq
   >- (drule_all prel_connect >> disch_then (qspecl_then [‘v’, ‘b’] strip_assume_tac) >>
-      qexistsl_tac [‘r’, ‘w1’, ‘hs1’] >> asm_rewrite_tac [])
+      qexistsl_tac [‘r’, ‘w1’, ‘hs1’] >> asm_rewrite_tac [] >> simp[])
   >- (drule_all prel_write_front >> disch_then (qspec_then ‘v’ strip_assume_tac) >>
-      qexistsl_tac [‘EWrote (LENGTH (EL k st.pc).bq)’, ‘w1’, ‘hs’] >> asm_rewrite_tac [])
+      qexistsl_tac [‘EWrote (LENGTH (EL k st.pc).bq)’, ‘w1’, ‘hs’] >> asm_rewrite_tac [] >> simp[])
   >- (drule_all prel_write_back >> disch_then (qspec_then ‘v’ strip_assume_tac) >>
-      qexistsl_tac [‘EWrote (LENGTH (EL k st.pc).fq)’, ‘w1’, ‘hs’] >> asm_rewrite_tac [])
+      qexistsl_tac [‘EWrote (LENGTH (EL k st.pc).fq)’, ‘w1’, ‘hs’] >> asm_rewrite_tac [] >> simp[])
   >- (drule_all prel_read_front >> disch_then (qspec_then ‘v’ strip_assume_tac) >>
-      qexistsl_tac [‘r’, ‘w1’, ‘hs1’] >> asm_rewrite_tac [])
+      qexistsl_tac [‘r’, ‘w1’, ‘hs1’] >> asm_rewrite_tac [] >> simp[])
   >> drule_all prel_read_back >> disch_then (qspec_then ‘v’ strip_assume_tac) >>
-  qexistsl_tac [‘r’, ‘w1’, ‘hs1’] >> asm_rewrite_tac []
+  qexistsl_tac [‘r’, ‘w1’, ‘hs1’] >> asm_rewrite_tac [] >> simp[]
 QED
 
 (* A list of actions for pair k, each possible after the ones before,
@@ -1266,9 +1284,10 @@ Theorem prel_seq:
     prel lfd st rdy ps w hs ∧ pseq_ok b rdy st k xs ⇒
     ∃rs w1 hs1. ehacts lfd lv n ix (w, hs) xs = SOME (rs, (w1, hs1)) ∧
       LENGTH rs = LENGTH xs ∧
-      prel lfd (pupd st (MAP (λx. (k, x)) xs) rs) rdy (ps ++ ZIP (xs, rs)) w1 hs1
+      prel lfd (pupd st (MAP (λx. (k, x)) xs) rs) rdy (ps ++ ZIP (xs, rs)) w1 hs1 ∧
+      wfull xs rs
 Proof
-  Induct >- (simp[ehacts_def, pupd_def]) >>
+  Induct >- (simp[ehacts_def, pupd_def, wfull_def]) >>
   rpt gen_tac >> REWRITE_TAC [pseq_ok_def] >> strip_tac >>
   drule_all prel_step >> disch_then (qspec_then ‘lv n ix’ strip_assume_tac) >>
   qpat_x_assum ‘∀r. pseq_ok _ _ _ _ _’ (qspec_then ‘r’ assume_tac) >>
@@ -1276,7 +1295,8 @@ Proof
   disch_then (qspec_then ‘ix + 1’ strip_assume_tac) >>
   qexistsl_tac [‘r :: rs’, ‘w1'’, ‘hs1'’] >>
   simp[ehacts_def] >> ONCE_REWRITE_TAC [pupd_cons] >>
-  full_simp_tac std_ss [GSYM APPEND_ASSOC, APPEND]
+  conj_tac >- full_simp_tac std_ss [GSYM APPEND_ASSOC, APPEND] >>
+  fs[wfull_def]
 QED
 
 Theorem pres_EWrite:
@@ -1455,6 +1475,7 @@ Theorem prel_pairs:
       ehacts lfd lv n ix (w, hs) (MAP SND (pupto (pone b hw lvs lw nw rdy) pc0 m)) =
         SOME (rs, (w1, hs1)) ∧
       LENGTH rs = LENGTH (pupto (pone b hw lvs lw nw rdy) pc0 m) ∧
+      wfull (MAP SND (pupto (pone b hw lvs lw nw rdy) pc0 m)) rs ∧
       prel lfd (pupd st (pupto (pone b hw lvs lw nw rdy) pc0 m) rs) rdy
         (ps ++ ZIP (MAP SND (pupto (pone b hw lvs lw nw rdy) pc0 m), rs)) w1 hs1 ∧
       LENGTH (pupd st (pupto (pone b hw lvs lw nw rdy) pc0 m) rs).pc = LENGTH st.pc ∧
@@ -1465,7 +1486,7 @@ Theorem prel_pairs:
       pkeep st.pc (pupd st (pupto (pone b hw lvs lw nw rdy) pc0 m) rs).pc
 Proof
   strip_tac >> Induct
-  >- (simp[pupto_def, ehacts_def, pupd_def]) >>
+  >- (simp[pupto_def, ehacts_def, pupd_def, wfull_def]) >>
   strip_tac >> fs[] >>
   qabbrev_tac ‘F' = pone b hw lvs lw nw rdy’ >>
   qabbrev_tac ‘st1 = pupd st (pupto F' pc0 m) rs’ >>
@@ -1490,6 +1511,7 @@ Proof
   >- (simp[] >> irule ehacts_APPEND >> simp[] >> qexists_tac ‘(w1, hs1)’ >> simp[] >>
       fs[])
   >- simp[pupto_SUC]
+  >- (asm_rewrite_tac [] >> irule wfull_APPEND >> asm_rewrite_tac [])
   >- (‘ZIP (MAP SND (pupto F' pc0 m) ++ F' (EL m pc0), rs ++ rs') =
        ZIP (MAP SND (pupto F' pc0 m), rs) ++ ZIP (F' (EL m pc0), rs')’
         by (irule (GSYM ZIP_APPEND) >> simp[]) >>
@@ -1547,6 +1569,7 @@ Theorem prel_round_acts:
   prel lfd st rdy ps w hs ∧ st'.pc = st.pc ⇒
   ∃rs w1 hs1.
     ehacts lfd lv n 0 (w, hs) (MAP SND (pacts lfd b hw st' rdy)) = SOME (rs, (w1, hs1)) ∧
+    wfull (MAP SND (pacts lfd b hw st' rdy)) rs ∧
     prel lfd (pupd st (pacts lfd b hw st' rdy) rs) rdy
       (ps ++ ZIP (MAP SND (pacts lfd b hw st' rdy), rs)) w1 hs1 ∧
     (pupd st (pacts lfd b hw st' rdy) rs).last = st.last ∧
@@ -1602,6 +1625,10 @@ Proof
       >- (irule ehacts_APPEND >> qexists_tac ‘(w, hs)’ >> simp[])
       >> ‘0 + LENGTH (MAP SND L ++ MAP SND Acc) = LENGTH Acc + LENGTH L’ by simp[] >>
       pop_assum SUBST1_TAC >> fs[Abbr ‘P’])
+  >- (REWRITE_TAC [MAP_APPEND] >> rpt (irule wfull_APPEND >> rpt conj_tac) >>
+      TRY (fs[Abbr ‘P’] >> NO_TAC) >> irule wfull_nowrite >> simp[] >>
+      simp[Abbr ‘L’, Abbr ‘Acc’, EVERY_MEM, pall_def, MEM_FLAT, MEM_GENLIST, MEM_MAP,
+           PULL_EXISTS, plevels_def] >> rw[] >> simp[])
   >- (‘pupd st (L ++ Acc ++ P) (rs ++ rs2 ++ rs') = pupd st2 P rs'’
         by (simp[Abbr ‘st2’, Abbr ‘st1’] >> REWRITE_TAC [GSYM APPEND_ASSOC] >>
             simp[pupd_APPEND]) >>
@@ -1842,6 +1869,35 @@ Proof
   >- (qpat_x_assum ‘st.last = _’ (fn th => fs[GSYM th]))
   >- (qexists_tac ‘st1’ >> simp[])
   >> fs[]
+QED
+
+(* Every round's writes take all their bytes *)
+Theorem pinv_wfull:
+  pinv lfd b hw lv W0 n ⇒
+  ∃s. ehhist lfd lv (pifds lfd b hw) (pprog lfd b hw) W0 (SUC n) =
+        ehhist lfd lv (pifds lfd b hw) (pprog lfd b hw) W0 n ++ [s] ∧
+      wfull (MAP SND (pstate lfd b hw (ehhist lfd lv (pifds lfd b hw) (pprog lfd b hw) W0 n)).last)
+        s.results
+Proof
+  qmatch_goalsub_abbrev_tac ‘ehhist lfd lv ifds m W0 n’ >>
+  simp[pinv_def] >> strip_tac >>
+  qabbrev_tac ‘h = ehhist lfd lv ifds m W0 n’ >>
+  qabbrev_tac ‘st = pstate lfd b hw h’ >>
+  Cases_on ‘ehst lfd lv ifds m W0 n’ >> rename1 ‘_ = (w, hs)’ >> fs[] >>
+  ‘new_actions (log_of m) h = MAP SND st.last’ by simp[Abbr ‘m’, Abbr ‘st’, pprog_new_actions] >>
+  ‘st'.pc = (st with lv := []).pc’ by simp[] >>
+  ‘prel lfd (st with lv := []) (prdy h) (hl_pairs m h) w hs’ by simp[] >>
+  drule_all prel_round_acts >>
+  disch_then (qspecl_then [‘n’, ‘lv’, ‘hw’, ‘b’] strip_assume_tac) >>
+  ‘ehacts_tot lfd lv n (w, hs) (MAP SND st.last) = (rs, (w1, hs1))’
+    by gvs[ehacts_tot_def] >>
+  Cases_on ‘ehpoll lfd hs1 (ifds h) w1’ >> rename1 ‘_ = (rdy', r2)’ >>
+  PairCases_on ‘r2’ >> rename1 ‘_ = (rdy', w2, hs2)’ >>
+  ‘ehhist lfd lv ifds m W0 (SUC n) = h ++ [ssnap rdy' rs] ∧
+   ehst lfd lv ifds m W0 (SUC n) = (w2, hs2)’
+    by (qunabbrev_tac ‘h’ >> irule honestL1EPRefineTheory.ehround_step >> gvs[]) >>
+  qexists_tac ‘ssnap rdy' rs’ >> simp[asyncM3WorldTheory.ssnap_def] >>
+  qpat_x_assum ‘st.last = _’ SUBST1_TAC >> first_assum ACCEPT_TAC
 QED
 
 Theorem pinv_all:

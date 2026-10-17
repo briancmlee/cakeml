@@ -324,11 +324,19 @@ Definition proxy_asks_l0_def:
         (drains w0 io c ⇒ L ∨ asks_io g io)
 End
 
-(* Fewer than N accepts on every prefix.  The proxy accepts while it holds
-   fewer than cbound / 2 = 2^62 pairs (2 · pairs + 2 ≤ cbound), and its pairs
-   never end until closing lands ([R3]); so new connections are owed only
-   below 2^62 accepts.  Once [R3] closing lands this becomes an observed
-   excuse ("open fronts at the cap") instead of a hypothesis *)
+(* Fewer than N accepts on every prefix.  The proxy offers an accept exactly
+   while 2 · pairs + 2 ≤ cbound = 2^63, i.e. while it holds at most 2^62 − 1
+   pairs; each successful accept adds one pair, and pairs never end until
+   closing lands ([R3]), so pairs = accepts so far.  With accepts_lt (2^62)
+   at most 2^62 − 1 accepts ever happen, so the accept is always offered.
+   The number is exact: with 2^62 accepts allowed, the proxy could hold 2^62
+   pairs, stop offering the accept, and leave the next connection unaccepted.
+   ("Fewer than 2^62" counts accepts; it is the same number as pairs only
+   because pairs never end.)  Once [R3] closing lands this becomes an
+   observed excuse ("open fronts at the cap") instead of a hypothesis.
+   accepts_below (honestL1BStmts, the live block's hypothesis) is implied
+   for this program in either version (2^64 − 1, or D40's 2^64 − 3): the
+   guard above caps accepts at 2^62 *)
 Definition accepts_lt_def:
   accepts_lt N io ⇔ ∀evs. LPREFIX (fromList evs) io ⇒ LENGTH (l0_accepted evs) < N
 End

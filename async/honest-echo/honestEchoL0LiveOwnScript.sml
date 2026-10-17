@@ -986,3 +986,251 @@ Proof
         metis_tac[acq_index]) >>
   gvs[]
 QED
+
+(* ------------------------------------------------------------------------
+   (e) While f is pending, no event ends or starts an episode of f
+   ------------------------------------------------------------------------ *)
+
+Overload ends[local] = “λf e. l0_event_closed e = SOME f ∨ l0_event_accepted e = SOME f”
+
+Theorem ep_st_no_end:
+  ∀evs s. ¬EXISTS (ends f) evs ⇒ ALOOKUP (SND (l0_ep_st s evs)) f = ALOOKUP (SND s) f
+Proof
+  Induct >> simp[] >> rpt gen_tac >> PairCases_on ‘s’ >> strip_tac >>
+  first_x_assum (qspec_then ‘l0_ep_step (s0, s1) h’ mp_tac) >>
+  impl_tac >- fs[EVERY_MEM, EXISTS_MEM] >> disch_then SUBST1_TAC >>
+  simp[l0_ep_step_def] >> every_case_tac >> rw[ALOOKUP_ADELKEY] >> gvs[]
+QED
+
+Theorem pdo_noend:
+  pdo lfd (w, ps) a = SOME (r, (w', ps'), evs) ∧ l0_rely w ∧ keep f ps ⇒
+  ¬EXISTS (ends f) evs
+Proof
+  strip_tac >> Cases_on ‘a’
+  >- gvs[pdo_def, AllCaseEqs()]
+  >- (qpat_x_assum ‘pdo _ _ _ = _’ mp_tac >> simp[pdo_def] >>
+      rw[AllCaseEqs()] >> gvs[] >>
+      PairCases_on ‘z’ >> gvs[] >>
+      drule l1_close_shape >> strip_tac >> gvs[] >>
+      drule_all sys_close_event >> strip_tac >> simp[] >>
+      every_case_tac >> gvs[keep_def] >> strip_tac >> gvs[]) >>
+  qpat_x_assum ‘pdo _ _ _ = _’ mp_tac >> simp[pdo_def, PULL_EXISTS] >> rpt gen_tac >>
+  PairCases_on ‘z’ >> simp[] >> strip_tac >> gvs[] >>
+  qpat_x_assum ‘l1do _ _ _ = _’ mp_tac >> simp[l1do_def] >>
+  rw[AllCaseEqs()] >> gvs[] >>
+  drule_all sys_send_event >> simp[]
+QED
+
+Theorem pacts_noend:
+  ∀acts w ps rs evs w' ps' opn.
+    pacts lfd (w, ps) acts = SOME (rs, evs, (w', ps')) ∧ l0_rely w ∧
+    own_ok lfd (k, opn) ps ∧ ps.b.nxt + naccepts acts < dimword (:64) ∧ keep f ps ⇒
+    ¬EXISTS (ends f) evs
+Proof
+  Induct >> simp[pacts_def] >> rpt gen_tac >> strip_tac >> gvs[AllCaseEqs()] >>
+  PairCases_on ‘ws1’ >> rename1 ‘pdo lfd (w, ps) a = SOME (r, (w1, ps1), evs1)’ >>
+  ‘ps.b.nxt < dimword (:64)’ by simp[] >>
+  ‘ps1.b.nxt + naccepts acts < dimword (:64)’
+    by (drule pdo_nxt_acc >>
+        ‘naccepts (a :: acts) = naccepts [a] + naccepts acts’ by (Cases_on ‘a’ >> simp[]) >>
+        fs[]) >>
+  drule_all pdo_noend >> strip_tac >>
+  drule_all pdo_keep >> strip_tac >>
+  drule_all pdo_in >> strip_tac >>
+  drule_all pdo_rely >> strip_tac >>
+  Cases_on ‘l0_ep_st (k, opn) evs1’ >> gvs[] >>
+  first_x_assum irule >> metis_tac[]
+QED
+
+Theorem l1_polls_noend:
+  ∀cs w rv w' evs. l1_polls cs w = SOME (rv, w', evs) ∧ l0_rely w ⇒ ¬EXISTS (ends f) evs
+Proof
+  Induct >> simp[l1_polls_def] >> rpt gen_tac >> strip_tac >> gvs[AllCaseEqs()] >>
+  drule_all sys_poll_event >> strip_tac >> first_x_assum drule_all >> simp[]
+QED
+
+Theorem l1_flush_noend:
+  ∀fs w b w' b' evs. l1_flush fs (w, b) = SOME ((w', b'), evs) ∧ l0_rely w ⇒
+                     ¬EXISTS (ends f) evs
+Proof
+  Induct >> simp[l1_flush_def] >> rpt gen_tac >> strip_tac >>
+  qpat_x_assum ‘(if _ then _ else _) = _’ mp_tac >> IF_CASES_TAC >> simp[]
+  >- (strip_tac >> first_x_assum drule_all >> simp[]) >>
+  simp[AllCaseEqs(), PULL_EXISTS] >> rpt gen_tac >> strip_tac >> gvs[] >>
+  drule_all sys_send_event >> strip_tac >>
+  ‘l0_rely w''’ by (gvs[sys_send_def] >> metis_tac[l0_do_rely]) >>
+  first_x_assum drule_all >> simp[]
+QED
+
+Theorem l1_reap_noend:
+  ∀fs w b w' b' evs. l1_reap fs (w, b) = SOME ((w', b'), evs) ∧ l0_rely w ∧ ¬MEM f fs ⇒
+                     ¬EXISTS (ends f) evs
+Proof
+  Induct >> simp[l1_reap_def] >> rpt gen_tac >> strip_tac >> gvs[AllCaseEqs()] >>
+  TRY (first_x_assum drule_all >> simp[] >> NO_TAC) >>
+  PairCases_on ‘ws’ >> drule l1_close_shape >> strip_tac >> gvs[] >>
+  drule_all sys_close_event >> strip_tac >>
+  ‘l0_rely ws0’ by (gvs[sys_close_def] >> metis_tac[l0_do_rely]) >>
+  first_x_assum drule_all >> simp[] >> every_case_tac >> simp[]
+QED
+
+Theorem pf_fetch_noend:
+  ∀fs w ps k opn w' ps' log evs.
+    pf_fetch lfd hw fs (w, ps) = SOME ((w', ps'), log, evs) ∧
+    wown lfd w ps ∧ own_ok lfd (k, opn) ps ∧ LENGTH ps.acq ≤ 1 ∧
+    ps.b.nxt < dimword (:64) ∧
+    (∀f. MEM f fs ⇒ f = lfd ∨ MEM f (MAP SND ps.b.tbl)) ∧
+    MEM f (l0_used w) ⇒
+    ¬EXISTS (ends f) evs
+Proof
+  Induct >- (rw[pf_fetch_def] >> simp[]) >>
+  rpt gen_tac >> strip_tac >>
+  qpat_x_assum ‘pf_fetch _ _ _ _ = _’ mp_tac >>
+  simp[Once pf_fetch_def] >> IF_CASES_TAC >> simp[]
+  >- (strip_tac >>
+      first_x_assum (qspecl_then [‘w’, ‘ps’, ‘k’, ‘opn’, ‘w'’, ‘ps'’, ‘log’, ‘evs’] mp_tac) >>
+      impl_tac >- (fs[] >> metis_tac[]) >> simp[]) >>
+  IF_CASES_TAC >> simp[]
+  >- (qpat_x_assum ‘h = lfd’ SUBST_ALL_TAC >>
+      ‘ps.acq = [] ∧ ps.pause = 0’ by gvs[wants_input_def] >>
+      Cases_on ‘sys_accept lfd w’ >> simp[] >> PairCases_on ‘x’ >> simp[] >>
+      rename1 ‘sys_accept lfd w = SOME (out, w1, ev)’ >>
+      pairarg_tac >> simp[AllCaseEqs(), PULL_EXISTS] >> rpt gen_tac >> strip_tac >>
+      ‘l0_rely w ∧ fds_lt w’ by gvs[wown_def] >>
+      ‘¬ends f ev’
+        by (drule_all sys_accept_event >> strip_tac >> simp[] >>
+            Cases_on ‘l0_res_of out’ >> simp[] >>
+            drule_all sys_accept_fresh >> strip_tac >> strip_tac >> gvs[]) >>
+      ‘ps1 = case l0_res_of out of
+             | Ok k' => ps with acq := ps.acq ++ [n2w k']
+             | Fail e _ => if e = E_MFILE then ps with pause := pf_backoff else ps’
+        by (every_case_tac >> gvs[]) >>
+      drule_all fetch_acc_step >> strip_tac >>
+      ‘MEM f (l0_used w1)’ by (gvs[sys_accept_def] >> drule l0_do_used >> simp[]) >>
+      ‘∃k1 opn1. l0_ep_step (k, opn) ev = (k1, opn1)’ by metis_tac[PAIR] >>
+      first_x_assum (qspecl_then [‘w1’, ‘ps1’, ‘k1’, ‘opn1’, ‘w'’, ‘ps'’, ‘log'’, ‘evs'’] mp_tac) >>
+      impl_tac
+      >- (gvs[] >> rpt conj_tac >> TRY (every_case_tac >> gvs[] >> NO_TAC) >> metis_tac[]) >>
+      strip_tac >> gvs[]) >>
+  ‘inb_of ps h = [] ∧ MEM h (MAP SND ps.b.tbl)’ by (gvs[wants_input_def] >> metis_tac[]) >>
+  Cases_on ‘sys_recv h pf_chunk w’ >> simp[] >> PairCases_on ‘x’ >> simp[] >>
+  rename1 ‘sys_recv h pf_chunk w = SOME (out, w1, ev)’ >>
+  pairarg_tac >> simp[AllCaseEqs(), PULL_EXISTS] >> rpt gen_tac >> strip_tac >>
+  ‘l0_rely w’ by gvs[wown_def] >>
+  ‘¬ends f ev’ by (drule_all sys_recv_event >> simp[]) >>
+  ‘ps1 = case l0_res_of out of
+         | Ok n => if 0 < n then set_inb h (TAKE n (DROP 13 out)) ps
+                   else ps with eof := h :: ps.eof
+         | Fail e _ => if l1_transient e then ps else ps with eof := h :: ps.eof’
+    by (every_case_tac >> gvs[]) >>
+  drule_all fetch_recv_step >> strip_tac >>
+  ‘l0_ep_step (k, opn) ev = (k, opn)’
+    by (drule_all sys_recv_event >> simp[l0_ep_step_def]) >>
+  ‘MEM f (l0_used w1)’ by (gvs[sys_recv_def] >> drule l0_do_used >> simp[]) >>
+  first_x_assum (qspecl_then [‘w1’, ‘ps1’, ‘k’, ‘opn’, ‘w'’, ‘ps'’, ‘log'’, ‘evs'’] mp_tac) >>
+  impl_tac
+  >- (gvs[] >> rpt conj_tac >> TRY (every_case_tac >> gvs[] >> NO_TAC) >> metis_tac[]) >>
+  strip_tac >> gvs[]
+QED
+
+(* A round in which f starts pending (or in the table without EOF) ends and
+   starts no episode of f *)
+Theorem pround_noend:
+  pround lfd pol hs (w, ps) acts = SOME (sn, (w', ps'), log, evs) ∧
+  wown lfd w ps ∧ own_ok lfd (k, opn) ps ∧ LENGTH ps.acq ≤ 1 ∧
+  ps.b.nxt + naccepts acts < dimword (:64) ∧ keep f ps ⇒
+  ¬EXISTS (ends f) evs
+Proof
+  strip_tac >> qpat_x_assum ‘pround _ _ _ _ _ = _’ mp_tac >>
+  simp[pround_def, AllCaseEqs(), PULL_EXISTS] >> rpt gen_tac >> strip_tac >>
+  rename1 ‘pacts _ _ _ = SOME (rs, evs1, ws1)’ >> PairCases_on ‘ws1’ >>
+  ‘l0_rely w’ by gvs[wown_def] >>
+  drule_all pacts_noend >> strip_tac >>
+  drule_all pacts_keep >> strip_tac >>
+  drule_all pacts_in >> strip_tac >>
+  drule_all pacts_wown >> strip_tac >>
+  drule pacts_nxt_acc >> strip_tac >>
+  drule pacts_nxt >> strip_tac >>
+  Cases_on ‘l0_ep_st (k, opn) evs1’ >> gvs[] >>
+  rename1 ‘own_ok lfd (k, opn1) ws11’ >>
+  ‘LENGTH ws11.acq ≤ 1’ by (Cases_on ‘acts’ >> gvs[own_ok_def]) >>
+  ‘ws11.b.nxt < dimword (:64)’ by fs[] >>
+  ‘¬MEM f ws11.b.closing’
+    by (strip_tac >> drule_all own_closing_free >> gvs[keep_def]) >>
+  qpat_x_assum ‘pf_tail _ _ _ _ = _’ mp_tac >>
+  simp[pf_tail_def, AllCaseEqs(), PULL_EXISTS] >> rpt gen_tac >> strip_tac >>
+  rename1 ‘l1_polls _ ws10 = SOME (rv, w1, pevs)’ >>
+  rename1 ‘l1_flush _ _ = SOME ((w2, b2), fevs)’ >>
+  rename1 ‘pf_fetch _ _ _ _ = SOME ((w3, ps3'), log2, gevs)’ >>
+  ‘l0_rely ws10’ by gvs[wown_def] >>
+  drule_all l1_polls_noend >> strip_tac >>
+  drule_all l1_polls_in >> disch_then (qspec_then ‘(k, opn1)’ strip_assume_tac) >>
+  drule_all l1_polls_wown >> strip_tac >>
+  drule_all l1_flush_noend >> strip_tac >>
+  drule_all l1_flush_in >> disch_then (qspec_then ‘(k, opn1)’ strip_assume_tac) >>
+  ‘wown lfd w2 (ws11 with b := b2)’ by (irule l1_flush_wown >> metis_tac[]) >>
+  ‘own_ok lfd (k, opn1) (ws11 with b := b2)’
+    by (mp_tac (Q.INST [‘ps'’ |-> ‘ws11 with b := b2’, ‘ps’ |-> ‘ws11’, ‘es’ |-> ‘(k, opn1)’]
+                  own_ok_cong) >> simp[]) >>
+  ‘¬EXISTS (ends f) gevs’
+    by (irule pf_fetch_noend >>
+        qexistsl [‘FILTER (λf. MEM f (in_fds (pf_poll_set lfd pol ws11 hs))) (readable_fds rv)’,
+                  ‘pol’, ‘k’, ‘lfd’, ‘log2’, ‘opn1’, ‘ws11 with b := b2’, ‘ps3'’, ‘w2’, ‘w3’] >>
+        rpt conj_tac >> TRY (first_assum ACCEPT_TAC) >> TRY (fs[] >> NO_TAC) >>
+        TRY (gvs[keep_def, wown_def, owned_def] >> metis_tac[] >> NO_TAC) >>
+        rw[MEM_FILTER] >> TRY (drule in_fds_poll_set >> simp[] >> NO_TAC) >> fs[]) >>
+  drule pf_fetch_acq >> strip_tac >>
+  drule pf_fetch_in >> disch_then (qspecl_then [‘k’, ‘opn1’] mp_tac) >> simp[] >>
+  impl_tac
+  >- (rw[MEM_FILTER] >> TRY (drule in_fds_poll_set >> simp[] >> NO_TAC) >> fs[]) >>
+  strip_tac >>
+  ‘l0_rely w3’ by gvs[wown_def] >>
+  ‘¬EXISTS (ends f) cevs’
+    by (drule l1_reap_noend >> simp[] >> disch_then irule >> gvs[]) >>
+  gvs[EXISTS_APPEND]
+QED
+
+(* MAIN (e): while f is pending, its episode index (if any) stays put *)
+Theorem acq_ep_keep:
+  run_ok lfd pol ifds m w0 ∧ winv w0 ∧ MEM lfd (l0_used w0) ∧
+  (∀n. SND (pcm lfd pol ifds m w0 n) + 1 < dimword (:64)) ⇒
+  ∀d n. (∀i. n ≤ i ∧ i < n + d ⇒ MEM f (rstate lfd pol ifds m w0 i).acq) ⇒
+        ALOOKUP (SND (l0_ep_st (0, []) (revs lfd pol ifds m w0 (n + d)))) f =
+        ALOOKUP (SND (l0_ep_st (0, []) (revs lfd pol ifds m w0 n))) f
+Proof
+  strip_tac >> drule_all run_own >> strip_tac >>
+  Induct >- simp[] >> rpt strip_tac >>
+  ‘MEM f (rstate lfd pol ifds m w0 (n + d)).acq’
+    by (qpat_x_assum ‘∀i. n ≤ i ∧ i < n + SUC d ⇒ _’ irule >> simp[]) >>
+  qpat_x_assum ‘∀n. (∀i. _) ⇒ _’ (qspec_then ‘n’ mp_tac) >>
+  impl_tac >- (rw[] >> qpat_x_assum ‘∀i. n ≤ i ∧ i < n + SUC d ⇒ _’ irule >> simp[]) >>
+  strip_tac >>
+  qabbrev_tac ‘i = n + d’ >> ‘n + SUC d = SUC i’ by simp[Abbr ‘i’] >> simp[] >>
+  qpat_assum ‘∀n. wown _ _ _ ∧ _’ (qspec_then ‘i’ strip_assume_tac) >>
+  drule prun_round' >> disch_then (qspecl_then [‘f’, ‘i’] strip_assume_tac) >>
+  drule prun_some >> disch_then (qspec_then ‘i’ assume_tac) >>
+  ‘(rstate lfd pol ifds m w0 i).b.nxt +
+   naccepts (new_actions (log_of m) (rhist lfd pol ifds m w0 i)) < dimword (:64)’
+    by (Cases_on ‘prun lfd pol ifds m w0 i’ >> rename1 ‘_ = (hh, rr)’ >> PairCases_on ‘rr’ >>
+        gvs[rstate_def, rhist_def, run_ok_def, pl2_ok_def] >>
+        first_x_assum drule >> simp[]) >>
+  ‘pown lfd (rstate lfd pol ifds m w0 i)’
+    by (mp_tac l1pf_refines_hl >> impl_tac >- gvs[winv_def, run_ok_def] >>
+        disch_then (qspec_then ‘i’ mp_tac) >>
+        Cases_on ‘prun lfd pol ifds m w0 i’ >> rename1 ‘_ = (hh, rr)’ >> PairCases_on ‘rr’ >>
+        gvs[rstate_def] >> disch_then drule >> simp[]) >>
+  ‘MEM f (rstate lfd pol ifds m w0 i).acq’
+    by (qpat_x_assum ‘∀i'. n ≤ i' ∧ _ ⇒ _’ irule >> simp[Abbr ‘i’]) >>
+  ‘¬MEM f (rstate lfd pol ifds m w0 i).eof’
+    by (strip_tac >> fs[pown_def, ALL_DISTINCT_APPEND] >> metis_tac[]) >>
+  ‘keep f (rstate lfd pol ifds m w0 i)’ by fs[keep_def] >>
+  Cases_on ‘l0_ep_st (0, []) (revs lfd pol ifds m w0 i)’ >>
+  ‘¬EXISTS (ends f) (rrev lfd pol ifds m w0 i)’
+    by (qpat_x_assum ‘pround _ _ _ _ _ = _’
+          (fn th => mp_tac (MATCH_MP (REWRITE_RULE [GSYM AND_IMP_INTRO]
+             (INST [“k:num” |-> “q:num”, “opn:(word64 # num) list” |-> “r:(word64 # num) list”]
+                pround_noend)) th)) >>
+        rpt (impl_tac >- fs[]) >> simp[]) >>
+  drule ep_st_no_end >> disch_then (qspec_then ‘(q, r)’ assume_tac) >>
+  gvs[]
+QED

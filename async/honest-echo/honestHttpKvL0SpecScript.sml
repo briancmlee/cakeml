@@ -19,10 +19,14 @@
      successful close of its fd (an accept that reuses the fd also ends it:
      honestEchoL0Bites' l0_ep_events_reuse);
    - as for echo, the claim is made while fewer than 2^64 - 1 connections
-     have been accepted (the loop stops for lack of handle room after
-     about 2^64 accepts, coordinator decision (A));
+     have been accepted (the loop stops when the handles run out, user
+     decision D25; honestEchoL0NoGuard shows echo needs no such guard, and
+     the guard's removal is with the user);
    - the program listens on its port first; if the listen fails it stops
-     after that one event.
+     after that one event;
+   - topology (for the moonshot's composition, step 12 T7/T8): every
+     successful sys_listen is on the configured port, and the program makes
+     no sys_connect.
   Liveness is not stated here: it waits for the liveness transfer
   (async-spike / R1-live), as for echo.
 *)
@@ -93,6 +97,20 @@ End
    loop, as echo_l0_safe of echo_l0_prog)
    ------------------------------------------------------------------------ *)
 
+(* The topology the composition needs (step 12, T7 and T8): a successful
+   listen only on the configured port (the port is the call's 2-byte conf,
+   as honestL0World's l0_call reads it), and no connect *)
+Definition l0_topo_ev_def:
+  l0_topo_ev port (IO_event (ExtCall n) conf bytes) =
+    ((n = «sys_listen» ∧ (∃k. l0_ev_res bytes = SOME (Ok k)) ⇒ w22n conf = port) ∧
+     n ≠ «sys_connect») ∧
+  l0_topo_ev port _ = T
+End
+
+Definition l0_topology_def:
+  l0_topology port io ⇔ ∀n ev. LNTH n io = SOME ev ⇒ l0_topo_ev port ev
+End
+
 (* The program's first event: a failed sys_listen *)
 Definition l0_listen_failed_def:
   l0_listen_failed (IO_event (ExtCall n) conf bytes) =
@@ -101,20 +119,20 @@ Definition l0_listen_failed_def:
 End
 
 Definition http_l0_claim_def:
-  http_l0_claim files (prog : dec list) ⇔
+  http_l0_claim port files (prog : dec list) ⇔
     ∀w0. l0_server_world w0 ⇒
       ∃io. (semantics_prog (init_state (l0_ffi w0)) init_env prog (Diverge io) ∧
-            http_safe_l0 files io) ∨
+            http_safe_l0 files io ∧ l0_topology port io) ∨
            (∃ev. l0_listen_failed ev ∧ io = [|ev|] ∧
                  semantics_prog (init_state (l0_ffi w0)) init_env prog
                    (Terminate Success [ev]))
 End
 
 Definition kv_l0_claim_def:
-  kv_l0_claim (prog : dec list) ⇔
+  kv_l0_claim port (prog : dec list) ⇔
     ∀w0. l0_server_world w0 ⇒
       ∃io. (semantics_prog (init_state (l0_ffi w0)) init_env prog (Diverge io) ∧
-            kv_safe_l0 io) ∨
+            kv_safe_l0 io ∧ l0_topology port io) ∨
            (∃ev. l0_listen_failed ev ∧ io = [|ev|] ∧
                  semantics_prog (init_state (l0_ffi w0)) init_env prog
                    (Terminate Success [ev]))

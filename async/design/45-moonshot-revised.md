@@ -941,6 +941,11 @@ l0sys inherits the L0 model's `eof_first` (D21, user-approved; honest-ffi, d20-p
 - `broken_seen` dropped (D34 excuses a break at world level);
 - `outcomes_claim` (the observed outcomes) and `blocking_poll_claim` are proofs for later, on the liveness path.
 
+**(h) Step 9 statements, revision 6 (user, via the coordinator, 2026-10-17): APPROVED** as on spike/moonshot-step9-stmts @3d97f542d:
+- `proxy_pairs_l0 K pr io`: a front's backend is owed (a connect event happened) unless an observed excuse holds on the front (`pos_excuse`); closing is no way out;
+- `accepts_lt N io`; `conn_live_l0` is under `accepts_lt (2 ** 62)`, the proxy's exact pair cap (an excuse once [R3] closing lands).
+Pending for revision 7: pairing liveness in the observed-excuse form (ruled), D33's `stdio_closed` at L0, and the Bnd findings (exact constant `hw + pf_chunk + pread`; the bound fails after a D23 drop), which are with the user.
+
 The safety path (§6, steps 1–4 and 9–12) starts when its dependencies land.
 The coordinator assigns the implementation.
 

@@ -322,7 +322,9 @@ Definition crel_def:
     (∀hd. hl_refused hd ps ∨ hl_eof hd ps ⇒ MEM hd (MAP FST st.hlc)) ∧
     (∀hd. hl_refused hd ps ∨ hl_eof hd ps ⇒ ¬MEM hd (MAP FST hs.tbl)) ∧
     (∀hd. ¬(hl_refused hd ps ∧ hl_eof hd ps)) ∧
-    (∀hd. (hl_refused hd ps ∨ hl_eof hd ps) ⇒ ∀i. i < N ⇒ ¬MEM hd (chd (EL i st.cs)))
+    (∀hd. (hl_refused hd ps ∨ hl_eof hd ps) ⇒ ∀i. i < N ⇒ ¬MEM hd (chd (EL i st.cs))) ∧
+    (* a connection that read an EOF is done *)
+    (∀hd i. hl_eof hd ps ∧ ALOOKUP st.hlc hd = SOME i ⇒ EL i st.cs = CDone)
 End
 
 (* ------------------------------------------------------------------------
@@ -532,9 +534,12 @@ Proof
   >- (gen_tac >> qpat_x_assum ‘∀hd. ¬(hl_refused hd ps ∧ hl_eof hd ps)’ (qspec_then ‘hd'’ mp_tac) >>
       simp[])
   (* 15 refused or ended: no connection's *)
-  >> gen_tac >> disch_tac >> gen_tac >> strip_tac >> simp[EL_LUPDATE] >> IF_CASES_TAC
-  >- (simp[chd_def] >> qpat_x_assum ‘∀x. _ ⇒ x ≠ hd’ irule >> first_assum ACCEPT_TAC) >>
-  qpat_x_assum ‘∀hd. _ ⇒ ∀i. i < N ⇒ ¬MEM hd _’ drule >> disch_then drule >> simp[]
+  >- (gen_tac >> disch_tac >> gen_tac >> strip_tac >> simp[EL_LUPDATE] >> IF_CASES_TAC
+      >- (simp[chd_def] >> qpat_x_assum ‘∀x. _ ⇒ x ≠ hd’ irule >> first_assum ACCEPT_TAC) >>
+      qpat_x_assum ‘∀hd. _ ⇒ ∀i. i < N ⇒ ¬MEM hd _’ drule >> disch_then drule >> simp[])
+  (* 16 ended: done *)
+  >> rpt gen_tac >> strip_tac >> Cases_on ‘hd' = hd’ >> gvs[] >>
+  qpat_x_assum ‘∀hd i. hl_eof hd ps ∧ _ ⇒ _’ drule_all >> rw[EL_LUPDATE] >> gvs[]
 QED
 
 (* ------------------------------------------------------------------------
@@ -688,6 +693,17 @@ Proof
   simp[ADELKEY_def, EVERY_MEM, MEM_MAP, MEM_FILTER, PULL_EXISTS]
 QED
 
+Theorem eof_done_upd:
+  (∀hd i. hl_eof hd ps ∧ ALOOKUP hlc hd = SOME i ⇒ EL i cs = CDone) ∧
+  ALOOKUP hlc hd0 = SOME k ∧ EL k cs ≠ CDone ∧ k < LENGTH cs ∧
+  (∀hd'. hd' ≠ hd0 ⇒ (hl_eof hd' ps' ⇔ hl_eof hd' ps)) ∧ (hl_eof hd0 ps' ⇒ c' = CDone) ⇒
+  Abbrev (∀hd i. hl_eof hd ps' ∧ ALOOKUP hlc hd = SOME i ⇒ EL i (LUPDATE c' k cs) = CDone)
+Proof
+  simp[markerTheory.Abbrev_def, EL_LUPDATE] >> rpt strip_tac >> Cases_on ‘hd = hd0’
+  >- (‘i = k’ by gvs[] >> gvs[]) >>
+  ‘hl_eof hd ps’ by metis_tac[] >> ‘EL i cs = CDone’ by metis_tac[] >> rw[] >> gvs[]
+QED
+
 Theorem crel_close:
   crel a N rqs lfd st rdyf ps w hs ∧ k < N ∧ chd (EL k st.cs) = [hd] ∧
   ALOOKUP hs.tbl hd = SOME f ∧ ALOOKUP w.open_fds f = SOME j ∧
@@ -696,7 +712,7 @@ Theorem crel_close:
   (c' = CIdle ⇒ (∃h. EL k st.cs = CPend h) ∧ hl_sent hd ps = []) ∧
   (∀hd'. hl_sent hd' ps' = hl_sent hd' ps) ∧ hl_conn_handles ps' = hl_conn_handles ps ∧
   (∀hd'. hd' ≠ hd ⇒ (hl_refused hd' ps' ⇔ hl_refused hd' ps) ∧ (hl_eof hd' ps' ⇔ hl_eof hd' ps)) ∧
-  ¬(hl_refused hd ps' ∧ hl_eof hd ps') ∧
+  ¬(hl_refused hd ps' ∧ hl_eof hd ps') ∧ (hl_eof hd ps' ⇒ c' = CDone) ∧
   (∀i. i ≠ k ⇒ rdyf' i = rdyf i) ⇒
   crel a N rqs lfd (st with cs := LUPDATE c' k st.cs) rdyf' ps' w1 (eh_del hd hs)
 Proof
@@ -725,6 +741,11 @@ Proof
   drule_all close_ended >>
     disch_then (strip_assume_tac o REWRITE_RULE [markerTheory.Abbrev_def]) >>
   drule_all lupd_owner >>
+    disch_then (strip_assume_tac o REWRITE_RULE [markerTheory.Abbrev_def]) >>
+  ‘EL k st.cs ≠ CDone’ by (strip_tac >> fs[chd_def]) >>
+  ‘k < LENGTH st.cs’ by simp[] >>
+  ‘∀hd'. hd' ≠ hd ⇒ (hl_eof hd' ps' ⇔ hl_eof hd' ps)’ by simp[] >>
+  drule_all eof_done_upd >>
     disch_then (strip_assume_tac o REWRITE_RULE [markerTheory.Abbrev_def]) >>
   SIMP_TAC (srw_ss()) [crel_def, eh_del_def] >> rpt conj_tac >> TRY (simp[] >> NO_TAC) >>
   TRY (irule ALL_DISTINCT_ADELKEY >> simp[] >> NO_TAC) >>
@@ -863,6 +884,14 @@ Proof
   drule_all keep_cok >> disch_then (strip_assume_tac o REWRITE_RULE [markerTheory.Abbrev_def]) >>
   drule_all keep_sends >> disch_then (strip_assume_tac o REWRITE_RULE [markerTheory.Abbrev_def]) >>
   drule_all lupd_owner >> disch_then (strip_assume_tac o REWRITE_RULE [markerTheory.Abbrev_def]) >>
+  ‘¬hl_eof hd ps’
+    by (strip_tac >>
+        qpat_x_assum ‘∀hd. hl_refused hd ps ∨ hl_eof hd ps ⇒ ∀i. i < N ⇒ ¬MEM hd _’
+          (qspec_then ‘hd’ mp_tac) >> simp[] >> qexists_tac ‘k’ >> simp[]) >>
+  ‘EL k st.cs ≠ CDone’ by (strip_tac >> fs[chd_def]) >>
+  ‘hl_eof hd ps' ⇒ c' = CDone’ by simp[] >>
+  ‘∀hd'. hd' ≠ hd ⇒ (hl_eof hd' ps' ⇔ hl_eof hd' ps)’ by simp[] >>
+  drule_all eof_done_upd >> disch_then (strip_assume_tac o REWRITE_RULE [markerTheory.Abbrev_def]) >>
   SIMP_TAC (srw_ss()) [crel_def] >> rpt conj_tac >> TRY (simp[] >> NO_TAC) >>
   qpat_x_assum ‘w1.open_fds = _’ (fn th => REWRITE_TAC [th]) >>
   TRY (first_assum MATCH_ACCEPT_TAC >> NO_TAC) >>

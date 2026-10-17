@@ -24,6 +24,12 @@
    [R4] The rely is run_rely (eh_round_ok), as for the client: valid
         along the run's own rounds; nosock (option (b)) is the world's.
 
+  REVISION 3: every condition on the program is one it can observe.  The
+  world's up_at is replaced by hl_up (c has answered a read, so it was not
+  refused): the program tells Up from Refused only by reading c, and that
+  read is itself credit-gated on hd's Level.  (World facts remain only in
+  conclusions: ever_up, and the connect liveness.)
+
   REVISION 2: a computation emits a round's actions before any of the
   round's results.  So (1) the relay lags one round: bytes read in round n
   are written in round n+1 (safety: prefixes; plus a one-round lag
@@ -67,6 +73,12 @@ End
 Definition wreq_def:
   wreq h (acts : eact list) =
     SUM (MAP (λa. case a of EWrite h' bs => if h' = h then LENGTH bs else 0 | _ => 0) acts)
+End
+
+(* Backend c has answered a read with data, would-block or EOF: it was not
+   refused (the program's knowledge that c is up) *)
+Definition hl_up_def:
+  hl_up c ps ⇔ ∃k r. MEM (ERead c k, EGot r) ps
 End
 
 Definition is_level_def:
@@ -125,17 +137,18 @@ Definition proxy_guar_hl_def:
       (∀n hd c. pair hd = SOME c ∧ opn n hd ∧ opn n c ⇒
                 MEM (ELevel c) (new_actions (log_of m) (H n)) ∧
                 MEM (ELevel hd) (new_actions (log_of m) (H n))) ∧
-      (∀n hd c l. pair hd = SOME c ∧ opn (SUC n) hd ∧ up_at lfd lv ifds m W (SUC n) c ∧
+      (∀n hd c l. pair hd = SOME c ∧ opn (SUC n) hd ∧ opn (SUC n) c ∧ hl_up c (ps (SUC n)) ∧
                   hd ∈ (LAST (H (SUC n))).ready ∧ MEM (ELevel c, ELvl l) (R n) ∧
                   l + wreq c (A n) + wreq c (A (SUC n)) ≤ hw ⇒
                   ∃k. MEM (ERead hd k) (A (SUC n))) ∧
-      (∀n hd c l. pair hd = SOME c ∧ opn (SUC n) hd ∧ up_at lfd lv ifds m W (SUC n) c ∧
+      (∀n hd c l. pair hd = SOME c ∧ opn (SUC n) hd ∧ opn (SUC n) c ∧
                   c ∈ (LAST (H (SUC n))).ready ∧ MEM (ELevel hd, ELvl l) (R n) ∧
                   l + wreq hd (A n) + wreq hd (A (SUC n)) ≤ hw ⇒
                   ∃k. MEM (ERead c k) (A (SUC n))) ∧
-      (* a front is not read before its backend is up *)
+      (* a front is read only once its backend has answered a read (so it
+         was not refused; and it was up in the world) *)
       (∀n hd k. MEM (ERead hd k) (new_actions (log_of m) (H n)) ∧ MEM hd (hl_acc_handles (ps n)) ⇒
-                ∃c. pair hd = SOME c ∧ up_at lfd lv ifds m W n c) ∧
+                ∃c. pair hd = SOME c ∧ hl_up c (ps n) ∧ ever_up lfd lv ifds m W n c) ∧
       (* LIVENESS, under connect fairness: every accepted front gets a
          backend that comes up or is refused.  (A socketless connect,
          option (b), is retried by the program) *)

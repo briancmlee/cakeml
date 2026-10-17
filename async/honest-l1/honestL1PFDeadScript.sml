@@ -83,3 +83,64 @@ Proof
   >- (drule_all sys_close_dinv >> simp[dinv_def])
   >> disj2_tac >> drule_all (cj 4 sys_csents) >> simp[]
 QED
+
+Theorem l1_close_dinv:
+  l1_close g (w, st) = SOME ((w', st'), evs) ∧ winv w ∧ dinv f c sb w ⇒ dinv f c sb w'
+Proof
+  rw[l1_close_def, AllCaseEqs()] >> metis_tac[sys_dinv]
+QED
+
+Theorem l1_polls_dinv:
+  ∀chs w rv w' evs. l1_polls chs w = SOME (rv, w', evs) ∧ winv w ∧ dinv f c sb w ⇒
+    dinv f c sb w'
+Proof
+  Induct >> simp[l1_polls_def] >> rw[AllCaseEqs()] >> metis_tac[sys_dinv, sys_winv]
+QED
+
+(* The flush leaves an fd with nothing to send (or gone) alone *)
+Theorem l1_flush_dinv:
+  ∀fs w b w' b' evs.
+    l1_flush fs (w, b) = SOME ((w', b'), evs) ∧ winv w ∧ EVERY small_send evs ∧
+    dinv f c sb w ∧ (outbox_of b f = [] ∨ MEM f b.gone) ⇒
+    dinv f c sb w' ∧ evs_sent f evs = []
+Proof
+  Induct >> simp[l1_flush_def] >> rpt gen_tac >> strip_tac >>
+  qpat_x_assum ‘(if _ then _ else _) = _’ mp_tac >> IF_CASES_TAC >> strip_tac >>
+  TRY (first_x_assum (qspecl_then [‘w’, ‘b’] mp_tac) >> simp[] >> metis_tac[] >> NO_TAC) >>
+  gvs[AllCaseEqs()] >>
+  ‘h ≠ f’ by (strip_tac >> gvs[]) >>
+  ‘dinv f c sb w''’ by metis_tac[sys_dinv] >>
+  ‘winv w''’ by metis_tac[sys_winv] >>
+  drule_all sys_send_other >> strip_tac >>
+  first_x_assum (qspecl_then [‘w''’, ‘after_send h (l0_res_of out) b’] mp_tac) >>
+  simp[outbox_of_after_send_other] >> disch_then irule >>
+  gvs[after_send_def] >> every_case_tac >> gvs[MEM_FILTER]
+QED
+
+Theorem pf_fetch_dinv:
+  ∀fs w ps w' ps' log evs.
+    pf_fetch lfd pol fs (w, ps) = SOME ((w', ps'), log, evs) ∧ winv w ∧ dinv f c sb w ⇒
+    dinv f c sb w'
+Proof
+  Induct >> simp[pf_fetch_def] >> rw[AllCaseEqs()] >>
+  TRY (pairarg_tac >> gvs[AllCaseEqs()]) >> metis_tac[sys_dinv, sys_winv]
+QED
+
+Theorem l1_reap_dinv:
+  ∀fs w st w' st' evs.
+    l1_reap fs (w, st) = SOME ((w', st'), evs) ∧ winv w ∧ dinv f c sb w ⇒ dinv f c sb w'
+Proof
+  Induct >> simp[l1_reap_def] >> rw[AllCaseEqs()] >>
+  TRY (Cases_on ‘ws’) >> metis_tac[l1_close_dinv, l1_close_winv]
+QED
+
+(* An action on others leaves f's channel alone *)
+Theorem pdo_dinv:
+  pdo lfd (w, ps) a = SOME (r, (w', ps'), evs) ∧ winv w ∧ EVERY small_send evs ∧
+  dinv f c sb w ∧ ¬MEM f (MAP SND ps.b.tbl) ⇒
+  dinv f c sb w'
+Proof
+  strip_tac >> qpat_x_assum ‘dinv _ _ _ _’ mp_tac >> simp[dinv_def] >> strip_tac
+  >- (disj1_tac >> irule pdo_wpres >> simp[wpres_uchan] >> metis_tac[])
+  >> disj2_tac >> drule_all pdo_chan >> simp[]
+QED

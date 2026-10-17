@@ -9,7 +9,7 @@
 *)
 Theory honestL1EPOut
 Ancestors
-  honestL1EPRefine honestL1EPModel honestL1PFOut honestL1PFRound honestL1PFModel
+  honestL1EPModel honestL1PFOut honestL1PFRound honestL1PFModel
   honestL1Steps honestL1Props honestL1Model honestL0WorldProps honestL0Rely honestL0World
   endpointHLModel endpointWorld
 Libs
@@ -268,14 +268,22 @@ Definition ewbytes_def:
   ewbytes f es (EConnect a) = [] ∧ ewbytes f es (ELevel h) = []
 End
 
+(* What the output side needs of L1's own invariant (E1's eown implies it) *)
+Definition oown_def:
+  oown lfd (es : l1e) ⇔
+    pown lfd es.p ∧
+    ALL_DISTINCT (MAP SND es.p.b.tbl ++ es.p.b.closing ++ MAP SND es.ctbl) ∧
+    ALL_DISTINCT (MAP FST es.p.b.tbl ++ MAP FST es.ctbl)
+End
+
 Theorem eown_ctbl_held:
-  eown lfd es ∧ MEM f (MAP SND es.ctbl) ⇒ ¬held es.p.b f
+  oown lfd es ∧ MEM f (MAP SND es.ctbl) ⇒ ¬held es.p.b f
 Proof
-  rw[eown_def, held_def, ALL_DISTINCT_APPEND] >> metis_tac[]
+  rw[oown_def, held_def, ALL_DISTINCT_APPEND] >> metis_tac[]
 QED
 
 Theorem eown_ctbl_lookup:
-  eown lfd es ∧ ALOOKUP es.ctbl h = SOME f0 ∧ held es.p.b g ⇒ g ≠ f0
+  oown lfd es ∧ ALOOKUP es.ctbl h = SOME f0 ∧ held es.p.b g ⇒ g ≠ f0
 Proof
   rpt strip_tac >> imp_res_tac ALOOKUP_MEM >>
   ‘MEM f0 (MAP SND es.ctbl)’ by (simp[MEM_MAP] >> metis_tac[SND]) >>
@@ -283,13 +291,13 @@ Proof
 QED
 
 Theorem edo_ostep:
-  edo lfd pol (w, es) a = SOME (r, (w', es'), evs) ∧ eown lfd es ∧ l0_rely w ⇒
+  edo lfd pol (w, es) a = SOME (r, (w', es'), evs) ∧ oown lfd es ∧ l0_rely w ⇒
   l0_rely w' ∧
   ∀f. held es.p.b f ⇒
       (held es'.p.b f ⇒ ostep f es.p.b es'.p.b evs (ewbytes f es a)) ∧
       ostepc f es.p.b evs (ewbytes f es a)
 Proof
-  strip_tac >> ‘pown lfd es.p’ by fs[eown_def] >>
+  strip_tac >> ‘pown lfd es.p’ by fs[oown_def] >>
   Cases_on ‘a’ >> gvs[edo_def, AllCaseEqs()]
   (* EAccept *)
   >~ [‘pdo _ _ (Accept _) = _’]
@@ -320,8 +328,107 @@ Proof
   TRY (rename1 ‘ALOOKUP es.ctbl h = SOME _’ >>
        ‘ALOOKUP es.p.b.tbl h = NONE’
          by (simp[ALOOKUP_NONE] >> imp_res_tac ALOOKUP_MEM >>
-             gvs[eown_def, ALL_DISTINCT_APPEND, MEM_MAP] >> metis_tac[FST]) >>
+             gvs[oown_def, ALL_DISTINCT_APPEND, MEM_MAP] >> metis_tac[FST]) >>
        simp[]) >>
   drule sys_connect_quiet >> strip_tac >>
   ‘l0_rely w'’ by (gvs[sys_connect_def] >> metis_tac[l0_do_rely]) >> simp[]
+QED
+
+(* ------------------------------------------------------------------------
+   The fds an episode lives on: held, or accepted ahead (whose account is
+   empty: only held fds have an outbox or are gone, okeys)
+   ------------------------------------------------------------------------ *)
+
+Definition live_def:
+  live (es : l1e) f ⇔ held es.p.b f ∨ MEM f es.p.acq
+End
+
+Theorem edo_okeys:
+  edo lfd pol (w, es) a = SOME (r, (w', es'), evs) ∧ oown lfd es ∧ okeys es.p.b ⇒
+  okeys es'.p.b
+Proof
+  strip_tac >> ‘pown lfd es.p’ by fs[oown_def] >>
+  Cases_on ‘a’ >> gvs[edo_def, AllCaseEqs()] >>
+  TRY (PairCases_on ‘z’) >> gvs[] >>
+  TRY (drule_all pdo_keys >> simp[] >> NO_TAC) >>
+  TRY (gvs[okeys_def, outbox_of_def] >> NO_TAC) >>
+  gvs[ec_del_def, l1_close_def, AllCaseEqs()] >> irule okeys_forget >> simp[]
+QED
+
+Theorem edo_acq:
+  edo lfd pol (w, es) a = SOME (r, (w', es'), evs) ∧ MEM f es'.p.acq ⇒ MEM f es.p.acq
+Proof
+  Cases_on ‘a’ >> rw[edo_def, AllCaseEqs()] >>
+  TRY (PairCases_on ‘z’) >> gvs[ec_del_def] >>
+  gvs[pdo_def, AllCaseEqs()] >> TRY (PairCases_on ‘z’) >> gvs[]
+QED
+
+Theorem pdo_write_held:
+  pdo lfd (w, ps) (Write h bs) = SOME (r, (w', ps'), evs) ⇒
+  ps'.b.tbl = ps.b.tbl ∧ ps'.b.closing = ps.b.closing
+Proof
+  simp[pdo_def, l1do_def] >> rw[] >> gvs[AllCaseEqs(), set_outbox_def] >>
+  simp[after_send_def] >> every_case_tac >> simp[set_outbox_def]
+QED
+
+(* An fd L1 does not hold: nothing sent or written; held after only as the
+   accepted one, with an empty outbox *)
+Theorem edo_quiet:
+  edo lfd pol (w, es) a = SOME (r, (w', es'), evs) ∧ oown lfd es ∧ okeys es.p.b ∧
+  l0_rely w ∧ ¬held es.p.b f ⇒
+  evs_sent f evs = [] ∧ ewbytes f es a = [] ∧
+  (held es'.p.b f ⇒ MEM f es.p.acq ∧ outbox_of es'.p.b f = [] ∧ ¬MEM f es'.p.b.gone)
+Proof
+  strip_tac >>
+  ‘outbox_of es.p.b f = [] ∧ ¬MEM f es.p.b.gone’ by (gvs[okeys_def, held_def] >> metis_tac[]) >>
+  ‘∀h. ALOOKUP es.p.b.tbl h ≠ SOME f’
+    by (rpt strip_tac >> imp_res_tac ALOOKUP_MEM >> gvs[held_def, MEM_MAP] >> metis_tac[SND]) >>
+  Cases_on ‘a’ >> gvs[edo_def, AllCaseEqs(), ewbytes_def]
+  >~ [‘pdo _ _ (Accept _) = _’]
+  >- (PairCases_on ‘z’ >> gvs[] >> drule pdo_accept_ostep >> strip_tac >> gvs[held_def] >>
+      rw[] >- (qpat_x_assum ‘es.p.acq = _’ (fn th => ONCE_REWRITE_TAC [th]) >> simp[]) >>
+      fs[outbox_of_def])
+  >~ [‘pdo _ _ (Read _ _) = _’]
+  >- (PairCases_on ‘z’ >> gvs[] >>
+      ‘pown lfd es.p’ by fs[oown_def] >> drule_all pdo_read_ostep >> strip_tac >> simp[] >>
+      strip_tac >> qpat_x_assum ‘held _ _’ mp_tac >> qpat_x_assum ‘¬held _ _’ mp_tac >>
+      qpat_x_assum ‘pdo _ _ _ = _’ mp_tac >>
+      simp[pdo_def, AllCaseEqs(), held_def] >> rw[] >> gvs[set_inb_def] >>
+      TRY (PairCases_on ‘z’) >> gvs[l1_close_def, AllCaseEqs(), forget_def, MEM_FILTER] >>
+      metis_tac[honestL1PFRefineTheory.MEM_SND_ADELKEY_sub])
+  >~ [‘pdo _ _ (Write _ _) = _’]
+  >- (PairCases_on ‘z’ >> gvs[] >> drule_all pdo_write_ostep >> strip_tac >>
+      drule pdo_write_held >> strip_tac >>
+      first_x_assum (qspec_then ‘f’ mp_tac) >> simp[ostep_def, wbytes_def] >>
+      ‘∀h. ALOOKUP es.p.b.tbl h = SOME f ⇔ F’ by metis_tac[] >> simp[] >>
+      Cases_on ‘MEM f z2.b.gone’ >> simp[] >> gvs[held_def])
+  >~ [‘l1_close _ _ = _’]
+  >- (PairCases_on ‘z’ >> gvs[] >> drule l1_close_ostep >> strip_tac >>
+      gvs[ec_del_def, held_def] >> metis_tac[])
+  >> TRY (drule sys_connect_quiet >> strip_tac) >> gvs[held_def]
+QED
+
+Theorem edo_live:
+  edo lfd pol (w, es) a = SOME (r, (w', es'), evs) ∧ oown lfd es ∧ okeys es.p.b ∧ l0_rely w ⇒
+  l0_rely w' ∧ okeys es'.p.b ∧
+  ∀f. (live es f ⇒
+         (live es' f ⇒ ostep f es.p.b es'.p.b evs (ewbytes f es a)) ∧
+         ostepc f es.p.b evs (ewbytes f es a)) ∧
+      (¬live es f ⇒ evs_sent f evs = [] ∧ ewbytes f es a = [] ∧ ¬live es' f)
+Proof
+  strip_tac >> drule_all edo_ostep >> strip_tac >> drule_all edo_okeys >> strip_tac >>
+  simp[] >> gen_tac >>
+  ‘pown lfd es.p’ by fs[oown_def] >>
+  Cases_on ‘held es.p.b f’
+  >- (‘¬MEM f es.p.acq’ by gvs[held_def, honestL1PFRefineTheory.pown_def, ALL_DISTINCT_APPEND] >>
+      ‘¬MEM f es'.p.acq’ by metis_tac[edo_acq] >>
+      simp[live_def] >> metis_tac[]) >>
+  drule_all edo_quiet >> strip_tac >> simp[live_def] >>
+  ‘outbox_of es.p.b f = [] ∧ ¬MEM f es.p.b.gone’ by (gvs[okeys_def, held_def] >> metis_tac[]) >>
+  reverse conj_tac >- metis_tac[edo_acq] >>
+  strip_tac >> simp[ostepc_def] >>
+  rpt strip_tac >> simp[ostep_def] >>
+  Cases_on ‘held es'.p.b f’ >> gvs[] >>
+  ‘outbox_of es'.p.b f = [] ∧ ¬MEM f es'.p.b.gone’ by (gvs[okeys_def, held_def] >> metis_tac[]) >>
+  simp[]
 QED

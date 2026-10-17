@@ -22,7 +22,7 @@ Libs
    Steps without calls
    ------------------------------------------------------------------------ *)
 
-Theorem flush_nil[local]:
+Theorem flush_nil:
   ∀fs w st w' st'. l1_flush fs (w, st) = SOME ((w', st'), []) ⇒ w' = w ∧ st' = st
 Proof
   Induct >> simp[l1_flush_def] >> rpt gen_tac >> IF_CASES_TAC
@@ -30,7 +30,7 @@ Proof
   >> simp[AllCaseEqs()] >> rpt strip_tac >> gvs[]
 QED
 
-Theorem fetch_nil[local]:
+Theorem fetch_nil:
   ∀fs w ps w' ps' log.
     pf_fetch lfd pol fs (w, ps) = SOME ((w', ps'), log, []) ⇒ w' = w ∧ ps' = ps ∧ log = []
 Proof

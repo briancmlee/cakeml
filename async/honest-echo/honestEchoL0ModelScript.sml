@@ -89,7 +89,7 @@ Proof
   rw[] >> gvs[bytes_round_trip]
 QED
 
-Theorem rl_accepted[local]:
+Theorem rl_accepted:
   ∀xs ys. rl xs ys ⇒ accepted xs = MAP w2n (haccepted ys)
 Proof
   Induct >> Cases_on ‘ys’ >> simp[haccepted_def, accepted_def] >>

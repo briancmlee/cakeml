@@ -18,6 +18,7 @@ Ancestors
   asyncM3World honestEchoL0Spec honestEchoL0Trace honestEchoL0Events
   honestEchoL0Model honestEchoL0Inv honestEchoL0Round honestEchoL0Out
   asyncCore asyncLevel1 asyncTranscript honestL1PFProg
+  asyncServer asyncServerSafety asyncM4Relabel asyncM4RelabelDist asyncM4SockModel
 Libs
   preamble
 
@@ -214,3 +215,29 @@ Proof
   qpat_x_assum ‘MAP FST (ZIP _) = _’ (fn th => REWRITE_TAC[th]) >> simp[]
 QED
 
+
+(* The echo server writes only through handles it has been handed *)
+Theorem server_writes_accepted:
+  ALL_DISTINCT (haccepted (trans (srelabel (server k)) h)) ∧
+  MEM (Write hd bs, r) (trans (srelabel (server k)) h) ⇒
+  MEM hd (haccepted (trans (srelabel (server k)) h))
+Proof
+  strip_tac >>
+  ‘rl (trans (server k) (MAP sfs h)) (trans (srelabel (server k)) h)’
+    by (irule trans_relabel >> simp[snap_map_def]) >>
+  drule rl_accepted >> strip_tac >>
+  qspecl_then [‘MAP sfs h’] mp_tac (Q.INST [‘lfd’ |-> ‘k’] server_echoes) >>
+  impl_tac >- (simp[fresh_def] >> irule ALL_DISTINCT_MAP_INJ >> simp[]) >>
+  strip_tac >>
+  ‘MEM (Write hd bs, OPTION_MAP sfr r)
+       (MAP (λ(a, r). (a, OPTION_MAP sfr r)) (trans (srelabel (server k)) h))’
+    by (simp[MEM_MAP, EXISTS_PROD] >> metis_tac[]) >>
+  ‘∃a r'. MEM (a, r') (trans (server k) (MAP sfs h)) ∧ sfa a = Write hd bs’
+    by (qpat_x_assum ‘MAP _ _ = MAP _ _’ (fn th => fs[GSYM th]) >>
+        gvs[MEM_MAP, EXISTS_PROD] >> metis_tac[]) >>
+  Cases_on ‘a’ >> gvs[sfa_def] >>
+  rename1 ‘MEM (Write fd d, r') _’ >>
+  ‘EXISTS (on_fd fd) (trans (server k) (MAP sfs h))’
+    by (simp[EXISTS_MEM] >> qexists_tac ‘(Write fd d, r')’ >> simp[on_fd_def]) >>
+  first_x_assum drule >> simp[MEM_MAP] >> strip_tac >> gvs[]
+QED

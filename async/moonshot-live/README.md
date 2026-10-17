@@ -235,3 +235,21 @@ termination obligation ([R3]) as an explicit hypothesis.
 
 **Mine (system level), still to do:** N1/N2 lifts; the excuse transfer (per-process excuses ⇒ `sys_excuse`); termination
 from F-obs (F) once [R3] lands; and `moonshot_live` from `chain_served` for each i < N.
+
+### Final instantiation (`moonshotLiveFinalScript.sml`)
+`moonshot_live_of_run_obs` (proved): `client_run_ob kb cprog ∧ proxy_run_ob kb pprog ∧ kv_run_ob kb kprog ∧
+topology_run_ob ∧ closes_run_ob ∧ exits_run_ob ⇒ moonshot_live kb cprog pprog kprog`. Each `_run_ob` is stated
+for every run of `moonshot_live_hyps`, with X = `sys_excuse`. At the concrete programs, the headline is this
+theorem INSTed at `client_prog`, as in `moonshot_safe_client`. Who delivers what:
+- **close-v2**, `client_run_ob kb client_prog`: from `client_live_claim` plus the moonshot-live lift
+  (`l0sys_proj_inf`/`l0sys_proj_drains`). Includes `client_open` (one connect episode per logical connection to a)
+  and, per episode, `client_conn_ob` (asks, sends under drains, never more than rq, reads what arrives).
+- **honest-ffi**, `proxy_run_ob kb proxy_prog`: from `proxy_live_l0` + `proxy_pairs_l0` + `proxy_asks_claim` +
+  `conn_live_l0`. Its accepts_lt premise is discharged by `accepts_lt_irun` (moonshot-live), given "the proxy
+  accepts only on a" and close-v2's episode bound and "never closes fd 0".
+- **KV owner**, `kv_run_ob kb kv_prog`: from `kv_live_claim` plus the lift.
+- **CALLS-IO** (`calls_io 1`, `calls_io 2`): the proxy and KV call infinitely often. A premise of the lifts, owed
+  per program from its Sem theorem's infinite-trace form (e1-driver's proxySem/KV: Diverge, with io the LFLATTEN of
+  rounds that each contain a non-blocking poll).
+- **topology_run_ob**: only the proxy listens on a, only KV on b (from the programs' code, through the lifts).
+- **[R3]**, `closes_run_ob` and `exits_run_ob`: owed, joint (r3-close).

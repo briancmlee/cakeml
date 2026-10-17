@@ -1480,6 +1480,24 @@ Connect action). The options:
 - **Deferred:** a write-completion event (or an outbox level as a
   readiness event) for the proxy's cross-fd backpressure (§5.4). It will
   be an addition to this layer later, not a change.
+- **Connect outcomes known at once take effect at the round's tail**
+  (close-v2, for the E1 refinement, 2026-10-17; agreed with honest-ffi).
+  - In honestL1EPModel, a connect that succeeds or fails at once keeps its
+    handle pending until the tail. The outcome is held in the model state
+    `early` (no syscall). This matches the layer, where Settle arrives at
+    the next tick.
+  - Without it, ERead or EWrite on a fresh refused handle in the same round
+    would answer before the layer could. Handle names are predictable, so
+    the refinement would need a hypothesis on the computation.
+  - An implementation of this layer must keep the same timing.
+- **E1's world is built from L1's run, so its rely is run-local**
+  (coordinator, 2026-10-17). A spec meant to transfer through E1 is stated
+  with the rely for the calls the program makes (`rely_on Q`), not plain
+  `ep_rely` (see design/45 §2.5).
+- **The weakening (a), pending the user:** E1 holds for runs in which no
+  connect returned without a socket (no `EConnected NONE`), a condition on
+  the observed events. (b), a world choice "connect failed, no socket" in
+  `endpointWorld`, would remove it.
 
 **New trusted items (L0 connect), for the user's review**
 (`honestL0WorldScript.sml`):

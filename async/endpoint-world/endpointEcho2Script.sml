@@ -131,8 +131,9 @@ QED
 Definition dworld_def:
   dworld lfd a sk =
     <| listening := [(lfd, a, [])]; chans := []; open_fds := [];
-       reserved := sk.reserved; alloc := sk.alloc; accepts := (λa j. T);
+       reserved := sk.reserved; alloc := sk.alloc;
        takes := (λj b n. n); calls := v2_calls;
+       nosock := (λi. F); nconnects := 0;
        env := (λn h. MAP (tr lfd a) (fut_step sk.future n) ++
                      GENLIST Drain (nconn sk (SUC n)));
        clock := 0; hist := [] |>
@@ -190,7 +191,7 @@ Theorem ep_ffi_fn_clock:
   (n = «sock_poll» ∧ w'.clock = w.clock + 1) ∨ (n ≠ «sock_poll» ∧ w'.clock = w.clock)
 Proof
   rw[ep_ffi_fn_def, ep_call_def, AllCaseEqs()] >>
-  gvs[ep_tick_def, ep_deliver_fields, settle_def, ep_accept_def, ep_connect_def,
+  gvs[ep_tick_def, ep_deliver_fields, ep_accept_def, ep_connect_def,
       ep_alloc_def, ep_read_def, ep_send_def, ep_shutdown_def, ep_close_def,
       ep_conn_err_def,
       upd_chan_def, AllCaseEqs()] >>
@@ -255,7 +256,7 @@ Proof
       ‘v2rel lfd a sk' w' ∧ v2shape sk' = v2shape (ticks2 w'.clock sk) ∧
        w'.env = (dworld lfd a sk).env’ by fs[dinv_def] >>
       ‘core lfd a sk' w'’ by fs[v2rel_def] >>
-      imp_res_tac core_all_up >> imp_res_tac settle_id >> simp[] >>
+      imp_res_tac core_all_up >> simp[] >>
       qabbrev_tac ‘c = w'.clock’ >>
       qabbrev_tac ‘xs = fut_step sk.future c’ >>
       simp[dworld_def, ep_step_ok_APPEND] >>
@@ -698,12 +699,12 @@ Proof
       ‘event_opened (IO_event (ExtCall «sock_poll») conf bs) = NONE’
         by simp[event_opened_def, event_accepted_def] >>
       gvs[] >>
-      ‘ep_step_ok (settle w0 with clock := w0.clock + 1) (w0.env w0.clock w0.hist)’
+      ‘ep_step_ok (w0 with clock := w0.clock + 1) (w0.env w0.clock w0.hist)’
         by (drule_then (qspec_then ‘a’ strip_assume_tac) dworld_props >>
             fs[ep_rely_def, ep_sched_ok_def] >> first_x_assum irule >>
             drule replay_ok_after >> simp[Abbr ‘w0’]) >>
       ‘core lfd a sk' w0 ∧ w0.env = (dworld lfd a sk).env’ by fs[dinv_def, v2rel_def] >>
-      imp_res_tac core_all_up >> imp_res_tac settle_id >>
+      imp_res_tac core_all_up >>
       qabbrev_tac ‘c = w0.clock’ >>
       qabbrev_tac ‘xs = fut_step sk.future c’ >>
       fs[dworld_def] >>

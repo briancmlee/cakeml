@@ -11,7 +11,7 @@ Ancestors
   asyncM3World asyncM4GRounds asyncM4GTrans asyncM4Loop asyncM4SockInv
   asyncM4EchoRunOk EchoSpec EchoSpec2 socketV2FFI socketV2Fair socketV2Proof
   asyncHLFair asyncHLModel asyncHLSimWorld asyncHLSimOps asyncHLSimRun
-  asyncHLEof asyncHLEpisodes asyncHLSimEvents
+  asyncHLEof asyncHLEpisodes asyncHLSimEvents socketV2Events
 Libs
   preamble
 

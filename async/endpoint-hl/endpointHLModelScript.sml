@@ -25,8 +25,15 @@
   connection; a closed handle) and, ONCE, a connect handle whose connect
   has settled (Up or Refused), so a client learns that its connect
   completed without polling writability.
-  Not yet: a write-completion (writability) event, for the proxy's
-  cross-fd backpressure (design/36 §5.4, deferred).
+   - ELevel h (design/45 §2.2, moonshot step 7): the level of h's
+     outbox, for the proxy's cross-fd backpressure.  The layer has no
+     outbox (its writes complete at once), so the answer is an ORACLE,
+     lv n k for the k-th action of round n, and EVERY answer is allowed:
+     a claim proved in this layer holds for every lv.  A claim that needs
+     true levels is proved at L1 level (honestL1EPRefine's level_true:
+     on L1's run, E1 runs this layer with lv = L1's answers, which are
+     its outbox lengths) or takes a hypothesis on lv.  No world call, no
+     tick.
 *)
 Theory endpointHLModel
 Ancestors
@@ -36,11 +43,12 @@ Libs
 
 Datatype:
   eact = EAccept word64 | ERead word64 num | EWrite word64 (word8 list) | EConnect num
+       | ELevel word64
 End
 
 Datatype:
   eresp = EAccepted (word64 option) | EGot ((word8 list) option) | EWrote num
-        | EConnected (word64 option) | ERefused
+        | EConnected (word64 option) | ERefused | ELvl num
 End
 
 (* The open handles and their fds; handles issued; connect handles whose
@@ -71,7 +79,7 @@ End
 (* One action: its response and the next world and handle state; NONE on
    misuse (an FFI call would fail, or the handles would overflow) *)
 Definition ehdo_def:
-  ehdo lfd (w, hs) (EAccept l) =
+  ehdo lfd v (w, hs) (EAccept l) =
     (case ep_accept l w of
      | NONE => NONE
      | SOME (NONE, w') => SOME (EAccepted NONE, (w', hs))
@@ -79,7 +87,7 @@ Definition ehdo_def:
          if hdln (w2n lfd) hs.nxt < dimword (:64) then
            SOME (EAccepted (SOME (hdl lfd hs.nxt)), (w', eh_new lfd f hs))
          else NONE) ∧
-  ehdo lfd (w, hs) (EConnect a) =
+  ehdo lfd v (w, hs) (EConnect a) =
     (case ep_connect a w of
      | (NONE, w') => SOME (EConnected NONE, (w', hs))
      | (SOME f, w') =>
@@ -87,7 +95,7 @@ Definition ehdo_def:
            SOME (EConnected (SOME (hdl lfd hs.nxt)),
                  (w', eh_new lfd f hs with settling := hdl lfd hs.nxt :: hs.settling))
          else NONE) ∧
-  ehdo lfd (w, hs) (ERead h n) =
+  ehdo lfd v (w, hs) (ERead h n) =
     (if 0 < n ∧ n < 256 ** 8 then
        case ALOOKUP hs.tbl h of
        | NONE => SOME (EGot (SOME []), (w, hs))
@@ -101,28 +109,30 @@ Definition ehdo_def:
                    OPTION_MAP (λw2. (EGot (SOME []), (w2, eh_del h hs))) (ep_close f w1)
                | SOME (r, w1) => SOME (EGot r, (w1, hs))
      else NONE) ∧
-  ehdo lfd (w, hs) (EWrite h bs) =
-    case ALOOKUP hs.tbl h of
+  ehdo lfd v (w, hs) (EWrite h bs) =
+    (case ALOOKUP hs.tbl h of
     | NONE => SOME (EWrote 0, (w, hs))
     | SOME f =>
         if chan_status w f = SOME Connecting then NONE
-        else OPTION_MAP (λ(k, w'). (EWrote k, (w', hs))) (ep_send f bs w)
+        else OPTION_MAP (λ(k, w'). (EWrote k, (w', hs))) (ep_send f bs w)) ∧
+  ehdo lfd v (w, hs) (ELevel h) = SOME (ELvl v, (w, hs))
 End
 
+(* The actions of round n from the k-th on (lv: the Level oracle) *)
 Definition ehacts_def:
-  ehacts lfd st [] = SOME ([], st) ∧
-  ehacts lfd st (a :: acts) =
-    case ehdo lfd st a of
+  ehacts lfd (lv : num -> num -> num) (n : num) (k : num) st [] = SOME ([], st) ∧
+  ehacts lfd lv n k st (a :: acts) =
+    case ehdo lfd (lv n k) st a of
     | NONE => NONE
     | SOME (r, st1) =>
-        case ehacts lfd st1 acts of
+        case ehacts lfd lv n (k + 1) st1 acts of
         | NONE => NONE
         | SOME (rs, st2) => SOME (r :: rs, st2)
 End
 
 Definition ehacts_tot_def:
-  ehacts_tot lfd st acts =
-    case ehacts lfd st acts of SOME x => x | NONE => ([], st)
+  ehacts_tot lfd lv n st acts =
+    case ehacts lfd lv n 0 st acts of SOME x => x | NONE => ([], st)
 End
 
 (* The poll of the interest handles hfds: time passes; the ready handles,
@@ -139,21 +149,22 @@ Definition ehpoll_def:
     in (rdy, w', hs with settling := FILTER (λh. ¬(MEM h hfds ∧ settled h)) hs.settling)
 End
 
-(* ehrounds lfd ifds m w0 n = (h, (w, hs)): after n rounds of the loop
-   running m, polling the handles ifds h, in the endpoint world w0 *)
+(* ehrounds lfd lv ifds m w0 n = (h, (w, hs)): after n rounds of the loop
+   running m, polling the handles ifds h, in the endpoint world w0, with
+   the Level oracle lv *)
 Definition ehrounds_def:
-  ehrounds lfd ifds m w0 0 = ([], (w0, ehinit)) ∧
-  ehrounds lfd ifds m w0 (SUC n) =
-    let (h, (w, hs)) = ehrounds lfd ifds m w0 n;
-        (rs, (w1, hs1)) = ehacts_tot lfd (w, hs) (new_actions (log_of m) h);
+  ehrounds lfd lv ifds m w0 0 = ([], (w0, ehinit)) ∧
+  ehrounds lfd lv ifds m w0 (SUC n) =
+    let (h, (w, hs)) = ehrounds lfd lv ifds m w0 n;
+        (rs, (w1, hs1)) = ehacts_tot lfd lv n (w, hs) (new_actions (log_of m) h);
         (rdy, w2, hs2) = ehpoll lfd hs1 (ifds h) w1
     in (h ++ [ssnap rdy rs], (w2, hs2))
 End
 
 Definition ehhist_def:
-  ehhist lfd ifds m w0 n = FST (ehrounds lfd ifds m w0 n)
+  ehhist lfd lv ifds m w0 n = FST (ehrounds lfd lv ifds m w0 n)
 End
 
 Definition ehst_def:
-  ehst lfd ifds m w0 n = SND (ehrounds lfd ifds m w0 n)
+  ehst lfd lv ifds m w0 n = SND (ehrounds lfd lv ifds m w0 n)
 End

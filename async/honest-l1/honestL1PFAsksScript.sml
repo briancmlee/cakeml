@@ -16,8 +16,7 @@ Libs
 
 (* The poll event of a poll set lists each of its entries *)
 Theorem sys_poll_lists:
-  sys_poll fes w = SOME (out, w', ev) ∧ l0_rely w ∧
-  EVERY (λ(g, e). small g ∧ e < 4) fes ∧ MEM (f, e) fes ⇒
+  sys_poll fes w = SOME (out, w', ev) ∧ l0_rely w ∧ small f ∧ e < 4 ∧ MEM (f, e) fes ⇒
   ∃bs. ev = IO_event (ExtCall «sys_poll») [0w] bs ∧
        MEM (f, e) (MAP pe_fe (pollfd_entries (DROP 16 (MAP FST bs))))
 Proof
@@ -27,8 +26,7 @@ Proof
   drule l0_do_buf_cases >> strip_tac >> simp[MAP_ZIP] >>
   simp[poll_buf_def, DROP_APPEND, pollfd_entries_buf, MAP_MAP_o, MEM_MAP] >>
   qexists_tac ‘pfd_bytes (f, e)’ >> conj_tac
-  >- (gvs[EVERY_MEM] >> first_x_assum drule >> simp[] >> strip_tac >>
-      drule_all pe_pfd_bytes >> simp[]) >>
+  >- (drule_all pe_pfd_bytes >> simp[]) >>
   qexists_tac ‘(f, e)’ >> simp[]
 QED
 
@@ -61,6 +59,9 @@ Proof
   ‘l0_rely wa’ by gvs[winv_def] >>
   ‘sys_poll fes wa = SOME (out, w1, ev)’ by asm_rewrite_tac[] >>
   ‘ODD e’ by (first_x_assum irule >> first_assum ACCEPT_TAC) >>
+  ‘small f ∧ e < 4’
+    by (qpat_x_assum ‘EVERY _ fes’ mp_tac >> simp[EVERY_MEM] >>
+        disch_then drule >> simp[]) >>
   drule_all sys_poll_lists >> strip_tac >>
   qexistsl_tac [‘bs’, ‘e’] >>
   qpat_x_assum ‘_ ++ _ = tevs’ (SUBST_ALL_TAC o SYM) >>
@@ -166,6 +167,9 @@ Proof
   ‘∀e. MEM (f, e) fes ⇒ ¬ODD e’
     by (rpt strip_tac >>
         qpat_x_assum ‘sys_poll _ _ = _’ assume_tac >>
+        ‘small f ∧ e < 4’
+          by (qpat_x_assum ‘EVERY _ fes’ mp_tac >> simp[EVERY_MEM] >>
+              disch_then drule >> simp[]) >>
         drule_all sys_poll_lists >> strip_tac >>
         qpat_x_assum ‘∀bs e. _’ (qspecl_then [‘bs’, ‘e’] mp_tac) >>
         qpat_x_assum ‘ev = _’ SUBST_ALL_TAC >> simp[]) >>

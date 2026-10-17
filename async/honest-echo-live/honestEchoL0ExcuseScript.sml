@@ -344,6 +344,8 @@ Proof
   fs[]
 QED
 
+Overload held = “λf ps. MEM f (MAP SND ps.b.tbl) ∨ MEM f ps.b.closing”
+
 (* MAIN: a write-timeout drop of f in round k is, on the trace, a hard
    error or a D23 timeout of the episode open on f *)
 Theorem rdrop_excuse:
@@ -353,6 +355,7 @@ Theorem rdrop_excuse:
     i ≤ k ∧ rrev lfd pol ifds m w0 i = pre ++ post ∧
     ep_open j (revs lfd pol ifds m w0 i ++ pre) ∧
     EL j (l0_accepted (revs lfd pol ifds m w0 i ++ pre)) = f ∧
+    (∀i'. i < i' ∧ i' ≤ k ⇒ held f (rstate lfd pol ifds m w0 i')) ∧
     (ep_hard_err j io ∨ ep_timed_out pf_sendwait j io)
 Proof
   strip_tac >>
@@ -375,7 +378,12 @@ Proof
   ‘∃j. ALOOKUP (SND (l0_ep_st (0, []) (revs lfd pol ifds m w0 k0 ++ pre0))) f = SOME j’
     by metis_tac[call_poll_open] >>
   drule ep_state_open >> strip_tac >>
-  qexistsl_tac [‘k0’, ‘pre0’, ‘[pev0] ++ post0’, ‘j’] >> simp[] >> disj2_tac >>
+  qexistsl_tac [‘k0’, ‘pre0’, ‘[pev0] ++ post0’, ‘j’] >> simp[] >>
+  conj_tac
+  >- (rpt strip_tac >>
+      qpat_assum ‘∀i. k0 ≤ i ∧ i < k ⇒ _’ (qspec_then ‘i' − 1’ mp_tac) >>
+      impl_tac >- simp[] >> ‘SUC (i' − 1) = i'’ by simp[] >> pop_assum SUBST1_TAC >> simp[]) >>
+  disj2_tac >>
   (* the stretch *)
   qabbrev_tac ‘mid = rrounds lfd pol ifds m w0 (k0 + 1) (k − k0 − 1)’ >>
   ‘revs lfd pol ifds m w0 (SUC k) =
@@ -485,4 +493,114 @@ Proof
     by (qspecl_then [‘mid’, ‘(k, opn)’] mp_tac ep_end_reindex >>
         fs[EXISTS_ep_ends]) >>
   simp[]
+QED
+
+(* f held at the end of each of rounds a … b − 1: none of their events
+   ends its episode *)
+Theorem held_no_end:
+  run_ok lfd pol ifds m w0 ∧ winv w0 ∧ MEM lfd (l0_used w0) ⇒
+  ∀d a. (∀i. a < i ∧ i ≤ a + d ⇒ held f (rstate lfd pol ifds m w0 i)) ⇒
+        ¬EXISTS (ep_ends f) (rrounds lfd pol ifds m w0 a d)
+Proof
+  strip_tac >> Induct >- simp[rrounds_def] >> rpt gen_tac >> strip_tac >>
+  ‘¬EXISTS (ep_ends f) (rrounds lfd pol ifds m w0 a d)’
+    by (qpat_x_assum ‘∀a. (∀i. _) ⇒ _’ irule >> rpt strip_tac >>
+        qpat_x_assum ‘∀i. a < i ∧ _ ⇒ _’ irule >> simp[]) >>
+  ‘¬EXISTS (ep_ends f) (rrev lfd pol ifds m w0 (a + d))’
+    by (REWRITE_TAC [EXISTS_ep_ends] >> irule round_no_end >> simp[] >>
+        qpat_x_assum ‘∀i. a < i ∧ _ ⇒ _’ (qspec_then ‘SUC (a + d)’ mp_tac) >> simp[ADD1]) >>
+  REWRITE_TAC [rrounds_SNOC, EXISTS_APPEND] >> fs[]
+QED
+
+(* f's index carried forward from round a's start to a point in round k *)
+Theorem keep_forward:
+  run_ok lfd pol ifds m w0 ∧ winv w0 ∧ MEM lfd (l0_used w0) ∧
+  ALOOKUP (SND (l0_ep_st (0, []) (revs lfd pol ifds m w0 a))) f = SOME j ∧ a ≤ k ∧
+  (∀i. a < i ∧ i ≤ SUC k ⇒ held f (rstate lfd pol ifds m w0 i)) ∧
+  rrev lfd pol ifds m w0 k = pre ++ post ⇒
+  ALOOKUP (SND (l0_ep_st (0, []) (revs lfd pol ifds m w0 k ++ pre))) f = SOME j
+Proof
+  strip_tac >>
+  ‘revs lfd pol ifds m w0 k = revs lfd pol ifds m w0 a ++ rrounds lfd pol ifds m w0 a (k − a)’
+    by (‘k = a + (k − a)’ by simp[] >> pop_assum (fn th => CONV_TAC (LHS_CONV (ONCE_REWRITE_CONV [th]))) >>
+        metis_tac[revs_rrounds]) >>
+  ‘¬EXISTS (ep_ends f) (rrounds lfd pol ifds m w0 a (k − a))’
+    by (mp_tac held_no_end >> impl_tac >- fs[] >>
+        disch_then (qspecl_then [‘k − a’, ‘a’] irule) >> rpt strip_tac >>
+        first_x_assum irule >> simp[]) >>
+  ‘¬EXISTS (ep_ends f) pre’
+    by (‘¬EXISTS (ep_ends f) (rrev lfd pol ifds m w0 k)’
+          by (REWRITE_TAC [EXISTS_ep_ends] >> irule round_no_end >> simp[]) >>
+        rfs[]) >>
+  pop_assum mp_tac >> pop_assum mp_tac >> pop_assum SUBST1_TAC >>
+  rpt strip_tac >> REWRITE_TAC [GSYM APPEND_ASSOC, l0_ep_st_simps] >>
+  irule ep_st_keep >> conj_tac >- fs[] >> irule ep_st_keep >> fs[]
+QED
+
+(* … and backward, from a point in round i to round a's start *)
+Theorem keep_backward:
+  run_ok lfd pol ifds m w0 ∧ winv w0 ∧ MEM lfd (l0_used w0) ∧
+  ALOOKUP (SND (l0_ep_st (0, []) (revs lfd pol ifds m w0 i ++ pre))) f = SOME j ∧
+  rrev lfd pol ifds m w0 i = pre ++ post ∧ i < a ∧
+  (∀i'. i < i' ∧ i' ≤ a ⇒ held f (rstate lfd pol ifds m w0 i')) ⇒
+  ALOOKUP (SND (l0_ep_st (0, []) (revs lfd pol ifds m w0 a))) f = SOME j
+Proof
+  strip_tac >>
+  ‘revs lfd pol ifds m w0 a =
+   revs lfd pol ifds m w0 i ++ pre ++ (post ++ rrounds lfd pol ifds m w0 (i + 1) (a − i − 1))’
+    by (‘a = i + SUC (a − i − 1)’ by simp[] >>
+        pop_assum (fn th => CONV_TAC (LHS_CONV (ONCE_REWRITE_CONV [th]))) >>
+        ‘revs lfd pol ifds m w0 (i + SUC (a − i − 1)) =
+         revs lfd pol ifds m w0 i ++ rrounds lfd pol ifds m w0 i (SUC (a − i − 1))’
+          by metis_tac[revs_rrounds] >>
+        simp[rrounds_CONS]) >>
+  ‘¬EXISTS (ep_ends f) post’
+    by (REWRITE_TAC [EXISTS_ep_ends] >> irule round_no_end_post >>
+        qexistsl_tac [‘i’, ‘ifds’, ‘lfd’, ‘m’, ‘pol’, ‘pre’, ‘w0’] >> simp[] >>
+        first_x_assum irule >> simp[]) >>
+  ‘¬EXISTS (ep_ends f) (rrounds lfd pol ifds m w0 (i + 1) (a − i − 1))’
+    by (mp_tac held_no_end >> impl_tac >- fs[] >>
+        disch_then (qspecl_then [‘a − i − 1’, ‘i + 1’] irule) >> rpt strip_tac >>
+        first_x_assum irule >> simp[]) >>
+  pop_assum mp_tac >> pop_assum mp_tac >> pop_assum SUBST1_TAC >>
+  rpt strip_tac >> REWRITE_TAC [l0_ep_st_simps] >>
+  irule ep_st_keep >> conj_tac >- fs[] >> irule ep_st_keep >> fs[]
+QED
+
+(* MAIN: an output-side excuse round k, with f held from round a to k + 1,
+   is the trace excuse of the episode f has at round a *)
+Theorem excuse_j0:
+  oassm lfd pol ifds m w0 ∧ pftrace lfd pol ifds m w0 io ∧ f ≠ lfd ∧
+  ALOOKUP (SND (l0_ep_st (0, []) (revs lfd pol ifds m w0 a))) f = SOME j0 ∧ a ≤ k ∧
+  (∀i. a < i ∧ i ≤ SUC k ⇒ held f (rstate lfd pol ifds m w0 i)) ∧
+  (hard_send f (rrev lfd pol ifds m w0 k) ∨ rdrop lfd pol ifds m w0 k f) ⇒
+  ep_hard_err j0 io ∨ ep_timed_out pf_sendwait j0 io
+Proof
+  strip_tac >>
+  ‘run_ok lfd pol ifds m w0 ∧ winv w0 ∧ MEM lfd (l0_used w0)’ by fs[oassm_def]
+  >- (fs[hard_send_def] >>
+      qpat_x_assum ‘MEM _ (rrev _ _ _ _ _ _)’
+        (qx_choosel_then [‘l1’, ‘l2’] strip_assume_tac o REWRITE_RULE [MEM_SPLIT]) >>
+      ‘rrev lfd pol ifds m w0 k = l1 ++ [ev] ++ l2’ by simp[] >>
+      ‘∃j. ep_hard_err j io ∧ ep_open j (revs lfd pol ifds m w0 k ++ l1) ∧
+           EL j (l0_accepted (revs lfd pol ifds m w0 k ++ l1)) = f’
+        by metis_tac[run_ep_hard_err] >>
+      ‘ALOOKUP (SND (l0_ep_st (0, []) (revs lfd pol ifds m w0 k ++ l1))) f = SOME j’
+        by metis_tac[ep_open_state] >>
+      ‘ALOOKUP (SND (l0_ep_st (0, []) (revs lfd pol ifds m w0 k ++ l1))) f = SOME j0’
+        by (irule keep_forward >> simp[] >> metis_tac[]) >>
+      gvs[]) >>
+  drule_all rdrop_excuse >> strip_tac >>
+  ‘ALOOKUP (SND (l0_ep_st (0, []) (revs lfd pol ifds m w0 i ++ pre))) f = SOME j’
+    by metis_tac[ep_open_state] >>
+  Cases_on ‘a ≤ i’ >>
+  TRY (‘ALOOKUP (SND (l0_ep_st (0, []) (revs lfd pol ifds m w0 i ++ pre))) f = SOME j0’
+         by (irule keep_forward >> simp[] >> qexists_tac ‘a’ >> simp[] >>
+             rpt strip_tac >> first_x_assum irule >> simp[]) >>
+       gvs[] >> NO_TAC) >>
+  ‘ALOOKUP (SND (l0_ep_st (0, []) (revs lfd pol ifds m w0 a))) f = SOME j’
+    by (irule keep_backward >> rpt conj_tac >> TRY (first_assum ACCEPT_TAC) >>
+        qexistsl_tac [‘i’, ‘post’, ‘pre’] >> fs[] >>
+        rpt strip_tac >> qpat_x_assum ‘∀i'. i < i' ∧ _ ⇒ _’ irule >> simp[]) >>
+  gvs[]
 QED

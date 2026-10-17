@@ -644,3 +644,31 @@ Proof
         rpt strip_tac >> qpat_x_assum ‘∀i'. i < i' ∧ _ ⇒ _’ irule >> simp[]) >>
   gvs[]
 QED
+
+(* A hard recv failure in round k, with f held from round a + 1 to k, is
+   ep_hard_err of the episode f has at round a *)
+Theorem recv_excuse_j0:
+  oassm lfd pol ifds m w0 ∧ pftrace lfd pol ifds m w0 io ∧
+  ALOOKUP (SND (l0_ep_st (0, []) (revs lfd pol ifds m w0 a))) f = SOME j0 ∧ a ≤ k ∧
+  (∀i. a < i ∧ i ≤ k ⇒ held f (rstate lfd pol ifds m w0 i)) ∧
+  hard_recv f (rrev lfd pol ifds m w0 k) ⇒
+  ep_hard_err j0 io
+Proof
+  strip_tac >>
+  ‘run_ok lfd pol ifds m w0 ∧ winv w0 ∧ MEM lfd (l0_used w0)’ by fs[oassm_def] >>
+  fs[hard_recv_def] >>
+  qpat_x_assum ‘MEM _ (rrev _ _ _ _ _ _)’
+    (qx_choosel_then [‘l1’, ‘l2’] strip_assume_tac o REWRITE_RULE [MEM_SPLIT]) >>
+  ‘rrev lfd pol ifds m w0 k = l1 ++ [ev] ++ l2’ by simp[] >>
+  ‘∃j. ep_hard_err j io ∧ ep_open j (revs lfd pol ifds m w0 k ++ l1) ∧
+       EL j (l0_accepted (revs lfd pol ifds m w0 k ++ l1)) = f’
+    by metis_tac[run_ep_hard_err] >>
+  ‘ALOOKUP (SND (l0_ep_st (0, []) (revs lfd pol ifds m w0 k ++ l1))) f = SOME j’
+    by metis_tac[ep_open_state] >>
+  ‘¬EXISTS (ep_ends f) l1’
+    by (REWRITE_TAC [EXISTS_ep_ends] >> irule send_no_end_before >> simp[] >>
+        metis_tac[]) >>
+  ‘ALOOKUP (SND (l0_ep_st (0, []) (revs lfd pol ifds m w0 k ++ l1))) f = SOME j0’
+    by (irule keep_into_round >> fs[] >> qexists_tac ‘a’ >> fs[]) >>
+  gvs[]
+QED

@@ -1,11 +1,12 @@
 # The proxy as a fold program for the generic E1 driver (e1-driver): the
-# bridge pprog = fold_prog, and the translated step.
-INCLUDES = ../model ../ffi-spike ../m3-assembly ../m4-server ../m4-common ../spec \
-           ../socket-v2 ../quiet/ffi ../cf-spike ../cf-actions ../cf-reactive ../m4-safety \
-           ../runnable ../machine-code ../http-model ../http-impl ../http-safety ../headline \
-           ../http-headers ../m4-liveness ../http-liveness ../http-liveness-h ../http-bodies ../socket-v2-cf \
-           ../close-v2-loop ../endpoint-world ../honest-l1-ep ../honest-l1 ../endpoint-hl ../honest-l0 \
-           ../honest-ffi ../moonshot ../moonshot-step9/hl ../moonshot-step9/proxy ../e1-driver
+# bridge pprog = fold_prog, the list-snapshot step, and its translation.
+INCLUDES = $(CAKEMLDIR)/characteristic ../cf-actions ../cf-reactive ../cf-spike ../close-v2-loop ../e1-driver \
+           ../endpoint-hl ../endpoint-world ../ffi-spike ../headline ../honest-ffi ../honest-l0 \
+           ../honest-l0-cf ../honest-l1 ../honest-l1-cf ../honest-l1-ep ../http-bodies ../http-headers \
+           ../http-impl ../http-liveness ../http-liveness-h ../http-model ../http-safety ../m3-assembly \
+           ../m4-common ../m4-liveness ../m4-safety ../m4-server ../machine-code ../model \
+           ../moonshot ../moonshot-step9/hl ../moonshot-step9/proxy ../quiet/ffi ../runnable ../socket-v2 \
+           ../socket-v2-cf ../spec
 ifdef POLY
 HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
 endif

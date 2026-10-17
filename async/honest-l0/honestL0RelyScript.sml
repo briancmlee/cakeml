@@ -14,6 +14,9 @@
      return any error "under circumstances other than those described";
      the model lets every other error happen at any time (transient), and
      assumes this one exception, checked by the conformance tests;
+   - D24: the counts the kernel takes and gives are below 2^64 [P send,
+     recv: they return ssize_t, so a count is at most SSIZE_MAX; the C
+     checks sizeof(ssize_t) <= 8 at build time];
    - sys_listen reports a step 1..5 (the C does);
    - the fd limit is at most 2^31 (fds are C ints).
 *)
@@ -28,6 +31,7 @@ Definition l0_rely_def:
     (∀h. LENGTH (w.ch.errno_of h) = 4) ∧
     (∀j h b n. w.ch.takes j h b n ≤ n) ∧
     (∀j h a. 0 < a ⇒ 0 < w.ch.short j h a ∧ w.ch.short j h a ≤ a) ∧
+    (∀j h b n. w.ch.takes j h b n < 256 ** 8) ∧ (∀j h a. w.ch.short j h a < 256 ** 8) ∧
     (∀h. w.ch.transient h ≠ SOME E_AGAIN) ∧
     (∀h k e. w.ch.listen_fails h = SOME (k, e) ⇒ 1 ≤ k ∧ k ≤ 5) ∧
     w.fd_limit ≤ 2 ** 31

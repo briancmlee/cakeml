@@ -60,3 +60,4 @@ Guiding rule (the user's): **for every L0 decision, do the honest thing, even if
 | [D39](D39.md) | Proxy learns the backend's status without the client gate | **decided (user, 2026-10-17)** |
 | [D40](D40.md) | Handle cut-off tightened by 2 (2^64−1 → 2^64−3); amends D25 | **decided (user, 2026-10-17); SHA pending** |
 | [D41](D41.md) | moonshot_live fixes: pending connects, transient connects (F1 by port), failed listens, EMFILE accepts | **decided (user, 2026-10-17)** |
+| [D42](D42.md) | Moonshot safety headline: fewer than 2^63 client connections (amends D37) | **decided (user, 2026-10-17)** |

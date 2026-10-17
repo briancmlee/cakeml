@@ -162,7 +162,7 @@ Proof
   strip_tac >> mp_tac own_hdl_lookup >> fs[]
 QED
 
-Theorem own_ok_cong[local]:
+Theorem own_ok_cong:
   ps'.b.tbl = ps.b.tbl ∧ ps'.b.nxt = ps.b.nxt ∧ ps'.b.closing = ps.b.closing ∧
   ps'.acq = ps.acq ∧ ps'.inb = ps.inb ⇒
   (own_ok lfd es ps' ⇔ own_ok lfd es ps) ∧ inbp lfd ps' = inbp lfd ps

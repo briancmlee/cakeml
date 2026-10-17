@@ -1744,3 +1744,111 @@ Proof
   >> rpt strip_tac >> qexists_tac ‘n’ >> simp[] >> irule cst_done >>
   simp[] >> metis_tac[]
 QED
+
+(* ------------------------------------------------------------------------
+   Liveness: what one round does to one connection
+   ------------------------------------------------------------------------ *)
+
+(* A handle's channel status, as the layer sees it *)
+Definition hstat_def:
+  hstat ((w : eworld), (hs : ehstate)) hd =
+    case ALOOKUP hs.tbl hd of SOME f => chan_status w f | NONE => NONE
+End
+
+(* An action on hd0 keeps every other open handle's fd and channel *)
+Theorem frame_core:
+  ALOOKUP hs.tbl hd0 = SOME f0 ∧ ALOOKUP w.open_fds f0 = SOME j0 ∧
+  ALOOKUP hs.tbl hd = SOME f ∧ ALOOKUP w.open_fds f = SOME j ∧ j < LENGTH w.chans ∧
+  hd ≠ hd0 ∧ ALL_DISTINCT (MAP SND hs.tbl) ∧ ALL_DISTINCT (MAP SND w.open_fds) ∧
+  wframe j0 w w1 ∧ (w1.open_fds = w.open_fds ∨ w1.open_fds = ADELKEY f0 w.open_fds) ∧
+  (hs1 = hs ∨ hs1 = eh_del hd0 hs) ⇒
+  ALOOKUP hs1.tbl hd = SOME f ∧ hstat (w1, hs1) hd = hstat (w, hs) hd
+Proof
+  strip_tac >>
+  ‘f ≠ f0’ by (strip_tac >> gvs[] >> metis_tac[ALOOKUP_SND_inj]) >>
+  ‘j ≠ j0’ by (strip_tac >> gvs[] >> metis_tac[ALOOKUP_SND_inj]) >>
+  gvs[eh_del_def, ALOOKUP_ADELKEY, hstat_def, chan_status_def, ep_chan_of_def, wframe_def]
+QED
+
+Theorem crel_other:
+  crel a N rqs lfd st rdyf ps w hs ∧ MEM hd (MAP FST hs.tbl) ⇒
+  ∃f j. ALOOKUP hs.tbl hd = SOME f ∧ ALOOKUP w.open_fds f = SOME j ∧ j < LENGTH w.chans
+Proof
+  rw[crel_def] >> gvs[] >> first_x_assum drule_all >> strip_tac >>
+  qexistsl_tac [‘f’, ‘j’] >> simp[] >>
+  imp_res_tac ALOOKUP_MEM >> fs[EVERY_MEM, MEM_MAP, EXISTS_PROD] >> metis_tac[]
+QED
+
+Theorem crel_distinct:
+  crel a N rqs lfd st rdyf ps w hs ⇒
+  ALL_DISTINCT (MAP SND hs.tbl) ∧ ALL_DISTINCT (MAP SND w.open_fds)
+Proof
+  simp[crel_def]
+QED
+
+Theorem frame_read:
+  crel a N rqs lfd st rdyf ps w hs ∧ k < N ∧ MEM hd0 (chd (EL k st.cs)) ∧
+  ehdo lfd v (w, hs) (ERead hd0 cread) = SOME (r, (w1, hs1)) ∧
+  hd ≠ hd0 ∧ MEM hd (MAP FST hs.tbl) ⇒
+  ALOOKUP hs1.tbl hd = ALOOKUP hs.tbl hd ∧ hstat (w1, hs1) hd = hstat (w, hs) hd
+Proof
+  strip_tac >> drule_all crel_handle >> strip_tac >>
+  rename1 ‘ALOOKUP hs.tbl hd0 = SOME f0’ >> rename1 ‘ALOOKUP w.open_fds f0 = SOME j0’ >>
+  drule_all crel_other >> strip_tac >> drule crel_distinct >> strip_tac >>
+  ‘0 < cread ∧ cread < 256 ** 8’ by simp[] >>
+  qspecl_then [‘hs’, ‘hd0’, ‘f0’, ‘w’, ‘j0’, ‘cread’] mp_tac
+    (Q.GENL [‘hs’, ‘hd’, ‘f’, ‘w’, ‘j’, ‘n’] ehdo_read) >> simp[] >>
+  strip_tac >> mp_tac frame_core >> impl_tac >> simp[] >> gvs[]
+QED
+
+
+Theorem frame_write:
+  crel a N rqs lfd st rdyf ps w hs ∧ k < N ∧ EL k st.cs = CUp hd0 rest ∧
+  ehdo lfd v (w, hs) (EWrite hd0 bs) = SOME (r, (w1, hs1)) ∧
+  hd ≠ hd0 ∧ MEM hd (MAP FST hs.tbl) ⇒
+  ALOOKUP hs1.tbl hd = ALOOKUP hs.tbl hd ∧ hstat (w1, hs1) hd = hstat (w, hs) hd
+Proof
+  strip_tac >> ‘MEM hd0 (chd (EL k st.cs))’ by simp[chd_def] >>
+  drule_all crel_handle >> strip_tac >>
+  rename1 ‘ALOOKUP hs.tbl hd0 = SOME f0’ >> rename1 ‘ALOOKUP w.open_fds f0 = SOME j0’ >>
+  ‘(EL j0 w.chans).status = Up ∧ ¬(EL j0 w.chans).shut’
+    by (qpat_x_assum ‘cok _ _ _ _ _ _’ mp_tac >> simp[cok_def]) >>
+  drule crel_takes >> strip_tac >>
+  drule_all crel_other >> strip_tac >> drule crel_distinct >> strip_tac >>
+  ‘w1 = upd_chan j0 (λc. c with <| sent := c.sent ++ bs; inflight := c.inflight + LENGTH bs |>) w ∧
+   hs1 = hs’
+    by (qpat_x_assum ‘ehdo _ _ _ _ = SOME (r, (w1, hs1))’ mp_tac >>
+        qspecl_then [‘hs’, ‘hd0’, ‘f0’, ‘w’, ‘j0’, ‘bs’, ‘lfd’, ‘v’] mp_tac
+          (Q.GENL [‘hs’, ‘hd’, ‘f’, ‘w’, ‘j’, ‘bs’, ‘lfd’, ‘v’] ehdo_write_up) >>
+        simp[] >> disch_then (fn th => simp[th])) >>
+  ‘wframe j0 w w1 ∧ w1.open_fds = w.open_fds’ by simp[wframe_def, upd_chan_def, EL_LUPDATE] >>
+  mp_tac frame_core >> impl_tac >> simp[]
+QED
+
+Theorem frame_connect:
+  crel a N rqs lfd st rdyf ps w hs ∧ hs.nxt + 2 < dimword (:64) ∧
+  ehdo lfd v (w, hs) (EConnect p) = SOME (r, (w1, hs1)) ∧ MEM hd (MAP FST hs.tbl) ⇒
+  ALOOKUP hs1.tbl hd = ALOOKUP hs.tbl hd ∧ hstat (w1, hs1) hd = hstat (w, hs) hd
+Proof
+  strip_tac >> drule_all crel_other >> strip_tac >>
+  qpat_x_assum ‘ehdo _ _ _ _ = _’ mp_tac >> simp[ehdo_connect] >>
+  IF_CASES_TAC
+  >- (strip_tac >> gvs[hstat_def, chan_status_def, ep_chan_of_def]) >>
+  ‘hdln (w2n lfd) hs.nxt < dimword (:64)’
+    by (‘hdln (w2n lfd) hs.nxt ≤ hs.nxt + 1’ by rw[hdln_def] >> fs[]) >>
+  simp[] >> strip_tac >> gvs[] >>
+  qpat_x_assum ‘crel _ _ _ _ _ _ _ _ _’ (strip_assume_tac o REWRITE_RULE [crel_def]) >>
+  ‘hd ≠ hdl lfd hs.nxt’
+    by (qpat_x_assum ‘∀hd. MEM hd (MAP FST hs.tbl) ⇔ _’ (qspec_then ‘hd’ mp_tac) >>
+        simp[] >> strip_tac >>
+        qpat_x_assum ‘∀i hd. i < N ∧ MEM hd (chd _) ⇒ ∃f j. _’ drule_all >> strip_tac >>
+        ‘MEM hd (MAP FST st.hlc)’
+          by (imp_res_tac ALOOKUP_MEM >> fs[MEM_MAP] >> metis_tac[FST]) >>
+        qpat_x_assum ‘∀hd. MEM hd (MAP FST st.hlc) ⇒ ∃k. _’ drule >> strip_tac >>
+        gvs[] >> irule hdl_fresh >> simp[]) >>
+  ‘¬MEM (w.alloc (LENGTH w.chans) (ep_used w)) (ep_used w)’ by fs[alloc_ok_def] >>
+  ‘w.alloc (LENGTH w.chans) (ep_used w) ≠ f’
+    by (strip_tac >> imp_res_tac ALOOKUP_MEM >> fs[ep_used_def, MEM_MAP] >>
+        metis_tac[FST]) >>
+  simp[eh_new_def, hstat_def, chan_status_def, ep_chan_of_def, EL_APPEND1]
+QED

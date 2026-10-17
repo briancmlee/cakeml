@@ -77,3 +77,39 @@ is buildable now.
 
 A (bridge) → B (S1–S3) → C (conn_live) → D input and server halves → D
 output (after flush_progress) → corollary.
+
+## Status (2026-10-17)
+
+Proved (spike/echo-live-pol, honest-echo-live/): S1 (generic), S2, S3w for
+the echo; the trace bridge (pftrace, F1_io ⇒ F1, accepts_fail ⇒
+accepts_fail_io); conn_live_l0 (generic pf_conn_live; the echo's
+echo_conn_live_trace under the statement's premises, the client bound from
+accepts_below).
+
+## D: echo_live_l0, decomposed
+
+Fix a prefix evs of the trace with episode j open on channel c (fd f), and
+drains c.  Excuses: ep_hard_err j, ep_timed_out K j (D23).
+
+1. Locate: evs lies in round N; the episode's world at the end of round N
+   has peer_sent ⊒ the one at evs (arrivals only append).
+2. Kernel input accounting (new): for a held fd f on channel c,
+   peer_sent c = (what L1 fetched on f, = client j's data in psk) ++ inbox c,
+   unless c broke and flushed its inbox (then a hard recv error is
+   observed: ep_hard_err).
+3. Input reaches psk: live_data (honest-ffi): inbox c at N ≼ client j's
+   data in psk, unless the episode ends (FEof / FReset; FReset is
+   ep_hard_err).
+4. The server: the M4 echo's liveness through hrun_sim (as S2/S3w did):
+   everything in client j's data is eventually in its outgoing in psk.
+5. Output: flush_live (honest-ffi): outgoing(j at n) ≼ csent c at n', or
+   broken / gone / hard_send (→ ep_hard_err) / rdrop (FReset → ep_hard_err,
+   or the D23 window → ep_timed_out, from the window's event facts).
+6. Kernel output accounting (new): csent c at a round boundary = l0_sent j
+   of the run's events (sends on f in episode j).
+7. EOF: peer_eof ⇒ EOF fetched (live_data's FEof) ⇒ the echo reads it and
+   closes its handle ⇒ L1's close of f reaches the trace (ep_closed j),
+   after the flush (closing) or at once.
+8. Strong form: HD16_io and stall_drains replace the excuses (honest-ffi's
+   D16 corollary and their model-level "peer drains within pf_sendwait"
+   corollary, bridged from the trace).

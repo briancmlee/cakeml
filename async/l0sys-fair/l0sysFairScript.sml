@@ -119,30 +119,60 @@ End
    [F0] kernel fairness, OBSERVED form (the main theorems' hypothesis)
    ------------------------------------------------------------------------ *)
 
+(* io P from n0 on: P holds again after every step *)
+Definition io_from_def:
+  io_from (n0 : num) (P : num -> bool) ⇔ ∀n1. n0 ≤ n1 ⇒ ∃n. n1 ≤ n ∧ P n
+End
+
 Definition kernel_fair_obs_def:
-  kernel_fair_obs ss rs ⇔
-    (* (1) DELIVERY: bytes owed to an end whose process keeps asking for
-       input are eventually seen *)
+  kernel_fair_obs (ss : num -> sysstate) (rs : num -> syslabel) ⇔
+    (* (D) DELIVERY to a receiver that keeps ASKING (a recv, or a poll
+       listing the fd for input): the kernel does not hold its bytes back
+       for ever.  Owed only to an asking receiver: l0sys inboxes are
+       unbounded, so unconditional delivery would drain every channel
+       whatever the receiver does, and exclude a stalled reader *)
+    (∀e k' j' (n0:num).
+       (∀n. n0 ≤ n ⇒ is_end (ss n) e ∧ (ss n).peer e = SOME (k', j') ∧
+                     (ss n).moved e < LENGTH (sys_chan (ss n) e).sent) ∧
+       io_from n0 (asks_in ss rs k' j') ⇒ F) ∧
+    (* (A) ACKNOWLEDGEMENT of moved bytes (they are in the receiver's kernel
+       buffer, [T] RFC 9293 §3.4): unconditional *)
+    (∀e (n0:num).
+       (∀n. n0 ≤ n ⇒ is_end (ss n) e ∧ (ss n).peer e ≠ NONE ∧
+                     (ss n).acked e < (ss n).moved e) ⇒ F) ∧
+    (* (F) EOF AFTER FIN, to a receiver that keeps asking *)
+    (∀e k' j' (n0:num).
+       (∀n. n0 ≤ n ⇒ is_end (ss n) e ∧ (ss n).peer e = SOME (k', j') ∧
+                     (sys_chan (ss n) e).shut ∧ ¬(ss n).finned e ∧
+                     (ss n).moved e = LENGTH (sys_chan (ss n) e).sent) ∧
+       io_from n0 (asks_in ss rs k' j') ⇒ F) ∧
+    (* (C) CONNECT SETTLEMENT: unconditional (as the internal form) *)
+    (∀e (n0:num).
+       (∀n. n0 ≤ n ⇒ is_end (ss n) e ∧ (sys_chan (ss n) e).connecting ∧
+                     ¬(sys_chan (ss n) e).closed) ⇒ F)
+End
+
+(* The OBSERVED OUTCOMES (what processes see), as claims to prove from
+   kernel_fair_obs, sched_fair, [F1] and [F2]: an asking receiver with
+   bytes owed sees input; an end whose process keeps asking to write, with
+   an asking peer, is seen writable; an asking peer of a shut end sees the
+   end of file; a pending connect polled for output is seen settled *)
+Definition observed_outcomes_def:
+  observed_outcomes ss rs ⇔
     (∀k j k' j' n0.
        (∀n. n0 ≤ n ⇒ is_end (ss n) (k', j') ∧ (ss n).peer (k', j') = SOME (k, j) ∧
                      (ss n).moved (k', j') < LENGTH (sys_chan (ss n) (k', j')).sent) ∧
        io (asks_in ss rs k j) ⇒ io (sees_in ss rs k j)) ∧
-    (* (2) SENDER PROGRESS: an end whose process keeps asking to write,
-       whose peer keeps asking for input, is eventually seen writable *)
     (∀k j k' j' n0.
        (∀n. n0 ≤ n ⇒ is_end (ss n) (k, j) ∧ (ss n).peer (k, j) = SOME (k', j')) ∧
        io (asks_out ss rs k j) ∧ io (asks_in ss rs k' j') ⇒ io (sees_out ss rs k j)) ∧
-    (* (3) EOF AFTER FIN: a shut end with everything moved, whose peer keeps
-       asking for input, is eventually seen at end of file by the peer *)
     (∀k j k' j' n0.
        (∀n. n0 ≤ n ⇒ is_end (ss n) (k, j) ∧ (ss n).peer (k, j) = SOME (k', j') ∧
                      (sys_chan (ss n) (k, j)).shut) ∧
        io (asks_in ss rs k' j') ⇒ io (sees_in ss rs k' j')) ∧
-    (* (4) CONNECT SETTLEMENT: a pending connect whose process keeps polling
-       its fd for output is eventually seen settled (writable, or in error) *)
     (∀k j n0.
-       (∀n. n0 ≤ n ⇒ is_end (ss n) (k, j) ∧ ¬(sys_chan (ss n) (k, j)).closed) ∧
-       (∀n. n0 ≤ n ⇒ (sys_chan (ss n) (k, j)).connecting) ∧
+       (∀n. n0 ≤ n ⇒ is_end (ss n) (k, j) ∧ ¬(sys_chan (ss n) (k, j)).closed ∧
+                     (sys_chan (ss n) (k, j)).connecting) ∧
        io (asks_out ss rs k j) ⇒ io (sees_out ss rs k j))
 End
 
@@ -212,11 +242,17 @@ Definition F2_sys_def:
     ∀k j h n. k < LENGTH S ∧ 0 < n ⇒ 0 < (EL k (ss 0).procs).ch.takes j h 0 n
 End
 
-(* TO PROVE (the sanity lemma, internal ⇒ observed) *)
+(* TO PROVE (the sanity lemma): the internal form implies the observed
+   one (each clause of kernel_fair_obs is a weakening: immediate) *)
 Definition obs_of_internal_claim_def:
-  obs_of_internal_claim ⇔
-    ∀S ss rs. l0sys_irun S ss rs ∧ sched_fair S ss rs ∧ kernel_fair ss rs ∧
-              F1_sys S rs ∧ F2_sys S ss ⇒ kernel_fair_obs ss rs
+  obs_of_internal_claim ⇔ ∀ss rs. kernel_fair ss rs ⇒ kernel_fair_obs ss rs
+End
+
+(* TO PROVE (the observed outcomes, the substantive layer) *)
+Definition outcomes_claim_def:
+  outcomes_claim ⇔
+    ∀S ss rs. l0sys_irun S ss rs ∧ sched_fair S ss rs ∧ kernel_fair_obs ss rs ∧
+              F1_sys S rs ∧ F2_sys S ss ⇒ observed_outcomes ss rs
 End
 
 (* TO PROVE: clause (5) from sched_fair *)
@@ -226,3 +262,13 @@ Definition blocking_poll_claim_def:
       l0sys_irun S ss rs ∧ sched_fair S ss rs ∧ io (blocked_poll S ss rs k conf bytes) ⇒
       io (λn. ∃c b out. rs n = Call k «sys_poll» c b out)
 End
+
+(* The sanity lemma, proved: every clause of kernel_fair_obs weakens one of
+   kernel_fair (so the observed form is satisfiable wherever the internal
+   one is) *)
+Theorem kernel_fair_obs_of_internal:
+  kernel_fair ss rs ⇒ kernel_fair_obs ss rs
+Proof
+  rw[kernel_fair_def, kernel_fair_obs_def] >> rpt strip_tac >>
+  first_x_assum (qspecl_then [‘e’, ‘n0’] mp_tac) >> simp[] >> metis_tac[optionTheory.NOT_SOME_NONE]
+QED

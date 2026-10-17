@@ -1,0 +1,11 @@
+# The proxy as a fold program for the generic E1 driver (e1-driver): the
+# bridge pprog = fold_prog, and the translated step.
+INCLUDES = ../model ../ffi-spike ../m3-assembly ../m4-server ../m4-common ../spec \
+           ../socket-v2 ../quiet/ffi ../cf-spike ../cf-actions ../cf-reactive ../m4-safety \
+           ../runnable ../machine-code ../http-model ../http-impl ../http-safety ../headline \
+           ../http-headers ../m4-liveness ../http-liveness ../http-liveness-h ../http-bodies ../socket-v2-cf \
+           ../close-v2-loop ../endpoint-world ../honest-l1-ep ../honest-l1 ../endpoint-hl ../honest-l0 \
+           ../honest-ffi ../moonshot ../moonshot-step9/hl ../moonshot-step9/proxy ../e1-driver
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

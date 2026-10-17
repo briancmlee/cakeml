@@ -57,11 +57,11 @@ Proof
 QED
 
 (* The blocking loop's run for the echo on listener k, from w1 *)
-Overload echo_b_rounds = “λk w1. brounds_t (n2w k) echo_hw (interest [n2w k])
+Overload echo_b_rounds = “λk w1. brounds_t (n2w k) echo_hw (asyncM4LiveInterest$live [n2w k] (log_of (srelabel (server k))))
                                    (srelabel (server k)) (w1, pinit)”
 
 Overload echo_l0b_run = “λk w1. LFLATTEN (LGENLIST (λi. fromList
-  (bround_evs (n2w k) echo_hw (interest [n2w k]) (srelabel (server k)) (w1, pinit) i)) NONE)”
+  (bround_evs (n2w k) echo_hw (asyncM4LiveInterest$live [n2w k] (log_of (srelabel (server k)))) (srelabel (server k)) (w1, pinit) i)) NONE)”
 
 (* main up to the loop, then the loop's spec *)
 fun main_tac loop_spec =
@@ -86,7 +86,7 @@ fun main_tac loop_spec =
 Theorem main_div_spec:
   limited_parts l0_names p ∧ l0_reach w0 w ∧ UNIT_TYPE () uv ∧
   sys_listen_echo w = SOME (out, w1, ev) ∧ listen_fd out = SOME k ∧ k < 2147483648 ∧
-  bt_awake (n2w k) echo_hw (interest [n2w k]) (srelabel (server k)) (w1, pinit) ⇒
+  bt_awake (n2w k) echo_hw (asyncM4LiveInterest$live [n2w k] (log_of (srelabel (server k)))) (srelabel (server k)) (w1, pinit) ⇒
   app (p:'ffi ffi_proj) main_v [uv] (L0_EV w0 w [])
     (POSTd io. io = LAPPEND (fromList [ev]) (echo_l0b_run k w1))
 Proof

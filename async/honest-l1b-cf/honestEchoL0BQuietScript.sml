@@ -41,7 +41,7 @@ End
 (* The echo's L1 parameters on listener k *)
 Overload elfd = “λk. n2w k : word64”
 Overload epol = “pol_self echo_hw”
-Overload eifds = “λk. interest [n2w k : word64]”
+Overload eifds = “λk. asyncM4LiveInterest$live [n2w k : word64] (log_of (srelabel (server k)))”
 Overload esrv = “λk. srelabel (server k)”
 
 (* The PF world: the post-listen world w1, reindexed by the blocking run *)
@@ -223,7 +223,7 @@ Proof
   (* the listen succeeds: the loop's facts, in the PF world *)
   first_x_assum drule_all >> simp[echo_pf_facts_def] >> strip_tac >>
   ‘l0wf w1 ∧ lone (elfd k) w1’ by metis_tac[listen_l0wf, listen_lone] >>
-  ‘bquiet (esrv k) (eifds k) (K F)’ by simp[echo_bquiet] >>
+  ‘bquiet (esrv k) (eifds k) (K F)’ by simp[echo_bquiet_live] >>
   drule_all sys_listen_echo_shift >> strip_tac >>
   ‘l0_reach w0 w1’
     by (‘l0_reach w0 w0’ by simp[l0_reach_init] >>

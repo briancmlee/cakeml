@@ -89,7 +89,7 @@ QED
 Theorem echo_l0b_div_semantics:
   l0_rely w0 ∧ w0.hist = [] ∧
   sys_listen_echo w0 = SOME (out, w1, ev) ∧ listen_fd out = SOME k ∧ k < 2147483648 ∧
-  bt_awake (n2w k) echo_hw (interest [n2w k]) (srelabel (server k)) (w1, pinit) ⇒
+  bt_awake (n2w k) echo_hw (asyncM4LiveInterest$live [n2w k] (log_of (srelabel (server k)))) (srelabel (server k)) (w1, pinit) ⇒
   semantics_dec_list (init_state (l0_ffi w0)) init_env echo_l0b_prog
     (Diverge (LCONS ev (echo_l0b_run k w1)))
 Proof
@@ -154,7 +154,7 @@ QED
    sleeps or sleeps in some round *)
 Theorem echo_b_awake_or_sleeps:
   l0_rely w0 ∧ w0.hist = [] ∧ sys_listen_echo w0 = SOME (out, w1, ev) ∧ k < 2147483648 ⇒
-  bt_awake (n2w k) echo_hw (interest [n2w k]) (srelabel (server k)) (w1, pinit) ∨
+  bt_awake (n2w k) echo_hw (asyncM4LiveInterest$live [n2w k] (log_of (srelabel (server k)))) (srelabel (server k)) (w1, pinit) ∨
   ∃n h evs cb. echo_b_rounds k w1 n = SOME (BSlept h evs cb)
 Proof
   strip_tac >>
@@ -186,7 +186,7 @@ Theorem echo_l0b_semantics_prog:
     ((listen_fd out = NONE ∧
       semantics_prog (init_state (l0_ffi w0)) init_env echo_l0b_prog (Terminate Success [ev])) ∨
      (∃k. listen_fd out = SOME k ∧
-          ((bt_awake (n2w k) echo_hw (interest [n2w k]) (srelabel (server k)) (w1, pinit) ∧
+          ((bt_awake (n2w k) echo_hw (asyncM4LiveInterest$live [n2w k] (log_of (srelabel (server k)))) (srelabel (server k)) (w1, pinit) ∧
             semantics_prog (init_state (l0_ffi w0)) init_env echo_l0b_prog
               (Diverge (LCONS ev (echo_l0b_run k w1)))) ∨
            (∃n h evs cb.

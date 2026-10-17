@@ -75,7 +75,7 @@ Quote add_cakeml:
       val idle = (case acts of [] => pf_idle_c lfd ps1 hs | a :: rest => False)
     in
       case (if idle then pf_tailb lfd hw hs ps1 else pf_tail lfd hw hs ps1) of (rdy, ps2) =>
-        (lfd, hw, add_accepted fds rs, ps2, Async.poll c (map_num rdy, 0, rs))
+        (lfd, hw, live_round fds acts rs, ps2, Async.poll c (map_num rdy, 0, rs))
     end;
 
   fun run_pfb st = run_pfb (step_pfb st);

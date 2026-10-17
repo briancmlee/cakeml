@@ -1,16 +1,18 @@
 # Decisions (one file per decision)
 
 The decision log that used to live in design/36 §9, split so that concurrent additions never
-conflict. It lives on branch `shared/base` (owner: devex); every line merges that branch forward.
+conflict. It lives on branch `shared/base`; every line merges that branch forward.
+**Owner of shared/base: m4-server** (merges trusted/model commits, tags pf-model-base-N).
+**Decision files: written by the desk** from the user's rulings in work/orchestrator/DECISIONS.md.
 
 Guiding rule (the user's): **for every L0 decision, do the honest thing, even if it is more work.**
 
-- **New decision:** the author writes `Dnn.md` (title line, `Status:`, the decision text) on a branch cut
-  from `shared/base`, and sends it to the owner, who merges it. Don't add rows to design/36 §9: that
-  table is frozen as of this split (its copies on the lines differ; these files are the reference).
-- **Amendment:** edit the decision's file, keep the old wording under "Superseded" if it was approved.
-- Ids are permanent. Open questions get Q-ids in work/orchestrator/DECISIONS.md and become Dnn here
-  once ruled.
+- **New decision:** the desk writes `Dnn.md` (title line, `Status:`, the user's words verbatim, the decision
+  text, the Q-id) in its detached worktree and runs `~/projects/cakeml/work/tools/bin/basecommit --only
+  async/design/decisions/ "<msg>"`. Don't add rows to design/36 §9: that table is frozen as of the split (its
+  copies on the lines differ; these files are the reference).
+- **Amendment:** append a dated section to the decision's file; keep the earlier wording.
+- Ids are permanent. Open questions get Q-ids in work/orchestrator/DECISIONS.md and become Dnn here once ruled.
 
 | id | decision | status |
 |---|---|---|

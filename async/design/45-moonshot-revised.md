@@ -932,6 +932,8 @@ l0sys inherits the L0 model's `eof_first` (D21, user-approved; honest-ffi, d20-p
 
 **(e) unblock only a blocking poll (user, via the coordinator, 2026-10-17):** `unblock` rewrites the mode byte to 0w only when it is 1w (blocking). Before, it rewrote any mode, so a poll with an invalid mode (≥ 2w) was answered by l0sys as a valid non-blocking poll, while the L0 world (`l0_call` needs `w2n (HD conf) ≤ 1`) fails it with FFI_failed. A run could then record an event no L0 world produces, and B1 (`l0sys_proj`) would be false. Found while proving B1. A mode-0 poll was already unchanged, and a mode-1 poll is handled as before.
 
+**(f) l0sys ported to D20 (user, via the coordinator, 2026-10-17: APPROVED):** D20 moved sys_poll's entries from `conf` into the call's buffer (from offset 16), and removed `poll_entries`. `poll_may_return` now takes the buffer and reads the entries as `l0_call` does, `MAP pe_fe (pollfd_entries (DROP 16 bytes))`, using honestL0World's decoders. `sys_step` passes `bytes`. Nothing else changes; (e)'s `unblock` still fits D20's 1-byte conf.
+
 The safety path (§6, steps 1–4 and 9–12) starts when its dependencies land.
 The coordinator assigns the implementation.
 

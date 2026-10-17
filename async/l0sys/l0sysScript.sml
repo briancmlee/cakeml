@@ -166,10 +166,13 @@ Definition unblock_def:
     if nm = «sys_poll» ∧ conf ≠ [] ∧ HD conf = 1w then 0w :: TL conf else conf
 End
 
+(* The entries are those l0_call polls: the call's buffer from offset 16,
+   decoded by honestL0World's pollfd_entries and pe_fe (D20) *)
 Definition poll_may_return_def:
-  poll_may_return nm (conf : word8 list) (w : l0world) ⇔
+  poll_may_return nm (conf : word8 list) (bytes : word8 list) (w : l0world) ⇔
     nm = «sys_poll» ∧ conf ≠ [] ∧ HD conf = 1w ⇒
-    w.ch.transient w.hist ≠ NONE ∨ any_revents w (poll_entries (DROP 1 conf))
+    w.ch.transient w.hist ≠ NONE ∨
+    any_revents w (MAP pe_fe (pollfd_entries (DROP 16 bytes)))
 End
 
 (* Exit: every fd of the process is closed (honestL0World's close_fd) *)
@@ -219,7 +222,7 @@ Definition sys_step_def:
   (sys_step s (Call k nm conf bytes out) s' ⇔
      k < LENGTH s.procs ∧ s.alive k ∧
      let w = EL k s.procs in
-       poll_may_return nm conf w ∧
+       poll_may_return nm conf bytes w ∧
        ∃w1. l0_call nm (unblock nm conf) bytes w = SOME (FFIreturn out w1) ∧
             let s1 = s with procs :=
                        LUPDATE (w1 with <| clock := w.clock + 1;

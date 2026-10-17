@@ -53,11 +53,18 @@ Proof
        enc_listen_fail_def]
 QED
 
+Theorem pfd_revents_envck[simp]:
+  pfd_revents (envck w E c) = pfd_revents w
+Proof
+  simp[FUN_EQ_THM, FORALL_PROD, pfd_revents_def]
+QED
+
 Theorem envck_reads3[simp]:
   any_revents (envck w E c) fes = any_revents w fes ∧
-  poll_out (envck w E c) fes = poll_out w fes
+  poll_out (envck w E c) bytes = poll_out w bytes ∧
+  poll_failed (envck w E c) e bytes = poll_failed w e bytes
 Proof
-  simp[any_revents_def, poll_out_def]
+  simp[any_revents_def, poll_out_def, poll_failed_def]
 QED
 
 Theorem FOLDL_upd_envck[simp]:
@@ -152,7 +159,7 @@ Proof
   Cases_on ‘nm = «sys_poll»’
   >- (gvs[] >> once_rewrite_tac[l0_call_def] >> simp[] >>
       IF_CASES_TAC >> simp[] >>
-      ‘HD (unblock «sys_poll» conf) = 0w’ by (irule unblock_poll_hd >> fs[]) >>
+      ‘HD (unblock «sys_poll» conf) = 0w’ by (irule unblock_poll_hd >> fs[] >> strip_tac >> fs[]) >>
       simp[] >> CASE_TAC >> simp[ffi_envck_def]) >>
   simp[unblock_def] >> once_rewrite_tac[l0_call_def] >> simp[] >>
   rpt (IF_CASES_TAC >> simp[]) >>
@@ -177,7 +184,7 @@ Proof
 QED
 
 Theorem l0_call_may_return:
-  poll_may_return nm conf w ∧ l0_call nm (unblock nm conf) bytes w = SOME r ⇒
+  poll_may_return nm conf bytes w ∧ l0_call nm (unblock nm conf) bytes w = SOME r ⇒
   l0_call nm conf bytes w = SOME r
 Proof
   Cases_on ‘nm = «sys_poll» ∧ conf ≠ [] ∧ HD conf = 1w’
@@ -213,14 +220,14 @@ Proof
 QED
 
 Theorem poll_may_return_envck[simp]:
-  poll_may_return nm conf (envck w E c) ⇔ poll_may_return nm conf w
+  poll_may_return nm conf bytes (envck w E c) ⇔ poll_may_return nm conf bytes w
 Proof
   simp[poll_may_return_def]
 QED
 
 Theorem l0_oracle_call:
   l0_call nm (unblock nm conf) bytes wk = SOME (FFIreturn out w1) ∧
-  poll_may_return nm conf wk ∧
+  poll_may_return nm conf bytes wk ∧
   V.env = (λn h nm. A n) ∧ V.clock = wk.clock ∧
   wk with env := V.env = FOLDL l0_deliver V (A wk.clock) ⇒
   l0_oracle (ExtCall nm) V conf bytes =
@@ -279,7 +286,7 @@ Definition kstep_def:
     case r of
     | Call k0 nm conf bytes out =>
         if k0 = k then
-          ∃w1. s.alive k ∧ poll_may_return nm conf (EL k s.procs) ∧
+          ∃w1. s.alive k ∧ poll_may_return nm conf bytes (EL k s.procs) ∧
                l0_call nm (unblock nm conf) bytes (EL k s.procs) = SOME (FFIreturn out w1) ∧
                EL k s'.procs =
                  FOLDL l0_deliver

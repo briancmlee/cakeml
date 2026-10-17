@@ -103,3 +103,13 @@ Next: phase 4, the L1 functional core (extend honestL1 to the L0 world, v2 only 
   - `rw` / `strip_tac` split goal conjunctions before `irule IH`, and then `irule` of the whole IH fails.
   - `metis_tac` looped (minutes, GBs) several times on big assumption sets. Prefer drule/qspecl_then.
   - `hst` and `o` are constants: do not use them as variable names.
+
+
+## Machine move (2026-10-16): exact next steps
+
+Branch tip spike/honest-connect. Decisions since the last section: D11′ ([F1] on observed outcomes; poll: any failure counts as retried), S4 with no-Write (approved text), l0wf/noconn w0 hypotheses OK. close-v2's PR #141 (Settle as an arrival) is approved; base E1 on spike/ep-settle @3c916c510.
+
+   1. honest-l1/honestL1PFRoundScript.sml: live part proved (winv, winv_do, pend_do, ev_do, sys_winv, l1_close_f, fds_lt_call, l1_close_winv, l1_polls_winv...). WIP comment block at end holds: pdo_winv, pacts_winv, l1_flush_winv, l1_reap_winv, pf_fetch_winv (loop on 'TRY (metis_tac[])' — replace with targeted drule of sys_winv / IH), pround_winv, pend_recv_retried, pdo_f, pacts_f, l1_polls_f, l1_flush_f, l1_reap_f, pf_fetch_f, pround_f. Un-comment one at a time (replace '(-*' '*-)' back), prove, keep cheats out of commits.
+   2. Run-level: winv along prun (needs l0wf w0 ∧ noconn w0 ∧ errb w0 hyps, + rely/fds_lt from l1pf_refines_hl); fkeep from pown/pl2_ok; revs prefix-monotone (prounds evs ++ revs).
+   3. fetch_progress in honestL1PFLive (statement in comment; add hyps l0wf/noconn/errb w0 and fds_lt w0, MEM lfd used); proof: by contradiction, use pround_f each round + F1(poll,f) + F1(recv,f) + S1/S3/S4.
+   4. Stream invariant, live-data (D16), live-conn ([F3]). Then E1 EP→endpointHL refinement on 3c916c510.

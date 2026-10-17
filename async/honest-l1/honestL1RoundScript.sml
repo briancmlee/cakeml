@@ -124,11 +124,6 @@ Proof
   every_case_tac >> gvs[outbox_of_def]
 QED
 
-Theorem poll_chunks_small:
-  LENGTH l ≤ 4096 ⇒ poll_chunks l = [l]
-Proof
-  simp[Once poll_chunks_def]
-QED
 
 Theorem l1_flush_noout:
   ∀fs w. st.outbox = [] ⇒ l1_flush fs (w, st) = SOME ((w, st), [])
@@ -198,21 +193,22 @@ QED
 
 (* A poll in the simple world: it never fails or blocks *)
 Theorem sys_poll_simple:
-  simple_v2 p lfd sched w ∧ EVERY (λ(f, e). w2n f < 2147483648 ∧ e < 256) fes ∧
-  LENGTH fes ≤ 4096 ⇒
+  simple_v2 p lfd sched w ∧ EVERY (λ(f, e). small f ∧ e < 4) fes ⇒
   sys_poll fes w =
-    SOME (poll_out (l0_tick «sys_poll» w) fes,
+    SOME (poll_out (l0_tick «sys_poll» w) (poll_buf fes),
           l0_tick «sys_poll» w with
-            hist := w.hist ++ [(«sys_poll», poll_conf fes, REPLICATE (LENGTH fes + 13) 0w)],
-          IO_event (ExtCall «sys_poll») (poll_conf fes)
-            (ZIP (REPLICATE (LENGTH fes + 13) 0w, poll_out (l0_tick «sys_poll» w) fes)))
+            hist := w.hist ++ [(«sys_poll», [0w], poll_buf fes)],
+          IO_event (ExtCall «sys_poll») [0w]
+            (ZIP (poll_buf fes, poll_out (l0_tick «sys_poll» w) (poll_buf fes))))
 Proof
   strip_tac >>
-  ‘EVERY (λ(f, e). e < 256) fes ∧ EVERY (fd_ok o FST) fes’
-    by (gvs[EVERY_MEM, FORALL_PROD, fd_ok_def] >> metis_tac[]) >>
+  ‘EVERY pe_ok (pollfd_entries (DROP 16 (poll_buf fes)))’
+    by (simp[pollfd_entries_buf, EVERY_MAP] >> gvs[EVERY_MEM, FORALL_PROD] >>
+        metis_tac[pe_pfd_bytes]) >>
   ‘w.ch.transient w.hist = NONE’ by gvs[simple_v2_def, simple0_def] >>
-  simp[sys_poll_def, l0_do_def, l0_ffi_fn_def, l0_call_def, l0_hdr_def, poll_conf_def,
-       poll_entries_conf, LENGTH_poll_conf]
+  ‘16 ≤ LENGTH (poll_buf fes) ∧ (LENGTH (poll_buf fes) − 16) MOD 8 = 0’
+    by simp[poll_buf_def, MOD_EQ_0, Once MULT_COMM] >>
+  fs[DROP_16_poll_buf] >> simp[sys_poll_def, l0_do_buf_def, l0_ffi_fn_def, l0_call_def]
 QED
 
 Theorem poll_pairs_mem:
@@ -248,7 +244,6 @@ Proof
   qabbrev_tac ‘fds = hpoll_fds lfd hs hfds’ >>
   qabbrev_tac ‘fes = MAP (λf. (f, 1n)) fds’ >>
   ‘l1_poll_set lfd hw st hfds = fes’ by simp[Abbr ‘fes’, Abbr ‘fds’, poll_set_simple] >>
-  ‘poll_chunks fes = [fes]’ by simp[poll_chunks_small, Abbr ‘fes’] >>
   qabbrev_tac ‘w1 = l0_tick «sys_poll» w’ >>
   ‘core_rel p lfd w1 (tick2 s) ∧ (tick2 s).future = fut_of p lfd sched (npolls w.hist + 1)’
     by (simp[Abbr ‘w1’] >> metis_tac[poll_tick_core]) >>
@@ -256,46 +251,48 @@ Proof
     by (qunabbrev_tac ‘fds’ >> drule hpoll_fds_open >>
         disch_then (qspec_then ‘hfds’ mp_tac) >> simp[]) >>
   ‘l0_rely w1’ by (simp[Abbr ‘w1’] >> irule l0_rely_ch >> qexists_tac ‘w’ >> simp[]) >>
-  ‘EVERY (λ(f, e). w2n f < 2147483648 ∧ e < 256) fes’
-    by (simp[Abbr ‘fes’, EVERY_MAP] >> gvs[EVERY_MEM] >> rw[] >>
+  ‘EVERY (λ(f, e). small f ∧ e < 4) fes’
+    by (simp[Abbr ‘fes’, EVERY_MAP, small_def] >> gvs[EVERY_MEM] >> rw[] >>
         Cases_on ‘ALOOKUP w.open_fds f’ >> gvs[] >>
         ‘MEM f (l0_used w)’ by (irule open_used >> simp[]) >>
         gvs[fds_lt_def, l0_rely_def] >> res_tac >> decide_tac) >>
-  ‘LENGTH fes ≤ 4096’ by simp[Abbr ‘fes’] >>
   drule_all sys_poll_simple >> strip_tac >>
   simp[l1_tail_def, l1_polls_def] >>
-  qabbrev_tac ‘out = poll_out w1 fes’ >>
-  ‘LENGTH (FILTER (λfe. fd_revents w1 fe ≠ 0w) fes) < 256 ** 8’
-    by (irule LESS_EQ_LESS_TRANS >> qexists_tac ‘LENGTH fes’ >> simp[LENGTH_FILTER_LEQ]) >>
-  ‘l0_res_of out = Ok (LENGTH (FILTER (λfe. fd_revents w1 fe ≠ 0w) fes))’
-    by (simp[Abbr ‘out’, poll_out_def] >> irule l0_res_of_enc_app >> simp[l0_res_ok_def]) >>
-  ‘DROP 13 out = MAP (fd_revents w1) fes’
-    by (simp[Abbr ‘out’, poll_out_def] >> simp[DROP_APPEND, enc_res_def, LENGTH_n2w8]) >>
-  ‘LENGTH out = LENGTH fes + 13’
-    by (simp[Abbr ‘out’, poll_out_def] >> simp[enc_res_def, LENGTH_n2w8]) >>
+  qabbrev_tac ‘out = poll_out w1 (poll_buf fes)’ >>
+  ‘∃k. l0_res_of out = Ok k’
+    by (simp[Abbr ‘out’, poll_out_def] >> REWRITE_TAC [GSYM APPEND_ASSOC] >>
+        qmatch_goalsub_abbrev_tac ‘enc_res (Ok N) ++ R’ >> qexists_tac ‘N’ >>
+        irule l0_res_of_enc_app >> simp[l0_res_ok_def, Abbr ‘N’] >>
+        irule LESS_EQ_LESS_TRANS >> qexists_tac ‘LENGTH fes’ >>
+        simp[pollfd_entries_buf] >> simp[Abbr ‘fes’] >>
+        irule LESS_EQ_TRANS >> irule_at Any LENGTH_FILTER_LEQ >> simp[]) >>
   ‘poll_revents fes out = ZIP (fds, MAP (λf. byte_revents (fd_revents w1 (f, 1))) fds)’
-    by (simp[poll_revents_def, Abbr ‘fes’, MAP_MAP_o, combinTheory.o_DEF] >>
-        ‘LENGTH (MAP (fd_revents w1) (MAP (λf. (f,1n)) fds)) = LENGTH fds’ by simp[] >>
-        simp[TAKE_LENGTH_ID_rwt, MAP_MAP_o, combinTheory.o_DEF]) >>
+    by (qunabbrev_tac ‘out’ >> drule_all poll_revents_ok >> simp[] >>
+        simp[Abbr ‘fes’, MAP_MAP_o, combinTheory.o_DEF]) >>
   ‘EVERY (λf. f = lfd ∨ ALOOKUP w1.open_fds f ≠ NONE) fds’ by gvs[Abbr ‘w1’] >>
   drule_all readable_filter >> strip_tac >>
   simp[l1_flush_noout, l1_reap_def, l1_ready_hready, sock_poll2_def] >>
   ‘l0_used w1 = l0_used w ∧ w1.env = w.env ∧ w1.ch = w.ch ∧ w1.fd_limit = w.fd_limit ∧
    w1.open_fds = w.open_fds ∧ w1.hist = w.hist’
     by simp[Abbr ‘w1’, l0_tick_def] >>
-  ‘EVERY (λ(f, e). e < 256) fes’ by (simp[Abbr ‘fes’, EVERY_MAP]) >>
-  ‘poll_entries (DROP 1 (poll_conf fes)) = fes’ by simp[poll_conf_def, poll_entries_conf] >>
   ‘«sys_poll» ≠ «sys_recv» ∧ «sys_poll» ≠ «sys_send» ∧ «sys_poll» ≠ «sys_accept» ∧
    «sys_poll» ≠ «sys_close»’ by EVAL_TAC >>
   rpt conj_tac
   (* the event *)
-  >- (simp[l0_v2_event_def, spoll2_event_def, MAP_SND_ZIP_REPLICATE] >>
-      ‘TAKE (LENGTH fes) (DROP 13 out) = MAP (fd_revents w1) fes’ by simp[] >>
-      simp[Abbr ‘fes’, MAP_MAP_o, combinTheory.o_DEF] >>
-      gvs[MAP_MAP_o, combinTheory.o_DEF] >>
-      ‘TAKE (LENGTH fds) (MAP (λf. fd_revents w1 (f,1)) fds) =
-       MAP (λf. fd_revents w1 (f,1)) fds’ by simp[TAKE_LENGTH_ID_rwt] >>
-      simp[MAP_MAP_o, combinTheory.o_DEF])
+  >- (‘LENGTH out = LENGTH (poll_buf fes)’
+        by (simp[Abbr ‘out’] >> irule (cj 1 LENGTH_poll_out) >>
+            simp[poll_buf_def] >> metis_tac[]) >>
+      simp[l0_v2_event_def, spoll2_event_def, MAP_ZIP, pollfd_entries_buf] >>
+      qunabbrev_tac ‘out’ >> drule poll_out_entries >>
+      disch_then (qspec_then ‘w1’ SUBST1_TAC) >>
+      simp[Abbr ‘fes’, MAP_MAP_o, combinTheory.o_DEF, DROP_APPEND] >>
+      ‘MAP (λx. pe_fd (pfd_bytes (x,1))) fds = fds’
+        by (simp[MAP_EQ_ID] >> rpt strip_tac >>
+            qpat_x_assum ‘EVERY _ (MAP _ fds)’ mp_tac >> simp[EVERY_MAP, EVERY_MEM] >>
+            disch_then drule >> strip_tac >>
+            drule_then (qspec_then ‘1’ mp_tac) pe_pfd_bytes >> simp[pe_fe_def]) >>
+      simp[] >> simp[pfd_bytes_def] >>
+      qpat_x_assum ‘MAP (λf. poll_flag _) _ = _’ (fn th => REWRITE_TAC [GSYM th]))
   (* the relation *)
   >- (qpat_x_assum ‘l1v2_rel _ _ _ _ _’ mp_tac >>
       simp[l1v2_rel_def, npolls_snoc] >> strip_tac >> simp[] >> metis_tac[])

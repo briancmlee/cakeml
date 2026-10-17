@@ -100,12 +100,12 @@ Proof
       ‘event_opened (IO_event (ExtCall «sock_poll») conf bs) = NONE’
         by simp[event_opened_def, event_accepted_def] >>
       gvs[] >>
-      ‘ep_step_ok (settle v0 with clock := v0.clock + 1) (v0.env v0.clock v0.hist)’
+      ‘ep_step_ok (v0 with clock := v0.clock + 1) (v0.env v0.clock v0.hist)’
         by (fs[simple_class_def, ep_rely_def, ep_sched_ok_def] >>
             ‘∃cs. ep_after w0 cs = SOME v0’ by (drule replay_ok_after >> simp[Abbr ‘v0’]) >>
             first_x_assum drule >> fs[]) >>
       ‘core lfd a sk v0’ by fs[v2rel_def] >>
-      imp_res_tac core_all_up >> imp_res_tac settle_id >>
+      imp_res_tac core_all_up >>
       qabbrev_tac ‘c = v0.clock’ >>
       qabbrev_tac ‘es = w0.env c []’ >>
       ‘v0.env c v0.hist = es’ by fs[simple_class_def, open_loop_def, Abbr ‘es’] >>

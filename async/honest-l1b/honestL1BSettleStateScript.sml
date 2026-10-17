@@ -55,7 +55,7 @@ Proof
   rw[sys_send_def, sys_close_def, l0_do_def, AllCaseEqs()] >> simp[ev_name_def]
 QED
 
-Theorem flush_names[local]:
+Theorem flush_names:
   ∀fs w st ws evs. l1_flush fs (w, st) = SOME (ws, evs) ⇒
                    EVERY (λev. ev_name ev = ExtCall «sys_send») evs
 Proof
@@ -64,7 +64,7 @@ Proof
   >> simp[AllCaseEqs()] >> rpt strip_tac >> gvs[] >> metis_tac[sys_names]
 QED
 
-Theorem reap_names[local]:
+Theorem reap_names:
   ∀fs w st ws evs. l1_reap fs (w, st) = SOME (ws, evs) ⇒
                    EVERY (λev. ev_name ev = ExtCall «sys_close») evs
 Proof
@@ -75,7 +75,7 @@ Proof
   >> strip_tac >> first_x_assum drule >> simp[]
 QED
 
-Theorem names_nil[local]:
+Theorem names_nil:
   EVERY (λev. ev_name ev = ExtCall «sys_poll») l ∧ EVERY (λev. ev_name ev = ExtCall nm) l ∧
   nm ≠ «sys_poll» ⇒ l = []
 Proof

@@ -14,6 +14,7 @@
 Theory honestL1BSleep
 Ancestors
   honestL1BStable honestL1BWake honestL1BSettleState honestL1BCallsStop honestL1BGone
+  honestL1BNoFail honestL1BQuietWorld
   honestL1BConnLive honestL1BGuar honestL1BTransfer honestL1BCorr honestL1BSim
   honestL1BRefine honestL1BPoll honestL1BModel honestL1BStmts honestL0Reindex
   honestL1BDrains honestL1BFaith honestEchoL0Spec honestL1PFFlush
@@ -339,4 +340,135 @@ Proof
   qspecl_then [‘fes’, ‘x’] mp_tac (Q.GENL [‘fes’, ‘x’] poll_out_wakes) >>
   impl_tac >- (rpt conj_tac >> first_assum ACCEPT_TAC) >> strip_tac >>
   qpat_x_assum ‘∀f e r. MEM (f, e) fes ∧ _ ⇒ _’ drule_all >> simp[]
+QED
+
+(* ------------------------------------------------------------------------
+   [F1] on the blocking trace
+   ------------------------------------------------------------------------ *)
+
+(* A blocking run whose rounds from n1 on each add one failed poll of the
+   listener contradicts [F1] *)
+Theorem trace_polls_contra:
+  btrace lfd hw ifds bz m w0 ps0 io ∧ F1_io io ∧
+  (∀n. brounds lfd hw ifds bz m (w0, ps0) n = SOME (BRun (H n) (WS n) (E n) (L n))) ∧
+  (∀n. n1 ≤ n ⇒ ∃ev. E (SUC n) = E n ++ [ev] ∧ ev_on «sys_poll» lfd ev ∧ retried ev) ⇒
+  F
+Proof
+  strip_tac >>
+  ‘∀n. LPREFIX (fromList (E n)) io’
+    by (gen_tac >> fs[btrace_def, bpre_def] >> qexists_tac ‘n’ >> simp[]) >>
+  ‘∀d. LENGTH (E (n1 + d)) = LENGTH (E n1) + d ∧
+       ∀i. LENGTH (E n1) ≤ i ∧ i < LENGTH (E (n1 + d)) ⇒
+           ev_on «sys_poll» lfd (EL i (E (n1 + d))) ∧ retried (EL i (E (n1 + d)))’
+    by (Induct >> simp[] >>
+        qpat_x_assum ‘∀n. n1 ≤ n ⇒ _’ (qspec_then ‘n1 + d’ mp_tac) >> simp[] >> strip_tac >>
+        simp[ADD_CLAUSES] >> rpt strip_tac >>
+        Cases_on ‘i < LENGTH (E (n1 + d))’ >> fs[EL_APPEND1, EL_APPEND2] >>
+        ‘i = LENGTH (E n1) + d’ by decide_tac >> simp[EL_APPEND2]) >>
+  qabbrev_tac ‘L0 = LENGTH (E n1)’ >>
+  ‘∀i. L0 ≤ i ⇒ ∃ev. LNTH i io = SOME ev ∧ ev_on «sys_poll» lfd ev ∧ retried ev’
+    by (rpt strip_tac >>
+        qpat_x_assum ‘∀d. LENGTH _ = _ ∧ _’ (qspec_then ‘i − L0 + 1’ strip_assume_tac) >>
+        qexists_tac ‘EL i (E (n1 + (i − L0 + 1)))’ >>
+        ‘i < LENGTH (E (n1 + (i − L0 + 1)))’ by simp[Abbr ‘L0’] >>
+        simp[] >>
+        qpat_x_assum ‘∀n. LPREFIX _ io’ (qspec_then ‘n1 + (i − L0 + 1)’ mp_tac) >>
+        simp[LPREFIX_fromList_LNTH]) >>
+  qpat_x_assum ‘F1_io _’ (mp_tac o REWRITE_RULE[F1_io_def]) >>
+  disch_then (qspecl_then [‘«sys_poll»’, ‘lfd’] mp_tac) >> impl_tac
+  >- (gen_tac >> first_x_assum (qspec_then ‘i + L0’ mp_tac) >> simp[] >> strip_tac >>
+      qexistsl_tac [‘i + L0’, ‘ev’] >> simp[]) >>
+  disch_then (qspec_then ‘L0’ strip_assume_tac) >>
+  first_x_assum (qspec_then ‘i'’ mp_tac) >> simp[] >> strip_tac >> gvs[]
+QED
+
+(* ------------------------------------------------------------------------
+   (S4′)
+   ------------------------------------------------------------------------ *)
+
+(* MAIN, (S4′): past the last arrival the blocking run sleeps, given [F1]
+   and that accepts fail only finitely often on its trace, the PF run's
+   standing facts in the reindexed world, and the server's SQ there *)
+Theorem l1b_sleeps:
+  bquiet m ifds bz ∧ l0_rely w0 ∧
+  btrace lfd hw ifds bz m w0 pinit io_b ∧ ptrace lfd hw ifds bz m w0 pinit io_p ∧
+  run_ok lfd hw ifds m (reindex (btr lfd hw ifds bz m (w0, pinit)) w0) ∧
+  winv (reindex (btr lfd hw ifds bz m (w0, pinit)) w0) ∧
+  linv lfd (reindex (btr lfd hw ifds bz m (w0, pinit)) w0) ∧
+  qfresh (reindex (btr lfd hw ifds bz m (w0, pinit)) w0) ∧
+  MEM lfd (l0_used (reindex (btr lfd hw ifds bz m (w0, pinit)) w0)) ∧
+  (∀n. SND (pcm lfd hw ifds m (reindex (btr lfd hw ifds bz m (w0, pinit)) w0) n) + 1 <
+       dimword (:64)) ∧
+  S1 lfd hw ifds m (reindex (btr lfd hw ifds bz m (w0, pinit)) w0) ∧
+  S2 lfd hw ifds m (reindex (btr lfd hw ifds bz m (w0, pinit)) w0) ∧
+  SQ lfd hw ifds bz m (reindex (btr lfd hw ifds bz m (w0, pinit)) w0) ∧
+  quiet_after N w0 ∧ F1_io io_b ∧ ¬accepts_fail_io io_b ⇒
+  ∃n h evs cb. brounds lfd hw ifds bz m (w0, pinit) n = SOME (BSlept h evs cb)
+Proof
+  strip_tac >> spose_not_then assume_tac >>
+  ‘∀n. brounds lfd hw ifds bz m (w0, pinit) n ≠ NONE’
+    by (irule brounds_ok >> fs[]) >>
+  ‘∀n. ∃h ws evs logs. brounds lfd hw ifds bz m (w0, pinit) n = SOME (BRun h ws evs logs)’
+    by (gen_tac >> first_x_assum (qspec_then ‘n’ mp_tac) >>
+        Cases_on ‘brounds lfd hw ifds bz m (w0, pinit) n’ >> simp[] >>
+        rename1 ‘SOME r’ >> Cases_on ‘r’ >> fs[] >> metis_tac[]) >>
+  fs[SKOLEM_THM] >> rename1 ‘BRun (H _) (WS _) (E _) (L _)’ >>
+  ‘F1_io io_p’ by (irule F1_transfer >> simp[] >> metis_tac[]) >>
+  ‘F1 lfd hw ifds m (reindex (btr lfd hw ifds bz m (w0, pinit)) w0)’
+    by (irule F1_run >> simp[] >> qexists_tac ‘io_p’ >> simp[]) >>
+  ‘¬accepts_fail lfd hw ifds m (reindex (btr lfd hw ifds bz m (w0, pinit)) w0)’
+    by (strip_tac >>
+        ‘accepts_fail_io io_p’
+          by (irule accepts_run >> fs[] >> qexistsl_tac [‘bz’, ‘hw’, ‘ifds’, ‘lfd’, ‘m’, ‘w0’] >>
+              simp[]) >>
+        ‘accepts_fail_io io_b’
+          by (irule accepts_fail_transfer >> simp[] >> qexistsl_tac [‘bz’, ‘hw’, ‘ifds’, ‘io_p’, ‘lfd’, ‘m’, ‘pinit’, ‘w0’] >>
+              simp[]) >>
+        fs[]) >>
+  ‘quiet_after N (reindex (btr lfd hw ifds bz m (w0, pinit)) w0)’ by fs[quiet_after_def, reindex_def] >>
+  drule l1pf_stable >> disch_then (qspecl_then [‘bz’, ‘N’] mp_tac) >>
+  impl_tac >- (rpt conj_tac >> TRY (first_assum ACCEPT_TAC) >> fs[]) >>
+  disch_then (qx_choose_then ‘n1’ assume_tac) >>
+  ‘oassm lfd hw ifds m (reindex (btr lfd hw ifds bz m (w0, pinit)) w0)’ by simp[oassm_def] >>
+  drule run_held_chan >> strip_tac >>
+  ‘∀n. SND (pcm lfd hw ifds m (reindex (btr lfd hw ifds bz m (w0, pinit)) w0) n) + 1 < dimword (:64)’ by fs[] >>
+  drule_all linv_run >> strip_tac >>
+  drule obwf_run >> strip_tac >> drule gone_clear_run >> strip_tac >>
+  drule psmall_run >> strip_tac >>
+  drule_all round_facts >> strip_tac >>
+  ‘∀n. n1 ≤ n ⇒ ∃ev. E (SUC n) = E n ++ [ev] ∧ ev_on «sys_poll» lfd ev ∧ retried ev’
+    by (rpt strip_tac >>
+        ‘∃w ps. WS n = (w, ps)’ by metis_tac[pair_CASES] >>
+        ‘brounds lfd hw ifds bz m (w0, pinit) n = SOME (BRun (H n) (w, ps) (E n) (L n))’
+          by metis_tac[] >>
+        ‘brounds lfd hw ifds bz m (w0, pinit) (SUC n) =
+           SOME (BRun (H (SUC n)) (WS (SUC n)) (E (SUC n)) (L (SUC n)))’ by metis_tac[] >>
+        ‘∃N' full xs pevs plogs. n ≤ N' ∧
+           binv_at lfd hw ifds bz m w0 pinit N' full xs pevs plogs (H n) w ps (E n)’
+          by (irule brounds_binv_ge >> simp[] >> qexists_tac ‘L n’ >> simp[]) >>
+        drule_all binv_run >> strip_tac >>
+        ‘∀k. N' ≤ k ⇒
+             new_actions (log_of m) (rhist lfd hw ifds m (reindex (btr lfd hw ifds bz m (w0, pinit)) w0) k) = [] ∧
+             ¬bz (rhist lfd hw ifds m (reindex (btr lfd hw ifds bz m (w0, pinit)) w0) k) ∧
+             pf_idle lfd hw (rstate lfd hw ifds m (reindex (btr lfd hw ifds bz m (w0, pinit)) w0) k)
+               (ifds (rhist lfd hw ifds m (reindex (btr lfd hw ifds bz m (w0, pinit)) w0) k)) ∧
+             EVERY (λev. ev_name ev = ExtCall «sys_poll»)
+               (rrev lfd hw ifds m (reindex (btr lfd hw ifds bz m (w0, pinit)) w0) k)’
+          by (rpt strip_tac >> qpat_x_assum ‘∀n. n1 ≤ n ⇒ _’ (qspec_then ‘k’ mp_tac) >>
+              impl_tac >- decide_tac >> simp[]) >>
+        ‘∀f. MEM f (MAP SND ps.b.tbl) ∨ outbox_of ps.b f ≠ [] ⇒
+             ∃j. l0_chan_of (rworld lfd hw ifds m (reindex (btr lfd hw ifds bz m (w0, pinit)) w0) N') f = SOME j’
+          by (rpt strip_tac >> qpat_x_assum ‘∀n f. _ ⇒ ∃j. _’ irule >> metis_tac[]) >>
+        ‘linv lfd (rworld lfd hw ifds m (reindex (btr lfd hw ifds bz m (w0, pinit)) w0) N')’ by metis_tac[] >>
+        ‘obwf ps.b ∧ gone_clear ps.b ∧ psmall lfd ps’ by metis_tac[] >>
+        ‘sfor m ifds bz full (H n)’ by fs[binv_at_def] >>
+        ‘MEM lfd (ifds (H n))’
+          by (qpat_x_assum ‘S1 _ _ _ _ _’ (strip_assume_tac o REWRITE_RULE[S1_def]) >>
+              first_x_assum (qspec_then ‘N'’ mp_tac) >> simp[] >>
+              drule sfor_now >> simp[]) >>
+        ‘ALOOKUP ps.b.tbl lfd = NONE’
+          by (qpat_x_assum ‘∀k. ∃cm s. _’ (qspec_then ‘N'’ strip_assume_tac) >>
+              irule tbl_lfd >> gvs[]) >>
+        drule_all stable_bround >> simp[]) >>
+  irule trace_polls_contra >> goal_assum (drule_at Any) >> metis_tac[]
 QED

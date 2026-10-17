@@ -692,6 +692,375 @@ Proof
   REWRITE_TAC [cbound_def] >> simp_tac (srw_ss() ++ ARITH_ss) []
 QED
 
+(* ------------------------------------------------------------------------
+   Rounds and positions of the run's trace
+   ------------------------------------------------------------------------ *)
+
+Theorem round_prefix:
+  io = LAPPEND (fromList pre)
+         (LFLATTEN (LGENLIST (λi. fromList (eround_evs lfd pol ifds m ws0 i)) NONE)) ∧
+  (∀i. erounds lfd pol ifds m ws0 i ≠ NONE) ∧
+  erounds lfd pol ifds m ws0 n = SOME (h, ws, EV, logs) ⇒
+  LPREFIX (fromList (pre ++ EV)) io
+Proof
+  strip_tac >>
+  ‘EV = FLAT (GENLIST (eround_evs lfd pol ifds m ws0) n)’
+    by (mp_tac erounds_evs_genlist >> impl_tac >- first_assum ACCEPT_TAC >>
+        disch_then (qspecl_then [‘n’, ‘h’, ‘ws’, ‘EV’, ‘logs’] mp_tac) >>
+        impl_tac >- first_assum ACCEPT_TAC >> simp[]) >>
+  qspecl_then [‘eround_evs lfd pol ifds m ws0’, ‘n’] mp_tac
+    (Q.GENL [‘f’, ‘n’] rounds_LPREFIX) >>
+  qpat_x_assum ‘EV = _’ (SUBST1_TAC o SYM) >>
+  simp[LPREFIX_APPEND] >> strip_tac >>
+  qpat_x_assum ‘io = _’ SUBST1_TAC >> qpat_x_assum ‘LFLATTEN _ = _’ SUBST1_TAC >>
+  qexists_tac ‘ll’ >> simp[GSYM LAPPEND_fromList, LAPPEND_ASSOC]
+QED
+
+Theorem round_evs_mono:
+  (∀i. erounds lfd pol ifds m ws0 i ≠ NONE) ∧
+  erounds lfd pol ifds m ws0 n1 = SOME (h1, ws1, E1, logs1) ∧
+  erounds lfd pol ifds m ws0 n2 = SOME (h2, ws2, E2, logs2) ∧ n1 ≤ n2 ⇒
+  ∃l. E2 = E1 ++ l
+Proof
+  strip_tac >>
+  drule erounds_evs_genlist >> strip_tac >>
+  first_assum (qspecl_then [‘n1’, ‘h1’, ‘ws1’, ‘E1’, ‘logs1’] mp_tac) >>
+  impl_tac >- first_assum ACCEPT_TAC >> disch_then SUBST1_TAC >>
+  first_assum (qspecl_then [‘n2’, ‘h2’, ‘ws2’, ‘E2’, ‘logs2’] mp_tac) >>
+  impl_tac >- first_assum ACCEPT_TAC >> disch_then SUBST1_TAC >>
+  qspecl_then [‘n1’, ‘n2’, ‘[]’, ‘eround_evs lfd pol ifds m ws0’] mp_tac
+    (Q.GENL [‘i’, ‘n’, ‘pre’, ‘f’] e1TraceRoundTheory.rounds_prefix_mono) >>
+  simp[IS_PREFIX_APPEND]
+QED
+
+(* Episode i of a round prefix is at position LENGTH pre + i of the trace *)
+Theorem round_ep_pos:
+  LPREFIX (fromList (pre ++ EV)) io ∧ EVERY (λe. ev_new e = NONE) pre ∧
+  i < LENGTH EV ∧ ev_new (EL i EV) ≠ NONE ⇒
+  io_ep_at io (LENGTH pre + i) ∧ LENGTH pre + i < LENGTH (pre ++ EV) ∧
+  io_ep_idx io (LENGTH pre + i) = LENGTH (ep_conn (TAKE i EV))
+Proof
+  strip_tac >> drule LPREFIX_io >> strip_tac >> rpt conj_tac
+  >- (REWRITE_TAC [io_ep_at_def] >> qexists_tac ‘EL i EV’ >> asm_rewrite_tac [] >>
+      qpat_x_assum ‘∀p. p < _ ⇒ LNTH _ _ = _’ (qspec_then ‘LENGTH pre + i’ mp_tac) >>
+      simp[EL_APPEND2])
+  >- simp[] >>
+  REWRITE_TAC [io_ep_idx_def] >>
+  qpat_x_assum ‘∀p. p ≤ _ ⇒ LTAKE _ _ = _’ (qspec_then ‘LENGTH pre + i’ mp_tac) >>
+  impl_tac >- simp[] >> disch_then SUBST1_TAC >>
+  ‘TAKE (LENGTH pre + i) (pre ++ EV) = pre ++ TAKE i EV’
+    by simp[TAKE_APPEND, TAKE_LENGTH_TOO_LONG] >>
+  pop_assum SUBST1_TAC >>
+  REWRITE_TAC [optionTheory.option_case_def, ep_fds_conn_LENGTH] >> BETA_TAC >>
+  qpat_x_assum ‘EVERY _ pre’ (fn th => REWRITE_TAC [MATCH_MP ep_conn_nonew th])
+QED
+
+(* Distinct episode positions have distinct episode numbers *)
+Theorem io_ep_idx_lt:
+  q1 < q2 ∧ io_ep_at io q1 ∧ io_ep_at io q2 ⇒ io_ep_idx io q1 < io_ep_idx io q2
+Proof
+  REWRITE_TAC [io_ep_at_def] >> strip_tac >>
+  qpat_x_assum ‘LNTH q2 io = _’ (strip_assume_tac o MATCH_MP LNTH_prefix) >>
+  drule LPREFIX_io >> strip_tac >>
+  ‘LNTH q1 io = SOME (EL q1 l)’ by (first_x_assum irule >> decide_tac) >>
+  ‘ev_new (EL q1 l) ≠ NONE’ by fs[] >>
+  REWRITE_TAC [io_ep_idx_def] >>
+  ‘LTAKE q1 io = SOME (TAKE q1 l) ∧ LTAKE q2 io = SOME (TAKE q2 l)’
+    by (conj_tac >> first_x_assum irule >> decide_tac) >>
+  asm_rewrite_tac [] >> simp_tac (srw_ss()) [ep_fds_conn_LENGTH] >>
+  irule ep_conn_TAKE_lt >> simp[]
+QED
+
+Theorem io_ep_idx_inj:
+  io_ep_at io q1 ∧ io_ep_at io q2 ∧ io_ep_idx io q1 = io_ep_idx io q2 ⇒ q1 = q2
+Proof
+  strip_tac >> CCONTR_TAC >>
+  ‘q1 < q2 ∨ q2 < q1’ by decide_tac
+  >- (‘io_ep_idx io q1 < io_ep_idx io q2’ by (irule io_ep_idx_lt >> simp[]) >> fs[]) >>
+  ‘io_ep_idx io q2 < io_ep_idx io q1’ by (irule io_ep_idx_lt >> simp[]) >> fs[]
+QED
+
+(* ------------------------------------------------------------------------
+   Channels' handles: bound once, to distinct channels
+   ------------------------------------------------------------------------ *)
+
+Theorem proxy_gchinv:
+  proxy_world lfd a W0 ⇒
+  gchinv lfd (ehbinds lfd lv (pifds lfd b hw) (pprog lfd b hw) W0 n)
+    (hl_pairs (pprog lfd b hw) (ehhist lfd lv (pifds lfd b hw) (pprog lfd b hw) W0 n))
+    (ehst lfd lv (pifds lfd b hw) (pprog lfd b hw) W0 n)
+Proof
+  strip_tac >> qpat_assum ‘proxy_world _ _ _’ (strip_assume_tac o REWRITE_RULE [proxy_world_def]) >>
+  irule ehrounds_gchinv >> asm_rewrite_tac [] >> simp[] >>
+  gen_tac >> irule proxy_ehacts >> qexists_tac ‘a’ >> first_assum ACCEPT_TAC
+QED
+
+Theorem proxy_kinv:
+  proxy_world lfd a W0 ⇒
+  kinv (ehbinds lfd lv (pifds lfd b hw) (pprog lfd b hw) W0 n)
+    (hl_pairs (pprog lfd b hw) (ehhist lfd lv (pifds lfd b hw) (pprog lfd b hw) W0 n))
+    (FST (ehst lfd lv (pifds lfd b hw) (pprog lfd b hw) W0 n))
+Proof
+  strip_tac >> qpat_assum ‘proxy_world _ _ _’ (strip_assume_tac o REWRITE_RULE [proxy_world_def]) >>
+  irule ehrounds_kinv >> asm_rewrite_tac [] >> simp[] >>
+  gen_tac >> irule proxy_ehacts >> qexists_tac ‘a’ >> first_assum ACCEPT_TAC
+QED
+
+Theorem bind_hdl_unique:
+  ALOOKUP (ehbinds lfd lv ifds m W0 n1) j = SOME h1 ∧
+  ALOOKUP (ehbinds lfd lv ifds m W0 n2) j = SOME h2 ⇒ h1 = h2
+Proof
+  strip_tac >>
+  ‘ALOOKUP (ehbinds lfd lv ifds m W0 (n1 + n2)) j = SOME h1 ∧
+   ALOOKUP (ehbinds lfd lv ifds m W0 (n1 + n2)) j = SOME h2’
+    by (conj_tac >> irule ehbinds_lookup_mono >> simp[] >| [qexists_tac ‘n1’, qexists_tac ‘n2’] >>
+        simp[]) >>
+  fs[]
+QED
+
+Theorem bind_chan_unique:
+  proxy_world lfd a W0 ∧
+  ALOOKUP (ehbinds lfd lv (pifds lfd b hw) (pprog lfd b hw) W0 n1) j1 = SOME c ∧
+  ALOOKUP (ehbinds lfd lv (pifds lfd b hw) (pprog lfd b hw) W0 n2) j2 = SOME c ⇒ j1 = j2
+Proof
+  strip_tac >>
+  ‘ALOOKUP (ehbinds lfd lv (pifds lfd b hw) (pprog lfd b hw) W0 (n1 + n2)) j1 = SOME c ∧
+   ALOOKUP (ehbinds lfd lv (pifds lfd b hw) (pprog lfd b hw) W0 (n1 + n2)) j2 = SOME c’
+    by (conj_tac >> irule ehbinds_lookup_mono >> simp[] >| [qexists_tac ‘n1’, qexists_tac ‘n2’] >>
+        simp[]) >>
+  drule proxy_gchinv >>
+  disch_then (qspecl_then [‘n1 + n2’, ‘lv’, ‘hw’, ‘b’] mp_tac) >>
+  Cases_on ‘ehst lfd lv (pifds lfd b hw) (pprog lfd b hw) W0 (n1 + n2)’ >>
+  REWRITE_TAC [gchinv_def] >> strip_tac >>
+  ‘MEM (j1, c) (ehbinds lfd lv (pifds lfd b hw) (pprog lfd b hw) W0 (n1 + n2)) ∧
+   MEM (j2, c) (ehbinds lfd lv (pifds lfd b hw) (pprog lfd b hw) W0 (n1 + n2))’
+    by (conj_tac >> irule alistTheory.ALOOKUP_MEM >> first_assum ACCEPT_TAC) >>
+  qpat_x_assum ‘ALL_DISTINCT (MAP SND _)’ mp_tac >> qpat_x_assum ‘MEM (j1, c) _’ mp_tac >>
+  qpat_x_assum ‘MEM (j2, c) _’ mp_tac >> rpt (pop_assum kall_tac) >> metis_tac[bind_inj]
+QED
+
+Theorem proxy_chan_hdl_intro:
+  ALOOKUP (ehbinds (plfd k) (proxy_lv b hw k w4) (pifds_k b hw k) (pprog_k b hw k)
+                   (proxy_pew a b hw k w4) n) j = SOME hd ⇒
+  proxy_chan_hdl a b hw k w4 j = SOME hd
+Proof
+  strip_tac >> REWRITE_TAC [proxy_chan_hdl_def] >> DEEP_INTRO_TAC some_intro >> conj_tac
+  >- (rpt strip_tac >> AP_TERM_TAC >> irule (INST_TYPE [alpha |-> “:unit option”] bind_hdl_unique) >>
+      qexistsl_tac [‘proxy_pew a b hw k w4’, ‘pifds_k b hw k’, ‘j’, ‘plfd k’, ‘proxy_lv b hw k w4’,
+                    ‘pprog_k b hw k’, ‘n'’, ‘n’] >>
+      conj_tac >> first_assum ACCEPT_TAC) >>
+  disch_then (qspec_then ‘hd’ mp_tac) >> simp[] >> qexists_tac ‘n’ >> first_assum ACCEPT_TAC
+QED
+
+Theorem proxy_chan_hdl_elim:
+  proxy_chan_hdl a b hw k w4 j = SOME hd ⇒
+  ∃n. ALOOKUP (ehbinds (plfd k) (proxy_lv b hw k w4) (pifds_k b hw k) (pprog_k b hw k)
+                       (proxy_pew a b hw k w4) n) j = SOME hd
+Proof
+  REWRITE_TAC [proxy_chan_hdl_def] >> DEEP_INTRO_TAC some_intro >> simp[]
+QED
+
+(* The pairing by position, from the handles *)
+Theorem proxy_pr_SOME:
+  io_ep_at io p ∧ proxy_chan_hdl a b hw k w4 (io_ep_idx io p) = SOME hd ∧
+  ppair (plfd k) b hw (proxy_lv b hw k w4) (proxy_pew a b hw k w4) hd = SOME c ∧
+  io_ep_at io q ∧ proxy_chan_hdl a b hw k w4 (io_ep_idx io q) = SOME c ⇒
+  proxy_pr a b hw k w4 io p = SOME q
+Proof
+  strip_tac >> asm_rewrite_tac [proxy_pr_def] >> simp_tac (srw_ss()) [] >> asm_rewrite_tac [] >>
+  simp_tac (srw_ss()) [] >>
+  DEEP_INTRO_TAC some_intro >> conj_tac
+  >- (rpt strip_tac >> AP_TERM_TAC >> irule io_ep_idx_inj >> qexists_tac ‘io’ >>
+      asm_rewrite_tac [] >>
+      ‘proxy_world (plfd k) a (proxy_pew a b hw k w4)’
+        by REWRITE_TAC [proxy_pew_def, pew_proxy_world] >>
+      qpat_x_assum ‘proxy_chan_hdl _ _ _ _ _ (io_ep_idx io q) = _’
+        (strip_assume_tac o MATCH_MP proxy_chan_hdl_elim) >>
+      qpat_x_assum ‘proxy_chan_hdl _ _ _ _ _ (io_ep_idx io x) = _’
+        (strip_assume_tac o MATCH_MP proxy_chan_hdl_elim) >>
+      irule bind_chan_unique >> metis_tac[]) >>
+  disch_then (qspec_then ‘q’ mp_tac) >> asm_rewrite_tac []
+QED
+
+Theorem proxy_round_prefix:
+  (∀n. erounds (plfd k) pol_never (pifds_k b hw k) (pprog_k b hw k) (w4, einit) n ≠ NONE) ∧
+  erounds (plfd k) pol_never (pifds_k b hw k) (pprog_k b hw k) (w4, einit) n = SOME (h, ws, EV, logs) ⇒
+  ∀pre. LPREFIX (fromList (pre ++ EV)) (proxy_run_io b hw k w4 pre)
+Proof
+  rpt strip_tac >> irule (INST_TYPE [alpha |-> “:unit option”] round_prefix) >>
+  qexistsl_tac [‘h’, ‘pifds_k b hw k’, ‘plfd k’, ‘logs’, ‘pprog_k b hw k’, ‘n’, ‘pol_never’, ‘ws’,
+                ‘(w4, einit)’] >>
+  REWRITE_TAC [proxy_run_io_def] >> rpt conj_tac >> first_assum ACCEPT_TAC
+QED
+
+Theorem proxy_roles:
+  l0_rely w4 ∧ honestL0WorldProps$fds_lt w4 ∧ MEM (plfd k) (l0_used w4) ∧ MEM 0w (l0_used w4) ∧
+  (∀n. erounds (plfd k) pol_never (pifds_k b hw k) (pprog_k b hw k) (w4, einit) n ≠ NONE) ∧
+  erounds (plfd k) pol_never (pifds_k b hw k) (pprog_k b hw k) (w4, einit) n = SOME (h, ws, EV, logs) ⇒
+  MAP cpa (FST (ehst (plfd k) (proxy_lv b hw k w4) (pifds_k b hw k) (pprog_k b hw k)
+                     (proxy_pew a b hw k w4) n)).chans = ep_conn EV
+Proof
+  strip_tac >> REWRITE_TAC [proxy_lv_def, proxy_pew_def] >>
+  ‘∀n. SND (ecm (plfd k) pol_never (pifds_k b hw k) (pprog_k b hw k) w4 n) + 1 < dimword (:64)’
+    by (irule proxy_ecm_bound >> rpt conj_tac >> first_assum ACCEPT_TAC) >>
+  drule_all e1_roles >> disch_then (qspecl_then [‘[]’, ‘a’] ACCEPT_TAC)
+QED
+
+(* A connect handle of the history is the handle of an episode of the run *)
+Theorem proxy_backend_pos:
+  l0_rely w4 ∧ honestL0WorldProps$fds_lt w4 ∧ MEM (plfd k) (l0_used w4) ∧ MEM 0w (l0_used w4) ∧
+  EVERY (λe. ev_new e = NONE) pre ∧
+  (∀n. erounds (plfd k) pol_never (pifds_k b hw k) (pprog_k b hw k) (w4, einit) n ≠ NONE) ∧
+  MEM c (hl_conn_handles (hl_pairs (pprog_k b hw k)
+           (ehhist (plfd k) (proxy_lv b hw k w4) (pifds_k b hw k) (pprog_k b hw k)
+                   (proxy_pew a b hw k w4) n))) ⇒
+  ∃evs' q. LPREFIX (fromList evs') (proxy_run_io b hw k w4 pre) ∧ q < LENGTH evs' ∧
+           io_ep_at (proxy_run_io b hw k w4 pre) q ∧
+           proxy_chan_hdl a b hw k w4 (io_ep_idx (proxy_run_io b hw k w4 pre) q) = SOME c
+Proof
+  strip_tac >>
+  ‘proxy_world (plfd k) a (proxy_pew a b hw k w4)’ by REWRITE_TAC [proxy_pew_def, pew_proxy_world] >>
+  drule proxy_kinv >> disch_then (qspecl_then [‘n’, ‘proxy_lv b hw k w4’, ‘hw’, ‘b’] mp_tac) >>
+  REWRITE_TAC [kinv_def] >> strip_tac >>
+  ‘MEM c (MAP SND (ehbinds (plfd k) (proxy_lv b hw k w4) (pifds_k b hw k) (pprog_k b hw k)
+                           (proxy_pew a b hw k w4) n))’
+    by (qpat_x_assum ‘∀hd. _ ∨ _ ⇒ _’ irule >> disj1_tac >> first_assum ACCEPT_TAC) >>
+  pop_assum (strip_assume_tac o REWRITE_RULE [MEM_MAP]) >> PairCases_on ‘y’ >>
+  qpat_x_assum ‘c = SND _’ (SUBST_ALL_TAC o REWRITE_RULE [pairTheory.SND]) >>
+  rename1 ‘MEM (j', c) _’ >>
+  Cases_on ‘erounds (plfd k) pol_never (pifds_k b hw k) (pprog_k b hw k) (w4, einit) n’
+  >- (qpat_x_assum ‘∀n. erounds _ _ _ _ _ n ≠ NONE’ (qspec_then ‘n’ mp_tac) >> asm_rewrite_tac []) >>
+  rename1 ‘_ = SOME r0’ >> PairCases_on ‘r0’ >>
+  ‘MAP cpa (FST (ehst (plfd k) (proxy_lv b hw k w4) (pifds_k b hw k) (pprog_k b hw k)
+                     (proxy_pew a b hw k w4) n)).chans = ep_conn r03’
+    by (irule proxy_roles >> asm_rewrite_tac [] >>
+        qexistsl_tac [‘r00’, ‘r04’, ‘(r01, r02)’] >> REWRITE_TAC []) >>
+  drule proxy_gchinv >> disch_then (qspecl_then [‘n’, ‘proxy_lv b hw k w4’, ‘hw’, ‘b’] mp_tac) >>
+  Cases_on ‘ehst (plfd k) (proxy_lv b hw k w4) (pifds_k b hw k) (pprog_k b hw k)
+                 (proxy_pew a b hw k w4) n’ >>
+  REWRITE_TAC [gchinv_def] >> strip_tac >>
+  ‘j' < LENGTH (ep_conn r03)’
+    by (qpat_x_assum ‘MAP cpa _ = ep_conn r03’ (SUBST1_TAC o SYM) >>
+        REWRITE_TAC [LENGTH_MAP, pairTheory.FST] >>
+        qpat_x_assum ‘∀j hd. MEM (j, hd) _ ⇒ j < _ ∧ _’ (drule_then strip_assume_tac) >>
+        first_assum ACCEPT_TAC) >>
+  ‘ALOOKUP (ehbinds (plfd k) (proxy_lv b hw k w4) (pifds_k b hw k) (pprog_k b hw k)
+                    (proxy_pew a b hw k w4) n) j' = SOME c’
+    by (irule alistTheory.ALOOKUP_ALL_DISTINCT_MEM >> conj_tac >> first_assum ACCEPT_TAC) >>
+  drule ep_conn_from >> strip_tac >>
+  qpat_assum ‘erounds _ _ _ _ _ n = _’ (fn th => qpat_assum ‘∀n. erounds _ _ _ _ _ n ≠ NONE’
+    (fn tt => assume_tac (Q.SPEC ‘pre’ (MATCH_MP proxy_round_prefix (CONJ tt th))))) >>
+  qspecl_then [‘pre’, ‘r03’, ‘proxy_run_io b hw k w4 pre’, ‘i’] mp_tac
+    (Q.GENL [‘pre’, ‘EV’, ‘io’, ‘i’] round_ep_pos) >>
+  impl_tac >- (rpt conj_tac >> first_assum ACCEPT_TAC) >> strip_tac >>
+  qexistsl_tac [‘pre ++ r03’, ‘LENGTH pre + i’] >> rpt conj_tac >> TRY (first_assum ACCEPT_TAC) >>
+  asm_rewrite_tac [] >> irule proxy_chan_hdl_intro >> qexists_tac ‘n’ >> asm_rewrite_tac []
+QED
+
+(* Socketless connects without bound in the history are without bound in
+   the run's trace *)
+Theorem proxy_nosock_lift:
+  l0_rely w4 ∧ honestL0WorldProps$fds_lt w4 ∧ MEM (plfd k) (l0_used w4) ∧
+  (∀n. erounds (plfd k) pol_never (pifds_k b hw k) (pprog_k b hw k) (w4, einit) n ≠ NONE) ∧
+  (∀k'. ∃n'. k' ≤ hl_nosock (hl_pairs (pprog_k b hw k)
+                (ehhist (plfd k) (proxy_lv b hw k w4) (pifds_k b hw k) (pprog_k b hw k)
+                        (proxy_pew a b hw k w4) n'))) ⇒
+  ∀k'. ∃evs'. LPREFIX (fromList evs') (proxy_run_io b hw k w4 pre) ∧
+              k' ≤ LENGTH (FILTER l0_nosock evs')
+Proof
+  strip_tac >> gen_tac >>
+  qpat_x_assum ‘∀k'. ∃n'. _’ (qspec_then ‘k'’ strip_assume_tac) >>
+  ‘∀n. SND (ecm (plfd k) pol_never (pifds_k b hw k) (pprog_k b hw k) w4 n) + 1 < dimword (:64)’
+    by (irule proxy_ecm_bound >> rpt conj_tac >> first_assum ACCEPT_TAC) >>
+  Cases_on ‘erounds (plfd k) pol_never (pifds_k b hw k) (pprog_k b hw k) (w4, einit) n'’
+  >- (qpat_x_assum ‘∀n. erounds _ _ _ _ _ n ≠ NONE’ (qspec_then ‘n'’ mp_tac) >> asm_rewrite_tac []) >>
+  rename1 ‘_ = SOME r0’ >> PairCases_on ‘r0’ >>
+  qpat_x_assum ‘k' ≤ _’ mp_tac >> REWRITE_TAC [proxy_lv_def, proxy_pew_def] >> strip_tac >>
+  drule_all ehl_nosock_l0 >> strip_tac >>
+  qpat_assum ‘erounds _ _ _ _ _ n' = _’ (fn th => qpat_assum ‘∀n. erounds _ _ _ _ _ n ≠ NONE’
+    (fn tt => assume_tac (Q.SPEC ‘pre’ (MATCH_MP proxy_round_prefix (CONJ tt th))))) >>
+  qexists_tac ‘pre ++ r03’ >> conj_tac >- first_assum ACCEPT_TAC >>
+  qpat_x_assum ‘∀calls a. _’ (qspecl_then [‘[]’, ‘a’] mp_tac) >>
+  qpat_x_assum ‘k' ≤ _’ mp_tac >> REWRITE_TAC [FILTER_APPEND, LENGTH_APPEND] >>
+  decide_tac
+QED
+
+(* A front's channel gets a handle, which the history accepted *)
+Theorem proxy_front_hdl:
+  l0_rely w4 ∧ honestL0WorldProps$fds_lt w4 ∧ MEM (plfd k) (l0_used w4) ∧ MEM 0w (l0_used w4) ∧
+  EVERY (λe. ev_new e = NONE) pre ∧
+  (∀n. erounds (plfd k) pol_never (pifds_k b hw k) (pprog_k b hw k) (w4, einit) n ≠ NONE) ∧
+  (∀evs. LPREFIX (fromList evs) (proxy_run_io b hw k w4 pre) ⇒
+         LENGTH (honestEchoL0Spec$l0_accepted evs) < 2 ** 62 + 1) ∧
+  LPREFIX (fromList evs) (proxy_run_io b hw k w4 pre) ∧ p < LENGTH evs ∧
+  ev_new (EL p evs) = SOME (f, INR l) ⇒
+  ∃hd N. io_ep_at (proxy_run_io b hw k w4 pre) p ∧
+         proxy_chan_hdl a b hw k w4 (io_ep_idx (proxy_run_io b hw k w4 pre) p) = SOME hd ∧
+         MEM hd (hl_acc_handles (hl_pairs (pprog_k b hw k)
+                   (ehhist (plfd k) (proxy_lv b hw k w4) (pifds_k b hw k) (pprog_k b hw k)
+                           (proxy_pew a b hw k w4) N)))
+Proof
+  strip_tac >>
+  ‘proxy_run_io b hw k w4 pre =
+   LAPPEND (fromList pre) (LFLATTEN (LGENLIST (λi. fromList
+     (eround_evs (plfd k) pol_never (pifds_k b hw k) (pprog_k b hw k) (w4, einit) i)) NONE))’
+    by REWRITE_TAC [proxy_run_io_def] >>
+  drule_all front_episode >> strip_tac >>
+  qpat_x_assum ‘proxy_run_io _ _ _ _ _ = _’ kall_tac >>
+  qabbrev_tac ‘j = io_ep_idx (proxy_run_io b hw k w4 pre) p’ >>
+  ‘LENGTH (FILTER $¬ (ep_conn EV)) ≤ 2 ** 62’
+    by (qpat_x_assum ‘∀evs. _ ⇒ LENGTH _ < _’ (qspec_then ‘pre ++ EV’ mp_tac) >>
+        impl_tac >- first_assum ACCEPT_TAC >>
+        REWRITE_TAC [GSYM ep_conn_accepted] >>
+        qpat_assum ‘EVERY _ pre’ (fn th => REWRITE_TAC [MATCH_MP ep_conn_nonew th]) >>
+        decide_tac) >>
+  drule_all front_bound >>
+  disch_then (qspecl_then [‘[]’, ‘a’] (strip_assume_tac o
+    REWRITE_RULE [GSYM proxy_lv_def, GSYM proxy_pew_def])) >>
+  Cases_on ‘ALOOKUP (ehbinds (plfd k) (proxy_lv b hw k w4) (pifds_k b hw k) (pprog_k b hw k)
+                             (proxy_pew a b hw k w4) n') j’
+  >- (qpat_x_assum ‘ALOOKUP _ _ = NONE’ (mp_tac o REWRITE_RULE [alistTheory.ALOOKUP_NONE]) >>
+      qpat_x_assum ‘MEM j _’ (fn th => REWRITE_TAC [th])) >>
+  rename1 ‘_ = SOME hd’ >>
+  qexistsl_tac [‘hd’, ‘n + n'’] >> rpt conj_tac
+  >- first_assum ACCEPT_TAC
+  >- (irule proxy_chan_hdl_intro >> qexists_tac ‘n'’ >> first_assum ACCEPT_TAC) >>
+  ‘ALOOKUP (ehbinds (plfd k) (proxy_lv b hw k w4) (pifds_k b hw k) (pprog_k b hw k)
+                    (proxy_pew a b hw k w4) (n + n')) j = SOME hd’
+    by (irule ehbinds_lookup_mono >> qexists_tac ‘n'’ >> asm_rewrite_tac [] >> decide_tac) >>
+  Cases_on ‘erounds (plfd k) pol_never (pifds_k b hw k) (pprog_k b hw k) (w4, einit) (n + n')’
+  >- (qpat_x_assum ‘∀n. erounds _ _ _ _ _ n ≠ NONE’ (qspec_then ‘n + n'’ mp_tac) >>
+      asm_rewrite_tac []) >>
+  rename1 ‘_ = SOME r0’ >> PairCases_on ‘r0’ >>
+  ‘∃l. r03 = EV ++ l’
+    by (irule (INST_TYPE [alpha |-> “:unit option”] round_evs_mono) >>
+        qexistsl_tac [‘h’, ‘r00’, ‘pifds_k b hw k’, ‘plfd k’, ‘logs’, ‘r04’, ‘pprog_k b hw k’,
+                      ‘n’, ‘n + n'’, ‘pol_never’, ‘(w4, einit)’, ‘ws’, ‘(r01, r02)’] >>
+        rpt conj_tac >> TRY (first_assum ACCEPT_TAC) >> decide_tac) >>
+  ‘MAP cpa (FST (ehst (plfd k) (proxy_lv b hw k w4) (pifds_k b hw k) (pprog_k b hw k)
+                     (proxy_pew a b hw k w4) (n + n'))).chans = ep_conn r03’
+    by (irule proxy_roles >> asm_rewrite_tac [] >>
+        qexistsl_tac [‘r00’, ‘r04’, ‘(r01, r02)’] >> REWRITE_TAC []) >>
+  ‘proxy_world (plfd k) a (proxy_pew a b hw k w4)’ by REWRITE_TAC [proxy_pew_def, pew_proxy_world] >>
+  drule proxy_kinv >> disch_then (qspecl_then [‘n + n'’, ‘proxy_lv b hw k w4’, ‘hw’, ‘b’] mp_tac) >>
+  REWRITE_TAC [kinv_def] >> disch_then (qspecl_then [‘j’, ‘hd’] mp_tac o CONJUNCT1) >>
+  impl_tac >- (irule alistTheory.ALOOKUP_MEM >> first_assum ACCEPT_TAC) >>
+  disch_then (fn th => REWRITE_TAC [hl_acc_handles_acc_hdls, CONJUNCT2 th]) >>
+  qabbrev_tac ‘cs = (FST (ehst (plfd k) (proxy_lv b hw k w4) (pifds_k b hw k) (pprog_k b hw k)
+                              (proxy_pew a b hw k w4) (n + n'))).chans’ >>
+  ‘j < LENGTH cs’
+    by (‘LENGTH (MAP cpa cs) = LENGTH (ep_conn r03)’ by asm_rewrite_tac [] >>
+        pop_assum mp_tac >> asm_rewrite_tac [ep_conn_APPEND, LENGTH_MAP, LENGTH_APPEND] >>
+        decide_tac) >>
+  ‘¬cpa (EL j cs)’
+    by (‘cpa (EL j cs) = EL j (MAP cpa cs)’ by (irule (GSYM EL_MAP) >> first_assum ACCEPT_TAC) >>
+        pop_assum SUBST1_TAC >> asm_rewrite_tac [ep_conn_APPEND] >>
+        ‘EL j (ep_conn EV ++ ep_conn l') = EL j (ep_conn EV)’
+          by (irule EL_APPEND1 >> first_assum ACCEPT_TAC) >>
+        asm_rewrite_tac []) >>
+  asm_rewrite_tac []
+QED
+
 (* The run and the live block's hypotheses *)
 Definition proxy_live_hyps_def:
   proxy_live_hyps a b hw w0 pre w4 k ⇔
@@ -715,6 +1084,24 @@ Definition proxy_pairs_run_def:
       proxy_pairs_l0 pf_sendwait (proxy_pr a b hw k w4 (proxy_run_io b hw k w4 pre))
                      (proxy_run_io b hw k w4 pre)
 End
+
+Theorem proxy_pairs_run_thm:
+  proxy_pairs_run
+Proof
+  REWRITE_TAC [proxy_pairs_run_def, proxy_live_hyps_def, proxy_pairs_l0_def, accepts_lt_def,
+               is_front_def] >> rpt strip_tac >>
+  drule proxy_start_facts >> strip_tac >> drule proxy_start_pre >> strip_tac >>
+  ‘∃f l. ev_new (EL p evs) = SOME (f, INR l)’
+    by (REWRITE_TAC [GSYM accepted_new_local] >> first_assum ACCEPT_TAC) >>
+  drule_all proxy_front_hdl >> disch_then (qspec_then ‘a’ strip_assume_tac) >>
+  ‘proxy_world (plfd k) a (proxy_pew a b hw k w4)’ by REWRITE_TAC [proxy_pew_def, pew_proxy_world] >>
+  drule_all proxy_pairs_hl >> strip_tac
+  >- (disj2_tac >> disj1_tac >> drule_all proxy_backend_pos >> strip_tac >>
+      qexistsl_tac [‘evs'’, ‘q’] >> asm_rewrite_tac [] >>
+      irule proxy_pr_SOME >> asm_rewrite_tac [] >> qexistsl_tac [‘c’, ‘hd’] >> asm_rewrite_tac []) >>
+  disj2_tac >> disj2_tac >> irule proxy_nosock_lift >>
+  rpt conj_tac >> TRY (qexists_tac ‘a’) >> first_assum ACCEPT_TAC
+QED
 
 Definition conn_live_run_def:
   conn_live_run ⇔

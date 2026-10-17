@@ -55,3 +55,67 @@ Echo's output half is proved locally in `honest-echo/honestEchoL0Inv`: per episo
 - it also needs a key bridge from episodes (accept order) to v2 clients (`cl cm f`) and channels.
 
 KV needs that key bridge anyway (moonshot step 11, the R4-style transfer). **Once the bridge exists, re-derive echo through `out_rel` and delete the local output half.**
+
+## P4 plan: HTTP and KV by the generic route (draft, 2026-10-17)
+
+The claims are fixed (`honestHttpKvL0Spec`). The route goes from the version-2 handle-layer safety
+of the unchanged servers, through R1 (psk), to the raw L0 trace.
+
+**Ingredients that exist.**
+- `kv2_safe`: `kv_safe2 (gtrace2 (kv_server lfdn) lfdn s2)` holds for a fresh one-listener `s2` with
+  `alloc_ok` and `sched_wf2`. It is on spike/kv-order-generic (asyncKv2Safe), **not on shared/base**.
+- `kv_safe2 = kv_safe_g ep_read ep_written` (moonshotKvClient's `kv_safe2_g`, or `kv_safe2_G`):
+  safety stated over any pair of projections.
+- R1: `l1pf_refines_hl(_upto)` (input side, pv_rel) and `l1pf_refines_hl_out(_upto)` /
+  `l1pf_round_sent_upto` (output side). Also `psk_sched_wf2` and `run_alloc_ok`.
+- honestL1PFClient / honestL1PFInput: raw episode → client key. Episode j's fd f, accepted in round
+  a, is client `cl (pcm a) f` (`client_stable`, `client_since`).
+
+**Gap 1: there is no version-2 HTTP-with-bodies safety theorem.** No branch proves
+`http_safe_b2 (gtrace2 (http_server_b files lfdn) lfdn s2)`. It would be about echo2_safe's size,
+using the generic sim (asyncHLSimRunGen and its ep-rounds lemma) plus `http_server_safety_b`
+(per-fd: written ≼ responses to read).
+
+**Gap 2: the global bound.** `sched_wf2 psk` and the non-`_upto` R1 theorems need
+`∀n. SND (pcm n) + 1 < dimword (:64)`. Our loop runs `prounds_t`, which freezes when `hdl_room`
+fails (D25). `prounds` keeps going past that point, so the global bound fails there.
+- Plan: truncate the schedule. `psk_upto N` is psk with no arrivals after round N.
+  - Its handle-layer run agrees with psk's for rounds ≤ N.
+  - `sched_wf2 (psk_upto N)` follows from the bound for n ≤ N. Empty arrivals are `step_ok2`, as in
+    `psk_sched_wf2`'s NONE case.
+  - Every claim is prefix-closed, so any finite raw prefix needs only N rounds.
+  - The bound for n ≤ N comes from `hdl_room` along `prounds_t`, which equals `prounds` while there
+    is room. This needs a lemma: pcm ≤ nxt + |acq|, with at most one pre-accept per round.
+- Rejected: asking for `kv2_safe_upto`. It would reopen close-v2's and kv's proofs; truncation is
+  one generic lemma, which echo can reuse.
+
+**Pure trace transfer: kv_server_view_safe (new).** It is server-side, the mirror of
+`kv_client_view_safe`. A raw prefix inside round n is paired with the v2 instant SUC n. For a paired
+raw episode j and v2 episode e j:
+- read: `krd (e j) (v2 (SUC n)) ≼ l0_read j raw`. Round lag: what the server consumes in round n,
+  L1 fetched before round n. At boundaries, raw recv = server read ++ inb (pv_rel + Client).
+- sent: `l0_sent j raw ≼ kwr (e j) (v2 (SUC n))`, by `l1pf_round_sent_upto`.
+- unpaired raw episodes send nothing, and each v2 episode is paired at most once.
+
+The raw side has read ahead, so it may hold complete requests the server has not yet consumed. The
+order is extended with those at the end, episode by episode:
+- no reply bytes were sent for them, so `wr ≼ replies` survives (replies of an extended order extend);
+- `precedes` into them is harmless (they come last);
+- `precedes` from them is impossible (no reply sent; needs `reply_bytes ≠ []`).
+
+It also needs request-parse monotonicity: from brequests rs ++ rest ≼ brequests rs' ++ rest' with
+both rests `no_full`, conclude rs ≼ rs'. HTTP's transfer is the per-episode special case.
+
+**Episode key bridge.** e j = the v2 episode whose handle is the client `cl (pcm a) f` of raw
+episode j. Expected: e j = SOME j whenever the fd reached the server, because acq is FIFO and
+listening = MAP (cl cm) acq. Raw episodes dropped in acq (broken / EMFILE) have e j = NONE; they
+sent nothing, by out_rel's acq clause.
+
+**Programs.** `honestHttpKvL0Prog`: the D33 fdok prefix, listen, then `run_pf` on the translated
+servers (spike/async-translate-kv: `gkv_server_spec`, asyncTranslateHttpB). Main / Sem / Stdio
+follow echo, generalised over the server value and its spec rather than copied. The
+`kept` invariant uses only `pact_ok`. Topology comes from the L1 events: listen only on lfd's port,
+no connect.
+
+**Then** re-derive echo through the same transfer (echo2_safe + kv_server_view_safe's per-episode
+form) and delete honestEchoL0Out / Inv's output half.

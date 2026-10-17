@@ -500,7 +500,8 @@ Proof
 QED
 
 (* ERead on any other handle: the prefetching part's read (data, nothing
-   yet, or EOF and the fd closed in both) *)
+   yet, or EOF; PROVISIONAL Q-13(a), point (2): at EOF the handle is kept
+   in both) *)
 Theorem ev_read_pf:
   ev_rel lfd a cm es w ∧ eown lfd es ∧ ehs_rel hs es ∧ ALOOKUP es.ctbl h = NONE ∧
   edo lfd pol (wl, es) (ERead h n) = SOME (r, (wl', es'), evs) ⇒
@@ -513,10 +514,21 @@ Proof
   strip_tac >>
   ‘ALOOKUP hs.tbl h = ALOOKUP es.p.b.tbl h’
     by (gvs[ehs_rel_def] >> Cases_on ‘ALOOKUP es.p.b.tbl h’ >> simp[]) >>
-  qpat_x_assum ‘edo _ _ _ _ = _’ mp_tac >> simp[edo_def] >> strip_tac >>
+  qpat_x_assum ‘edo _ _ _ _ = _’ mp_tac >> simp[edo_def] >> IF_CASES_TAC
+  >- ((* EOF: kept *)
+      strip_tac >> gvs[] >>
+      qpat_x_assum ‘ep_eof _ _’ mp_tac >> simp[ep_eof_def] >>
+      Cases_on ‘ALOOKUP es.p.b.tbl h’ >> simp[] >> strip_tac >>
+      rename1 ‘ALOOKUP es.p.b.tbl h = SOME f’ >>
+      drule_all ev_rel_tbl >> strip_tac >>
+      simp[ehdo_def, ep_conn_err_def, ep_read_def]) >>
+  simp[] >> strip_tac >>
+  ‘0 < n ∧ n < 256 ** 8’
+    by (qpat_x_assum ‘pdo _ _ _ = _’ mp_tac >> simp[pdo_def, AllCaseEqs()]) >>
+  ‘¬ep_eof es h’ by (CCONTR_TAC >> fs[]) >>
+  qpat_x_assum ‘¬(_ ∧ _)’ kall_tac >>
   rename1 ‘pdo _ _ _ = SOME z’ >> PairCases_on ‘z’ >> gvs[] >>
   rename1 ‘pdo _ _ _ = SOME (rr, (wl', ps'), evs)’ >>
-  ‘0 < n ∧ n < 256 ** 8’ by gvs[pdo_def, AllCaseEqs()] >>
   simp[ehdo_def] >>
   Cases_on ‘ALOOKUP es.p.b.tbl h’ >> simp[]
   >- (gvs[pdo_def] >>
@@ -526,24 +538,7 @@ Proof
   simp[ep_conn_err_def, ep_read_def] >>
   Cases_on ‘inb_of es.p f = []’ >> simp[]
   >- (Cases_on ‘MEM f es.p.eof’ >> simp[]
-      >- ((* EOF: closed *)
-          drule_all pdo_read_eof >> disch_then (fn th => map_every assume_tac (CONJUNCTS th)) >>
-          gvs[] >>
-          ‘ADELKEY h es.ctbl = es.ctbl’ by gvs[ALOOKUP_NONE, ADELKEY_not_MEM] >>
-          (* both closing outcomes alike *)
-          (‘∃w2. ep_close f w = SOME w2’ by simp[ep_close_def] >>
-          qexists_tac ‘w2’ >> simp[] >>
-          ‘ev_rel lfd a cm (es with p := ps') w2 ∧ ehs_rel (eh_del h hs) (es with p := ps')’
-            by (irule ev_rel_close >> qexistsl_tac [‘es’, ‘f’, ‘w’, ‘w’] >>
-                simp[inb_of_def, cstat_of_def, MEM_FILTER]) >>
-          ‘MEM f (MAP SND es.p.b.tbl)’ by metis_tac[ALOOKUP_SOME_MEM_SND] >>
-          simp[] >> conj_tac
-          >- (irule eown_p >> simp[MEM_FST_ADELKEY] >> conj_tac
-              >- (rpt strip_tac >> gvs[MEM_FILTER] >> metis_tac[MEM_SND_ADELKEY_sub]) >>
-              irule read_eof_pown >> qexistsl_tac [‘f’, ‘h’, ‘es.p’] >>
-              gvs[eown_def]) >>
-          qpat_x_assum ‘ep_close _ _ = _’ mp_tac >> simp[ep_close_def] >>
-          disch_then (SUBST_ALL_TAC o SYM) >> simp[])) >>
+      >- gvs[ep_eof_def] >>
       gvs[pdo_def] >>
       ‘es with p := es.p = es’ by simp[l1e_component_equality] >> simp[]) >>
   (* data *)
@@ -1307,9 +1302,10 @@ Proof
     (* EAccept *)
     gvs[edo_def] >> PairCases_on ‘z’ >> gvs[] >> drule_all pdo_l0owne >> simp[],
     (* ERead *)
-    gvs[edo_def, AllCaseEqs()]
-      >- (PairCases_on ‘z’ >> gvs[] >> drule_all pdo_l0owne >> simp[])
-      >> PairCases_on ‘z’ >> gvs[] >> rename1 ‘l1_close f _ = SOME ((wl', b'), evs)’ >>
+    gvs[edo_def, AllCaseEqs()] >>
+      TRY (PairCases_on ‘z’ >> gvs[] >> drule_all pdo_l0owne >> simp[] >> NO_TAC) >>
+      TRY (gvs[] >> NO_TAC) >>   (* EOF: kept *)
+      PairCases_on ‘z’ >> gvs[] >> rename1 ‘l1_close f _ = SOME ((wl', b'), evs)’ >>
       drule_all l1_close_l0 >> strip_tac >>
       ‘MEM f (MAP SND es.ctbl) ∧ ALL_DISTINCT (MAP SND es.ctbl) ∧ ALL_DISTINCT (MAP FST es.ctbl) ∧
        ¬MEM f (MAP SND es.p.b.tbl) ∧ ¬MEM f es.p.b.closing ∧ ¬MEM f es.p.acq ∧ f ≠ lfd’
@@ -1360,10 +1356,12 @@ Proof
   strip_tac >> Cases_on ‘a’ >| [
     gvs[edo_def] >> PairCases_on ‘z’ >> gvs[pdo_def, AllCaseEqs(), ciss_def] >>
     rw[] >> res_tac >> qexists_tac ‘i’ >> simp[],
-    gvs[edo_def, AllCaseEqs()] >> TRY (PairCases_on ‘z’) >> gvs[]
-    >- (gvs[pdo_def, AllCaseEqs(), ciss_def] >> TRY (PairCases_on ‘z’) >> gvs[] >>
-        imp_res_tac l1_close_b >> gvs[])
-    >> imp_res_tac l1_close_b >> gvs[ciss_def, ec_del_def, ALOOKUP_ADELKEY] >>
+    gvs[edo_def, AllCaseEqs()] >> TRY (PairCases_on ‘z’) >> gvs[] >>
+    TRY (qpat_x_assum ‘pdo _ _ _ = _’ assume_tac >>
+         gvs[pdo_def, AllCaseEqs(), ciss_def] >> TRY (PairCases_on ‘z’) >> gvs[] >>
+         imp_res_tac l1_close_b >> gvs[] >> NO_TAC) >>
+    TRY (gvs[] >> NO_TAC) >>   (* EOF: kept *)
+    imp_res_tac l1_close_b >> gvs[ciss_def, ec_del_def, ALOOKUP_ADELKEY] >>
     rw[] >> res_tac >> metis_tac[],
     gvs[edo_def, AllCaseEqs()] >> TRY (PairCases_on ‘z’) >> gvs[pdo_def] >>
     TRY (pairarg_tac >> gvs[] >> imp_res_tac l1do_write_tbl) >> gvs[ciss_def],
@@ -1384,8 +1382,9 @@ Theorem edo_keeps_pending:
 Proof
   strip_tac >> Cases_on ‘a’ >| [
     gvs[edo_def] >> PairCases_on ‘z’ >> gvs[cstat_of_def],
-    gvs[edo_def, AllCaseEqs()]
-    >- (PairCases_on ‘z’ >> gvs[cstat_of_def]) >>
+    gvs[edo_def, AllCaseEqs()] >>
+    TRY (qpat_x_assum ‘pdo _ _ _ = _’ assume_tac >> PairCases_on ‘z’ >> gvs[cstat_of_def] >> NO_TAC) >>
+    TRY (gvs[] >> NO_TAC) >>   (* EOF: kept *)
     PairCases_on ‘z’ >> gvs[] >> rename1 ‘ALOOKUP es.ctbl c = SOME g’ >>
     ‘g ≠ f’ by (strip_tac >> gvs[]) >>
     ‘c ≠ h’ by (strip_tac >> gvs[]) >>

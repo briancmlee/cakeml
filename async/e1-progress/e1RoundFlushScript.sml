@@ -63,10 +63,10 @@ Proof
       gvs[AllCaseEqs()]
       >~ [‘l1_close _ _ = SOME z’]
       >- (PairCases_on ‘z’ >> gvs[] >> drule_all esmall_ctbl_close >> simp[])
-      >~ [‘pdo _ _ _ = SOME z’]
-      >- (PairCases_on ‘z’ >> gvs[] >>
-          ‘psmall lfd es.p’ by gvs[esmall_def] >>
-          drule_all pdo_psmall >> gvs[esmall_def]))
+      >>~- ([‘pdo _ _ _ = SOME z’],
+            PairCases_on ‘z’ >> gvs[] >>
+            ‘psmall lfd es.p’ by gvs[esmall_def] >>
+            drule_all pdo_psmall >> gvs[esmall_def]))
   >~ [‘edo _ _ _ (EWrite _ _)’]
   >- (simp[edo_def] >> strip_tac >> gvs[AllCaseEqs()] >>
       PairCases_on ‘z’ >> gvs[] >>

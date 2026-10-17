@@ -4,10 +4,13 @@
   Read returned end-of-file), and its converse live_held: a live handle
   other than the listener is in L1's table.
 
-  The servers' side condition, reads_handed: a server reads only handles it
-  was handed (interest fds0), never the listener.  (Without it a server
-  could Read a predictable handle before its Accept, get end-of-file, and
-  drop it from live while the Accept puts it in the table.)
+  The servers' side condition, reads_handed: the initial interest list is
+  the listener's, and a server reads only handles that an Accept returned
+  to it (reads_accepted, over every history: a property of the program
+  alone).  On the run those handles are L1's issued handles, so never the
+  listener.  (Without it a server could Read a predictable handle before
+  its Accept, get end-of-file, and drop it from live while the Accept puts
+  it in the table.)
 
   As S1_interest: proved on the handle layer, where L1's table is exactly
   the live list less the listener, and moved to the PF run by R1-safe.
@@ -21,10 +24,14 @@ Ancestors
 Libs
   preamble
 
+Definition reads_accepted_def:
+  reads_accepted m ⇔
+    ∀hh h k. MEM (Read h k) (new_actions (log_of m) hh) ⇒
+             ∃s. MEM s hh ∧ MEM (Accepted (SOME h)) s.results
+End
+
 Definition reads_handed_def:
-  reads_handed lfd fds0 m ⇔
-    (∀h. MEM h fds0 ⇒ h = lfd) ∧
-    ∀hh h k. MEM (Read h k) (new_actions (log_of m) hh) ⇒ MEM h (interest fds0 hh) ∧ h ≠ lfd
+  reads_handed lfd fds0 m ⇔ (∀h. MEM h fds0 ⇒ h = lfd) ∧ reads_accepted m
 End
 
 Theorem MEM_add_accepted:
@@ -34,6 +41,13 @@ Proof
 QED
 
 (* The handles: the listener's number skipped; valid ones are distinct *)
+Theorem MEM_interest:
+  ∀hh fds0. MEM x (interest fds0 hh) ⇔
+            MEM x fds0 ∨ ∃s. MEM s hh ∧ MEM (Accepted (SOME x)) s.results
+Proof
+  Induct >> simp[interest_def] >> fs[interest_def, MEM_add_accepted] >> metis_tac[]
+QED
+
 Definition hvalid_def:
   hvalid (lfd : word64) j ⇔ hdln (w2n lfd) j < dimword (:64)
 End
@@ -140,7 +154,10 @@ Theorem hl_live_inv:
       (∀h. MEM h (interest fds0 (hhist lfd (live fds0 (log_of m)) m s0 n)) ⇒
            h = lfd ∨
            ∃j. j < (SND (hst lfd (live fds0 (log_of m)) m s0 n)).nxt ∧ hvalid lfd j ∧
-               h = hdl lfd j)
+               h = hdl lfd j) ∧
+      (∀h sn. MEM sn (hhist lfd (live fds0 (log_of m)) m s0 n) ∧ MEM (Accepted (SOME h)) sn.results ⇒
+              ∃j. j < (SND (hst lfd (live fds0 (log_of m)) m s0 n)).nxt ∧ hvalid lfd j ∧
+                  h = hdl lfd j)
 Proof
   strip_tac >> Induct
   >- (simp[hst_def, hhist_def, hrounds_def, hinit_def] >> fs[reads_handed_def] >> metis_tac[]) >>
@@ -157,11 +174,18 @@ Proof
   ‘hacts_of lfd (live fds0 (log_of m)) m s0 n = acts’ by simp[hacts_of_def, Abbr ‘acts’] >>
   fs[hacts_tot_def] >>
   Cases_on ‘hacts lfd (s, hs) acts’ >> fs[]
-  >- (gvs[live_round_nil, add_accepted_def] >> metis_tac[]) >>
+  >- (gvs[live_round_nil, add_accepted_def, DISJ_IMP_THM, FORALL_AND_THM] >>
+      qpat_x_assum ‘reads_handed _ _ _’ kall_tac >> rw[] >> gvs[] >> metis_tac[]) >>
   qpat_x_assum ‘x = _’ SUBST_ALL_TAC >>
   ‘∀h k. MEM (Read h k) acts ⇒ MEM h I0 ∧ h ≠ lfd’
-    by (qpat_x_assum ‘reads_handed _ _ _’ mp_tac >> simp[reads_handed_def, Abbr ‘acts’, Abbr ‘I0’] >>
-        metis_tac[]) >>
+    by (rpt gen_tac >> strip_tac >>
+        qpat_assum ‘reads_handed _ _ _’
+          (strip_assume_tac o REWRITE_RULE [reads_handed_def, reads_accepted_def]) >>
+        first_x_assum (qspecl_then [‘H’, ‘h’, ‘k’] mp_tac) >>
+        impl_tac >- fs[Abbr ‘acts’] >> strip_tac >>
+        conj_tac >- (simp[Abbr ‘I0’, MEM_interest] >> metis_tac[]) >>
+        ‘∃j. j < hs.nxt ∧ hvalid lfd j ∧ h = hdl lfd j’ by metis_tac[] >>
+        metis_tac[hdl_not_lfd]) >>
   drule hacts_live >> impl_tac
   >- (conj_tac
       >- (rpt gen_tac >> strip_tac >>
@@ -196,13 +220,20 @@ Proof
   >- (rpt strip_tac
       >- (disj1_tac >> qpat_x_assum ‘∀h. MEM h L ⇒ _’ irule >> first_assum ACCEPT_TAC)
       >> disj2_tac >> first_assum ACCEPT_TAC)
-  >> rpt strip_tac
-  >- (qpat_x_assum ‘∀h. MEM h I0 ⇒ _’ drule >> strip_tac
-      >- (disj1_tac >> first_assum ACCEPT_TAC)
-      >> disj2_tac >> qexists_tac ‘j’ >> asm_rewrite_tac [] >>
+  >- (rpt strip_tac
+      >- (qpat_x_assum ‘∀h. MEM h I0 ⇒ _’ drule >> strip_tac
+          >- (disj1_tac >> first_assum ACCEPT_TAC)
+          >> disj2_tac >> qexists_tac ‘j’ >> asm_rewrite_tac [] >>
+          irule LESS_LESS_EQ_TRANS >> qexists_tac ‘hs.nxt’ >> asm_rewrite_tac [])
+      >> qpat_x_assum ‘∀h. MEM (Accepted (SOME h)) rs ⇒ _’ drule >> strip_tac >>
+      disj2_tac >> qexists_tac ‘j’ >> asm_rewrite_tac [])
+  >> rpt gen_tac >> REWRITE_TAC [MEM_APPEND, MEM] >> strip_tac
+  >- (‘∃j. j < hs.nxt ∧ hvalid lfd j ∧ h = hdl lfd j’ by metis_tac[] >>
+      qexists_tac ‘j’ >> asm_rewrite_tac [] >>
       irule LESS_LESS_EQ_TRANS >> qexists_tac ‘hs.nxt’ >> asm_rewrite_tac [])
-  >> qpat_x_assum ‘∀h. MEM (Accepted (SOME h)) rs ⇒ _’ drule >> strip_tac >>
-  disj2_tac >> qexists_tac ‘j’ >> asm_rewrite_tac []
+  >> gvs[ssnap_def] >>
+  qpat_x_assum ‘∀h. MEM (Accepted (SOME h)) rs ⇒ _’ drule >> strip_tac >>
+  qexists_tac ‘j’ >> asm_rewrite_tac []
 QED
 
 (* On the PF run, by R1-safe: L1's table is the live list less the

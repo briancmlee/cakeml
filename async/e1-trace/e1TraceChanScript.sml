@@ -35,7 +35,7 @@ End
 
 (* A round's bindings, action by action, as ehacts runs them *)
 Definition ehbacts_def:
-  ehbacts lfd (lv : num -> num -> num) (n : num) (k : num) st [] = [] ∧
+  ehbacts lfd (lv : num -> num -> num option) (n : num) (k : num) st [] = [] ∧
   ehbacts lfd lv n k st (x :: acts) =
     case ehdo lfd (lv n k) st x of
     | NONE => []
@@ -397,6 +397,7 @@ Proof
   >- (drule_all ehdo_write_gchinv >> simp[])
   >- (drule_all ehdo_connect_gchinv >> simp[])
   >> qpat_x_assum ‘ehdo _ _ _ _ = _’ mp_tac >> simp[ehdo_def] >> strip_tac >> gvs[] >>
+  Cases_on ‘v’ >> simp[] >>
   irule gchinv_frame >> simp[] >> qexistsl_tac [‘hs’, ‘ps’, ‘w’] >> simp[]
 QED
 

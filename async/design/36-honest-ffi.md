@@ -1407,6 +1407,16 @@ D(c) is made precise as `drains` (the peer's in-flight bytes eventually
 fall; an `LDrain` of 0 bytes does not count). Under construction on
 `spike/moonshot-s4g`.
 
+**Correction (2026-10-17, found by async-spike): S3 as stated is false**
+for any server whose peer always has data ready: a round's actions empty
+f's inbox and the same round's fetch refills it, so the inbox is never
+empty at a round boundary although the server reads everything. The proofs
+use S3 only once f is no longer fetched, so S3 is replaced by **S3w**
+("if f is no longer fetched, its inbox eventually empties"), and S4 by
+**S4w** (the same premise; then f's outbox stays within hw and nothing is
+written to it). S3 ⇒ S3w and S4 ⇒ S4w are proved, so fetch_progress,
+live_data_kernel, live_data and the D16 corollary only got stronger.
+
 *Why it should hold:*
 - A byte in c's kernel inbox makes c's next unpaused poll report IN.
 - L1 then recvs, or retries after a transient failure ([F1]).

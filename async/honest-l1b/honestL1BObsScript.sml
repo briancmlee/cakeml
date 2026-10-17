@@ -112,7 +112,7 @@ Proof
   metis_tac[poll_not_accepted, optionTheory.NOT_NONE_SOME]
 QED
 
-Theorem nopoll_split[local]:
+Theorem nopoll_split:
   nopoll l = a ++ [ev] ++ b ⇒
   ∃a' b'. l = a' ++ [ev] ++ b' ∧ nopoll a' = a ∧ nopoll b' = b
 Proof

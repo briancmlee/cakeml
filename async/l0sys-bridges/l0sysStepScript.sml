@@ -668,3 +668,140 @@ Proof
   >- (rveq >> irule pk_call_self >> simp[Abbr ‘w’]) >>
   irule pk_call_other >> simp[]
 QED
+
+(*---------------------------------------------------------------------------*)
+(* Every step *)
+
+Definition step_css_def:
+  step_css s (Call k nm conf bytes out) css = call_css s k nm conf bytes out css ∧
+  step_css s (Kern ks) css = css ∧
+  step_css s (Env es) css = css ∧
+  step_css s (Exit k) css = css
+End
+
+(* A connect's new channel has heard nothing yet *)
+Theorem connect_peer_sent:
+  l0_call «sys_connect» conf bytes w = SOME (FFIreturn out w1) ∧
+  LENGTH w1.chans = LENGTH w.chans + 1 ⇒
+  (EL (LENGTH w.chans) w1.chans).peer_sent = []
+Proof
+  strip_tac >> gvs[l0_call_def, AllCaseEqs()] >> drule l0_connect_cases >>
+  simp[LET_THM] >> strip_tac >> gvs[] >>
+  simp[upd_lchan_def, EL_LUPDATE, EL_APPEND2, fresh_lchan_def]
+QED
+
+(* LConnUp leaves the listeners and the channel count *)
+Theorem conn_up_fields:
+  (l0_deliver w (LConnUp j)).listeners = w.listeners ∧
+  LENGTH (l0_deliver w (LConnUp j)).chans = LENGTH w.chans ∧
+  (j < LENGTH w.chans ∧ (EL j w.chans).connecting ⇒
+   EL j (l0_deliver w (LConnUp j)).chans = (EL j w.chans) with connecting := F)
+Proof
+  rw[l0_deliver_def, upd_lchan_def, EL_LUPDATE]
+QED
+
+Theorem sinv_handshake:
+  sinv rs s css ∧ is_end s (k, j) ∧ (sys_chan s (k, j)).connecting ∧
+  s.target (k, j) = SOME p ∧ sys_room s k' p ⇒
+  sinv (rs ++ [Kern (Handshake k j k')]) (sys_pair (k, j) k' p (sys_deliver k (LConnUp j) s)) css
+Proof
+  strip_tac >> ‘kinv s’ by fs[sinv_def] >>
+  ‘s.peer (k, j) = NONE’
+    by (Cases_on ‘s.peer (k, j)’ >> simp[] >> fs[kinv_def] >> res_tac >> fs[]) >>
+  ‘(sys_chan s (k, j)).peer_sent = []’ by (fs[kinv_def] >> res_tac) >>
+  ‘k < LENGTH s.procs ∧ j < LENGTH (EL k s.procs).chans’ by fs[is_end_def] >>
+  qabbrev_tac ‘s1 = sys_deliver k (LConnUp j) s’ >>
+  ‘sinv (rs ++ [Kern (Handshake k j k')]) s1 css’
+    by (irule sinv_other_deliver >> simp[] >>
+        simp[Abbr ‘s1’] >> conj_tac >- (irule kinv_deliver >> simp[]) >>
+        qexistsl_tac [‘LConnUp j’, ‘k’, ‘s’] >> simp[]) >>
+  irule sinv_pair >> simp[Abbr ‘s1’] >>
+  fs[is_end_def, sys_chan_def, sys_deliver_def, EL_LUPDATE, conn_up_fields] >>
+  fs[sys_room_def, EL_LUPDATE] >> Cases_on ‘k' = k’ >> fs[conn_up_fields]
+QED
+
+(* A step that is one arrival, other than data or a new connection *)
+Theorem sinv_deliver_step:
+  sinv rs s css ∧ k < LENGTH s.procs ∧ (∀p. a ≠ LIncoming p) ∧ (∀j bs. a ≠ LData j bs) ∧
+  (∀k nm conf bytes out. r ≠ Call k nm conf bytes out) ⇒
+  sinv (rs ++ [r]) (sys_deliver k a s) css ∧
+  sinv (rs ++ [r]) ((sys_deliver k a s) with acked := X) css ∧
+  sinv (rs ++ [r]) ((sys_deliver k a s) with finned := Y) css
+Proof
+  strip_tac >> ‘kinv (sys_deliver k a s)’ by (irule kinv_deliver >> fs[sinv_def]) >>
+  rpt conj_tac >> irule sinv_other_deliver >> simp[] >> metis_tac[]
+QED
+
+Theorem sinv_kern:
+  sinv rs s css ∧ sys_step s (Kern ks) s' ⇒ sinv (rs ++ [Kern ks]) s' css
+Proof
+  strip_tac >> ‘kinv s’ by fs[sinv_def] >>
+  Cases_on ‘ks’ >> fs[sys_step_def]
+  >- (irule sinv_handshake >> simp[])
+  >- ((* Move *)
+      rename1 ‘s.peer (k, j) = SOME (k', j')’ >>
+      ‘is_end s (k', j')’ by (fs[kinv_def] >> res_tac >> res_tac) >>
+      irule sinv_other_deliver >> simp[] >>
+      conj_tac
+      >- (‘s.moved (k, j) + n1 ≤ LENGTH (sys_chan s (k, j)).sent’ by simp[] >>
+          drule_all kinv_move >> simp[]) >>
+      qexistsl_tac [‘LData j' (TAKE n1 (DROP (s.moved (k, j)) (sys_chan s (k, j)).sent))’,
+                    ‘k'’, ‘s’] >> fs[is_end_def] >> metis_tac[])
+  >- fs[is_end_def, sinv_deliver_step]
+  >- ((* Fin *)
+      rename1 ‘s.peer (k, j) = SOME (k', j')’ >>
+      ‘is_end s (k', j')’ by (fs[kinv_def] >> res_tac >> res_tac) >>
+      fs[is_end_def, sinv_deliver_step]) >>
+  fs[is_end_def, sinv_deliver_step]
+QED
+
+Theorem sinv_env:
+  sinv rs s css ∧ sys_step s (Env es) s' ⇒ sinv (rs ++ [Env es]) s' css
+Proof
+  strip_tac >> ‘kinv s’ by fs[sinv_def] >>
+  Cases_on ‘es’ >> fs[sys_step_def]
+  >- (irule sinv_incoming >> simp[])
+  >- fs[is_end_def, sinv_deliver_step] >>
+  rename1 ‘env_arrival_chan a = SOME j’ >>
+  Cases_on ‘a’ >> fs[env_arrival_chan_def, is_end_def, sinv_deliver_step] >>
+  irule sinv_other_deliver >> simp[] >>
+  conj_tac >- (irule kinv_arrive_data >> simp[]) >>
+  qexistsl_tac [‘LData j l’, ‘n’, ‘s’] >> simp[]
+QED
+
+Theorem sinv_call_step:
+  sinv rs s css ∧ sys_step s (Call k nm conf bytes out) s' ⇒
+  sinv (rs ++ [Call k nm conf bytes out]) s' (call_css s k nm conf bytes out css)
+Proof
+  rw[sys_step_def] >> drule_all sinv_call >> strip_tac >>
+  ‘kinv s’ by fs[sinv_def] >>
+  qabbrev_tac ‘n = LENGTH (EL k s.procs).chans’ >>
+  qabbrev_tac ‘s2 = call_state s k nm conf bytes w1’ >>
+  ‘s' = s2 ∨
+   nm = «sys_connect» ∧ LENGTH w1.chans = n + 1 ∧ ¬(EL n w1.chans).connecting ∧
+   ∃k'. sys_room s2 k' (w22n conf) ∧ s' = sys_pair (k, n) k' (w22n conf) s2’
+    by (qpat_x_assum ‘if _ then _ else _’ mp_tac >>
+        simp[Abbr ‘s2’, call_state_def, call_target_def] >>
+        rw[] >> fs[l0sysTheory.sysstate_component_equality] >> metis_tac[]) >>
+  fs[] >> irule sinv_pair >> simp[] >>
+  ‘¬is_end s (k, n)’ by simp[is_end_def, Abbr ‘n’] >>
+  simp[Abbr ‘s2’, call_state_def, call_target_def, is_end_def, sys_chan_def, EL_LUPDATE,
+       APPLY_UPDATE_THM] >>
+  ‘s.peer (k, n) = NONE’ by fs[kinv_def] >> simp[] >>
+  qpat_x_assum ‘if _ then _ else _’ kall_tac >>
+  qunabbrev_tac ‘n’ >> irule connect_peer_sent >> fs[unblock_other] >> metis_tac[]
+QED
+
+Theorem sinv_step:
+  sinv rs s css ∧ sys_step s r s' ⇒ sinv (rs ++ [r]) s' (step_css s r css)
+Proof
+  Cases_on ‘r’ >> rw[step_css_def]
+  >- metis_tac[sinv_call_step]
+  >- metis_tac[sinv_kern]
+  >- metis_tac[sinv_env] >>
+  fs[sys_step_def] >> rveq >>
+  ‘s with <| procs := LUPDATE (close_all (EL n s.procs)) n s.procs; alive := (n =+ F) s.alive |> =
+   s with <| alive := (n =+ F) s.alive; procs := LUPDATE (close_all (EL n s.procs)) n s.procs |>’
+    by simp[l0sysTheory.sysstate_component_equality] >>
+  pop_assum SUBST1_TAC >> irule sinv_exit >> simp[]
+QED

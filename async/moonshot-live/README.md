@@ -256,3 +256,12 @@ theorem INSTed at `client_prog`, as in `moonshot_safe_client`. Who delivers what
   rounds that each contain a non-blocking poll).
 - **topology_run_ob**: only the proxy listens on a, only KV on b (from the programs' code, through the lifts).
 - **[R3]**, `closes_run_ob` and `exits_run_ob`: owed, joint (r3-close).
+
+Shared lift pieces (`moonshotLiveLiftScript.sml`, moonshot-live):
+- `proj_world` (proved): the world w0 of each process's projection is an `l0_server_world`, and `F2_sys` gives `F2 w0`.
+- **[F1]**: `F1_sys` does not cover polls, since a poll's conf is 1 byte. The L1 proofs use F1 on `«sys_poll» f`
+  (`F1_io`/`call_fds`). Q-16 is open with the user: (B) add `F1_poll_sys` to `moonshot_live_hyps` (recommended),
+  or (A) re-key `F1_sys`. Listen is covered by `listen_failed`, connect by `F1_connect_sys`, and every other call
+  by `F1_sys`.
+- KV, G3: honest-ffi's proxy backend cap. Over the proxy trace, `backend_broke ∨ conn_ok_count b ≤ 2^62` gives
+  `accepts_lt_irun`'s `conns_ok` premise with cl = 1, p = b, N = 2^62.

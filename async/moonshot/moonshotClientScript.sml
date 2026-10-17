@@ -1994,3 +1994,71 @@ Proof
   (* CDone *)
   >> gvs[ehacts_def, cupd_def]
 QED
+
+Theorem frame_read_core:
+  ALOOKUP hs.tbl hd0 = SOME f0 ∧ ALOOKUP w.open_fds f0 = SOME j0 ∧ j0 < LENGTH w.chans ∧
+  ALOOKUP hs.tbl hd = SOME f ∧ ALOOKUP w.open_fds f = SOME j ∧ j < LENGTH w.chans ∧
+  hd ≠ hd0 ∧ ALL_DISTINCT (MAP SND hs.tbl) ∧ ALL_DISTINCT (MAP SND w.open_fds) ∧
+  ehdo lfd v (w, hs) (ERead hd0 cread) = SOME (r, (w1, hs1)) ⇒
+  ALOOKUP hs1.tbl hd = SOME f ∧ hstat (w1, hs1) hd = hstat (w, hs) hd
+Proof
+  strip_tac >> ‘0 < cread ∧ cread < 256 ** 8’ by simp[] >>
+  qspecl_then [‘hs’, ‘hd0’, ‘f0’, ‘w’, ‘j0’, ‘cread’] mp_tac
+    (Q.GENL [‘hs’, ‘hd’, ‘f’, ‘w’, ‘j’, ‘n’] ehdo_read) >> simp[] >>
+  strip_tac >> mp_tac frame_core >> impl_tac >> simp[] >> gvs[]
+QED
+
+Theorem write_eq:
+  crel a N rqs lfd st rdyf ps w hs ∧ k < N ∧ EL k st.cs = CUp hd0 rest ∧
+  ehdo lfd v (w, hs) (EWrite hd0 bs) = SOME (r, (w1, hs1)) ⇒
+  hs1 = hs ∧ w1.open_fds = w.open_fds ∧ LENGTH w1.chans = LENGTH w.chans
+Proof
+  strip_tac >> ‘MEM hd0 (chd (EL k st.cs))’ by simp[chd_def] >>
+  drule_all crel_handle >> strip_tac >>
+  rename1 ‘ALOOKUP hs.tbl hd0 = SOME f0’ >> rename1 ‘ALOOKUP w.open_fds f0 = SOME j0’ >>
+  ‘(EL j0 w.chans).status = Up ∧ ¬(EL j0 w.chans).shut’
+    by (qpat_x_assum ‘cok _ _ _ _ _ _’ mp_tac >> simp[cok_def]) >>
+  drule crel_takes >> strip_tac >>
+  qpat_x_assum ‘ehdo _ _ _ _ = SOME (r, (w1, hs1))’ mp_tac >>
+  qspecl_then [‘hs’, ‘hd0’, ‘f0’, ‘w’, ‘j0’, ‘bs’, ‘lfd’, ‘v’] mp_tac
+    (Q.GENL [‘hs’, ‘hd’, ‘f’, ‘w’, ‘j’, ‘bs’, ‘lfd’, ‘v’] ehdo_write_up) >>
+  simp[] >> disch_then (fn th => simp[th]) >> strip_tac >> gvs[upd_chan_def]
+QED
+
+Theorem conn_frame:
+  crel a N rqs lfd st rdyf ps w hs ∧ k < N ∧ N < dimword (:64) ∧
+  (nh0 < cbound ⇒ st.nh + 2 < dimword (:64)) ∧
+  ehacts lfd lv n ix (w, hs) (cact1 a nh0 (EL k st.cs) (rdyf k)) = SOME (rs, (w1, hs1)) ∧
+  ¬MEM hd (chd (EL k st.cs)) ∧ MEM hd (MAP FST hs.tbl) ⇒
+  ALOOKUP hs1.tbl hd = ALOOKUP hs.tbl hd ∧ hstat (w1, hs1) hd = hstat (w, hs) hd
+Proof
+  strip_tac >> ‘LENGTH st.cs = N ∧ st.nh = hs.nxt’ by fs[crel_def] >>
+  Cases_on ‘EL k st.cs’ >> fs[cact1_def, chd_def]
+  (* CIdle *)
+  >- (Cases_on ‘nh0 < cbound’ >> fs[ehacts_one_eq] >> fs[ehacts_def] >>
+      ‘hs.nxt + 2 < dimword (:64)’ by gvs[] >>
+      drule_all frame_connect >> simp[])
+  (* CPend *)
+  >- (rename1 ‘EL k st.cs = CPend h0’ >> ‘MEM h0 (chd (EL k st.cs))’ by simp[chd_def] >>
+      Cases_on ‘h0 ∈ rdyf k’ >> fs[ehacts_one_eq] >> fs[ehacts_def] >>
+      ‘hd ≠ h0’ by (strip_tac >> gvs[]) >> drule_all frame_read >> simp[])
+  (* CUp *)
+  >- (rename1 ‘EL k st.cs = CUp h0 rest’ >> ‘MEM h0 (chd (EL k st.cs))’ by simp[chd_def] >>
+      ‘hd ≠ h0’ by (strip_tac >> gvs[]) >>
+      Cases_on ‘rest = []’ >> fs[]
+      >- (Cases_on ‘h0 ∈ rdyf k’ >> fs[ehacts_one_eq] >> fs[ehacts_def] >>
+          drule_all frame_read >> simp[]) >>
+      Cases_on ‘h0 ∈ rdyf k’ >> fs[ehacts_one_eq, ehacts_two_eq]
+      >- (rename1 ‘ehdo _ _ (w, hs) (EWrite h0 rest) = SOME (r1, st1)’ >> PairCases_on ‘st1’ >>
+          drule_all frame_write >> strip_tac >>
+          drule_all write_eq >> strip_tac >> gvs[] >>
+          ‘MEM h0 (chd (EL k st.cs))’ by simp[chd_def] >>
+          drule_all crel_handle >> strip_tac >>
+          drule_all crel_other >> strip_tac >> drule crel_distinct >> strip_tac >>
+          qspecl_then [‘hs’, ‘h0’, ‘f’, ‘st10’, ‘j’, ‘hd’, ‘f'’, ‘j'’, ‘lv n (ix + 1)’, ‘r'’, ‘w1’, ‘hs1’]
+            mp_tac (Q.GENL [‘hs’, ‘hd0’, ‘f0’, ‘w’, ‘j0’, ‘hd’, ‘f’, ‘j’, ‘v’, ‘r’, ‘w1’, ‘hs1’]
+                      frame_read_core) >> simp[]) >>
+      drule_all frame_write >> simp[])
+  (* CDone *)
+  >> fs[ehacts_def]
+QED

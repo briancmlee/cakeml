@@ -16,7 +16,8 @@ Ancestors
   honestL1PFObl honestL1BConnLive honestL1BConn honestL1BFaith honestL1BTransfer
   honestL1BCorr honestL1BRuns honestL1BStmts
   honestL1PFConnRun honestL1PFConn honestL1PFLive honestL1PFRound honestL1PFRefine
-  honestL1PFModel honestL1Steps honestL1Model honestEchoL0Spec honestL0WorldProps honestL0Rely
+  honestL1PFModel honestL1Steps honestL1Model honestEchoL0Spec honestL0WorldInv honestL0WorldProps
+  honestL0Rely
   honestL0Part honestL0World honestL0 llist
 Libs
   preamble
@@ -190,4 +191,88 @@ Proof
   gvs[ev_on_def, failed_def] >>
   drule_all accept_dec >> strip_tac >>
   gvs[l0_res_of_def, l0_ev_res_def]
+QED
+
+(* ------------------------------------------------------------------------
+   Raw liveness for connections
+   ------------------------------------------------------------------------ *)
+
+Theorem pftrace_sub:
+  run_ok lfd pol ifds m w0 ∧ pftrace lfd pol ifds m w0 io ∧
+  evs ≼ revs lfd pol ifds m w0 N ⇒ LPREFIX (fromList evs) io
+Proof
+  rw[pftrace_def, ppre_def] >> drule_then (qspec_then ‘N’ assume_tac) prun_some >>
+  Cases_on ‘prun lfd pol ifds m w0 N’ >> PairCases_on ‘r’ >>
+  qexistsl_tac [‘N’, ‘q’, ‘(r0, r1)’, ‘r2’, ‘r3’] >> gvs[revs_def]
+QED
+
+(* A new connection of round k is an accepted fd of the run's events *)
+Theorem run_conn_accepted:
+  run_ok lfd pol ifds m w0 ∧ winv w0 ∧ MEM (FConn g) (rlog lfd pol ifds m w0 k) ⇒
+  MEM g (l0_accepted (revs lfd pol ifds m w0 (SUC k)))
+Proof
+  strip_tac >> drule_all winv_run >> disch_then (qspec_then ‘k’ assume_tac) >>
+  ‘l0_rely (rworld lfd pol ifds m w0 k)’ by fs[winv_def] >>
+  drule_then (qspec_then ‘k’ strip_assume_tac) prun_round >>
+  ‘rlog lfd pol ifds m w0 k = log’ by simp[rlog_def] >> gvs[] >>
+  drule_all pround_conn >> strip_tac >>
+  simp[l0_accepted_def, MEM_FLAT, MEM_MAP, PULL_EXISTS] >>
+  disj2_tac >> qexists_tac ‘ev’ >> simp[]
+QED
+
+(* MAIN (C): raw liveness for connections on the PF trace, for every server
+   meeting S1 and S2 *)
+Theorem pf_conn_live:
+  run_ok lfd pol ifds m w0 ∧ winv w0 ∧ linv lfd w0 ∧ lone lfd w0 ∧
+  MEM lfd (l0_used w0) ∧ (∀n. SND (pcm lfd pol ifds m w0 n) + 1 < dimword (:64)) ∧
+  F1 lfd pol ifds m w0 ∧ S1 lfd pol ifds m w0 ∧ S2 lfd pol ifds m w0 ∧
+  pftrace lfd pol ifds m w0 io ⇒
+  conn_live_l0 w0 io
+Proof
+  rw[conn_live_l0_def, conn_live_unless_def] >>
+  drule_all pftrace_prefix >> strip_tac >>
+  ‘∃s. revs lfd pol ifds m w0 N = evs ++ s’ by fs[IS_PREFIX_APPEND] >>
+  drule_then (qspec_then ‘N’ strip_assume_tac) run_world_at >>
+  ‘l0_rely w0 ∧ l0wf w0’ by fs[run_ok_def, winv_def] >>
+  ‘faithful w0 (evs ++ s)’ by metis_tac[] >>
+  ‘lone lfd w ∧ l0wf w’
+    by (conj_tac >> irule faithful_world_inv >>
+        (conj_tac >- metis_tac[lone_ffi, l0wf_ffi_fn]) >>
+        qexistsl_tac [‘evs’, ‘s’, ‘w0’] >> simp[]) >>
+  drule_all lone_qof >> strip_tac >>
+  qpat_x_assum ‘l = lfd’ SUBST_ALL_TAC >> qpat_x_assum ‘qof _ _ = q’ (SUBST_ALL_TAC o SYM) >>
+  ‘FOLDL l0_step (SOME w) (MAP ev_lcall s) = SOME (rworld lfd pol ifds m w0 N)’
+    by (qpat_x_assum ‘world_at w0 (revs _ _ _ _ _ _) = _’ mp_tac >>
+        qpat_assum ‘revs _ _ _ _ _ _ = _’ (fn th => REWRITE_TAC[th]) >>
+        simp[world_at_append]) >>
+  ‘faithful w s’
+    by (irule faithful_drop >> qexistsl_tac [‘evs’, ‘w0’] >>
+        fs[world_at_def, l0_replay_def]) >>
+  Cases_on ‘MEM j0 (qof (rworld lfd pol ifds m w0 N) lfd)’
+  >- ((* still queued at the end of the round: live_conn_psk *)
+      qspecl_then [‘N’, ‘j0’] mp_tac (Q.GENL [‘n0’, ‘j0’] live_conn_psk) >>
+      impl_tac >- simp[] >> strip_tac
+      >- (disj2_tac >> disj1_tac >>
+          qexistsl_tac [‘revs lfd pol ifds m w0 (SUC k)’,
+                        ‘rworld lfd pol ifds m w0 (SUC k)’, ‘g’] >>
+          simp[run_world_at] >> metis_tac[pftrace_revs, run_conn_accepted])
+      >- (disj2_tac >> disj2_tac >> simp[broke_def] >>
+          qexistsl_tac [‘revs lfd pol ifds m w0 (SUC k)’,
+                        ‘rworld lfd pol ifds m w0 (SUC k)’] >>
+          simp[run_world_at] >> metis_tac[pftrace_revs])
+      >> disj1_tac >> metis_tac[accepts_fail_io_run]) >>
+  (* it left the queue during the round: at an accept naming it, or broken *)
+  drule_all qexit_trace >> strip_tac >>
+  qpat_x_assum ‘s = _’ SUBST_ALL_TAC >>
+  ‘world_at w0 (evs ++ a ++ [ev]) = SOME x’
+    by (REWRITE_TAC[GSYM APPEND_ASSOC] >> ONCE_REWRITE_TAC[world_at_append] >>
+        qpat_assum ‘world_at w0 evs = _’ (fn th => REWRITE_TAC[th]) >>
+        qpat_x_assum ‘FOLDL _ _ (MAP _ (_ ++ [_])) = _’ mp_tac >> simp[]) >>
+  ‘evs ++ a ++ [ev] ≼ revs lfd pol ifds m w0 N’
+    by (qpat_x_assum ‘revs _ _ _ _ _ _ = _’ SUBST1_TAC >> simp[IS_PREFIX_APPEND]) >>
+  ‘LPREFIX (fromList (evs ++ a ++ [ev])) io’ by metis_tac[pftrace_sub] >>
+  TRY (disj2_tac >> disj1_tac >> qexistsl_tac [‘evs ++ a ++ [ev]’, ‘x’, ‘k’] >>
+       simp[l0_accepted_def] >> NO_TAC) >>
+  disj2_tac >> disj2_tac >> simp[broke_def] >>
+  qexistsl_tac [‘evs ++ a ++ [ev]’, ‘x’] >> simp[]
 QED

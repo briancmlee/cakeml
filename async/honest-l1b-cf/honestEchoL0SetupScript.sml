@@ -228,3 +228,19 @@ Proof
   irule ri_echo_base >>
   qexistsl [‘ev’, ‘out’, ‘w3’] >> ASM_REWRITE_TAC[]
 QED
+
+(* MAIN: the listener is the world's only one and the world is well formed,
+   in the world reindexed by tr *)
+Theorem post_listen_wf_reindexed:
+  l0_server_world w0 ∧ stdio_prefix w0 w3 ∧
+  sys_listen_echo w3 = SOME (out, w4, ev) ∧ listen_fd out = SOME k ⇒
+  l0wf (reindex tr w4) ∧ lone (n2w k) (reindex tr w4)
+Proof
+  strip_tac >>
+  mp_tac stdio_prefix_lt >> ASM_REWRITE_TAC[] >> strip_tac >>
+  ‘l0wf w4’ by (irule listen_l0wf >> qexistsl [‘ev’, ‘out’, ‘w3’] >> ASM_REWRITE_TAC[]) >>
+  ‘lone (n2w k) w4’ by (irule listen_lone >> qexistsl [‘ev’, ‘out’, ‘w3’] >> ASM_REWRITE_TAC[]) >>
+  qpat_x_assum ‘l0wf _’ mp_tac >> qpat_x_assum ‘lone _ _’ mp_tac >>
+  REWRITE_TAC[l0wf_def, used_chans_def, lone_def, reindex_fields] >>
+  rpt strip_tac >> ASM_REWRITE_TAC[]
+QED

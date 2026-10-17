@@ -158,16 +158,21 @@ Definition sys_pair_def:
       s1 with peer := (e =+ SOME e') ((e' =+ SOME e) s1.peer)
 End
 
-(* A blocking poll is answered as a non-blocking one, once it may return *)
+(* A blocking poll (mode 1w) is answered as a non-blocking one, once it
+   may return; any other mode is left alone, so an invalid one fails as in
+   the L0 world (design/45 §9 (e)) *)
 Definition unblock_def:
   unblock nm (conf : word8 list) =
-    if nm = «sys_poll» ∧ conf ≠ [] then 0w :: TL conf else conf
+    if nm = «sys_poll» ∧ conf ≠ [] ∧ HD conf = 1w then 0w :: TL conf else conf
 End
 
+(* The entries are those l0_call polls: the call's buffer from offset 16,
+   decoded by honestL0World's pollfd_entries and pe_fe (D20) *)
 Definition poll_may_return_def:
-  poll_may_return nm (conf : word8 list) (w : l0world) ⇔
+  poll_may_return nm (conf : word8 list) (bytes : word8 list) (w : l0world) ⇔
     nm = «sys_poll» ∧ conf ≠ [] ∧ HD conf = 1w ⇒
-    w.ch.transient w.hist ≠ NONE ∨ any_revents w (poll_entries (DROP 1 conf))
+    w.ch.transient w.hist ≠ NONE ∨
+    any_revents w (MAP pe_fe (pollfd_entries (DROP 16 bytes)))
 End
 
 (* Exit: every fd of the process is closed (honestL0World's close_fd) *)
@@ -217,7 +222,7 @@ Definition sys_step_def:
   (sys_step s (Call k nm conf bytes out) s' ⇔
      k < LENGTH s.procs ∧ s.alive k ∧
      let w = EL k s.procs in
-       poll_may_return nm conf w ∧
+       poll_may_return nm conf bytes w ∧
        ∃w1. l0_call nm (unblock nm conf) bytes w = SOME (FFIreturn out w1) ∧
             let s1 = s with procs :=
                        LUPDATE (w1 with <| clock := w.clock + 1;
@@ -311,7 +316,9 @@ End
 (* The run *)
 
 (* One fresh L0 state per program: no listener, no channel; the reserved
-   fds include 0 (the startup contract: fds 0-2 are open); the choices
+   fds include 0 (the startup contract: fds 0-2 are open), and every fd in
+   use is below the fd limit (the startup contract, as l0_server_world's
+   fds_lt; user-approved 2026-10-17, design/45 §9 (d)); the choices
    satisfy honestL0Rely's rely *)
 Definition sys_init_def:
   sys_init (S : dec list list) s ⇔
@@ -319,6 +326,7 @@ Definition sys_init_def:
     (∀k. k < LENGTH S ⇒
          let w = EL k s.procs in
            w.listeners = [] ∧ w.chans = [] ∧ w.open_fds = [] ∧ MEM 0w w.reserved ∧
+           (∀x. MEM x (l0_used w) ⇒ w2n x < w.fd_limit) ∧
            w.clock = 0 ∧ w.hist = [] ∧ l0_rely w) ∧
     (∀k. s.alive k ⇔ k < LENGTH S) ∧
     s.target = K NONE ∧ s.peer = K NONE ∧ s.moved = K 0 ∧ s.acked = K 0 ∧

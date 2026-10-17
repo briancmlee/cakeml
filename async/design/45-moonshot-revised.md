@@ -141,6 +141,22 @@ interest. L1 gains one non-syscall query:
 Level f  ⟶  Lvl n        (* n = LENGTH (outbox_of st.b f); no syscall *)
 ```
 
+> **Level is an unconstrained oracle in the abstract layer (step 7, as built;
+> `spike/moonshot-level`).** The E1 handle layer (endpointHLModel) has no
+> outbox: its writes complete at once. So it answers `ELevel h` with
+> `ELvl (lv n k)`, where `lv` is an oracle keyed by (round n, index k of the
+> action in the round), and **every** `lv` is allowed. Consequences:
+> - **Any claim proved in the abstract layer holds for every answer
+>   sequence.** It cannot rely on the answers being true levels.
+> - **A claim that needs true levels** (the proxy's bounded buffering,
+>   `S4_relay`) is proved **at L1 level**, through `level_true`
+>   (honestL1EPRefine): on L1's run, E1 runs the layer with `lv = elv …`,
+>   L1's own answers, and the answer to round n's i-th action `ELevel h` is
+>   the length of h's outbox in L1's state just before that action.
+>   Otherwise it takes an explicit hypothesis on `lv`.
+> - endpointWorld is unchanged. L1 answers with no syscall (`elevel`: the
+>   outbox length; 0 for an unknown or still-connecting handle).
+
 The proxy's rule, at each round, for each pair (A, B):
 - A is in the read interest, and A is read, only if `Level B ≤ hw`;
 - B is in the read interest, and B is read, only if `Level A ≤ hw`.
@@ -213,6 +229,14 @@ Theorem S4_relay:
 In words: if the backend keeps reading, the backend outbox falls below the
 mark again. While it is above the mark, the proxy takes nothing new from
 the client. So the outbox never exceeds the mark by more than one chunk.
+
+**As built (honestL1PFS4w, step 8, spike/moonshot-s4g @aa4c7fcd9; deviations approved by the coordinator).**
+1. S4g needs no D, and S4g_from_feeds needs no [F1]/[F2]: the D23 write timeout drops an outbox that stops shrinking, so "≤ hw infinitely often" holds unconditionally. *Delivery*, as distinct from the bound, stays with flush_live, under D.
+2. `feeds` is per round (`num → word64 → word64 → bool`), because the proxy's pairing changes as fds are reused.
+3. `writes_follow_feeds` is eventual: once f's feeders are no longer read, f's writes (`wclean`: Writes on handles naming f at the round's start or end) eventually carry no bytes. The sketch's `outbox_at n' ≤ outbox_at n` is false for a server that replies one round after reading (M4).
+4. The `≤ hw + resp_bound` clause is deferred to step 9 (proxy: hw + pf_chunk).
+5. `pauses_feeders` constrains reads (`read_at`: a Read on a handle of g while g's inbox is non-empty), not fetches. Fetch belongs to S3c and no_deadlock (steps 15–16).
+6. Servers don't meet `pauses_feeders`: they read their own inbox while their outbox is full. They get S4w through `S4w_of_feeds` (S3w + replies only, `feeds` = identity), and the server-side `S4w_of_stop` (05a20ad2a). The proxy gets S4g through `S4g_from_feeds`.
 
 ### 2.4 The proxy's spec, revised (`proxy_guar'`)
 
@@ -897,5 +921,25 @@ Coordination (each is one message, at the step):
 | Q8 client | **accepted:** one client binary with N ≥ 2 connections first |
 | Q9 memory | **accepted:** `no_oom` is a hypothesis of liveness only. Safety tolerates OOM |
 
+**l0sys (step 2, PR #158): APPROVED** (user, via the coordinator, 2026-10-17), as drafted, with:
+- (a) several listeners may share a port (SO_REUSEADDR is loose in POSIX), so `isolated` covers our ports;
+- (b) a connection may break at any time; liveness takes the D16 form ("… unless a connection broke (observed)"), plus a corollary under an explicit no-break hypothesis;
+- (c) `Ack` is the kernel's acknowledgement; B3 (`l0sys_drains_exact`) is restated over moved bytes, not application reads.
+
+l0sys inherits the L0 model's `eof_first` (D21, user-approved; honest-ffi, d20-poll) unchanged, because each process is answered by `l0_call`. The §3.1 table's concrete EADDRINUSE is superseded by (a).
+
+**(d) fds below the limit (user, via the coordinator, 2026-10-17):** `sys_init` adds, per process, `∀x. MEM x (l0_used w) ⇒ w2n x < w.fd_limit`. This is `fds_lt`, the same startup-contract assumption as `l0_server_world`'s. Without it, an initial `reserved` list covering all 2^64 words leaves `lowest_fd` unspecified, so the model could hand out an fd twice (B2's port clause fails). The per-process theorems also all assume `fds_lt w0`. B1's conclusion adds `fds_lt w0`; B2 is unchanged.
+
+**(e) unblock only a blocking poll (user, via the coordinator, 2026-10-17):** `unblock` rewrites the mode byte to 0w only when it is 1w (blocking). Before, it rewrote any mode, so a poll with an invalid mode (≥ 2w) was answered by l0sys as a valid non-blocking poll, while the L0 world (`l0_call` needs `w2n (HD conf) ≤ 1`) fails it with FFI_failed. A run could then record an event no L0 world produces, and B1 (`l0sys_proj`) would be false. Found while proving B1. A mode-0 poll was already unchanged, and a mode-1 poll is handled as before.
+
+**(f) l0sys ported to D20 (2026-10-17; pending the user's OK, via the coordinator):** D20 moved sys_poll's entries from `conf` into the call's buffer (from offset 16), and removed `poll_entries`. `poll_may_return` now takes the buffer and reads the entries as `l0_call` does, `MAP pe_fe (pollfd_entries (DROP 16 bytes))`, using honestL0World's decoders. `sys_step` passes `bytes`. Nothing else changes; (e)'s `unblock` still fits D20's 1-byte conf.
+
 The safety path (§6, steps 1–4 and 9–12) starts when its dependencies land.
 The coordinator assigns the implementation.
+
+## 10. Known limitations
+
+- **A socket on fd 0 (coordinator, 2026-10-17).** `close_fd` frees a reserved fd, so a process that closes fd 0 can get fd 0 back from a connect or an accept. The trusted C reports a failed connect's socket in the value field, with 0 meaning "no socket", so an fd-0 socket can't be reported. l0sysEpisodes therefore counts an fd-0 episode but gives it no bytes. Consequences:
+  - B2 (`l0sys_causal`) is unchanged: `conn` leaves out every pair with an fd-0 episode on either side.
+  - Step 12 needs "no process closes fd 0" (or "no process closes a reserved fd"). It is to be discharged for L1 programs, which close only the connection fds they accepted or connected, so step 12's users never see it.
+  - A possible later fix in C is a separate no-socket flag. There is no change now.

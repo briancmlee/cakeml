@@ -14,7 +14,7 @@ Ancestors
   ml_translator cfHeapsBase Word8ArrayProof mlstring
   honestL0 honestL0World honestL1Model honestL1PFModel honestL0Part
   honestL0Prog honestL0Proof honestL1PFProg ffiSpikeSocketFFI asyncM3Loop asyncM3World
-  asyncM3Prog asyncM4Loop asyncCfActProg asyncCfActModel asyncChoose honestL1PFInv cfDiv
+  asyncM3Prog asyncM4Loop asyncM4LiveInterest asyncCfActProg asyncCfActModel asyncChoose honestL1PFInv cfDiv
 Libs
   preamble ml_translatorLib ml_progLib cfLib basisFunctionsLib
 
@@ -391,6 +391,61 @@ Proof
   xapp >> xsimpl
 QED
 
+(* D26: the handles whose Read returned end-of-file *)
+Theorem eof_reads_spec:
+  ∀acts rs actsv rsv evs.
+    LIST_TYPE SACT acts actsv ∧ LIST_TYPE SRESP rs rsv ⇒
+    app (p:'ffi ffi_proj) eof_reads_v [actsv; rsv] (L0_EV w0 w evs)
+      (POSTv v. &LIST_TYPE NUM (MAP w2n (eof_reads acts rs)) v * L0_EV w0 w evs)
+Proof
+  Induct >> rpt strip_tac >>
+  xcf_with_def (fetch "honestL1PFProg" "eof_reads_v_def") >>
+  gvs[LIST_TYPE_def] >> xmatch
+  >- (xcon >> xsimpl >> simp[eof_reads_def, LIST_TYPE_def]) >>
+  Cases_on ‘rs’ >> gvs[LIST_TYPE_def] >> xmatch
+  >- (xcon >> xsimpl >> simp[eof_reads_def, LIST_TYPE_def]) >>
+  rename1 ‘SRESP r rv’ >>
+  Cases_on ‘h’ >> gvs[SACT_def] >> xmatch >> simp[eof_reads_def] >>
+  TRY (xapp >> xsimpl >> NO_TAC) >>
+  Cases_on ‘r’ >> gvs[SRESP_def] >> TRY (Cases_on ‘o'’) >>
+  gvs[std_preludeTheory.OPTION_TYPE_def] >> xmatch >>
+  TRY (xapp >> xsimpl >> NO_TAC) >>
+  rename1 ‘STRING_TYPE (bytes_str bs) bsv’ >>
+  xlet_auto >- xsimpl >>
+  ‘(bytes_str bs = strlit "") ⇔ bs = []’
+    by (Cases_on ‘bs’ >> simp[]) >>
+  xif >> gvs[]
+  >- (xlet ‘POSTv v. &LIST_TYPE NUM (MAP w2n (eof_reads acts t)) v * L0_EV w0 w evs’
+      >- (xapp >> xsimpl) >>
+      xcon >> xsimpl >> fs[LIST_TYPE_def]) >>
+  Cases_on ‘bs’ >> gvs[] >> xapp >> xsimpl
+QED
+
+Theorem MAP_w2n_FILTER[local]:
+  ∀l. MAP w2n (FILTER (λh : word64. ¬MEM h e) l) =
+      FILTER (λn. ¬MEM n (MAP w2n e)) (MAP w2n l)
+Proof
+  Induct >> rw[MEM_MAP] >> gvs[]
+QED
+
+(* D26: one round's update of the interest list *)
+Theorem live_round_spec:
+  LIST_TYPE NUM (MAP w2n fds) fdsv ∧ LIST_TYPE SACT acts actsv ∧ LIST_TYPE SRESP rs rsv ⇒
+  app (p:'ffi ffi_proj) live_round_v [fdsv; actsv; rsv] (L0_EV w0 w evs)
+    (POSTv v. &LIST_TYPE NUM (MAP w2n (live_round fds acts rs)) v * L0_EV w0 w evs)
+Proof
+  strip_tac >> xcf_with_def (fetch "honestL1PFProg" "live_round_v_def") >>
+  ‘app p add_accepted_v [fdsv; rsv] emp
+     (POSTv v. &LIST_TYPE NUM (MAP w2n (add_accepted fds rs)) v)’
+    by (irule add_accepted_spec >> simp[]) >>
+  xlet ‘POSTv av. &LIST_TYPE NUM (MAP w2n (add_accepted fds rs)) av * L0_EV w0 w evs’
+  >- (qpat_x_assum ‘app _ add_accepted_v _ _ _’ xapp_spec >> xsimpl) >>
+  xlet ‘POSTv ev. &LIST_TYPE NUM (MAP w2n (eof_reads acts rs)) ev * L0_EV w0 w evs’
+  >- (xapp_spec eof_reads_spec >> xsimpl >> metis_tac[]) >>
+  xapp >> xsimpl >>
+  simp[live_round_def, drop_nums_def, MAP_w2n_FILTER] >> metis_tac[]
+QED
+
 (* The round's guard: room in the handle counter for the round's accepts *)
 val guard_tac =
   xlet ‘POSTv v. &NUM (naccepts (m []).actions) v * L0_EV w0 w evs’
@@ -408,7 +463,7 @@ Theorem step_pf_spec:
     (L0_EV w0 w evs)
     (POSTv v.
        &(∃fdsv' psv' cv'. v = Conv NONE [lfdv; hwv; fdsv'; psv'; cv'] ∧
-           LIST_TYPE NUM (MAP w2n (add_accepted fds snap.results)) fdsv' ∧
+           LIST_TYPE NUM (MAP w2n (live_round fds (m []).actions snap.results)) fdsv' ∧
            L1P ps' psv' ∧
            COMP p SACT A (SNAPSHOT SREADY SRESP) (suspended m [snap]) cv') *
        L0_EV w0 w' (evs ++ evs1))
@@ -441,12 +496,9 @@ Proof
   xlet ‘POSTv cv'. &COMP p SACT A (SNAPSHOT SREADY SRESP) (suspended m [ssnap rdy rs]) cv' *
                    L0_EV w0 w' (evs ++ evs' ++ tevs)’
   >- (qpat_x_assum ‘app _ Async_poll_v _ _ _’ xapp_spec >> xsimpl) >>
-  ‘app p add_accepted_v [fdsv; rsv] emp
-     (POSTv v. &LIST_TYPE NUM (MAP w2n (add_accepted fds rs)) v)’
-    by (irule add_accepted_spec >> simp[]) >>
-  xlet ‘POSTv fv. &LIST_TYPE NUM (MAP w2n (add_accepted fds rs)) fv *
+  xlet ‘POSTv fv. &LIST_TYPE NUM (MAP w2n (live_round fds (m []).actions rs)) fv *
                   L0_EV w0 w' (evs ++ evs' ++ tevs)’
-  >- (qpat_x_assum ‘app _ add_accepted_v _ _ _’ xapp_spec >> xsimpl) >>
+  >- (xapp_spec live_round_spec >> xsimpl >> metis_tac[]) >>
   xcon >> xsimpl >> simp[ssnap_def]
 QED
 
@@ -580,43 +632,43 @@ Proof
   first_x_assum (qspecl_then [‘n’, ‘x0’, ‘(x1, x2)’, ‘x3’, ‘x4’] mp_tac) >> gvs[]
 QED
 
-(* MAIN (P2): the prefetching L1 loop, running m with interest fds0 (plus
+(* MAIN (P2): the prefetching L1 loop, running m with live fds0 (log_of m) (plus
    every fd accepted) from the world w and the L1 state ps0, never
    terminates, and its I/O trace is, round by round, the events of
    pround_evs *)
 Theorem run_pf_spec:
   limited_parts l0_names p ∧ wf m ∧ l0_reach w0 w ∧ psmall lfd ps0 ∧
-  pt_ok lfd hw (interest fds0) m (w, ps0) ∧
+  pt_ok lfd hw (live fds0 (log_of m)) m (w, ps0) ∧
   WORD lfd lfdv ∧ NUM hw hwv ∧ LIST_TYPE NUM (MAP w2n fds0) fdsv ∧
   L1P ps0 psv ∧ COMP p SACT A (SNAPSHOT SREADY SRESP) m cv ⇒
   app (p:'ffi ffi_proj) run_pf_v [Conv NONE [lfdv; hwv; fdsv; psv; cv]]
     (L0_EV w0 w evs0)
     (POSTd io. io = LAPPEND (fromList evs0) (LFLATTEN (LGENLIST
-       (λi. fromList (pround_evs lfd hw (interest fds0) m (w, ps0) i)) NONE)))
+       (λi. fromList (pround_evs lfd hw (live fds0 (log_of m)) m (w, ps0) i)) NONE)))
 Proof
   strip_tac >>
-  ‘∀n. prounds_t lfd hw (interest fds0) m (w, ps0) n ≠ NONE’
+  ‘∀n. prounds_t lfd hw (live fds0 (log_of m)) m (w, ps0) n ≠ NONE’
     by (gvs[l0_reach_def] >> drule_all prounds_t_total >> rw[] >>
         first_x_assum (qspec_then ‘n’ strip_assume_tac) >> simp[]) >>
   xcf_div_rule IMP_app_POSTd_one_FFI_part_FLATTEN "run_pf" st >>
   qexists_tac ‘K emp’ >>
-  qexists_tac ‘λi. if i = 0 then evs0 else pround_evs lfd hw (interest fds0) m (w, ps0) (i - 1)’ >>
+  qexists_tac ‘λi. if i = 0 then evs0 else pround_evs lfd hw (live fds0 (log_of m)) m (w, ps0) (i - 1)’ >>
   qexists_tac ‘λi stv. ∃fdsv psv cv.
                  stv = Conv NONE [lfdv; hwv; fdsv; psv; cv] ∧
-                 LIST_TYPE NUM (MAP w2n (interest fds0
-                   (FST (prun lfd hw (interest fds0) m (w, ps0) i)))) fdsv ∧
-                 L1P (SND (FST (SND (prun lfd hw (interest fds0) m (w, ps0) i)))) psv ∧
-                 l0_reach w0 (FST (FST (SND (prun lfd hw (interest fds0) m (w, ps0) i)))) ∧
+                 LIST_TYPE NUM (MAP w2n (live fds0 (log_of m)
+                   (FST (prun lfd hw (live fds0 (log_of m)) m (w, ps0) i)))) fdsv ∧
+                 L1P (SND (FST (SND (prun lfd hw (live fds0 (log_of m)) m (w, ps0) i)))) psv ∧
+                 l0_reach w0 (FST (FST (SND (prun lfd hw (live fds0 (log_of m)) m (w, ps0) i)))) ∧
                  COMP p SACT A (SNAPSHOT SREADY SRESP)
-                   (suspended m (FST (prun lfd hw (interest fds0) m (w, ps0) i))) cv’ >>
-  qexists_tac ‘λi. l0_enc w0 (FST (FST (SND (prun lfd hw (interest fds0) m (w, ps0) i))))’ >>
+                   (suspended m (FST (prun lfd hw (live fds0 (log_of m)) m (w, ps0) i))) cv’ >>
+  qexists_tac ‘λi. l0_enc w0 (FST (FST (SND (prun lfd hw (live fds0 (log_of m)) m (w, ps0) i))))’ >>
   qexists_tac ‘l0_next w0’ >>
   simp[] >> rpt conj_tac
   >- (simp[L0_EV_def] >> xsimpl)
   >- ((* one iteration: a round (step_pf_spec), or the stop (step_pf_stop_spec) *)
       rpt strip_tac >> gvs[] >>
       drule prun_SUC >> disch_then (qspec_then ‘i’ assume_tac) >>
-      qabbrev_tac ‘r = prun lfd hw (interest fds0) m (w, ps0) i’ >>
+      qabbrev_tac ‘r = prun lfd hw (live fds0 (log_of m)) m (w, ps0) i’ >>
       PairCases_on ‘r’ >> gvs[] >>
       ‘(suspended m r0 []).actions = new_actions (log_of m) r0’
         by simp[suspended_first_poll] >>
@@ -634,19 +686,19 @@ Proof
       sg ‘app p step_pf_v [Conv NONE [lfdv; hwv; fdsv'; psv'; cv']] (L0_EV w0 r1 [])
             (POSTv v.
                &(∃fdsv2 psv2 cv2. v = Conv NONE [lfdv; hwv; fdsv2; psv2; cv2] ∧
-                   LIST_TYPE NUM (MAP w2n (add_accepted (interest fds0 r0) snap.results)) fdsv2 ∧
+                   LIST_TYPE NUM (MAP w2n (live_round (live fds0 (log_of m) r0) (suspended m r0 []).actions snap.results)) fdsv2 ∧
                    L1P ws'1 psv2 ∧
                    COMP p SACT A (SNAPSHOT SREADY SRESP) (suspended (suspended m r0) [snap]) cv2) *
-               L0_EV w0 ws'0 ([] ++ pround_evs lfd hw (interest fds0) m (w,ps0) i))’
+               L0_EV w0 ws'0 ([] ++ pround_evs lfd hw (live fds0 (log_of m)) m (w,ps0) i))’
       >- (irule step_pf_spec >> simp[] >> metis_tac[]) >>
-      gvs[suspended_suspended_one, GSYM interest_SNOC, L0_EV_def, SEP_CLAUSES] >>
+      gvs[suspended_suspended_one, GSYM live_SNOC, L0_EV_def, SEP_CLAUSES] >>
       xlet ‘POSTv v.
               &(∃fdsv2 psv2 cv2. v = Conv NONE [lfdv; hwv; fdsv2; psv2; cv2] ∧
-                  LIST_TYPE NUM (MAP w2n (interest fds0 (r0 ++ [snap]))) fdsv2 ∧
+                  LIST_TYPE NUM (MAP w2n (live fds0 (log_of m) (r0 ++ [snap]))) fdsv2 ∧
                   L1P ws'1 psv2 ∧
                   COMP p SACT A (SNAPSHOT SREADY SRESP) (suspended m (r0 ++ [snap])) cv2) *
               (one (FFI_part (l0_enc w0 ws'0) (l0_next w0) l0_names
-                      (pround_evs lfd hw (interest fds0) m (w,ps0) i)) *
+                      (pround_evs lfd hw (live fds0 (log_of m)) m (w,ps0) i)) *
                &l0_reach w0 ws'0)’
       >- (qpat_x_assum ‘app _ step_pf_v _ _ _’ xapp_spec >> xsimpl) >>
       xvar >> xsimpl >> rpt strip_tac >> gvs[] >> xsimpl)

@@ -124,7 +124,7 @@ QED
    side, later) *)
 Definition l0_names_def:
   l0_names = [«sys_listen»; «sys_poll»; «sys_accept»; «sys_recv»; «sys_send»;
-              «sys_shutdown»; «sys_close»]
+              «sys_shutdown»; «sys_close»; «sys_connect»; «sys_connerr»]
 End
 
 Definition l0_enc_def:

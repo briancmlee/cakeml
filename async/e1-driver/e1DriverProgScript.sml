@@ -249,3 +249,46 @@ Quote add_cakeml:
     case c of (lfd, pol, ifds, acts, step, fin) =>
       if fin s then () else run_e (step_e st);
 End
+
+(* ------------------------------------------------------------------------
+   Startup (D33 and listen-first): fdok on fds 0, 1, 2 (always all three);
+   if all open, listen on port; then the loop on the program mk builds for
+   the listener
+   ------------------------------------------------------------------------ *)
+
+(* All three answers say open *)
+Definition fdok_all_def:
+  fdok_all (a : word8 list) (b : word8 list) (c : word8 list) ⇔
+    a = [1w] ∧ b = [1w] ∧ c = [1w]
+End
+
+(* The listener fd sys_listen returned, if it succeeded (as honest-echo's) *)
+Definition listen_fd_def:
+  listen_fd out = case l0_res_of out of Ok k => SOME k | Fail _ _ => NONE
+End
+
+val r = tr fdok_all_def;
+val r = tr listen_fd_def;
+val r = tr (einit_def |> SIMP_RULE std_ss [pinit_def, l1init_def]);
+
+Quote add_cakeml:
+  fun c_fdok f = str_to_bytes (L0.fdok (bytes_to_str [f]) 1);
+  fun c_listen port = str_to_bytes (L0.listen (bytes_to_str (port_bytes port)) 13);
+
+  fun e1_start port mk =
+    let
+      val a = c_fdok (Word8.fromInt 0)
+      val b = c_fdok (Word8.fromInt 1)
+      val c = c_fdok (Word8.fromInt 2)
+    in
+      if not (fdok_all a b c) then ()
+      else
+        case listen_fd (c_listen port) of
+          None => ()
+        | Some k =>
+            let val lfd = Word64.fromInt k in
+              case mk lfd of (pol, ifds, acts, step, fin, init) =>
+                run_e ((lfd, pol, ifds, acts, step, fin), init, einit)
+            end
+    end;
+End

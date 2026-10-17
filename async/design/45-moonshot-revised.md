@@ -230,6 +230,14 @@ In words: if the backend keeps reading, the backend outbox falls below the
 mark again. While it is above the mark, the proxy takes nothing new from
 the client. So the outbox never exceeds the mark by more than one chunk.
 
+**As built (honestL1PFS4w, step 8, spike/moonshot-s4g @aa4c7fcd9; deviations approved by the coordinator).**
+1. S4g needs no D, and S4g_from_feeds needs no [F1]/[F2]: the D23 write timeout drops an outbox that stops shrinking, so "≤ hw infinitely often" holds unconditionally. *Delivery*, as distinct from the bound, stays with flush_live, under D.
+2. `feeds` is per round (`num → word64 → word64 → bool`), because the proxy's pairing changes as fds are reused.
+3. `writes_follow_feeds` is eventual: once f's feeders are no longer read, f's writes (`wclean`: Writes on handles naming f at the round's start or end) eventually carry no bytes. The sketch's `outbox_at n' ≤ outbox_at n` is false for a server that replies one round after reading (M4).
+4. The `≤ hw + resp_bound` clause is deferred to step 9 (proxy: hw + pf_chunk).
+5. `pauses_feeders` constrains reads (`read_at`: a Read on a handle of g while g's inbox is non-empty), not fetches. Fetch belongs to S3c and no_deadlock (steps 15–16).
+6. Servers don't meet `pauses_feeders`: they read their own inbox while their outbox is full. They get S4w through `S4w_of_feeds` (S3w + replies only, `feeds` = identity), and the server-side `S4w_of_stop` (05a20ad2a). The proxy gets S4g through `S4g_from_feeds`.
+
 ### 2.4 The proxy's spec, revised (`proxy_guar'`)
 
 Changes from `endpointClients.proxy_guar`:

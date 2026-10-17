@@ -383,3 +383,260 @@ Proof
   ‘sinv (TAKE (t + d) rs) (EL (t + d) ss) (ghost ss rs css0 (t + d))’ by simp[] >>
   simp[ghost_def] >> irule hist_step >> fs[] >> qexists_tac ‘TAKE (t + d) rs’ >> fs[]
 QED
+
+(*---------------------------------------------------------------------------*)
+(* The prefix at one instant st (ghost cst), for a pair of the final state s
+   (ghost css): what k' 's episode j' received is a prefix of what k's
+   episode j sent *)
+
+Theorem TAKE_prefix_self:
+  TAKE n l ≼ l
+Proof
+  metis_tac[IS_PREFIX_APPEND, TAKE_DROP]
+QED
+
+Theorem prefix_EL:
+  l1 ≼ l2 ∧ j < LENGTH l1 ⇒ EL j l1 = EL j l2
+Proof
+  rw[IS_PREFIX_APPEND] >> simp[EL_APPEND1]
+QED
+
+Theorem in_ok_prefix:
+  in_ok r c ⇒ r ≼ c.peer_sent
+Proof
+  rw[in_ok_def] >> metis_tac[IS_PREFIX_TRANS, IS_PREFIX_APPEND]
+QED
+
+Theorem causal_at:
+  sinv rs st cst ∧ hist_inv st cst s css ∧ kinv s ∧
+  k < LENGTH st.procs ∧ k' < LENGTH st.procs ∧
+  j < LENGTH (css k) ∧ j' < LENGTH (css k') ∧ ALL_DISTINCT (css k) ∧
+  s.peer (k', EL j' (css k')) = SOME (k, EL j (css k)) ∧
+  (j < LENGTH (cst k) ⇒ EL j (ep_fds (proc_events k rs)) ≠ 0w) ∧
+  (j' < LENGTH (cst k') ⇒ EL j' (ep_fds (proc_events k' rs)) ≠ 0w) ⇒
+  l0_ep_recvd j' (proc_events k' rs) ≼ l0_ep_sent j (proc_events k rs)
+Proof
+  strip_tac >>
+  qabbrev_tac ‘c = EL j (css k)’ >> qabbrev_tac ‘c' = EL j' (css k')’ >>
+  ‘kinv st’ by fs[sinv_def] >>
+  ‘pinv (proc_events k rs) (EL k st.procs) (cst k) ∧
+   pinv (proc_events k' rs) (EL k' st.procs) (cst k')’ by fs[sinv_def, pk_def] >>
+  ‘cst k ≼ css k ∧ cst k' ≼ css k'’ by fs[hist_inv_def] >>
+  Cases_on ‘j' < LENGTH (cst k')’
+  >- (‘EL j' (cst k') = c'’ by metis_tac[prefix_EL] >>
+      ‘c' < LENGTH (EL k' st.procs).chans’
+        by (fs[pinv_def, EVERY_EL] >> metis_tac[]) >>
+      ‘is_end st (k', c')’ by simp[is_end_def] >>
+      ‘l0_ep_recvd j' (proc_events k' rs) ≼ (sys_chan st (k', c')).peer_sent’
+        by (simp[l0_ep_recvd_def, sys_chan_def] >> irule in_ok_prefix >>
+            qpat_x_assum ‘pinv (proc_events k' rs) _ _’ mp_tac >> rewrite_tac[pinv_def] >>
+            strip_tac >> first_x_assum (qspec_then ‘j'’ mp_tac) >> simp[]) >>
+      ‘(sys_chan st (k', c')).peer_sent ≼ l0_ep_sent j (proc_events k rs)’
+        suffices_by metis_tac[IS_PREFIX_TRANS] >>
+      ‘s.peer (k, c) = SOME (k', c')’ by (fs[kinv_def] >> res_tac) >>
+      Cases_on ‘is_end st (k, c)’
+      >- (‘st.peer (k', c') = SOME (k, c)’ by (fs[hist_inv_def] >> res_tac) >>
+          ‘st.peer (k, c) = SOME (k', c') ∧
+           (sys_chan st (k', c')).peer_sent ≼ TAKE (st.moved (k, c)) (sys_chan st (k, c)).sent’
+            by (fs[kinv_def] >> res_tac >> res_tac >> fs[]) >>
+          ‘(sys_chan st (k', c')).peer_sent ≼ (sys_chan st (k, c)).sent’
+            by metis_tac[IS_PREFIX_TRANS, TAKE_prefix_self] >>
+          Cases_on ‘j < LENGTH (cst k)’
+          >- (‘EL j (cst k) = c’ by metis_tac[prefix_EL] >>
+              ‘l0_ep_sent j (proc_events k rs) = (sys_chan st (k, c)).sent’
+                by (simp[l0_ep_sent_def, sys_chan_def] >>
+                    qpat_x_assum ‘pinv (proc_events k rs) _ _’ mp_tac >>
+                    rewrite_tac[pinv_def] >> strip_tac >>
+                    first_x_assum (qspec_then ‘j’ mp_tac) >> simp[]) >>
+              fs[]) >>
+          ‘¬MEM c (cst k)’
+            by (fs[IS_PREFIX_APPEND] >> rename1 ‘css k = cst k ++ l’ >>
+                ‘c = EL (j - LENGTH (cst k)) l ∧ j - LENGTH (cst k) < LENGTH l’
+                  by (qunabbrev_tac ‘c’ >> fs[EL_APPEND2]) >>
+                ‘MEM c l’ by metis_tac[EL_MEM] >>
+                qpat_x_assum ‘ALL_DISTINCT (css k)’ mp_tac >> fs[ALL_DISTINCT_APPEND] >>
+                metis_tac[]) >>
+          ‘c < LENGTH (EL k st.procs).chans’ by fs[is_end_def] >>
+          ‘queued (EL k st.procs) c’
+            by (‘MEM c (css k)’ by metis_tac[EL_MEM] >>
+                qpat_x_assum ‘hist_inv _ _ _ _’ mp_tac >> rewrite_tac[hist_inv_def] >>
+                strip_tac >> first_x_assum (qspecl_then [‘k’, ‘c’] mp_tac) >> simp[]) >>
+          ‘(sys_chan st (k, c)).sent = []’
+            by (fs[queued_def, pinv_def, sys_chan_def] >> res_tac) >>
+          fs[]) >>
+      ‘st.peer (k', c') = NONE ∧ (sys_chan st (k', c')).connecting’
+        by (qpat_x_assum ‘hist_inv _ _ _ _’ mp_tac >> rewrite_tac[hist_inv_def] >>
+            strip_tac >> first_x_assum irule >> simp[] >> metis_tac[]) >>
+      ‘(sys_chan st (k', c')).peer_sent = []’ by (fs[kinv_def] >> res_tac) >>
+      simp[]) >>
+  ‘l0_ep_recvd j' (proc_events k' rs) = []’ by
+    (simp[l0_ep_recvd_def] >> irule ep_io_unborn >> fs[pinv_def]) >>
+  simp[]
+QED
+
+(*---------------------------------------------------------------------------*)
+(* The pairs of the final state *)
+
+Theorem proc_events_APPEND:
+  ∀a. proc_events k (a ++ b) = proc_events k a ++ proc_events k b
+Proof
+  Induct >> simp[proc_events_def] >> Cases >> simp[proc_events_def]
+QED
+
+Theorem ep_fds_APPEND:
+  ep_fds (a ++ b) = ep_fds a ++ ep_fds b
+Proof
+  simp[ep_fds_def]
+QED
+
+Theorem ep_fds_TAKE:
+  ep_fds (proc_events k (TAKE t rs)) ≼ ep_fds (proc_events k rs)
+Proof
+  ‘rs = TAKE t rs ++ DROP t rs’ by simp[] >>
+  qabbrev_tac ‘a = TAKE t rs’ >> qabbrev_tac ‘b = DROP t rs’ >>
+  pop_assum kall_tac >> pop_assum kall_tac >> rveq >>
+  simp[proc_events_APPEND, ep_fds_APPEND]
+QED
+
+(* Two episodes paired at the end: both counted with an fd other than 0,
+   and their channels peers *)
+Definition fin_pair_def:
+  fin_pair rs (s : sysstate) css (k, j) (k', j') ⇔
+    k < LENGTH s.procs ∧ k' < LENGTH s.procs ∧
+    j < LENGTH (css k) ∧ j' < LENGTH (css k') ∧
+    EL j (ep_fds (proc_events k rs)) ≠ 0w ∧ EL j' (ep_fds (proc_events k' rs)) ≠ 0w ∧
+    s.peer (k, EL j (css k)) = SOME (k', EL j' (css k'))
+End
+
+Theorem fin_pair_sym:
+  kinv s ⇒ (fin_pair rs s css e e' ⇔ fin_pair rs s css e' e)
+Proof
+  PairCases_on ‘e’ >> PairCases_on ‘e'’ >> rw[fin_pair_def, kinv_def] >> metis_tac[]
+QED
+
+Theorem fin_pair_unique:
+  sinv rs s css ∧ fin_pair rs s css e e1 ∧ fin_pair rs s css e e2 ⇒ e1 = e2
+Proof
+  PairCases_on ‘e’ >> PairCases_on ‘e1’ >> PairCases_on ‘e2’ >> rw[fin_pair_def] >> fs[] >>
+  ‘ALL_DISTINCT (css e10)’ by fs[sinv_def, pk_def, pinv_def] >>
+  metis_tac[ALL_DISTINCT_EL_IMP]
+QED
+
+Theorem l0_ep_role_EL:
+  pinv (proc_events k rs) w cs ∧ j < LENGTH cs ⇒
+  l0_ep_role j (proc_events k rs) = SOME (EL j (ep_roles [] (proc_events k rs)))
+Proof
+  rw[l0_ep_role_def, LENGTH_ep_roles] >> fs[pinv_def]
+QED
+
+Theorem fin_pair_roles:
+  sinv rs s css ∧ fin_pair rs s css (k, j) (k', j') ⇒
+  ∃p. l0_ep_role j (proc_events k rs) = SOME (Connected p) ∧
+      l0_ep_role j' (proc_events k' rs) = SOME (Accepted p) ∨
+      l0_ep_role j (proc_events k rs) = SOME (Accepted p) ∧
+      l0_ep_role j' (proc_events k' rs) = SOME (Connected p)
+Proof
+  rw[fin_pair_def] >>
+  ‘pk rs s css k ∧ pk rs s css k' ∧ kinv s’ by fs[sinv_def] >>
+  ‘pinv (proc_events k rs) (EL k s.procs) (css k) ∧
+   pinv (proc_events k' rs) (EL k' s.procs) (css k')’ by fs[pk_def] >>
+  imp_res_tac l0_ep_role_EL >> simp[] >>
+  qabbrev_tac ‘c = EL j (css k)’ >> qabbrev_tac ‘c' = EL j' (css k')’ >>
+  ‘s.peer (k', c') = SOME (k, c) ∧ (s.target (k, c) = NONE ⇔ s.target (k', c') ≠ NONE)’
+    by (fs[kinv_def] >> res_tac >> simp[]) >>
+  qpat_x_assum ‘pk rs s css k’ (strip_assume_tac o SIMP_RULE (srw_ss()) [pk_def, LET_THM]) >>
+  qpat_x_assum ‘pk rs s css k'’ (strip_assume_tac o SIMP_RULE (srw_ss()) [pk_def, LET_THM]) >>
+  Cases_on ‘EL j (ep_roles [] (proc_events k rs))’ >>
+  Cases_on ‘EL j' (ep_roles [] (proc_events k' rs))’ >> simp[] >>
+  map_every qunabbrev_tac [‘c’, ‘c'’] >> res_tac >> fs[] >> rfs[]
+QED
+
+(*---------------------------------------------------------------------------*)
+(* B2, over a run (small_ch: until D24 puts it in the rely) *)
+
+Theorem fin_pair_at:
+  sys_steps s0 rs ss ∧ sinv [] s0 css0 ∧
+  fin_pair rs (EL (LENGTH rs) ss) (ghost ss rs css0 (LENGTH rs)) (k, j) (k', j') ∧ t ≤ LENGTH rs ⇒
+  l0_ep_recvd j' (proc_events k' (TAKE t rs)) ≼ l0_ep_sent j (proc_events k (TAKE t rs))
+Proof
+  strip_tac >>
+  qabbrev_tac ‘sf = EL (LENGTH rs) ss’ >> qabbrev_tac ‘csf = ghost ss rs css0 (LENGTH rs)’ >>
+  ‘∀t. t ≤ LENGTH rs ⇒ sinv (TAKE t rs) (EL t ss) (ghost ss rs css0 t)’
+    by (match_mp_tac sinv_run >> simp[]) >>
+  ‘sinv rs sf csf’
+    by (map_every qunabbrev_tac [‘sf’, ‘csf’] >> first_assum (qspec_then ‘LENGTH rs’ mp_tac) >>
+        rewrite_tac[TAKE_LENGTH_ID, LESS_EQ_REFL]) >>
+  ‘sinv (TAKE t rs) (EL t ss) (ghost ss rs css0 t)’ by fs[] >>
+  ‘hist_inv (EL t ss) (ghost ss rs css0 t) sf csf’
+    by (‘∀d. t + d ≤ LENGTH rs ⇒
+             hist_inv (EL t ss) (ghost ss rs css0 t) (EL (t + d) ss) (ghost ss rs css0 (t + d))’
+          by (match_mp_tac hist_run >> simp[]) >>
+        pop_assum (qspec_then ‘LENGTH rs - t’ mp_tac) >>
+        ‘t + (LENGTH rs - t) = LENGTH rs’ by simp[] >> pop_assum SUBST1_TAC >>
+        map_every qunabbrev_tac [‘sf’, ‘csf’] >> rewrite_tac[LESS_EQ_REFL]) >>
+  ‘kinv sf’ by fs[sinv_def] >>
+  ‘fin_pair rs sf csf (k', j') (k, j)’ by metis_tac[fin_pair_sym] >>
+  irule causal_at >>
+  qexists_tac ‘csf’ >> qexists_tac ‘ghost ss rs css0 t’ >> qexists_tac ‘sf’ >>
+  qexists_tac ‘EL t ss’ >>
+  ‘LENGTH sf.procs = LENGTH (EL t ss).procs’ by fs[hist_inv_def] >>
+  fs[fin_pair_def] >>
+  ‘ALL_DISTINCT (csf k)’ by (fs[sinv_def, pk_def, pinv_def] >> res_tac >> fs[]) >>
+  simp[] >>
+  ‘∀k j. k < LENGTH sf.procs ∧ j < LENGTH (ghost ss rs css0 t k) ⇒
+         EL j (ep_fds (proc_events k (TAKE t rs))) = EL j (ep_fds (proc_events k rs))’
+    by (rpt strip_tac >> irule prefix_EL >> simp[ep_fds_TAKE] >>
+        ‘pinv (proc_events k'' (TAKE t rs)) (EL k'' (EL t ss).procs) (ghost ss rs css0 t k'')’
+          by (fs[sinv_def, pk_def] >> res_tac >> fs[]) >>
+        fs[pinv_def]) >>
+  conj_tac >> strip_tac >>
+  FIRST [qpat_x_assum ‘∀k j. _’ (qspecl_then [‘k’, ‘j’] mp_tac) >> fs[] >> NO_TAC,
+         qpat_x_assum ‘∀k j. _’ (qspecl_then [‘k'’, ‘j'’] mp_tac) >> fs[] >> NO_TAC]
+QED
+
+Theorem sys_causal:
+  sys_init ps s0 ∧ sys_steps s0 rs ss ∧ (∀k. k < LENGTH ps ⇒ small_ch (EL k s0.procs).ch) ⇒
+  ∃conn. (∀e e'. conn e = SOME e' ⇔ conn e' = SOME e) ∧
+    ∀k j k' j'. conn (k, j) = SOME (k', j') ⇒
+      k < LENGTH ps ∧ k' < LENGTH ps ∧
+      (∃p. l0_ep_role j (proc_events k rs) = SOME (Connected p) ∧
+           l0_ep_role j' (proc_events k' rs) = SOME (Accepted p) ∨
+           l0_ep_role j (proc_events k rs) = SOME (Accepted p) ∧
+           l0_ep_role j' (proc_events k' rs) = SOME (Connected p)) ∧
+      ∀t. l0_ep_recvd j' (proc_events k' (TAKE t rs)) ≼ l0_ep_sent j (proc_events k (TAKE t rs))
+Proof
+  strip_tac >>
+  ‘sinv [] s0 (K [])’ by metis_tac[sinv_init] >>
+  qabbrev_tac ‘sf = EL (LENGTH rs) ss’ >> qabbrev_tac ‘csf = ghost ss rs (K []) (LENGTH rs)’ >>
+  ‘∀t. t ≤ LENGTH rs ⇒ sinv (TAKE t rs) (EL t ss) (ghost ss rs (K []) t)’
+    by (match_mp_tac sinv_run >> simp[]) >>
+  ‘sinv rs sf csf’
+    by (map_every qunabbrev_tac [‘sf’, ‘csf’] >> first_assum (qspec_then ‘LENGTH rs’ mp_tac) >>
+        rewrite_tac[TAKE_LENGTH_ID, LESS_EQ_REFL]) >>
+  ‘kinv sf’ by fs[sinv_def] >>
+  ‘LENGTH sf.procs = LENGTH ps’
+    by (‘∀d. 0 + d ≤ LENGTH rs ⇒
+             hist_inv (EL 0 ss) (ghost ss rs (K []) 0) (EL (0 + d) ss) (ghost ss rs (K []) (0 + d))’
+          by (match_mp_tac hist_run >> simp[]) >>
+        pop_assum (qspec_then ‘LENGTH rs’ mp_tac) >> rewrite_tac[ADD, LESS_EQ_REFL] >>
+        drule sys_steps_EL >> strip_tac >> Cases_on ‘ss’ >> fs[] >>
+        fs[ghost_def, hist_inv_def, sys_init_def, Abbr ‘sf’, Abbr ‘csf’]) >>
+  qexists_tac ‘λe. if ∃e'. fin_pair rs sf csf e e' then SOME (@e'. fin_pair rs sf csf e e')
+                   else NONE’ >>
+  ‘∀e e'. (if ∃e'. fin_pair rs sf csf e e' then SOME (@e'. fin_pair rs sf csf e e')
+           else NONE) = SOME e' ⇔ fin_pair rs sf csf e e'’
+    by (rpt gen_tac >> IF_CASES_TAC >> simp[]
+        >- (SELECT_ELIM_TAC >> metis_tac[fin_pair_unique]) >>
+        metis_tac[]) >>
+  simp[] >> conj_tac >- metis_tac[fin_pair_sym] >>
+  rpt gen_tac >> strip_tac >>
+  rpt conj_tac
+  >- fs[fin_pair_def]
+  >- fs[fin_pair_def]
+  >- (irule fin_pair_roles >> metis_tac[]) >>
+  gen_tac >> Cases_on ‘t ≤ LENGTH rs’
+  >- (irule fin_pair_at >> fs[Abbr ‘sf’, Abbr ‘csf’] >> metis_tac[]) >>
+  ‘TAKE t rs = TAKE (LENGTH rs) rs’ by simp[TAKE_LENGTH_TOO_LONG] >>
+  pop_assum SUBST1_TAC >>
+  irule fin_pair_at >> fs[Abbr ‘sf’, Abbr ‘csf’] >> metis_tac[]
+QED

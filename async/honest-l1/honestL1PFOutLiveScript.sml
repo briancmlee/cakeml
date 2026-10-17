@@ -1069,3 +1069,65 @@ Proof
   qpat_x_assum ‘∀f. MEM f (MAP SND _) ∨ _ ⇒ _’ (qspec_then ‘f’ mp_tac) >>
   simp[] >> strip_tac >> gvs[acct_def] >> metis_tac[]
 QED
+
+(* ------------------------------------------------------------------------
+   The start of the run: qfresh and nshut from a world with fresh channels
+   ------------------------------------------------------------------------ *)
+
+(* No channel has anything sent or is shut (a program's start: there are
+   no channels yet) *)
+Definition fresh_chans_def:
+  fresh_chans w ⇔ ∀j. j < LENGTH w.chans ⇒ (EL j w.chans).sent = [] ∧ ¬(EL j w.chans).shut
+End
+
+Theorem fresh_chans_nil:
+  w.chans = [] ⇒ fresh_chans w
+Proof
+  simp[fresh_chans_def]
+QED
+
+Theorem fresh_chans_upd:
+  fresh_chans w ∧ (∀c. (g c).sent = c.sent ∧ ((g c).shut ⇔ c.shut)) ⇒
+  fresh_chans (upd_lchan j g w)
+Proof
+  rw[fresh_chans_def, upd_lchan_def, EL_LUPDATE] >> rw[] >> gvs[]
+QED
+
+Theorem fresh_chans_deliver:
+  fresh_chans w ⇒ fresh_chans (l0_deliver w a)
+Proof
+  strip_tac >> Cases_on ‘a’ >> rw[l0_deliver_def] >> every_case_tac >> gvs[] >>
+  TRY (irule fresh_chans_upd >> rw[break_lchan_def] >> NO_TAC) >>
+  gvs[fresh_chans_def] >> rw[] >>
+  Cases_on ‘j < LENGTH w.chans’ >> gvs[EL_APPEND1, EL_APPEND2] >>
+  ‘j = LENGTH w.chans’ by simp[] >> gvs[EL_APPEND2, fresh_lchan_def]
+QED
+
+Theorem fresh_chans_tick:
+  fresh_chans w ⇒ fresh_chans (l0_tick nm w)
+Proof
+  simp[l0_tick_def] >>
+  ‘∀as w. fresh_chans w ⇒ fresh_chans (FOLDL l0_deliver w as)’
+    by (Induct >> simp[] >> metis_tac[fresh_chans_deliver]) >>
+  rpt strip_tac >> first_x_assum irule >> gvs[fresh_chans_def]
+QED
+
+(* The program's listen keeps the channels fresh *)
+Theorem fresh_chans_listen:
+  l0_do «sys_listen» conf alen w = SOME (out, w', ev) ∧ fresh_chans w ⇒ fresh_chans w'
+Proof
+  strip_tac >> drule l0_do_cases >> strip_tac >> gvs[] >>
+  qpat_x_assum ‘l0_call _ _ _ _ = _’ mp_tac >> simp[l0_call_def, AllCaseEqs()] >>
+  strip_tac >> gvs[l0_listen_def, AllCaseEqs()] >>
+  drule fresh_chans_tick >> disch_then (qspec_then ‘«sys_listen»’ mp_tac) >>
+  simp[fresh_chans_def]
+QED
+
+(* At the run's start: queued connections have nothing sent, and no used
+   channel is shut *)
+Theorem fresh_chans_start:
+  fresh_chans w ∧ l0wf w ⇒ qfresh w ∧ nshut w
+Proof
+  rw[fresh_chans_def, qfresh_def, nshut_def, csent_def, l0wf_def, EVERY_MEM] >>
+  gvs[used_chans_def, MEM_FLAT, MEM_MAP, PULL_EXISTS] >> metis_tac[SND]
+QED

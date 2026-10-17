@@ -712,7 +712,7 @@ QED
 
 Theorem pf_fetch_qfresh:
   ∀fs w ps w' ps' log evs.
-    pf_fetch lfd hw fs (w, ps) = SOME ((w', ps'), log, evs) ∧ winv w ∧ qfresh w ⇒ qfresh w'
+    pf_fetch lfd pol fs (w, ps) = SOME ((w', ps'), log, evs) ∧ winv w ∧ qfresh w ⇒ qfresh w'
 Proof
   Induct >> simp[pf_fetch_def] >> rpt gen_tac >> rw[] >>
   TRY (first_x_assum drule_all >> simp[] >> NO_TAC) >>
@@ -734,7 +734,7 @@ Proof
 QED
 
 Theorem pround_qfresh:
-  pround lfd hw hs (w, ps) acts = SOME (snap, (w', ps'), log, evs) ∧ winv w ∧ qfresh w ⇒
+  pround lfd pol hs (w, ps) acts = SOME (snap, (w', ps'), log, evs) ∧ winv w ∧ qfresh w ⇒
   qfresh w'
 Proof
   rw[pround_def, AllCaseEqs()] >>
@@ -1106,7 +1106,7 @@ val fconn_tac =
    output alone, and pre-accepts fresh fds whose channels have nothing sent *)
 Theorem pf_fetch_out:
   ∀fs w ps w' ps' log evs.
-    pf_fetch lfd hw fs (w, ps) = SOME ((w', ps'), log, evs) ∧ winv w ∧ qfresh w ⇒
+    pf_fetch lfd pol fs (w, ps) = SOME ((w', ps'), log, evs) ∧ winv w ∧ qfresh w ⇒
     ps'.b = ps.b ∧
     (∀f c. l0_chan_of w f = SOME c ⇒ l0_chan_of w' f = SOME c ∧ csent w' c = csent w c) ∧
     (∀f. evs_sent f evs = []) ∧
@@ -1381,20 +1381,20 @@ val not_new_tac =
   qpat_x_assum ‘∀c. l0_chan_of w2 f ≠ SOME c’ (qspec_then ‘c’ mp_tac) >> fs[];
 
 Theorem tail_out:
-  pf_tail lfd hw hs (w, ps) = SOME (rdy, (w', ps'), log, evs) ∧
+  pf_tail lfd pol hs (w, ps) = SOME (rdy, (w', ps'), log, evs) ∧
   pv_rel lfd cm ps s ∧ pown lfd ps ∧ winv w ∧ EVERY small_send evs ∧ out_rel cm w ps s ∧
   arrs lfd (cm, LENGTH s.clients) log = (as, (cm', k')) ∧ cext s s' ∧
   k' = LENGTH s'.clients ⇒
   out_rel cm' w' ps' s'
 Proof
   simp[pf_tail_def] >> strip_tac >>
-  qabbrev_tac ‘fes = pf_poll_set lfd hw ps hs’ >>
+  qabbrev_tac ‘fes = pf_poll_set lfd pol ps hs’ >>
   Cases_on ‘l1_polls [fes] w’ >> gvs[] >> rename1 ‘_ = SOME x’ >>
   PairCases_on ‘x’ >> rename1 ‘l1_polls _ _ = SOME (rv, w1, pevs)’ >> gvs[] >>
   Cases_on ‘l1_flush (writable_fds rv) (w1, ps.b)’ >> gvs[] >> rename1 ‘_ = SOME y’ >>
   PairCases_on ‘y’ >> rename1 ‘l1_flush _ _ = SOME ((w2, b2), fevs)’ >> gvs[] >>
   qmatch_asmsub_abbrev_tac ‘pf_fetch _ _ fs (w2, ps2)’ >>
-  Cases_on ‘pf_fetch lfd hw fs (w2, ps2)’ >> gvs[] >> rename1 ‘_ = SOME z’ >>
+  Cases_on ‘pf_fetch lfd pol fs (w2, ps2)’ >> gvs[] >> rename1 ‘_ = SOME z’ >>
   PairCases_on ‘z’ >> rename1 ‘pf_fetch _ _ _ _ = SOME ((w3, ps3f), log3, gevs)’ >> gvs[] >>
   qabbrev_tac ‘ps3 = hup_step (hup_fds rv) (outbox_of ps.b) log3 ps3f’ >>
   ‘ps3f.b.closing = ps3.b.closing ∧ ps3f.pause = ps3.pause’ by simp[Abbr ‘ps3’] >>
@@ -1522,7 +1522,7 @@ QED
    ------------------------------------------------------------------------ *)
 
 Theorem round_out:
-  pround lfd hw hs (w, ps) acts = SOME (snap, (w', ps'), log, evs) ∧
+  pround lfd pol hs (w, ps) acts = SOME (snap, (w', ps'), log, evs) ∧
   pv_rel lfd cm ps s ∧ pown lfd ps ∧ l0own lfd w ps ∧ winv w ∧
   EVERY small_send evs ∧ out_rel cm w ps s ∧
   arrs lfd (cm, LENGTH s.clients) log = (as, (cm', k')) ∧
@@ -1559,12 +1559,12 @@ QED
    prefix once the fd is gone) *)
 Theorem l1pf_refines_hl_out_upto:
   winv w0 ∧ qfresh w0 ∧ MEM lfd (l0_used w0) ∧
-  (∀n'. n' ≤ N ⇒ SND (pcm lfd hw ifds m w0 n') + 1 < dimword (:64)) ⇒
+  (∀n'. n' ≤ N ⇒ SND (pcm lfd pol ifds m w0 n') + 1 < dimword (:64)) ⇒
   ∀n h ws evs logs.
-    n ≤ N ∧ prounds lfd hw ifds m (w0, pinit) n = SOME (h, ws, evs, logs) ∧
+    n ≤ N ∧ prounds lfd pol ifds m (w0, pinit) n = SOME (h, ws, evs, logs) ∧
     EVERY small_send evs ⇒
-    out_rel (FST (pcm lfd hw ifds m w0 n)) (FST ws) (SND ws)
-      (FST (hst lfd ifds m (psk lfd hw ifds m w0) n)) ∧ winv (FST ws)
+    out_rel (FST (pcm lfd pol ifds m w0 n)) (FST ws) (SND ws)
+      (FST (hst lfd ifds m (psk lfd pol ifds m w0) n)) ∧ winv (FST ws)
 Proof
   strip_tac >>
   ‘l0_rely w0 ∧ fds_lt w0’ by gvs[winv_def] >>
@@ -1583,21 +1583,21 @@ Proof
   qpat_x_assum ‘∀h ws evs logs. _’ drule_all >> strip_tac >>
   mp_tac (Q.INST [‘N’ |-> ‘N’] l1pf_refines_hl_upto) >> impl_tac >- simp[] >>
   disch_then drule_all >> strip_tac >>
-  ‘hacts_of lfd ifds m (psk lfd hw ifds m w0) n = new_actions (log_of m) h0’
+  ‘hacts_of lfd ifds m (psk lfd pol ifds m w0) n = new_actions (log_of m) h0’
     by simp[hacts_of_def] >>
   PairCases_on ‘ws0’ >> rename1 ‘prounds _ _ _ _ _ n = SOME (h0, (w, ps), evs0, logs0)’ >>
   PairCases_on ‘ws’ >> rename1 ‘pround _ _ _ _ _ = SOME (snap, (w', ps'), log, _)’ >>
   gvs[] >>
-  Cases_on ‘hst lfd ifds m (psk lfd hw ifds m w0) n’ >> rename1 ‘_ = (s, hs)’ >> gvs[] >>
-  ‘plog lfd hw ifds m w0 n = log’
+  Cases_on ‘hst lfd ifds m (psk lfd pol ifds m w0) n’ >> rename1 ‘_ = (s, hs)’ >> gvs[] >>
+  ‘plog lfd pol ifds m w0 n = log’
     by (drule prounds_logs >> strip_tac >>
         qpat_x_assum ‘prounds _ _ _ _ _ (SUC n) = _’ assume_tac >>
         drule plog_EL >> disch_then (qspec_then ‘n’ mp_tac) >>
         simp[EL_APPEND2]) >>
-  Cases_on ‘pcm lfd hw ifds m w0 n’ >> rename1 ‘pcm _ _ _ _ _ n = (cm, k)’ >> gvs[] >>
-  Cases_on ‘arrs lfd (cm, LENGTH s.clients) (plog lfd hw ifds m w0 n)’ >>
+  Cases_on ‘pcm lfd pol ifds m w0 n’ >> rename1 ‘pcm _ _ _ _ _ n = (cm, k)’ >> gvs[] >>
+  Cases_on ‘arrs lfd (cm, LENGTH s.clients) (plog lfd pol ifds m w0 n)’ >>
   rename1 ‘_ = (as, ck)’ >> PairCases_on ‘ck’ >>
-  ‘pcm lfd hw ifds m w0 (SUC n) = (ck0, ck1) ∧ parr lfd hw ifds m w0 n = as’
+  ‘pcm lfd pol ifds m w0 (SUC n) = (ck0, ck1) ∧ parr lfd pol ifds m w0 n = as’
     by simp[pcm_def, parr_def] >>
   ‘∀f j. MEM (f, j) ck0 ∧ LENGTH s.clients ≤ j ⇒
          ∀used. ¬MEM f used ⇒ s.alloc j used = f’
@@ -1608,20 +1608,20 @@ Proof
         qpat_assum ‘pcm _ _ _ _ _ (SUC n) = _’ (fn th => REWRITE_TAC [th]) >>
         simp[]) >>
   drule_all round_out >> strip_tac >>
-  ‘hacts_tot lfd (hst lfd ifds m (psk lfd hw ifds m w0) n)
-     (hacts_of lfd ifds m (psk lfd hw ifds m w0) n) = (rs, hevs, (s1, hs_of ps'))’
+  ‘hacts_tot lfd (hst lfd ifds m (psk lfd pol ifds m w0) n)
+     (hacts_of lfd ifds m (psk lfd pol ifds m w0) n) = (rs, hevs, (s1, hs_of ps'))’
     by simp[hacts_tot_def] >>
   drule hround_step >> strip_tac >> simp[]
 QED
 
 Theorem l1pf_refines_hl_out:
   winv w0 ∧ qfresh w0 ∧ MEM lfd (l0_used w0) ∧
-  (∀n. SND (pcm lfd hw ifds m w0 n) + 1 < dimword (:64)) ⇒
+  (∀n. SND (pcm lfd pol ifds m w0 n) + 1 < dimword (:64)) ⇒
   ∀n h ws evs logs.
-    prounds lfd hw ifds m (w0, pinit) n = SOME (h, ws, evs, logs) ∧
+    prounds lfd pol ifds m (w0, pinit) n = SOME (h, ws, evs, logs) ∧
     EVERY small_send evs ⇒
-    out_rel (FST (pcm lfd hw ifds m w0 n)) (FST ws) (SND ws)
-      (FST (hst lfd ifds m (psk lfd hw ifds m w0) n))
+    out_rel (FST (pcm lfd pol ifds m w0 n)) (FST ws) (SND ws)
+      (FST (hst lfd ifds m (psk lfd pol ifds m w0) n))
 Proof
   strip_tac >> rpt gen_tac >> strip_tac >>
   mp_tac (Q.SPEC ‘n’ (Q.GEN ‘N’ l1pf_refines_hl_out_upto)) >>
@@ -1902,18 +1902,18 @@ Proof
 QED
 
 Theorem tail_tk:
-  pf_tail lfd hw hs (w, ps) = SOME (rdy, (w', ps'), log, evs) ∧
+  pf_tail lfd pol hs (w, ps) = SOME (rdy, (w', ps'), log, evs) ∧
   winv w ∧ qfresh w ∧ pown lfd ps ∧ EVERY small_send evs ∧ tk live w ps f c ts out ⇒
   ∃live'. tk live' w' ps' f c (ts ++ evs_sent f evs) out
 Proof
   simp[pf_tail_def] >> strip_tac >>
-  qabbrev_tac ‘fes = pf_poll_set lfd hw ps hs’ >>
+  qabbrev_tac ‘fes = pf_poll_set lfd pol ps hs’ >>
   Cases_on ‘l1_polls [fes] w’ >> gvs[] >> rename1 ‘_ = SOME x’ >>
   PairCases_on ‘x’ >> rename1 ‘l1_polls _ _ = SOME (rv, w1, pevs)’ >> gvs[] >>
   Cases_on ‘l1_flush (writable_fds rv) (w1, ps.b)’ >> gvs[] >> rename1 ‘_ = SOME y’ >>
   PairCases_on ‘y’ >> rename1 ‘l1_flush _ _ = SOME ((w2, b2), fevs)’ >> gvs[] >>
   qmatch_asmsub_abbrev_tac ‘pf_fetch _ _ fs (w2, ps2)’ >>
-  Cases_on ‘pf_fetch lfd hw fs (w2, ps2)’ >> gvs[] >> rename1 ‘_ = SOME z’ >>
+  Cases_on ‘pf_fetch lfd pol fs (w2, ps2)’ >> gvs[] >> rename1 ‘_ = SOME z’ >>
   PairCases_on ‘z’ >> rename1 ‘pf_fetch _ _ _ _ = SOME ((w3, ps3f), log3, gevs)’ >> gvs[] >>
   qabbrev_tac ‘ps3 = hup_step (hup_fds rv) (outbox_of ps.b) log3 ps3f’ >>
   ‘ps3f.b.closing = ps3.b.closing ∧ ps3f.pause = ps3.pause’ by simp[Abbr ‘ps3’] >>
@@ -2019,7 +2019,7 @@ QED
 
 (* One round, followed from an fd L1 holds or has pre-accepted at its start *)
 Theorem round_tk:
-  pround lfd hw hs (w, ps) acts = SOME (snap, (w', ps'), log, evs) ∧
+  pround lfd pol hs (w, ps) acts = SOME (snap, (w', ps'), log, evs) ∧
   pv_rel lfd cm ps s ∧ pown lfd ps ∧ winv w ∧ EVERY small_send evs ∧ out_rel cm w ps s ∧
   (MEM f (MAP SND ps.b.tbl) ∨ MEM f ps.b.closing ∨ MEM f ps.acq) ∧ l0_chan_of w f = SOME c ⇒
   MEM f (MAP FST cm) ∧
@@ -2046,10 +2046,10 @@ Proof
 QED
 
 Theorem prounds_SUC_step:
-  prounds lfd hw ifds m ws0 n = SOME (h, ws, evs, logs) ∧
-  prounds lfd hw ifds m ws0 (SUC n) = SOME (h', ws', evs', logs') ⇒
+  prounds lfd pol ifds m ws0 n = SOME (h, ws, evs, logs) ∧
+  prounds lfd pol ifds m ws0 (SUC n) = SOME (h', ws', evs', logs') ⇒
   ∃snap log revs.
-    pround lfd hw (ifds h) ws (new_actions (log_of m) h) = SOME (snap, ws', log, revs) ∧
+    pround lfd pol (ifds h) ws (new_actions (log_of m) h) = SOME (snap, ws', log, revs) ∧
     evs' = evs ++ revs
 Proof
   rw[] >> qpat_x_assum ‘prounds _ _ _ _ _ (SUC _) = _’ mp_tac >>
@@ -2065,18 +2065,18 @@ QED
    its client, cl (pcm n) f, in psk) *)
 Theorem l1pf_round_sent_upto:
   winv w0 ∧ qfresh w0 ∧ MEM lfd (l0_used w0) ∧
-  (∀n'. n' ≤ N ⇒ SND (pcm lfd hw ifds m w0 n') + 1 < dimword (:64)) ⇒
+  (∀n'. n' ≤ N ⇒ SND (pcm lfd pol ifds m w0 n') + 1 < dimword (:64)) ⇒
   ∀n h ws evs logs h' ws' evs' logs'.
     SUC n ≤ N ∧
-    prounds lfd hw ifds m (w0, pinit) n = SOME (h, ws, evs, logs) ∧
-    prounds lfd hw ifds m (w0, pinit) (SUC n) = SOME (h', ws', evs', logs') ∧
+    prounds lfd pol ifds m (w0, pinit) n = SOME (h, ws, evs, logs) ∧
+    prounds lfd pol ifds m (w0, pinit) (SUC n) = SOME (h', ws', evs', logs') ∧
     EVERY small_send evs' ∧
     (MEM f (MAP SND (SND ws).b.tbl) ∨ MEM f (SND ws).b.closing ∨ MEM f (SND ws).acq) ∧
     l0_chan_of (FST ws) f = SOME c ⇒
     ∃live. tk live (FST ws') (SND ws') f c
              (csent (FST ws) c ++ evs_sent f (DROP (LENGTH evs) evs'))
-             (EL (cl (FST (pcm lfd hw ifds m w0 n)) f)
-                 (FST (hst lfd ifds m (psk lfd hw ifds m w0) (SUC n))).clients).outgoing
+             (EL (cl (FST (pcm lfd pol ifds m w0 n)) f)
+                 (FST (hst lfd ifds m (psk lfd pol ifds m w0) (SUC n))).clients).outgoing
 Proof
   strip_tac >> rpt gen_tac >>
   disch_then (fn th => MAP_EVERY assume_tac (CONJUNCTS th)) >>
@@ -2094,27 +2094,27 @@ Proof
   disch_then drule_all >> strip_tac >>
   PairCases_on ‘ws’ >> PairCases_on ‘ws'’ >>
   RULE_ASSUM_TAC (REWRITE_RULE [FST, SND]) >> REWRITE_TAC [FST, SND] >>
-  Cases_on ‘hst lfd ifds m (psk lfd hw ifds m w0) n’ >> rename1 ‘_ = (s, hs)’ >> gvs[] >>
-  ‘hacts_of lfd ifds m (psk lfd hw ifds m w0) n =
-   new_actions (log_of m) (hhist lfd ifds m (psk lfd hw ifds m w0) n)’
+  Cases_on ‘hst lfd ifds m (psk lfd pol ifds m w0) n’ >> rename1 ‘_ = (s, hs)’ >> gvs[] >>
+  ‘hacts_of lfd ifds m (psk lfd pol ifds m w0) n =
+   new_actions (log_of m) (hhist lfd ifds m (psk lfd pol ifds m w0) n)’
     by simp[hacts_of_def] >>
   Q.SUBGOAL_THEN ‘MEM f (MAP SND ws1.b.tbl) ∨ MEM f ws1.b.closing ∨ MEM f ws1.acq’
     ASSUME_TAC >> TRY (fs[] >> NO_TAC) >>
   qpat_x_assum ‘pround _ _ _ _ _ = _’ assume_tac >>
   drule round_tk >>
-  disch_then (qspecl_then [‘s’, ‘f’, ‘FST (pcm lfd hw ifds m w0 n)’, ‘c’] mp_tac) >>
+  disch_then (qspecl_then [‘s’, ‘f’, ‘FST (pcm lfd pol ifds m w0 n)’, ‘c’] mp_tac) >>
   (impl_tac >- (rpt conj_tac >> first_assum ACCEPT_TAC)) >> strip_tac >>
-  ‘hacts_tot lfd (hst lfd ifds m (psk lfd hw ifds m w0) n)
-     (hacts_of lfd ifds m (psk lfd hw ifds m w0) n) = (rs, hevs, (s1, hs1))’
+  ‘hacts_tot lfd (hst lfd ifds m (psk lfd pol ifds m w0) n)
+     (hacts_of lfd ifds m (psk lfd pol ifds m w0) n) = (rs, hevs, (s1, hs1))’
     by fs[hacts_tot_def] >>
   drule hround_step >> strip_tac >> simp[] >>
-  ‘cl (FST (pcm lfd hw ifds m w0 n)) f < LENGTH s1.clients’
+  ‘cl (FST (pcm lfd pol ifds m w0 n)) f < LENGTH s1.clients’
     by (drule hacts_world >> strip_tac >>
         qpat_x_assum ‘pv_rel _ _ _ _’ mp_tac >> simp[pv_rel_def] >> strip_tac >>
         drule cl_mem >> gvs[EVERY_MEM]) >>
-  ‘∀hf. (EL (cl (FST (pcm lfd hw ifds m w0 n)) f)
+  ‘∀hf. (EL (cl (FST (pcm lfd pol ifds m w0 n)) f)
            (SND (hpoll lfd hs1 hf s1)).clients).outgoing =
-        (EL (cl (FST (pcm lfd hw ifds m w0 n)) f) s1.clients).outgoing’
+        (EL (cl (FST (pcm lfd pol ifds m w0 n)) f) s1.clients).outgoing’
     by (gen_tac >> qspecl_then [‘s1’, ‘lfd’, ‘hs1’, ‘hf’] mp_tac
           (Q.GENL [‘s’, ‘lfd’, ‘hs’, ‘hfds’] cext_hpoll) >>
         simp[cext_def]) >>

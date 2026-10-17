@@ -469,7 +469,7 @@ QED
    arrivals), each popped channel accepted (FConn in the log) or broken *)
 Theorem pf_fetch_queue:
   ∀fs w ps w' ps' log evs.
-    pf_fetch lfd hw fs (w, ps) = SOME ((w', ps'), log, evs) ∧ winv w ⇒
+    pf_fetch lfd pol fs (w, ps) = SOME ((w', ps'), log, evs) ∧ winv w ⇒
     wmono w w' ∧
     ∃t k. k ≤ LENGTH t + LENGTH (qof w lfd) ∧ qof w' lfd = DROP k (qof w lfd ++ t) ∧
           (∀j. MEM j (TAKE k (qof w lfd ++ t)) ⇒ resolved w' log j) ∧
@@ -598,7 +598,7 @@ QED
 
 Theorem pf_fetch_closing:
   ∀fs w ps w' ps' log evs.
-    pf_fetch lfd hw fs (w, ps) = SOME ((w', ps'), log, evs) ⇒ ps'.b.closing = ps.b.closing
+    pf_fetch lfd pol fs (w, ps) = SOME ((w', ps'), log, evs) ⇒ ps'.b.closing = ps.b.closing
 Proof
   Induct >> simp[pf_fetch_def] >> rpt gen_tac >> rw[] >>
   TRY (first_x_assum drule >> simp[] >> NO_TAC) >>
@@ -610,7 +610,7 @@ QED
    arrivals), each popped channel accepted under an fd the round's fetch
    log names (FConn), or broken *)
 Theorem pround_queue:
-  pround lfd hw hs (w, ps) acts = SOME (snap, (w', ps'), log, evs) ∧
+  pround lfd pol hs (w, ps) acts = SOME (snap, (w', ps'), log, evs) ∧
   winv w ∧ pv_rel lfd cm ps s ∧ pown lfd ps ∧ l0own lfd w ps ⇒
   ∃t k. k ≤ LENGTH t + LENGTH (qof w lfd) ∧ qof w' lfd = DROP k (qof w lfd ++ t) ∧
         (∀j. MEM j (TAKE k (qof w lfd ++ t)) ⇒ resolved w' log j) ∧
@@ -678,10 +678,10 @@ QED
 
 Theorem pf_fetch_lfd:
   ∀fs w ps w' ps' log evs.
-    pf_fetch lfd hw fs (w, ps) = SOME ((w', ps'), log, evs) ∧ winv w ⇒
+    pf_fetch lfd pol fs (w, ps) = SOME ((w', ps'), log, evs) ∧ winv w ⇒
     ps'.acq = ps.acq ++ log_conns log ∧
     (0 < ps.pause ⇒ ps'.pause = ps.pause ∧ ¬EXISTS (ev_on «sys_accept» lfd) evs) ∧
-    (MEM lfd fs ∧ wants_input lfd hw ps lfd ⇒ EXISTS (ev_on «sys_accept» lfd) evs) ∧
+    (MEM lfd fs ∧ wants_input lfd pol ps lfd ⇒ EXISTS (ev_on «sys_accept» lfd) evs) ∧
     (∀ev. MEM ev evs ∧ ev_on «sys_accept» lfd ev ∧ ¬failed ev ⇒ log_conns log ≠ [])
 Proof
   Induct >- simp[pf_fetch_def, log_conns_def] >>
@@ -990,7 +990,7 @@ QED
 
 Theorem pf_fetch_linv:
   ∀fs w ps w' ps' log evs.
-    pf_fetch lfd hw fs (w, ps) = SOME ((w', ps'), log, evs) ∧ winv w ∧ linv l w ⇒ linv l w'
+    pf_fetch lfd pol fs (w, ps) = SOME ((w', ps'), log, evs) ∧ winv w ∧ linv l w ⇒ linv l w'
 Proof
   Induct >> simp[pf_fetch_def] >> rpt gen_tac >> rw[] >>
   TRY (first_x_assum drule_all >> simp[] >> NO_TAC) >>
@@ -1058,10 +1058,10 @@ QED
    always for input *)
 Theorem pf_poll_set_lfd:
   ALOOKUP ps.b.tbl lfd = NONE ∧ (∀h. ALOOKUP ps.b.tbl h ≠ SOME lfd) ∧
-  MEM lfd hs ∧ wants_input lfd hw ps lfd ⇒
-  (∃e. MEM (lfd, e) (pf_poll_set lfd hw ps hs)) ∧
-  (∀e. MEM (lfd, e) (pf_poll_set lfd hw ps hs) ⇒ ODD e) ∧
-  EVERY (λ(g, e). e < 4) (pf_poll_set lfd hw ps hs)
+  MEM lfd hs ∧ wants_input lfd pol ps lfd ⇒
+  (∃e. MEM (lfd, e) (pf_poll_set lfd pol ps hs)) ∧
+  (∀e. MEM (lfd, e) (pf_poll_set lfd pol ps hs) ⇒ ODD e) ∧
+  EVERY (λ(g, e). e < 4) (pf_poll_set lfd pol ps hs)
 Proof
   strip_tac >> simp[pf_poll_set_def] >> rpt conj_tac
   >- (qexists_tac ‘1’ >> simp[MEM_FLAT, MEM_MAP, PULL_EXISTS] >> disj1_tac >>
@@ -1082,7 +1082,7 @@ QED
    queue not empty: the round polls the listener, and a poll on it that is
    not retried leads to an accept on it *)
 Theorem pround_lfd:
-  pround lfd hw hs (w, ps) acts = SOME (snap, (w', ps'), log, evs) ∧
+  pround lfd pol hs (w, ps) acts = SOME (snap, (w', ps'), log, evs) ∧
   winv w ∧ linv lfd w ∧ pv_rel lfd cm ps s ∧ pown lfd ps ∧ psmall lfd ps ∧
   l1hdln (w2n lfd) (ps.b.nxt + LENGTH acts) < dimword (:64) ⇒
   linv lfd w' ∧
@@ -1143,8 +1143,8 @@ Proof
       simp[] >> strip_tac >> gvs[] >>
       qpat_x_assum ‘∀ev. MEM ev gevs ∧ _ ⇒ _’ (qspec_then ‘ev’ mp_tac) >> metis_tac[])
   >> strip_tac >> gvs[] >>
-  qabbrev_tac ‘fes = pf_poll_set lfd hw pa hs’ >>
-  ‘wants_input lfd hw pa lfd’ by gvs[wants_input_def] >>
+  qabbrev_tac ‘fes = pf_poll_set lfd pol pa hs’ >>
+  ‘wants_input lfd pol pa lfd’ by gvs[wants_input_def] >>
   ‘(∃e. MEM (lfd, e) fes) ∧ (∀e. MEM (lfd, e) fes ⇒ ODD e) ∧ EVERY (λ(g, e). e < 4) fes’
     by (qunabbrev_tac ‘fes’ >> match_mp_tac pf_poll_set_lfd >> simp[]) >>
   ‘EVERY (λ(g, e). small g ∧ e < 4) fes’
@@ -1158,7 +1158,7 @@ Proof
         simp[MEM_MAP] >> qexists_tac ‘(lfd, e)’ >> simp[]) >>
   ‘MEM lfd (in_fds fes)’
     by (simp[in_fds_def, MEM_MAP, MEM_FILTER, EXISTS_PROD] >> metis_tac[]) >>
-  ‘wants_input lfd hw (pa with b := b2) lfd’ by gvs[wants_input_def] >>
+  ‘wants_input lfd pol (pa with b := b2) lfd’ by gvs[wants_input_def] >>
   conj_tac >- metis_tac[] >>
   rpt strip_tac >> gvs[] >>
   TRY (imp_res_tac ev_on_name >> gvs[EVERY_MEM] >> res_tac >> gvs[] >> NO_TAC) >>

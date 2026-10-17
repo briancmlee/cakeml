@@ -603,3 +603,170 @@ Proof
         simp[cext_def]) >>
   simp[] >> qexists_tac ‘live’ >> simp[]
 QED
+
+(* ------------------------------------------------------------------------
+   A connection that is still f's (channel c) after a round was not
+   re-accepted in it: its client stays the same
+   ------------------------------------------------------------------------ *)
+
+Theorem tail_noconn:
+  pf_tail lfd pol hs (w, ps) = SOME (rdy, (w', ps'), log, evs) ∧ winv w ∧ qfresh w ∧
+  EVERY small_send evs ∧ tkx live dx w ps f c ts out ∧ l0_chan_of w' f = SOME c ⇒
+  ¬MEM (FConn f) log
+Proof
+  simp[pf_tail_def, AllCaseEqs()] >> strip_tac >> gvs[] >> strip_tac >>
+  ‘winv w1 ∧ qfresh w1’ by metis_tac[l1_polls_winv, l1_polls_qfresh] >>
+  ‘winv w2 ∧ qfresh w2’ by metis_tac[l1_flush_winv, l1_flush_qfresh] >>
+  drule_all pf_fetch_out >> strip_tac >>
+  ‘∀c. l0_chan_of w2 f ≠ SOME c’ by metis_tac[] >>
+  Cases_on ‘live’
+  >- ((* live: f keeps channel c up to the fetch *)
+      ‘acct w ps.b f c out’ by fs[tkx_def, tk_def] >>
+      ‘l0_chan_of w f = SOME c’ by fs[acct_def] >>
+      drule_all l1_polls_csent >> strip_tac >>
+      ‘acct w1 ps.b f c out’ by metis_tac[acct_keep] >>
+      drule_all l1_flush_acct >> strip_tac >> gvs[acct_def]) >>
+  (* closed: c is unused once f has no channel, and stays unused *)
+  ‘dinv f c ts w ∧ outbox_of ps.b f = []’ by fs[tkx_def, tk_def] >>
+  ‘dinv f c ts w1’ by (drule_all l1_polls_dinv >> simp[]) >>
+  ‘dinv f c ts w2 ∧ evs_sent f fevs = []’ by (irule l1_flush_dinv >> fs[] >> metis_tac[]) >>
+  ‘uchan c ts w2’ by gvs[dinv_def] >>
+  ‘wpres (uchan c ts)’ by simp[wpres_uchan] >>
+  drule_all pf_fetch_wpres >> strip_tac >>
+  ‘winv w3’ by (drule_all pf_fetch_winv >> simp[]) >>
+  drule_all l1_reap_wpres >> strip_tac >>
+  gvs[uchan_def] >> drule chan_of_used >> simp[]
+QED
+
+(* ------------------------------------------------------------------------
+   Send progress: a send on f that L1 does not retry either took bytes or
+   failed hard, when L1 sends f's (non-empty) outbox
+   ------------------------------------------------------------------------ *)
+
+Theorem sys_send_small:
+  sys_send g bs w = SOME (out, w', ev) ∧ small_send ev ⇒ LENGTH bs < 256 ** 8
+Proof
+  rw[sys_send_def] >> drule l0_do_cases >> strip_tac >> gvs[small_send_def]
+QED
+
+Theorem l1_flush_progress:
+  ∀fs w b w' b' evs.
+    l1_flush fs (w, b) = SOME ((w', b'), evs) ∧ winv w ∧ EVERY small_send evs ∧
+    l0_chan_of w f = SOME c ∧ (∃ev. MEM ev evs ∧ ev_on «sys_send» f ev ∧ ¬retried ev) ⇒
+    evs_sent f evs ≠ [] ∨ hard_send f evs
+Proof
+  Induct >> simp[l1_flush_def] >> rpt gen_tac >> strip_tac >>
+  qpat_x_assum ‘(if _ then _ else _) = _’ mp_tac >> IF_CASES_TAC >> strip_tac
+  >- (first_x_assum (qspecl_then [‘w’, ‘b’] mp_tac) >> fs[] >> metis_tac[]) >>
+  gvs[AllCaseEqs()] >>
+  rename1 ‘sys_send h _ w = SOME (out, w1, ev1)’ >>
+  ‘winv w1’ by metis_tac[sys_winv] >>
+  drule_all sys_send_csent >> strip_tac >>
+  ONCE_REWRITE_TAC [hard_send_cons] >> simp[] >>
+  TRY (first_x_assum (qspecl_then [‘w1’, ‘after_send h (l0_res_of out) b’] mp_tac) >>
+       fs[] >> metis_tac[] >> NO_TAC) >>
+  ‘h = f’ by (imp_res_tac ev_on_send >> fs[]) >> gvs[] >>
+  drule_all retried_send >> strip_tac >>
+  drule_all sys_send_small >> strip_tac >>
+  drule sys_send_res >> simp[] >> strip_tac >> gvs[] >>
+  TRY (Cases_on ‘outbox_of b f’ >> gvs[] >> NO_TAC) >>
+  rpt strip_tac >> disj1_tac >> drule_all sys_send_hard >> simp[]
+QED
+
+Theorem l1_polls_names:
+  ∀chs w rv w' evs. l1_polls chs w = SOME (rv, w', evs) ⇒
+    EVERY (λev. ev_name ev = ExtCall «sys_poll») evs
+Proof
+  Induct >> simp[l1_polls_def, AllCaseEqs()] >> rpt strip_tac >> gvs[] >>
+  first_x_assum drule >> simp[] >> gvs[sys_poll_def] >>
+  drule l0_do_buf_cases >> rw[] >> simp[ev_name_def]
+QED
+
+(* A round from an fd with something to send: a send on it that L1 does
+   not retry took bytes or failed hard (only the flush sends on it) *)
+Theorem pround_progress:
+  pround lfd pol hs (w, ps) acts = SOME (snap, (w', ps'), log, evs) ∧
+  winv w ∧ olive lfd f ps ∧ l0_chan_of w f = SOME c ∧ EVERY small_send evs ∧
+  MEM ev evs ∧ ev_on «sys_send» f ev ∧ ¬retried ev ⇒
+  evs_sent f evs ≠ [] ∨ hard_send f evs
+Proof
+  simp[pround_def, AllCaseEqs()] >> strip_tac >> PairCases_on ‘ws1’ >>
+  gvs[pf_tail_def, AllCaseEqs()] >>
+  rename1 ‘pacts _ _ _ = SOME (rs, aevs, wa, pa)’ >>
+  drule_all pacts_live >> strip_tac >>
+  rename1 ‘l1_polls _ wa = SOME (rv, w1, pevs)’ >>
+  drule_all l1_polls_csent >> strip_tac >>
+  ‘winv w1’ by metis_tac[l1_polls_winv] >>
+  imp_res_tac ev_on_name >>
+  imp_res_tac l1_polls_names >> imp_res_tac pf_fetch_names >> imp_res_tac l1_reap_names >>
+  gvs[] >>
+  TRY (gvs[EXISTS_MEM] >> metis_tac[] >> NO_TAC) >>
+  TRY (gvs[EVERY_MEM] >> res_tac >> gvs[] >> NO_TAC) >>
+  rename1 ‘l1_flush _ (w1, pa.b) = SOME ((w2, b2), fevs)’ >>
+  ‘evs_sent f fevs ≠ [] ∨ hard_send f fevs’
+    by (irule l1_flush_progress >> simp[] >> metis_tac[]) >>
+  gvs[]
+QED
+
+(* An fd held (or pre-accepted) at a round's start that still has its
+   channel at the end was not re-accepted in the round *)
+Theorem round_noconn:
+  pround lfd pol hs (w, ps) acts = SOME (snap, (w', ps'), log, evs) ∧
+  pv_rel lfd cm ps s ∧ pown lfd ps ∧ winv w ∧ EVERY small_send evs ∧ out_rel cm w ps s ∧
+  (MEM f (MAP SND ps.b.tbl) ∨ MEM f ps.b.closing ∨ MEM f ps.acq) ∧ l0_chan_of w f = SOME c ∧
+  l0_chan_of w' f = SOME c ⇒
+  ¬MEM (FConn f) log
+Proof
+  disch_then (fn th => MAP_EVERY assume_tac (CONJUNCTS th)) >>
+  drule_all held_acct >> strip_tac >>
+  ‘c' = c’ by gvs[acct_def] >> gvs[] >>
+  qpat_x_assum ‘pround _ _ _ _ _ = _’ mp_tac >> simp[pround_def, AllCaseEqs()] >>
+  strip_tac >> PairCases_on ‘ws1’ >> gvs[] >>
+  rename1 ‘pacts _ _ _ = SOME (rs1, aevs, (w1, ps1))’ >>
+  drule_all pacts_hacts >> strip_tac >> gvs[] >>
+  ‘tkx T (MEM f ps.b.gone) w ps f c (csent w c) (EL (cl cm f) s.clients).outgoing’
+    by simp[tkx_def, tk_def] >>
+  ‘EVERY small_send aevs ∧ EVERY small_send tevs’ by fs[] >>
+  ‘¬T ⇒ ¬MEM f ps.acq’ by simp[] >>
+  drule_all pacts_tkx >> strip_tac >>
+  ‘qfresh w’ by fs[out_rel_def] >>
+  drule_all pacts_winv >> strip_tac >>
+  drule_all pacts_qfresh >> strip_tac >>
+  drule_all tail_noconn >> simp[]
+QED
+
+Theorem l1pf_round_noconn:
+  winv w0 ∧ qfresh w0 ∧ MEM lfd (l0_used w0) ∧
+  (∀n'. n' ≤ N ⇒ SND (pcm lfd pol ifds m w0 n') + 1 < dimword (:64)) ⇒
+  ∀n h ws evs logs h' ws' evs' logs'.
+    SUC n ≤ N ∧
+    prounds lfd pol ifds m (w0, pinit) n = SOME (h, ws, evs, logs) ∧
+    prounds lfd pol ifds m (w0, pinit) (SUC n) = SOME (h', ws', evs', logs') ∧
+    EVERY small_send evs' ∧
+    (MEM f (MAP SND (SND ws).b.tbl) ∨ MEM f (SND ws).b.closing ∨ MEM f (SND ws).acq) ∧
+    l0_chan_of (FST ws) f = SOME c ∧ l0_chan_of (FST ws') f = SOME c ⇒
+    ¬MEM (FConn f) (plog lfd pol ifds m w0 n)
+Proof
+  strip_tac >> rpt gen_tac >>
+  disch_then (fn th => MAP_EVERY assume_tac (CONJUNCTS th)) >>
+  ‘l0_rely w0 ∧ fds_lt w0’ by fs[winv_def] >>
+  qpat_assum ‘prounds _ _ _ _ _ (SUC _) = _’
+    (strip_assume_tac o SIMP_RULE (srw_ss()) [AllCaseEqs()] o
+     ONCE_REWRITE_RULE [prounds_def]) >>
+  rpt BasicProvers.VAR_EQ_TAC >> gvs[] >>
+  ‘plog lfd pol ifds m w0 n = log’
+    by (drule prounds_logs >> strip_tac >>
+        qpat_x_assum ‘prounds _ _ _ _ _ (SUC n) = _’ assume_tac >>
+        drule plog_EL >> disch_then (qspec_then ‘n’ mp_tac) >>
+        simp[EL_APPEND2]) >>
+  ‘n ≤ N’ by simp[] >>
+  RULE_ASSUM_TAC (REWRITE_RULE [EVERY_APPEND]) >>
+  mp_tac (Q.INST [‘N’ |-> ‘N’] l1pf_refines_hl_out_upto) >>
+  (impl_tac >- fs[]) >>
+  disch_then drule_all >> strip_tac >>
+  mp_tac (Q.INST [‘N’ |-> ‘N’] l1pf_refines_hl_upto) >>
+  (impl_tac >- fs[]) >>
+  disch_then drule_all >> strip_tac >>
+  PairCases_on ‘ws’ >> PairCases_on ‘ws'’ >> gvs[] >>
+  irule round_noconn >> simp[] >> metis_tac[]
+QED

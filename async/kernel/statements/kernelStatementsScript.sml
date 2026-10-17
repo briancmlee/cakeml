@@ -374,7 +374,9 @@ Definition arrivals_finite_l0_def:
 End
 
 (* quiet_on_kernel: guar holds whether the program runs forever or sleeps;
-   with finitely many arrivals it sleeps, unless [F1] fails.  There is no
+   with finitely many arrivals it sleeps, unless [F1] fails or accepts fail
+   infinitely often (D18's excuse: under EMFILE/ENFILE a blocking L1 keeps
+   retrying the accept, so a correct program may never sleep).  There is no
    POLLHUP disjunct: under D19 (user decision Q-L3-1) L1 closes a hung-up
    fd, so none stays in the blocking set; hup_spin_bite below is why the
    policy is needed *)
@@ -387,7 +389,23 @@ Definition quiet_on_kernel_claim_def:
            (∃io. asleep_l0 b io ∧ guar w0 (fromList io))) ∧
           (arrivals_finite_l0 w0 ⇒
            listen_failed b ∨ (∃io. asleep_l0 b io) ∨
-           ∃io. b = Diverge io ∧ ¬F1_io io)
+           ∃io. b = Diverge io ∧ (¬F1_io io ∨ accepts_fail_io io))
+End
+
+(* The corollary form (D18, as l0_echo2_strong_claim's): under H1 and the
+   joint weak H3, read off the trace, the accepts excuse goes.  ("Accepts
+   fail only finitely often" as a premise on the trace would only restate
+   the main form: ¬accepts_fail_io io ⇒ ¬F1_io io is its disjunct) *)
+Definition quiet_on_kernel_strong_claim_def:
+  quiet_on_kernel_strong_claim guar prog ⇔
+    ∀w0. l0_server_world w0 ⇒
+      ∃b. semantics_prog (init_state (l0_ffi w0)) init_env prog b ∧
+          (listen_failed b ∨
+           (∃io. b = Diverge io ∧ guar w0 io) ∨
+           (∃io. asleep_l0 b io ∧ guar w0 (fromList io))) ∧
+          (arrivals_finite_l0 w0 ⇒
+           listen_failed b ∨ (∃io. asleep_l0 b io) ∨
+           ∃io. b = Diverge io ∧ (H1_io w0 io ∧ H3_io io ⇒ ¬F1_io io))
 End
 
 (* The echo's guarantee, for its quiet instance *)

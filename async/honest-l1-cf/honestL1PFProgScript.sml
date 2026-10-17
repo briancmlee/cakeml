@@ -207,7 +207,7 @@ val r = tr pf_backoff_def;
    computes it: by the high-water mark *)
 Definition wants_input_hw_def:
   wants_input_hw lfd hw ps f ⇔
-    if f = lfd then ps.acq = [] ∧ ps.pause = 0
+    if f = lfd then ps.acq = [] ∧ ps.pause = 0 ∧ pf_room ps
     else inb_of ps f = [] ∧ ¬MEM f ps.eof ∧ LENGTH (outbox_of ps.b f) ≤ hw
 End
 
@@ -236,6 +236,14 @@ Proof
   simp[pf_poll_set_hw_def, pf_poll_set_def, wants_input_hw]
 QED
 
+(* D25′: the model's room test, with dimword as a numeral *)
+Theorem pf_room_num:
+  pf_room ps ⇔ ps.b.nxt + 2 < 18446744073709551616
+Proof
+  simp[pf_room_def]
+QED
+
+val r = tr pf_room_num;
 val r = tr wants_input_hw_def;
 val r = tr pf_poll_set_hw_def;
 val r = tr in_fds_def;
@@ -250,9 +258,11 @@ val r = tr pf_ready_def;
    the split is the model.
    ------------------------------------------------------------------------ *)
 
-(* Accept: the oldest queued fd under the next handle *)
+(* Accept: the oldest queued fd under the next handle; none past the
+   cut-off (D25′) *)
 Definition pacc_def:
   pacc lfd ps =
+    if ¬pf_room ps then NONE else
     case ps.acq of
     | [] => NONE
     | f :: q =>
@@ -356,25 +366,6 @@ Definition set_b_def:
   set_b ps b = ps with b := b
 End
 
-(* D25, amended by D40: room for the handles of a round with n accepts
-   (only an Accept takes a handle), and 2 more: handles nxt .. nxt + n - 1
-   exist iff nxt + n < 2^64 (honestL1PFInv l1hdln_lt); the 2 keep the
-   connections L1 has taken from the kernel (handed out, plus at most one
-   pre-accepted in acq) within the 2^64 - 2 clients of the version-2 world
-   (socketV2Fair arrival_ok2), which R1 (honestL1PFRefine) needs.  Without
-   room the loop stops (spins without I/O): after 2^64 - 3 handed-out
-   connections, unreachable in practice; a deliberate choice over wrapping
-   the counter (which would reuse handles) *)
-Definition hdl_room_def:
-  hdl_room (lfd:word64) ps n ⇔ ps.b.nxt + n + 2 < dimword (:64)
-End
-
-Theorem hdl_room_num:
-  hdl_room (lfd:word64) ps n ⇔ ps.b.nxt + n + 2 < 18446744073709551616
-Proof
-  simp[hdl_room_def]
-QED
-
 (* The round's end: the reaped state, and one round of the listener's pause *)
 Definition end_round_def:
   end_round ps b = ps with <| b := b; pause := ps.pause − 1 |>
@@ -444,7 +435,6 @@ Proof
 QED
 
 val r = tr end_round_guarded;
-val r = tr hdl_room_num;
 val r = tr closing_of_def;
 val r = tr filter_in_def;
 val r = tr map_w64_def;
@@ -576,7 +566,6 @@ Quote add_cakeml:
   fun step_pf st =
     case st of (lfd, hw, fds, ps, c) =>
     case c of (acts, s) =>
-    if not (hdl_room lfd ps (naccepts acts)) then st else
     case pacts lfd ps acts of (ps1, rs) =>
     case pf_tail lfd hw (map_w64 fds) ps1 of (rdy, ps2) =>
       (lfd, hw, live_round fds acts rs, ps2, Async.poll c (map_num rdy, 0, rs));

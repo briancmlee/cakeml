@@ -783,3 +783,212 @@ Proof
                impl_tac >- (conj_tac >> first_assum ACCEPT_TAC) >> simp[]]) >>
   drule_all etail_ctbl >> simp[]
 QED
+
+(* A handle without a connect entry keeps none through the round *)
+Theorem proxy_ctbl_none:
+  ebund lfd w es ∧ eacts lfd pol (w, es) acts = SOME (rs, evs, (w1, es1)) ∧
+  etail lfd pol hs (w1, es1) = SOME (rdy, (w2, es2), log, tevs) ∧
+  j < es.p.b.nxt ∧ ALOOKUP es.ctbl (hdl lfd j) = NONE ⇒
+  ALOOKUP es2.ctbl (hdl lfd j) = NONE
+Proof
+  strip_tac >>
+  ‘ALOOKUP es1.ctbl (hdl lfd j) = NONE’ by metis_tac[eacts_ctbl_none] >>
+  metis_tac[etail_ctbl]
+QED
+
+(* One round from a state with the invariant's pairs (st0: the state the
+   results update; st: the state the actions came from) *)
+Theorem proxy_round:
+  ∀st st0 es w R hs.
+    b < 65536 ∧ st0.pc = st.pc ∧ pinv lfd st.pc es R ∧ ebund lfd w es ∧ esmall lfd es ⇒
+    ∃rs aevs w1 es1 rdy w2 es2 log tevs.
+      eacts lfd pol (w, es) (MAP SND (pacts lfd b hw st R)) = SOME (rs, aevs, (w1, es1)) ∧
+      etail lfd pol hs (w1, es1) = SOME (rdy, (w2, es2), log, tevs) ∧
+      esmall lfd es2 ∧ es2.p.b.nxt = es1.p.b.nxt ∧
+      pinv lfd (pupd st0 (pacts lfd b hw st R) rs).pc es2 (set rdy)
+Proof
+  rpt gen_tac >> strip_tac >>
+  mp_tac (Q.INST [‘R'’ |-> ‘R’] (SPEC_ALL proxy_nhdls)) >>
+  impl_tac >- first_assum ACCEPT_TAC >> strip_tac >>
+  assume_tac cbound_lt >>
+  ‘l0_rely w’ by (qpat_x_assum ‘ebund _ _ _’ mp_tac >> simp[ebund_def]) >>
+  ‘∃rs aevs w1 es1.
+     eacts lfd pol (w, es) (MAP SND (pacts lfd b hw st R)) = SOME (rs, aevs, (w1, es1)) ∧
+     l0_rely w1 ∧ esmall lfd es1 ∧ es1.p.b.nxt ≤ es.p.b.nxt + nhdls (MAP SND (pacts lfd b hw st R))’
+    by (irule eacts_ok >> rpt conj_tac >>
+        FIRST [first_assum ACCEPT_TAC,
+               qpat_x_assum ‘_ + nhdls _ ≤ cbound’ mp_tac >> qpat_x_assum ‘cbound + 2 < _’ mp_tac >>
+               rpt (pop_assum kall_tac) >> simp[] >> NO_TAC,
+               rpt strip_tac >> drule_at (Pos last) proxy_acts_ok >>
+               disch_then irule >> rpt conj_tac >>
+               FIRST [first_assum ACCEPT_TAC, qpat_x_assum ‘i < LENGTH _’ mp_tac >> simp[]]]) >>
+  ‘∃rdy w2 es2 log tevs.
+     etail lfd pol hs (w1, es1) = SOME (rdy, (w2, es2), log, tevs) ∧
+     l0_rely w2 ∧ esmall lfd es2 ∧ es2.p.b.nxt = es1.p.b.nxt’
+    by (irule etail_ok >> rpt conj_tac >> first_assum ACCEPT_TAC) >>
+  qexistsl_tac [‘rs’, ‘aevs’, ‘w1’, ‘es1’, ‘rdy’, ‘w2’, ‘es2’, ‘log’, ‘tevs’] >>
+  rpt conj_tac >> TRY (first_assum ACCEPT_TAC) >>
+  drule eacts_rkind >> strip_tac >>
+  drule eacts_hdls >> strip_tac >>
+  qpat_assum ‘pinv _ _ _ _’ (strip_assume_tac o REWRITE_RULE [pinv_def]) >>
+  strip_assume_tac cidx_pacts_props >>
+  ‘es1.p.b.nxt + 1 < dimword (:64)’
+    by (qpat_x_assum ‘es1.p.b.nxt ≤ _’ mp_tac >> qpat_x_assum ‘_ + nhdls _ ≤ cbound’ mp_tac >>
+        qpat_x_assum ‘cbound + 2 < _’ mp_tac >> rpt (pop_assum kall_tac) >> simp[]) >>
+  ‘es.p.b.nxt ≤ es2.p.b.nxt’
+    by (qpat_x_assum ‘es2.p.b.nxt = _’ mp_tac >> qpat_x_assum ‘es1.p.b.nxt = es.p.b.nxt + _’ mp_tac >>
+        rpt (pop_assum kall_tac) >> simp[]) >>
+  (* the pairs' handles stay issued and without a connect entry *)
+  ‘EVERY (pok (λhd. ∃j. j < es2.p.b.nxt ∧ hd = hdl lfd j) (λhd. ALOOKUP es2.ctbl hd = NONE)) st.pc’
+    by (irule MONO_EVERY >>
+        qexists_tac ‘pok (λhd. ∃j. j < es.p.b.nxt ∧ hd = hdl lfd j) (λhd. ALOOKUP es.ctbl hd = NONE)’ >>
+        rpt conj_tac >> TRY (first_assum ACCEPT_TAC) >>
+        rpt strip_tac >> irule pok_mono >> first_assum (irule_at Any) >>
+        BETA_TAC >> rpt conj_tac >> rpt strip_tac >>
+        FIRST [qexists_tac ‘j’ >> conj_tac
+               >- (qpat_x_assum ‘j < es.p.b.nxt’ mp_tac >> qpat_x_assum ‘es.p.b.nxt ≤ es2.p.b.nxt’ mp_tac >>
+                   rpt (pop_assum kall_tac) >> simp[]) >>
+               first_assum ACCEPT_TAC,
+               TRY (qpat_x_assum ‘hd = _’ SUBST_ALL_TAC) >> drule_all proxy_ctbl_none >>
+               disch_then ACCEPT_TAC]) >>
+  (* each result *)
+  ‘∀k. k < LENGTH (pacts lfd b hw st R) ⇒
+       rok (λhd. ∃j. j < es.p.b.nxt ∧ hd = hdl lfd j) (λhd. ∃j. j < es2.p.b.nxt ∧ hd = hdl lfd j)
+           (λhd. ALOOKUP es2.ctbl hd = NONE) R (SND (EL k (pacts lfd b hw st R))) (EL k rs)’
+    by (rpt strip_tac >>
+        ‘EL k (MAP SND (pacts lfd b hw st R)) = SND (EL k (pacts lfd b hw st R))’
+          by (irule EL_MAP >> first_assum ACCEPT_TAC) >>
+        pop_assum (fn th => REWRITE_TAC [GSYM th]) >>
+        mp_tac (Q.INST [‘evs’ |-> ‘aevs’, ‘acts’ |-> ‘MAP SND (pacts lfd b hw st R)’]
+                  (SPEC_ALL proxy_res_ok)) >>
+        impl_tac >- (rpt conj_tac >> FIRST [first_assum ACCEPT_TAC, qpat_x_assum ‘k < _’ mp_tac >> simp[]]) >>
+        disch_then ACCEPT_TAC) >>
+  mp_tac (Q.INST [‘K0’ |-> ‘λhd. ∃j. j < es.p.b.nxt ∧ hd = hdl lfd j’,
+                  ‘G0’ |-> ‘λhd. ALOOKUP es.ctbl hd = NONE’,
+                  ‘K'’ |-> ‘λhd. ∃j. j < es2.p.b.nxt ∧ hd = hdl lfd j’,
+                  ‘G'’ |-> ‘λhd. ALOOKUP es2.ctbl hd = NONE’, ‘pc0’ |-> ‘st.pc’] pupd_inv) >>
+  disch_then (qspecl_then [‘pacts lfd b hw st R’, ‘rs’, ‘st0’] mp_tac) >>
+  impl_tac
+  >- (qpat_x_assum ‘st0.pc = st.pc’ (fn th => REWRITE_TAC [th]) >> rpt conj_tac >>
+      FIRST [first_assum ACCEPT_TAC, REWRITE_TAC [prel_refl] >> NO_TAC,
+             qpat_x_assum ‘LENGTH rs = _’ mp_tac >> REWRITE_TAC [LENGTH_MAP] >> NO_TAC,
+             rpt strip_tac >> qpat_x_assum ‘∀j. MEM j (cidx _) ⇒ _’ drule >> simp[] >> NO_TAC,
+             rpt strip_tac >> drule pacts_mem >> disch_then ACCEPT_TAC]) >>
+  strip_tac >> REWRITE_TAC [pinv_def] >> rpt conj_tac
+  >| [qpat_x_assum ‘pcount (pupd _ _ _).pc = _’ (fn th => REWRITE_TAC [th]) >>
+      qpat_x_assum ‘st0.pc = st.pc’ (fn th => REWRITE_TAC [th]) >>
+      qpat_x_assum ‘es2.p.b.nxt = _’ (fn th => REWRITE_TAC [th]) >>
+      qpat_x_assum ‘es1.p.b.nxt = es.p.b.nxt + _’ (fn th => REWRITE_TAC [th]) >>
+      qpat_x_assum ‘es.p.b.nxt = pcount st.pc’ (fn th => REWRITE_TAC [th]),
+      qpat_x_assum ‘LENGTH (pupd _ _ _).pc ≤ _’ mp_tac >>
+      qpat_x_assum ‘st0.pc = st.pc’ (fn th => REWRITE_TAC [th, nacc_pacts]) >>
+      qpat_x_assum ‘2 * LENGTH st.pc ≤ cbound’ mp_tac >>
+      rpt (pop_assum kall_tac) >> IF_CASES_TAC >> rpt strip_tac >> fs[],
+      first_assum ACCEPT_TAC,
+      rpt strip_tac >> drule_all etail_rdy_ctbl >> disch_then ACCEPT_TAC]
+QED
+
+(* ------------------------------------------------------------------------
+   Every round
+   ------------------------------------------------------------------------ *)
+
+Theorem small_lfd:
+  l0_rely w0 ∧ fds_lt w0 ∧ MEM lfd (l0_used w0) ⇒ small lfd
+Proof
+  strip_tac >>
+  ‘w2n lfd < w0.fd_limit’
+    by (qpat_x_assum ‘fds_lt _’ mp_tac >> simp[honestL0WorldPropsTheory.fds_lt_def] >>
+        disch_then drule >> simp[]) >>
+  ‘w0.fd_limit ≤ 2147483648’ by gvs[l0_rely_def] >>
+  simp[honestL1InvTheory.small_def]
+QED
+
+(* L1's bundle at each round's start, from the refinement *)
+Theorem erounds_ebund:
+  l0_rely w0 ∧ fds_lt w0 ∧ MEM lfd (l0_used w0) ∧
+  (∀n'. n' ≤ n ⇒ SND (ecm lfd pol ifds m w0 n') + 1 < dimword (:64)) ∧
+  erounds lfd pol ifds m (w0, einit) n = SOME (h, ws, evs, logs) ⇒
+  ebund lfd (FST ws) (SND ws)
+Proof
+  strip_tac >>
+  mp_tac (INST [“N:num” |-> “n:num”] l1ep_refines_ehl_upto) >>
+  impl_tac >- simp[] >>
+  disch_then (qspecl_then [‘n’, ‘h’, ‘ws’, ‘evs’, ‘logs’] mp_tac) >>
+  simp[ebund_def] >> strip_tac >> metis_tac[]
+QED
+
+Theorem proxy_rounds:
+  b < 65536 ∧ l0_rely w0 ∧ fds_lt w0 ∧ MEM lfd (l0_used w0) ⇒
+  ∀n. ∃h ws evs logs.
+    erounds lfd pol (pifds lfd b hw) (pprog lfd b hw) (w0, einit) n = SOME (h, ws, evs, logs) ∧
+    pinv lfd (pstate lfd b hw h).pc (SND ws) (cready h) ∧ esmall lfd (SND ws) ∧
+    SND (ecm lfd pol (pifds lfd b hw) (pprog lfd b hw) w0 n) =
+      (SND ws).p.b.nxt + LENGTH (SND ws).p.acq ∧
+    ∀n'. n' ≤ n ⇒ SND (ecm lfd pol (pifds lfd b hw) (pprog lfd b hw) w0 n') + 1 < dimword (:64)
+Proof
+  strip_tac >> Induct
+  >- (simp[erounds_def, ecm_def] >> rpt conj_tac >>
+      FIRST [irule esmall_einit >> metis_tac[small_lfd],
+             simp[pinv_def, pstate_def, moonshotProxyTheory.pinit_def, pcount_def, cready_def, einit_def,
+                  honestL1PFModelTheory.pinit_def, honestL1ModelTheory.l1init_def, cbound_def] >> NO_TAC,
+             simp[einit_def, honestL1PFModelTheory.pinit_def, honestL1ModelTheory.l1init_def] >> NO_TAC]) >>
+  pop_assum strip_assume_tac >> PairCases_on ‘ws’ >>
+  RULE_ASSUM_TAC (REWRITE_RULE [pairTheory.FST, pairTheory.SND]) >>
+  ‘ebund lfd ws0 ws1’
+    by (drule_at (Pos last) erounds_ebund >>
+        impl_tac >- (rpt conj_tac >> first_assum ACCEPT_TAC) >> simp[]) >>
+  strip_assume_tac pstate_last >>
+  qspecl_then [‘st'’, ‘pstate lfd b hw h with lv := []’, ‘ws1’, ‘ws0’, ‘cready h’,
+               ‘pifds lfd b hw h’] mp_tac proxy_round >>
+  impl_tac
+  >- (rpt conj_tac >>
+      FIRST [first_assum ACCEPT_TAC,
+             qpat_x_assum ‘pinv _ _ _ _’ mp_tac >> qpat_x_assum ‘st'.pc = _’ (fn th => REWRITE_TAC [th]) >>
+             NO_TAC,
+             simp[] >> qpat_x_assum ‘st'.pc = _’ (ACCEPT_TAC o SYM)]) >>
+  strip_tac >>
+  ‘SND (ecm lfd pol (pifds lfd b hw) (pprog lfd b hw) w0 (SUC n)) = es2.p.b.nxt + LENGTH es2.p.acq’
+    by (‘eacts lfd pol (ws0, ws1) (new_actions (log_of (pprog lfd b hw)) h) = SOME (rs, aevs, (w1, es1))’
+          by simp[pprog_new_actions] >>
+        ‘(SND (w2, es2)).p.b.nxt = (SND (w1, es1)).p.b.nxt’ by simp[] >>
+        ‘SND (ecm lfd pol (pifds lfd b hw) (pprog lfd b hw) w0 n) =
+           (SND (ws0, ws1)).p.b.nxt + LENGTH (SND (ws0, ws1)).p.acq’ by simp[] >>
+        drule_all ecm_round >> simp[]) >>
+  ‘erounds lfd pol (pifds lfd b hw) (pprog lfd b hw) (w0, einit) (SUC n) =
+     SOME (h ++ [ssnap rdy rs], (w2, es2), evs ++ (aevs ++ tevs), logs ++ [log])’
+    by simp[erounds_def, eround_def, pprog_new_actions] >>
+  ‘LENGTH es2.p.acq ≤ 1’
+    by (qpat_assum ‘erounds _ _ _ _ _ (SUC n) = _’ (mp_tac o MATCH_MP erounds_acq) >> simp[]) >>
+  qabbrev_tac ‘pc' = (pupd (pstate lfd b hw h with lv := []) (pacts lfd b hw st' (cready h)) rs).pc’ >>
+  ‘es2.p.b.nxt = pcount pc' ∧ 2 * LENGTH pc' ≤ cbound’
+    by (qpat_x_assum ‘pinv _ pc' _ _’ mp_tac >> simp[pinv_def]) >>
+  qexistsl_tac [‘h ++ [ssnap rdy rs]’, ‘(w2, es2)’, ‘evs ++ (aevs ++ tevs)’, ‘logs ++ [log]’] >>
+  rpt conj_tac
+  >- first_assum ACCEPT_TAC
+  >- (qpat_x_assum ‘pinv _ pc' _ _’ mp_tac >>
+      simp[pstate_SNOC, pstep_def, asyncM3WorldTheory.ssnap_def, Abbr ‘pc'’])
+  >- simp[]
+  >- simp[] >>
+  rpt strip_tac >> Cases_on ‘n' ≤ n’ >- simp[] >>
+  ‘n' = SUC n’ by simp[] >> qpat_x_assum ‘n' = _’ SUBST1_TAC >>
+  qpat_x_assum ‘SND (ecm _ _ _ _ _ (SUC n)) = _’ SUBST1_TAC >>
+  qspec_then ‘pc'’ assume_tac pcount_FILTER >>
+  qpat_x_assum ‘LENGTH es2.p.acq ≤ 1’ mp_tac >> qpat_x_assum ‘es2.p.b.nxt = pcount pc'’ mp_tac >>
+  qpat_x_assum ‘2 * LENGTH pc' ≤ cbound’ mp_tac >> qpat_x_assum ‘pcount pc' + _ = _’ mp_tac >>
+  assume_tac cbound_lt >> qpat_x_assum ‘cbound + 2 < _’ mp_tac >>
+  rpt (pop_assum kall_tac) >> simp[]
+QED
+
+(* The run hypotheses: the proxy's L1 run never fails and its channel
+   count stays below 2^64 - 1 *)
+Theorem proxy_l1_total:
+  b < 65536 ∧ l0_rely w0 ∧ fds_lt w0 ∧ MEM lfd (l0_used w0) ⇒
+  (∀n. erounds lfd pol (pifds lfd b hw) (pprog lfd b hw) (w0, einit) n ≠ NONE) ∧
+  (∀n. SND (ecm lfd pol (pifds lfd b hw) (pprog lfd b hw) w0 n) + 1 < dimword (:64))
+Proof
+  strip_tac >> mp_tac (SPEC_ALL proxy_rounds) >>
+  impl_tac >- (rpt conj_tac >> first_assum ACCEPT_TAC) >> strip_tac >> conj_tac >> gen_tac
+  >- (first_x_assum (qspec_then ‘n’ strip_assume_tac) >> simp[]) >>
+  first_x_assum (qspec_then ‘n’ strip_assume_tac) >>
+  first_x_assum (qspec_then ‘n’ mp_tac) >> simp[]
+QED

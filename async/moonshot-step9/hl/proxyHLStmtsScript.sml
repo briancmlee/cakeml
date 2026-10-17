@@ -24,6 +24,14 @@
    [R4] The rely is run_rely (eh_round_ok), as for the client: valid
         along the run's own rounds; nosock (option (b)) is the world's.
 
+  REVISION 2: a computation emits a round's actions before any of the
+  round's results.  So (1) the relay lags one round: bytes read in round n
+  are written in round n+1 (safety: prefixes; plus a one-round lag
+  bound); (2) the Level gate is a CREDIT gate: the proxy reads hd in
+  round n only if c's Level answered in round n−1, plus the bytes it
+  writes to c in rounds n−1 and n, is ≤ hw (all known when round n's
+  actions are emitted).  Bnd for the raw trace becomes hw + 3·pf_chunk.
+
   OWED, PENDING [R3] (design/45 §2.4; kept out of this draft until the
   user rules on [R3], recommended (a): EClose / EShut in endpointHLModel,
   folded into close-v2's E1 rebase):
@@ -55,6 +63,12 @@ Definition hl_acc_handles_def:
                         | _ => []) ps)
 End
 
+(* Bytes a round's actions ask to write on handle h *)
+Definition wreq_def:
+  wreq h (acts : eact list) =
+    SUM (MAP (λa. case a of EWrite h' bs => if h' = h then LENGTH bs else 0 | _ => 0) acts)
+End
+
 Definition is_level_def:
   is_level (x : eact) ⇔ ∃h. x = ELevel h
 End
@@ -72,6 +86,7 @@ Definition proxy_guar_hl_def:
     ∃pair.
       let H = ehhist lfd lv ifds m W; S = ehst lfd lv ifds m W;
           ps = (λn. hl_pairs m (H n)); R = (λn. hl_round m (H (SUC n)) n);
+          A = (λn. new_actions (log_of m) (H n));
           opn = (λn hd. MEM hd (MAP FST (SND (S n)).tbl)) in
       (* no misuse *)
       (∀n. ehacts lfd lv n 0 (S n) (new_actions (log_of m) (H n)) ≠ NONE) ∧
@@ -81,22 +96,29 @@ Definition proxy_guar_hl_def:
       (∀hd hd' c. pair hd = SOME c ∧ pair hd' = SOME c ⇒ hd = hd') ∧
       (∀n c. MEM c (hl_conn_handles (ps n)) ⇒
              ∃hd. pair hd = SOME c ∧ MEM hd (hl_acc_handles (ps n))) ∧
-      (* SAFETY, the relay, exact at this layer (writes complete at once):
-         each side was written what was read from the other, except that a
-         refused backend was written nothing; an unpaired front is
-         written nothing *)
+      (* SAFETY, the relay: each side has been written a prefix of what was
+         read from the other; an unpaired front is written nothing *)
       (∀n hd c. pair hd = SOME c ⇒
-         (hl_sent c (ps n) = hl_read hd (ps n) ∨ hl_refused c (ps n) ∧ hl_sent c (ps n) = []) ∧
-         hl_sent hd (ps n) = hl_read c (ps n)) ∧
+         hl_sent c (ps n) ≼ hl_read hd (ps n) ∧ hl_sent hd (ps n) ≼ hl_read c (ps n)) ∧
+      (* the relay lags one round: what was read by round n is written by
+         round n + 1, unless that side was refused or has ended (read EOF:
+         at this layer a break reads as an EOF) *)
+      (∀n hd c. pair hd = SOME c ⇒
+         (hl_read hd (ps n) ≼ hl_sent c (ps (SUC n)) ∨
+          hl_refused c (ps (SUC n)) ∨ hl_eof c (ps (SUC n))) ∧
+         (hl_read c (ps n) ≼ hl_sent hd (ps (SUC n)) ∨ hl_eof hd (ps (SUC n)))) ∧
       (∀n hd. MEM hd (hl_acc_handles (ps n)) ∧ pair hd = NONE ⇒ hl_sent hd (ps n) = []) ∧
-      (* THE LEVEL GATE (design/45 §2.2, at the round's start): a round's
-         Level queries come before its other actions; a paired handle is
-         read only if its partner's Level was ≤ hw in that round *)
+      (* THE CREDIT GATE (design/45 §2.2, revised): a round's Level queries
+         come before its other actions; a paired handle is read in round n
+         only if its partner's Level answered in round n − 1, plus the bytes
+         written to the partner in rounds n − 1 and n, is ≤ hw *)
       (∀n pre x post. R n = pre ++ [x] ++ post ∧ is_level (FST x) ⇒ EVERY (is_level o FST) pre) ∧
-      (∀n hd c k r. pair hd = SOME c ∧ MEM (ERead hd k, r) (R n) ⇒
-                    ∃l. l ≤ hw ∧ MEM (ELevel c, ELvl l) (R n)) ∧
-      (∀n hd c k r. pair hd = SOME c ∧ MEM (ERead c k, r) (R n) ⇒
-                    ∃l. l ≤ hw ∧ MEM (ELevel hd, ELvl l) (R n)) ∧
+      (∀n hd c k. pair hd = SOME c ∧ MEM (ERead hd k) (A n) ⇒
+                  0 < n ∧ ∃l. MEM (ELevel c, ELvl l) (R (n − 1)) ∧
+                              l + wreq c (A (n − 1)) + wreq c (A n) ≤ hw) ∧
+      (∀n hd c k. pair hd = SOME c ∧ MEM (ERead c k) (A n) ⇒
+                  0 < n ∧ ∃l. MEM (ELevel hd, ELvl l) (R (n − 1)) ∧
+                              l + wreq hd (A (n − 1)) + wreq hd (A n) ≤ hw) ∧
       (* the gate is evaluated every round, and is all that holds a read
          back: an open paired handle whose partner is open has its
          partner's Level queried; a ready one, with the gate open, is read *)
@@ -104,11 +126,13 @@ Definition proxy_guar_hl_def:
                 MEM (ELevel c) (new_actions (log_of m) (H n)) ∧
                 MEM (ELevel hd) (new_actions (log_of m) (H n))) ∧
       (∀n hd c l. pair hd = SOME c ∧ opn (SUC n) hd ∧ up_at lfd lv ifds m W (SUC n) c ∧
-                  hd ∈ (LAST (H (SUC n))).ready ∧ MEM (ELevel c, ELvl l) (R (SUC n)) ∧ l ≤ hw ⇒
-                  ∃k. MEM (ERead hd k) (new_actions (log_of m) (H (SUC n)))) ∧
+                  hd ∈ (LAST (H (SUC n))).ready ∧ MEM (ELevel c, ELvl l) (R n) ∧
+                  l + wreq c (A n) + wreq c (A (SUC n)) ≤ hw ⇒
+                  ∃k. MEM (ERead hd k) (A (SUC n))) ∧
       (∀n hd c l. pair hd = SOME c ∧ opn (SUC n) hd ∧ up_at lfd lv ifds m W (SUC n) c ∧
-                  c ∈ (LAST (H (SUC n))).ready ∧ MEM (ELevel hd, ELvl l) (R (SUC n)) ∧ l ≤ hw ⇒
-                  ∃k. MEM (ERead c k) (new_actions (log_of m) (H (SUC n)))) ∧
+                  c ∈ (LAST (H (SUC n))).ready ∧ MEM (ELevel hd, ELvl l) (R n) ∧
+                  l + wreq hd (A n) + wreq hd (A (SUC n)) ≤ hw ⇒
+                  ∃k. MEM (ERead c k) (A (SUC n))) ∧
       (* a front is not read before its backend is up *)
       (∀n hd k. MEM (ERead hd k) (new_actions (log_of m) (H n)) ∧ MEM hd (hl_acc_handles (ps n)) ⇒
                 ∃c. pair hd = SOME c ∧ up_at lfd lv ifds m W n c) ∧
@@ -131,16 +155,16 @@ Definition proxy_hl_claim_def:
 End
 
 (* Through E1, along every run of the honest L1 (as client_l1_claim).
-   [R1]: after E1's rebase, erounds/ecm/elv/pew take pol_never where they
-   take hw here, and hw stays the proxy's own Level threshold *)
+   [R1], applied: E1's erounds/ecm/elv/pew take the L1 policy pol_never;
+   hw is the proxy's own Level threshold only *)
 Definition proxy_l1_claim_def:
   proxy_l1_claim pprog pifds ⇔
     ∀a b lfd hw w0 calls.
       l0_rely w0 ∧ fds_lt w0 ∧ MEM lfd (l0_used w0) ∧
-      (∀n. SND (ecm lfd hw (pifds b hw) (pprog b hw) w0 n) + 1 < dimword (:64)) ∧
-      (∀n. erounds lfd hw (pifds b hw) (pprog b hw) (w0, einit) n ≠ NONE) ⇒
-      proxy_guar_hl b hw lfd (elv lfd hw (pifds b hw) (pprog b hw) w0)
-        (pifds b hw) (pprog b hw) (pew lfd a hw (pifds b hw) (pprog b hw) w0 calls)
+      (∀n. SND (ecm lfd pol_never (pifds b hw) (pprog b hw) w0 n) + 1 < dimword (:64)) ∧
+      (∀n. erounds lfd pol_never (pifds b hw) (pprog b hw) (w0, einit) n ≠ NONE) ⇒
+      proxy_guar_hl b hw lfd (elv lfd pol_never (pifds b hw) (pprog b hw) w0)
+        (pifds b hw) (pprog b hw) (pew lfd a pol_never (pifds b hw) (pprog b hw) w0 calls)
 End
 
 (* ------------------------------------------------------------------------

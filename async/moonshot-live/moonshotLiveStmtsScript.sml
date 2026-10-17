@@ -31,7 +31,11 @@
    - a process of ours exited before its program finished (OOM, a signal:
      Exit is the kernel's, design/45 Q9);
    - L1 timed out an fd (D23, the write timeout);
-   - a process's accepts failed infinitely often (D18 (c)).
+   - a process's accepts failed infinitely often (D18 (c));
+   - a recv or send of ours failed with a hard error (D16; Q-12 E1);
+   - a process of ours found one of fds 0-2 closed at launch (D33; Q-12 E3).
+  A connect's EINPROGRESS is an excuse only when it returned no socket
+  (Q-12 E2).
   So there is no start-order, backlog, fd-limit or no-OOM hypothesis in the
   main form: a connect before the listen, a full backlog (the connect
   settles by ConnFail: kernel fairness (C)), or EMFILE all show up as an
@@ -125,12 +129,33 @@ Definition accepts_fail_sys_def:
 End
 
 (* A call nm of process k failed with a hard (not retried) error.  A
-   pending connect (EINPROGRESS) is not a failure: it settles by kernel
-   fairness (C), D41 (1) *)
+   pending connect (EINPROGRESS with a socket, i.e. a non-zero value field)
+   is not a failure: it settles by kernel fairness (C), D41 (1).  An
+   EINPROGRESS with no socket (value 0) settles nothing, so it is hard
+   (Q-12 E2, amending D41 (1)) *)
 Definition hard_fail_def:
   hard_fail (rs : num -> syslabel) k nm ⇔
     ∃n conf bytes out e v. rs n = Call k nm conf bytes out ∧
-                           dec_res out = SOME (Fail e v) ∧ ¬l1_transient e ∧ e ≠ E_INPROGRESS
+                           dec_res out = SOME (Fail e v) ∧ ¬l1_transient e ∧
+                           (e = E_INPROGRESS ⇒ w82n (TAKE 8 (TL out)) = 0)
+End
+
+(* A recv or send of process k failed with a hard (not retried) error:
+   D16's excuse, observed (Q-12 E1).  The L0 model allows any error but
+   EAGAIN on a healthy channel, and L1 then drops the fd *)
+Definition hard_io_def:
+  hard_io (rs : num -> syslabel) k ⇔
+    ∃n nm conf bytes out e v. rs n = Call k nm conf bytes out ∧
+                              (nm = «sys_recv» ∨ nm = «sys_send») ∧
+                              dec_res out = SOME (Fail e v) ∧ ¬l1_transient e
+End
+
+(* A sys_fdok of process k answered that the fd is closed: k was launched
+   with one of fds 0-2 closed and stops with stdio_closed, a normal end
+   (D33; Q-12 E3) *)
+Definition stdio_closed_sys_def:
+  stdio_closed_sys (rs : num -> syslabel) k ⇔
+    ∃n conf bytes. rs n = Call k «sys_fdok» conf bytes [0w]
 End
 
 (* A listen of process k failed, with any error (programs listen once and
@@ -157,7 +182,8 @@ Definition sys_excuse_def:
     ∃k. k < LENGTH S ∧
         (kern_broke rs k ∨ hard_fail rs k «sys_connect» ∨ listen_failed rs k ∨
          hard_fail rs k «sys_accept» ∨
-         crashed S rs k ∨ timed_out_sys K rs k ∨ accepts_fail_sys rs k)
+         crashed S rs k ∨ timed_out_sys K rs k ∨ accepts_fail_sys rs k ∨
+         hard_io rs k ∨ stdio_closed_sys rs k)
 End
 
 (* ------------------------------------------------------------------------

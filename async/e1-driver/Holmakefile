@@ -1,3 +1,9 @@
 # The generic E1 CakeML driver (moonshot C1(i)): fold programs on E1's L1
 # (honest-l1-ep), listen-first, stdio check (D33), and the semantics bridge.
-INCLUDES = ../model
+INCLUDES = ../honest-l1-ep ../honest-l1-cf ../honest-l0-cf ../honest-l1 ../endpoint-hl ../endpoint-world \
+           ../honest-l0 ../honest-ffi ../ffi-spike ../model ../cf-actions ../m3-assembly ../socket-v2 \
+           ../close-v2-loop ../m4-safety ../m4-common ../m4-server ../cf-spike ../cf-reactive ../spec \
+           $(CAKEMLDIR)/characteristic
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

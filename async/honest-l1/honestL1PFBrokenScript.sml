@@ -12,7 +12,7 @@
 Theory honestL1PFBroken
 Ancestors
   honestL1PFD16 honestL1PFStream honestL1PFS4w honestL1PFInput honestL1PFOutLive honestL1PFDead honestL1PFFlushLive
-  honestL1PFOut honestL1PFConnRun honestL1PFLive honestL1PFRound honestL1PFRefine
+  honestL1PFOut honestL1PFConn honestL1PFInv honestL1PFFlush honestL1PFConnRun honestL1PFLive honestL1PFRound honestL1PFRefine
   honestL1PFModel honestL1Steps honestL1Props honestL1Model honestL0WorldInv honestL0Rely
   honestL0World honestL0
 Libs
@@ -744,4 +744,155 @@ Proof
   ‘outbox_of (rstate lfd pol ifds m w0 (SUC k)).b f = []’
     by (CCONTR_TAC >> mp_tac (Q.INST [‘n’ |-> ‘SUC k’] run_okeys_held) >> simp[]) >>
   qpat_x_assum ‘good _ _ _ _ _ _ _ _ (SUC k)’ mp_tac >> simp[good_def] >> strip_tac >> gvs[]
+QED
+
+(* ------------------------------------------------------------------------
+   After the release: f stays quiet until it is accepted again
+   ------------------------------------------------------------------------ *)
+
+Theorem pdo_acq:
+  pdo lfd (w, ps) a = SOME (r, (w', ps'), evs) ∧ MEM g ps'.acq ⇒ MEM g ps.acq
+Proof
+  Cases_on ‘a’ >> simp[pdo_def, AllCaseEqs()] >> rw[] >> gvs[] >>
+  TRY (PairCases_on ‘z’) >> gvs[] >>
+  rpt (qpat_x_assum ‘l1do _ _ _ = _’ mp_tac) >> rpt (qpat_x_assum ‘l1_close _ _ = _’ mp_tac) >>
+  simp[l1do_def, l1_close_def, AllCaseEqs()] >> rw[] >> gvs[]
+QED
+
+Theorem pacts_acq:
+  ∀acts w ps rs evs w' ps'.
+    pacts lfd (w, ps) acts = SOME (rs, evs, (w', ps')) ∧ MEM g ps'.acq ⇒ MEM g ps.acq
+Proof
+  Induct >> simp[pacts_def] >> rpt gen_tac >> strip_tac >> gvs[AllCaseEqs()] >>
+  PairCases_on ‘ws1’ >> first_x_assum drule_all >> strip_tac >> drule_all pdo_acq >> simp[]
+QED
+
+Theorem pf_fetch_acq_log:
+  ∀fs w ps w' ps' log evs.
+    pf_fetch lfd pol fs (w, ps) = SOME ((w', ps'), log, evs) ∧ MEM g ps'.acq ⇒
+    MEM g ps.acq ∨ MEM (FConn g) log
+Proof
+  Induct >> simp[pf_fetch_def] >> rpt gen_tac >> rw[AllCaseEqs()] >>
+  TRY (first_x_assum drule_all >> simp[] >> NO_TAC) >>
+  pairarg_tac >> gvs[AllCaseEqs()] >>
+  first_x_assum drule_all >> strip_tac >> gvs[set_inb_def]
+QED
+
+(* A round puts g among the pre-accepted only by accepting it (FConn g) *)
+Theorem pround_acq:
+  pround lfd pol hs (w, ps) acts = SOME (snap, (w', ps'), log, evs) ∧ MEM g ps'.acq ⇒
+  MEM g ps.acq ∨ MEM (FConn g) log
+Proof
+  simp[pround_def, AllCaseEqs()] >> strip_tac >> PairCases_on ‘ws1’ >> gvs[] >>
+  qpat_x_assum ‘pf_tail _ _ _ _ = _’ mp_tac >> simp[pf_tail_def, AllCaseEqs()] >>
+  strip_tac >> gvs[stall_step_fields] >>
+  drule pf_fetch_acq_log >> disch_then drule >> strip_tac >> simp[] >>
+  fs[] >> drule pacts_acq >> disch_then drule >> simp[]
+QED
+
+(* The round that releases f (held, then not, not accepted again in it)
+   leaves f quiet *)
+Theorem release_quiet:
+  oassm lfd pol ifds m w0 ∧
+  (MEM f (MAP SND (rstate lfd pol ifds m w0 k).b.tbl) ∨
+   MEM f (rstate lfd pol ifds m w0 k).b.closing) ∧
+  ¬MEM f (MAP SND (rstate lfd pol ifds m w0 (SUC k)).b.tbl) ∧
+  ¬MEM f (rstate lfd pol ifds m w0 (SUC k)).b.closing ∧
+  ¬MEM (FConn f) (rlog lfd pol ifds m w0 k) ⇒
+  cquiet f (rstate lfd pol ifds m w0 (SUC k))
+Proof
+  disch_then (fn th => MAP_EVERY assume_tac (CONJUNCTS th)) >>
+  ‘run_ok lfd pol ifds m w0’ by fs[oassm_def] >>
+  simp[cquiet_def] >>
+  conj_tac
+  >- (‘¬MEM f (rstate lfd pol ifds m w0 k).acq’
+        by (drule run_rel >> disch_then (qspec_then ‘k’ strip_assume_tac) >>
+            fs[pown_def, ALL_DISTINCT_APPEND] >> metis_tac[]) >>
+      drule prun_round' >> disch_then (qspecl_then [‘ARB’, ‘k’] strip_assume_tac) >>
+      strip_tac >> drule_all pround_acq >> simp[]) >>
+  CCONTR_TAC >> mp_tac (Q.INST [‘n’ |-> ‘SUC k’] run_okeys_held) >> simp[]
+QED
+
+(* tail_quiet, pround_quiet and run_closed_quiet without the channel
+   invariant dinv: f stays quiet *)
+Theorem tail_cquiet:
+  pf_tail lfd pol hs (w, ps) = SOME (rdy, (w', ps'), log, evs) ∧ winv w ∧
+  psmall lfd ps ∧ oinv ps.b ∧ f ≠ lfd ∧ cquiet f ps ∧ ¬MEM (FConn f) log ⇒
+  cquiet f ps' ∧ ev_off f evs
+Proof
+  simp[pf_tail_def, AllCaseEqs()] >> strip_tac >> gvs[cquiet_def] >>
+  qabbrev_tac ‘fes = pf_poll_set lfd pol ps hs’ >>
+  ‘EVERY (λ(g, e). small g ∧ e < 4) fes’
+    by (simp[Abbr ‘fes’] >> irule pf_poll_set_small >> simp[]) >>
+  ‘l0_rely w’ by fs[winv_def] >>
+  ‘ev_off f pevs’
+    by (simp[ev_off_def] >> rpt strip_tac >>
+        ‘ev_name ev = ExtCall «sys_poll»’
+          by (drule l1_polls_names >> simp[EVERY_MEM]) >>
+        ‘nm = «sys_poll»’ by (Cases_on ‘ev’ >> gvs[ev_on_def, ev_name_def]) >> gvs[] >>
+        ‘MEM f (MAP FST fes)’
+          by (qspecl_then [‘[fes]’, ‘w’, ‘rv’, ‘w1’, ‘pevs’] mp_tac l1_polls_fds >>
+              simp[] >> metis_tac[]) >>
+        gvs[MEM_MAP] >> rename1 ‘MEM y fes’ >> PairCases_on ‘y’ >> gvs[Abbr ‘fes’] >>
+        drule pf_poll_set_keys >> strip_tac >> gvs[oinv_def, MEM_MAP] >>
+        metis_tac[]) >>
+  ‘winv w1’ by metis_tac[l1_polls_winv] >>
+  drule_all l1_flush_off >> strip_tac >>
+  drule l1_flush_fields >> strip_tac >>
+  ‘winv w2’ by metis_tac[l1_flush_winv] >>
+  ‘¬MEM f (FILTER (λf. MEM f (in_fds fes)) (readable_fds rv))’
+    by (simp[MEM_FILTER] >> disj1_tac >> strip_tac >> gvs[Abbr ‘fes’] >>
+        drule in_fds_poll_set >> simp[]) >>
+  drule_all pf_fetch_off >> strip_tac >>
+  drule pf_fetch_b >> strip_tac >>
+  drule_all pf_fetch_lfd >> strip_tac >>
+  ‘winv w3’ by metis_tac[pf_fetch_winv] >>
+  qabbrev_tac ‘ps3 = stall_step (pf_held ps3') (outbox_of ps.b) log ps3'’ >>
+  ‘ps3.b.tbl = b2.tbl ∧ ps3.b.closing = b2.closing ∧ ps3.acq = ps3'.acq ∧
+   outbox_of ps3.b f = []’
+    by (simp[Abbr ‘ps3’, stall_step_drops, FOLDL_drop_out] >>
+        simp[stall_step_def] >> rw[]) >>
+  ‘¬MEM f ps3.b.closing ∧ ¬MEM f ps3'.b.closing’ by gvs[] >>
+  drule_all l1_reap_off >> strip_tac >>
+  drule_all l1_reap_quiet >> strip_tac >>
+  drule l1_reap_tbl >> strip_tac >>
+  gvs[log_conns_FConn]
+QED
+
+Theorem pround_cquiet:
+  pround lfd pol hs (w, ps) acts = SOME (snap, (w', ps'), log, evs) ∧ winv w ∧
+  psmall lfd ps ∧ oinv ps.b ∧ f ≠ lfd ∧ cquiet f ps ∧ ¬MEM (FConn f) log ⇒
+  cquiet f ps' ∧ ev_off f evs
+Proof
+  simp[pround_def, AllCaseEqs()] >> strip_tac >> PairCases_on ‘ws1’ >> gvs[] >>
+  ‘¬MEM f (MAP SND ps.b.tbl) ∧ ¬MEM f ps.acq’ by fs[cquiet_def] >>
+  drule_all pacts_off >> strip_tac >>
+  ‘winv ws10 ∧ psmall lfd ws11 ∧ oinv ws11.b’
+    by metis_tac[pacts_winv, pacts_psmall, pacts_oinv] >>
+  ‘cquiet f ws11’ by gvs[cquiet_def] >>
+  drule_all tail_cquiet >> simp[]
+QED
+
+(* MAIN (for async-spike): from a quiet f, until it is accepted again, f
+   stays quiet and no event mentions it *)
+Theorem run_quiet:
+  oassm lfd pol ifds m w0 ∧ f ≠ lfd ∧ cquiet f (rstate lfd pol ifds m w0 k0) ⇒
+  ∀k. k0 ≤ k ∧ (∀i. k0 ≤ i ∧ i < k ⇒ ¬MEM (FConn f) (rlog lfd pol ifds m w0 i)) ⇒
+      cquiet f (rstate lfd pol ifds m w0 k) ∧
+      ∀i nm ev. k0 ≤ i ∧ i < k ∧ MEM ev (rrev lfd pol ifds m w0 i) ⇒ ¬ev_on nm f ev
+Proof
+  strip_tac >> fs[oassm_def] >> Induct
+  >- (rpt strip_tac >> gvs[]) >>
+  strip_tac >> Cases_on ‘k0 = SUC k’ >- (gvs[] >> rpt strip_tac >> gvs[]) >>
+  ‘k0 ≤ k’ by simp[] >>
+  ‘cquiet f (rstate lfd pol ifds m w0 k) ∧
+   ∀i nm ev. k0 ≤ i ∧ i < k ∧ MEM ev (rrev lfd pol ifds m w0 i) ⇒ ¬ev_on nm f ev’
+    by (first_x_assum irule >> simp[]) >>
+  drule prun_round' >> disch_then (qspecl_then [‘ARB’, ‘k’] strip_assume_tac) >>
+  drule pround_cquiet >> disch_then (qspec_then ‘f’ mp_tac) >>
+  impl_tac
+  >- (simp[] >> metis_tac[winv_run, psmall_run, run_oinv, LESS_EQ_REFL]) >>
+  strip_tac >> simp[] >> rpt strip_tac >>
+  Cases_on ‘i = k’ >- gvs[ev_off_def] >>
+  first_x_assum (qspecl_then [‘i’, ‘nm’, ‘ev’] mp_tac) >> simp[]
 QED

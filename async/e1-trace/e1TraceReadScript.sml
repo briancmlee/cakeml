@@ -16,7 +16,7 @@
 *)
 Theory e1TraceRead
 Ancestors
-  moonshotSentGlue honestL1EPRefine honestL1EPOut honestL1EPModel honestL1PFOut
+  moonshotSentGlue moonshotEpRenum honestL1EPRefine honestL1EPOut honestL1EPModel honestL1PFOut
   honestL1PFModel honestL1Model honestL1PFRound honestL1PFRefine honestL1PFConnRun
   honestL1Steps honestL0WorldProps honestL0World honestL0 Marshalling ffiSpikeSocketFFI
   l0sysEpisodes endpointHLModel endpointFair endpointWorld
@@ -179,17 +179,10 @@ QED
    The trace: episode j's receives are the run's data arrivals for j
    ------------------------------------------------------------------------ *)
 
-Theorem name_recvd:
-  ev_name ev ≠ ExtCall «sys_recv» ⇒ ev_recvd ev = NONE
+Theorem cep_io_norecv:
+  ∀evs opn n. EVERY (λev. ev_recvd ev = NONE) evs ⇒ cep_io ev_recvd j opn n evs = []
 Proof
-  Cases_on ‘ev’ >> rename1 ‘IO_event n _ _’ >> Cases_on ‘n’ >>
-  simp[ev_name_def, ev_recvd_def]
-QED
-
-Theorem ep_io_norecv:
-  ∀evs opn n. EVERY (λev. ev_recvd ev = NONE) evs ⇒ ep_io ev_recvd j opn n evs = []
-Proof
-  Induct >> simp[ep_io_def] >> rpt gen_tac >> strip_tac >> every_case_tac >> fs[]
+  Induct >> simp[cep_io_def] >> rpt gen_tac >> strip_tac >> every_case_tac >> fs[]
 QED
 
 Theorem names_norecv:
@@ -198,36 +191,14 @@ Proof
   rw[EVERY_MEM] >> res_tac >> irule name_recvd >> simp[]
 QED
 
-Theorem bytes_fd_fd_bytes[simp]:
-  bytes_fd (fd_bytes f) = f ∧ LENGTH (fd_bytes f) = 8
-Proof
-  simp[bytes_fd_def, fd_bytes_def, LENGTH_n2w8] >>
-  ‘w82n (fd_bytes f) = w2n f’ by simp[] >> fs[fd_bytes_def]
-QED
-
-(* A receive on f: episode j gets its bytes when f is j's fd *)
-Theorem sys_recv_recvd:
-  sys_recv f n w = SOME (out, w1, ev) ∧ l0_rely w ⇒
-  ev_new ev = NONE ∧
-  ev_recvd ev = case l0_res_of out of
-                | Ok k => SOME (f, TAKE k (DROP 13 out))
-                | Fail _ _ => NONE
-Proof
-  strip_tac >>
-  ‘∃bl. ev = IO_event (ExtCall «sys_recv») (fd_bytes f) bl ∧ MAP SND bl = out’
-    by (gvs[sys_recv_def] >> drule_all l0_do_ev >> simp[]) >>
-  simp[ev_other, ev_recvd_def, l0_res_of_def, l0_hdr_def] >>
-  Cases_on ‘dec_res out’ >> simp[] >> CASE_TAC >> simp[]
-QED
-
 (* The fetch: as the log's arrivals number them, from the same map *)
 Theorem pf_fetch_recvd:
   ∀fs w ps w' ps' log evs opn k.
     pf_fetch lfd pol fs (w, ps) = SOME ((w', ps'), log, evs) ∧ l0_rely w ∧ fds_lt w ∧
     MEM 0w (l0_used w) ∧ (∀f. MEM f fs ∧ f ≠ lfd ⇒ ALOOKUP opn f ≠ NONE) ⇒
-    ep_io ev_recvd j opn k evs = pdata j (MAP (conv a) (FST (arrs lfd (opn, k) log)))
+    cep_io ev_recvd j opn k evs = pdata j (MAP (conv a) (FST (arrs lfd (opn, k) log)))
 Proof
-  Induct >- simp[pf_fetch_def, ep_io_def, arrs_def, pdata_def] >>
+  Induct >- simp[pf_fetch_def, cep_io_def, arrs_def, pdata_def] >>
   rpt gen_tac >> rename1 ‘pf_fetch _ _ (f :: fs)’ >> strip_tac >>
   qpat_x_assum ‘pf_fetch _ _ _ _ = _’ mp_tac >> simp[Once pf_fetch_def] >>
   IF_CASES_TAC
@@ -250,7 +221,7 @@ Proof
       ‘MEM 0w (l0_used w1)’
         by (qpat_assum ‘sys_accept _ _ = _’ (assume_tac o REWRITE_RULE [sys_accept_def]) >>
             drule l0_do_used >> simp[]) >>
-      Cases_on ‘l0_res_of out’ >> gvs[ep_io_def, arrs_def]
+      Cases_on ‘l0_res_of out’ >> gvs[cep_io_def, arrs_def]
       >- (rename1 ‘l0_res_of out = Ok v’ >>
           ‘(n2w v : word64) ≠ 0w’
             by (strip_tac >> qpat_x_assum ‘v MOD _ ≠ 0’ mp_tac >>
@@ -265,6 +236,7 @@ Proof
   Cases_on ‘pf_fetch lfd pol fs (w1, ps1)’ >> simp[] >> rename1 ‘_ = SOME y’ >>
   PairCases_on ‘y’ >> simp[] >> strip_tac >> gvs[] >>
   drule_all sys_recv_recvd >> strip_tac >>
+  ‘cev_new ev = NONE’ by simp[cev_new_none] >>
   ‘l0_rely w1’
     by (qpat_assum ‘sys_recv _ _ _ = _’ (assume_tac o REWRITE_RULE [sys_recv_def]) >>
         drule_all l0_do_rely >> simp[]) >>
@@ -275,10 +247,10 @@ Proof
   ‘∃i. ALOOKUP opn f = SOME i’
     by (Cases_on ‘ALOOKUP opn f’ >> simp[] >> first_x_assum (qspec_then ‘f’ mp_tac) >>
         simp[]) >>
-  ‘ep_io ev_recvd j opn k y3 = pdata j (MAP (conv a) (FST (arrs lfd (opn, k) y2)))’
+  ‘cep_io ev_recvd j opn k y3 = pdata j (MAP (conv a) (FST (arrs lfd (opn, k) y2)))’
     by (first_x_assum (drule_then irule) >> simp[] >> metis_tac[]) >>
   ‘cl opn f = i’ by simp[cl_def] >>
-  simp[ep_io_def, arrs_APPEND] >>
+  simp[cep_io_def, arrs_APPEND] >>
   Cases_on ‘arrs lfd (opn, k) y2’ >>
   Cases_on ‘l0_res_of out’ >> gvs[]
   >- (rename1 ‘l0_res_of out = Ok kk’ >> Cases_on ‘0 < kk’ >> gvs[] >>
@@ -297,18 +269,19 @@ Proof
   irule name_recvd >> simp[]
 QED
 
-Theorem ep_io_quiet:
+Theorem cep_io_quiet:
   EVERY (λev. ev_new ev = NONE) evs ∧ EVERY (λev. ev_recvd ev = NONE) evs ⇒
-  ∀o1 n1. ep_io ev_recvd j o1 n1 evs = [] ∧ FOLDL ep_next (o1, n1) evs = (o1, n1)
+  ∀o1 n1. cep_io ev_recvd j o1 n1 evs = [] ∧ FOLDL cep_next (o1, n1) evs = (o1, n1)
 Proof
-  metis_tac[ep_io_norecv, ep_io_nonew]
+  strip_tac >> ‘EVERY (λev. cev_new ev = NONE) evs’ by fs[EVERY_MEM, cev_new_none] >>
+  metis_tac[cep_io_norecv, cep_io_nonew]
 QED
 
 (* A round's tail: its receives are the fetch log's data arrivals *)
 Theorem etail_recvd:
   etail lfd pol hs (w, es) = SOME (rdy, (w', es'), log, tevs) ∧ l0_rely w ∧ fds_lt w ∧
   MEM 0w (l0_used w) ∧ (∀f. MEM f (MAP SND es.p.b.tbl) ⇒ ALOOKUP opn f ≠ NONE) ⇒
-  ep_io ev_recvd j opn kk tevs = pdata j (MAP (conv a) (FST (arrs lfd (opn, kk) log)))
+  cep_io ev_recvd j opn kk tevs = pdata j (MAP (conv a) (FST (arrs lfd (opn, kk) log)))
 Proof
   strip_tac >>
   qpat_x_assum ‘etail _ _ _ _ = _’ mp_tac >> simp[etail_def, AllCaseEqs(), PULL_EXISTS] >>
@@ -327,22 +300,23 @@ Proof
       drule honestL1PFRefineTheory.in_fds_poll_set >> simp[] >> strip_tac >>
       qpat_x_assum ‘∀f. MEM f (MAP SND _) ⇒ _’ (qspec_then ‘f’ mp_tac) >> simp[]) >>
   strip_tac >>
-  ‘∀o1 n1. ep_io ev_recvd j o1 n1 pevs = [] ∧ FOLDL ep_next (o1, n1) pevs = (o1, n1)’
-    by (irule ep_io_quiet >> ONCE_REWRITE_TAC [CONJ_COMM] >> irule names_quiet >> qexists_tac ‘«sys_poll»’ >> simp[]) >>
-  ‘∀o1 n1. ep_io ev_recvd j o1 n1 fevs = [] ∧ FOLDL ep_next (o1, n1) fevs = (o1, n1)’
-    by (irule ep_io_quiet >> ONCE_REWRITE_TAC [CONJ_COMM] >> irule names_quiet >> qexists_tac ‘«sys_send»’ >> simp[]) >>
-  ‘∀o1 n1. ep_io ev_recvd j o1 n1 cevs = [] ∧ FOLDL ep_next (o1, n1) cevs = (o1, n1)’
-    by (irule ep_io_quiet >> ONCE_REWRITE_TAC [CONJ_COMM] >> irule names_quiet >> qexists_tac ‘«sys_close»’ >> simp[]) >>
-  ‘∀o1 n1. ep_io ev_recvd j o1 n1 sevs = [] ∧ FOLDL ep_next (o1, n1) sevs = (o1, n1)’
-    by (irule ep_io_quiet >> ONCE_REWRITE_TAC [CONJ_COMM] >> irule names_quiet >> qexists_tac ‘«sys_connerr»’ >> simp[]) >>
+  ‘∀o1 n1. cep_io ev_recvd j o1 n1 pevs = [] ∧ FOLDL cep_next (o1, n1) pevs = (o1, n1)’
+    by (irule cep_io_quiet >> ONCE_REWRITE_TAC [CONJ_COMM] >> irule names_quiet >> qexists_tac ‘«sys_poll»’ >> simp[]) >>
+  ‘∀o1 n1. cep_io ev_recvd j o1 n1 fevs = [] ∧ FOLDL cep_next (o1, n1) fevs = (o1, n1)’
+    by (irule cep_io_quiet >> ONCE_REWRITE_TAC [CONJ_COMM] >> irule names_quiet >> qexists_tac ‘«sys_send»’ >> simp[]) >>
+  ‘∀o1 n1. cep_io ev_recvd j o1 n1 cevs = [] ∧ FOLDL cep_next (o1, n1) cevs = (o1, n1)’
+    by (irule cep_io_quiet >> ONCE_REWRITE_TAC [CONJ_COMM] >> irule names_quiet >> qexists_tac ‘«sys_close»’ >> simp[]) >>
+  ‘∀o1 n1. cep_io ev_recvd j o1 n1 sevs = [] ∧ FOLDL cep_next (o1, n1) sevs = (o1, n1)’
+    by (irule cep_io_quiet >> ONCE_REWRITE_TAC [CONJ_COMM] >> irule names_quiet >> qexists_tac ‘«sys_connerr»’ >> simp[]) >>
   qpat_x_assum ‘_ = tevs’ (SUBST_ALL_TAC o SYM) >>
-  asm_rewrite_tac[ep_io_append, APPEND_NIL, APPEND, FOLDL_APPEND, pairTheory.FST, pairTheory.SND]
+  asm_rewrite_tac[cep_io_append, APPEND_NIL, APPEND, FOLDL_APPEND, pairTheory.FST, pairTheory.SND]
 QED
 
 (* After round n's actions, every table fd is in the round's client map
    (ecm1): ev_acts' ev_rel there, set up as in l1ep_refines_ehl_upto_sent *)
 Theorem tbl_ecm1:
   l0_rely w0 ∧ fds_lt w0 ∧ MEM lfd (l0_used w0) ∧
+  (∀hh. EVERY noclose (new_actions (log_of m) hh)) ∧
   (∀n'. n' ≤ SUC n ⇒ SND (ecm lfd pol ifds m w0 n') + 1 < dimword (:64)) ∧
   erounds lfd pol ifds m (w0, einit) (SUC n) = SOME (hh, wss, evss, logss) ⇒
   ∃rs aevs wl1 es1.
@@ -400,11 +374,13 @@ Proof
         qpat_x_assum ‘MEM _ (cnew _ _)’ mp_tac >> fs[Abbr ‘fs’]) >>
   ‘∀i hd. i < LENGTH (new_actions (log_of m) (ehhist lfd lv ifds m W0 n)) ∧
           EL i (new_actions (log_of m) (ehhist lfd lv ifds m W0 n)) = ELevel hd ⇒
-          EL i rs = ELvl (lv n (0 + i))’
+          EL i rs = case lv n (0 + i) of SOME l => ELvl l | NONE => EGone’
     by (rpt strip_tac >>
         qpat_assum ‘eacts _ _ _ _ = _’ assume_tac >>
         qpat_assum ‘erounds _ _ _ _ _ n = _’ assume_tac >>
-        drule_all level_true >> strip_tac >> simp[Abbr ‘lv’]) >>
+        drule_all level_true >> strip_tac >> simp[Abbr ‘lv’] >> rw[]) >>
+  ‘EVERY noclose (new_actions (log_of m) (ehhist lfd lv ifds m W0 n))’
+    by (qpat_assum ‘∀hh. EVERY noclose _’ (qspec_then ‘ehhist lfd lv ifds m W0 n’ ACCEPT_TAC)) >>
   qpat_x_assum ‘eacts _ _ _ _ = _’ assume_tac >>
   drule_all ev_acts >> strip_tac >>
   ‘cnew (LENGTH w.chans) (rfds ws11 rs) = cnew k fs’ by simp[Abbr ‘fs’] >>
@@ -423,27 +399,6 @@ Proof
   first_x_assum drule >> simp[]
 QED
 
-(* A round's actions receive nothing (their reads come from the inboxes) *)
-Theorem edo_norecv:
-  edo lfd pol (w, es) a = SOME (r, (w', es'), evs) ⇒ EVERY (λev. ev_recvd ev = NONE) evs
-Proof
-  Cases_on ‘∃p. a = EConnect p’
-  >- (gvs[] >> simp[edo_def, AllCaseEqs()] >> rw[] >> gvs[sys_connect_def] >>
-      drule l0_do_cases >> rw[] >> simp[ev_recvd_def]) >>
-  strip_tac >> drule edo_names >> impl_tac >- metis_tac[] >>
-  simp[EVERY_MEM] >> rpt strip_tac >> res_tac >> irule name_recvd >> simp[]
-QED
-
-Theorem eacts_norecv:
-  ∀acts w es rs evs w' es'.
-    eacts lfd pol (w, es) acts = SOME (rs, evs, (w', es')) ⇒
-    EVERY (λev. ev_recvd ev = NONE) evs
-Proof
-  Induct >> simp[eacts_def, AllCaseEqs(), PULL_EXISTS] >> rpt gen_tac >> strip_tac >>
-  rename1 ‘edo _ _ _ _ = SOME (r1, ws1, evs1)’ >> PairCases_on ‘ws1’ >> gvs[] >>
-  drule edo_norecv >> strip_tac >> first_x_assum drule >> simp[]
-QED
-
 Theorem pdata_rsettles[simp]:
   pdata j (rsettles cm es es') = []
 Proof
@@ -457,16 +412,17 @@ Proof
   simp[esett_def] >> every_case_tac >> simp[pdata_def]
 QED
 
-(* The run: episode j's receives are the data arrivals for channel j, tick by tick *)
+(* The run: channel j's receives (cep_io) are its data arrivals, tick by tick *)
 Theorem l0_ep_recvd_run:
   l0_rely w0 ∧ fds_lt w0 ∧ MEM lfd (l0_used w0) ∧ MEM 0w (l0_used w0) ∧
+  (∀hh. EVERY noclose (new_actions (log_of m) hh)) ∧
   (∀n. SND (ecm lfd pol ifds m w0 n) + 1 < dimword (:64)) ⇒
   ∀n h ws evs logs.
     erounds lfd pol ifds m (w0, einit) n = SOME (h, ws, evs, logs) ⇒
-    ∀j. l0_ep_recvd j evs = FLAT (GENLIST (λi. pdata j (earr lfd a pol ifds m w0 i)) n)
+    ∀j. cep_io ev_recvd j [] 0 evs = FLAT (GENLIST (λi. pdata j (earr lfd a pol ifds m w0 i)) n)
 Proof
   strip_tac >> Induct
-  >- simp[erounds_def, l0_ep_recvd_def, ep_io_def] >>
+  >- simp[erounds_def, cep_io_def] >>
   rpt gen_tac >> strip_tac >> gen_tac >>
   qpat_assum ‘erounds _ _ _ _ _ (SUC _) = _’
     (strip_assume_tac o SIMP_RULE (srw_ss()) [AllCaseEqs()] o
@@ -482,7 +438,7 @@ Proof
   mp_tac (Q.INST [‘N’ |-> ‘SUC n’] l1ep_refines_ehl_upto_sent) >> impl_tac >- fs[] >>
   disch_then (fn th =>
     qspecl_then [‘n’, ‘h'’, ‘(ws'0, ws'1)’, ‘evs'’, ‘logs'’] mp_tac th >>
-    qspecl_then [‘SUC n’, ‘h' ++ [ssnap rdy rs]’, ‘(ws0, ws1)’, ‘evs' ++ aevs ++ tevs’,
+    qspecl_then [‘SUC n’, ‘h' ++ [ssnap rdy rs]’, ‘(ws0, ws1)’, ‘evs' ++ (aevs ++ tevs ++ shevs)’,
                  ‘logs' ++ [log]’] mp_tac th) >>
   simp[] >> rpt (disch_then strip_assume_tac) >>
   ‘∃cm k. ecm lfd pol ifds m w0 n = (cm, k)’ by metis_tac[pairTheory.PAIR] >>
@@ -494,15 +450,32 @@ Proof
      SOME (rs0, evs0, (wi, esi)) ⇒ eown lfd esi’
     by (qpat_x_assum ‘∀n'. n' < SUC n ⇒ eround_own _ _ _ _ _ _’ (qspec_then ‘n’ mp_tac) >>
         simp[eround_own_def] >> disch_then drule >> simp[]) >>
+  ‘eown lfd ws11’
+    by (first_x_assum (qspecl_then [‘LENGTH (new_actions (log_of m) h')’, ‘rs’, ‘aevs’,
+                                    ‘ws10’, ‘ws11’] mp_tac) >> simp[TAKE_LENGTH_ID]) >>
+  ‘EVERY noclose (new_actions (log_of m) h')’
+    by (qpat_assum ‘∀hh. EVERY noclose _’ (qspec_then ‘h'’ ACCEPT_TAC)) >>
+  (* no EShut in E1 (eown): the shutdown step is the identity *)
+  PairCases_on ‘ws2’ >>
+  ‘ws21.shq = []’
+    by (qpat_x_assum ‘etail _ _ _ _ = _’ (mp_tac o MATCH_MP etail_shq) >>
+        qpat_x_assum ‘eown lfd ws11’ mp_tac >> simp[eown_def]) >>
+  qpat_x_assum ‘eshuts _ = _’ mp_tac >>
+  qpat_x_assum ‘ws21.shq = []’ (fn th => simp[MATCH_MP eshuts_nil th]) >> strip_tac >>
+  qpat_x_assum ‘ws20 = ws0’ SUBST_ALL_TAC >> qpat_x_assum ‘ws21 = ws1’ SUBST_ALL_TAC >>
+  qpat_x_assum ‘shevs = []’ SUBST_ALL_TAC >> RULE_ASSUM_TAC (REWRITE_RULE [APPEND_NIL]) >>
+  REWRITE_TAC [APPEND_NIL] >>
   qpat_x_assum ‘eacts _ _ _ _ = _’ assume_tac >>
   drule_all eacts_fd0 >> strip_tac >>
-  ‘FOLDL ep_next (cm, k) aevs = (cnew k (rfds ws11 rs) ++ cm, k + LENGTH (rfds ws11 rs))’
+  ‘FOLDL cep_next (cm, k) aevs = (cnew k (rfds ws11 rs) ++ cm, k + LENGTH (rfds ws11 rs))’
     by (qpat_x_assum ‘eacts _ _ (ws'0, ws'1) _ = _’ assume_tac >>
         drule eacts_ep >> disch_then (qspecl_then [‘j’, ‘cm’, ‘cm’, ‘k’] mp_tac) >>
         impl_tac >- (rpt conj_tac >> TRY (first_assum ACCEPT_TAC) >> simp[]) >> simp[]) >>
-  ‘∀o1 n1. ep_io ev_recvd j o1 n1 aevs = []’
-    by (rpt gen_tac >> irule ep_io_norecv >>
-        qpat_x_assum ‘eacts _ _ (ws'0, ws'1) _ = _’ (ACCEPT_TAC o MATCH_MP eacts_norecv)) >>
+  ‘∀o1 n1. cep_io ev_recvd j o1 n1 aevs = []’
+    by (rpt gen_tac >> irule cep_io_norecv >>
+        qpat_x_assum ‘eacts _ _ (ws'0, ws'1) _ = _’
+          (fn th => MATCH_MP (REWRITE_RULE [GSYM AND_IMP_INTRO] eacts_norecv) th |> mp_tac) >>
+        disch_then irule >> first_assum ACCEPT_TAC) >>
   ‘eacts_of lfd pol ifds m w0 n = SOME (rs, aevs, (ws10, ws11))’
     by (qpat_x_assum ‘erounds _ _ _ _ _ n = _’ mp_tac >> simp[eacts_of_def]) >>
   ‘econ lfd pol ifds m w0 n = rfds ws11 rs’ by simp[econ_def] >>
@@ -530,31 +503,43 @@ Proof
         rpt strip_tac >>
         qpat_x_assum ‘ALOOKUP _ f = NONE’ (mp_tac o REWRITE_RULE [ALOOKUP_NONE]) >>
         qpat_x_assum ‘∀f. MEM f (MAP SND ws11.p.b.tbl) ⇒ _’ drule >> simp[]) >>
-  ‘ep_io ev_recvd j (cnew k (rfds ws11 rs) ++ cm) (k + LENGTH (rfds ws11 rs)) tevs =
+  ‘cep_io ev_recvd j (cnew k (rfds ws11 rs) ++ cm) (k + LENGTH (rfds ws11 rs)) tevs =
    pdata j (MAP (conv a) (FST (arrs lfd (cnew k (rfds ws11 rs) ++ cm,
                                           k + LENGTH (rfds ws11 rs)) log)))’
     by (qpat_x_assum ‘etail _ _ _ _ = _’
           (fn th => irule (MATCH_MP (REWRITE_RULE [GSYM AND_IMP_INTRO] etail_recvd) th)) >>
         rpt conj_tac >> TRY (first_assum ACCEPT_TAC) >>
         qpat_x_assum ‘fd0_ok ws10 ws11’ mp_tac >> simp[fd0_ok_def]) >>
-  ‘FOLDL ep_next ([], 0) evs' = (cm, k)’ by fs[] >>
-  simp[l0_ep_recvd_def, ep_io_append, FOLDL_APPEND, GENLIST, SNOC_APPEND, FLAT_APPEND] >>
-  qpat_x_assum ‘∀j. l0_ep_recvd j evs' = _’ (fn th => simp[GSYM th, l0_ep_recvd_def]) >>
+  ‘FOLDL cep_next ([], 0) evs' = (cm, k)’ by fs[] >>
+  simp[cep_io_append, FOLDL_APPEND, GENLIST, SNOC_APPEND, FLAT_APPEND] >>
+  qpat_x_assum ‘∀j. cep_io ev_recvd j [] 0 evs' = _’ (fn th => simp[GSYM th]) >>
   simp[earr_def]
 QED
 
-(* G2: episode j received exactly what the layer's channel j received *)
+(* G2: episode j received nothing if it is a transient connect (tsig: no
+   channel), and otherwise exactly what the layer's channel (tsig evs j)
+   received *)
 Theorem e1_l0_ep_recvd:
   l0_rely w0 ∧ fds_lt w0 ∧ MEM lfd (l0_used w0) ∧ MEM 0w (l0_used w0) ∧
+  (∀hh. EVERY noclose (new_actions (log_of m) hh)) ∧
   (∀n. SND (ecm lfd pol ifds m w0 n) + 1 < dimword (:64)) ⇒
   ∀n h ws evs logs j.
     erounds lfd pol ifds m (w0, einit) n = SOME (h, ws, evs, logs) ⇒
-    l0_ep_recvd j evs =
-    chrecv (FST (ehst lfd (elv lfd pol ifds m w0) ifds m (pew lfd a pol ifds m w0 calls) n)) j
+    case tsig evs j of
+    | NONE => l0_ep_recvd j evs = []
+    | SOME c =>
+        l0_ep_recvd j evs =
+        chrecv (FST (ehst lfd (elv lfd pol ifds m w0) ifds m (pew lfd a pol ifds m w0 calls) n)) c
 Proof
   rpt strip_tac >>
+  mp_tac e1_nodead >> impl_tac >- (rpt conj_tac >> first_assum ACCEPT_TAC) >>
+  disch_then drule >> strip_tac >>
+  qpat_x_assum ‘nodead ev_recvd [] evs’ (mp_tac o MATCH_MP ep_io_renum) >>
+  disch_then (qspec_then ‘j’ assume_tac) >>
+  simp[l0_ep_recvd_def] >> pop_assum SUBST1_TAC >>
+  Cases_on ‘tsig evs j’ >> simp[] >> rename1 ‘tsig evs j = SOME c’ >>
   mp_tac l0_ep_recvd_run >> impl_tac >- (rpt conj_tac >> first_assum ACCEPT_TAC) >>
-  disch_then (drule_then (qspec_then ‘j’ SUBST1_TAC)) >>
+  disch_then (drule_then (qspec_then ‘c’ SUBST1_TAC)) >>
   mp_tac l1ep_refines_ehl >> impl_tac >- (rpt conj_tac >> first_assum ACCEPT_TAC) >>
   disch_then (drule_then strip_assume_tac) >>
   drule eh_recv_run >> strip_tac >>

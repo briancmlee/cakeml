@@ -11,7 +11,7 @@
 Theory e1TraceEvents
 Ancestors
   moonshotSentGlue honestL1EPModel honestL1PFConnRun honestL1PFRound honestL1PFModel honestL1Model
-  l0sysEpisodes e1TraceRound
+  l0sysEpisodes e1TraceRound honestL1PFConn honestL1PFClose
 Libs
   preamble
 
@@ -37,15 +37,29 @@ Proof
   rw[EVERY_MEM] >> res_tac >> irule names_ok >> simp[]
 QED
 
+(* Every action but a connect only sends and closes (R3: EClose too) *)
+Theorem edo_names_nc:
+  edo lfd pol (w, es) x = SOME (r, (w', es'), evs) ∧ (∀p. x ≠ EConnect p) ⇒
+  EVERY (λev. ev_name ev = ExtCall «sys_send» ∨ ev_name ev = ExtCall «sys_close») evs
+Proof
+  Cases_on ‘x’ >> simp[edo_def, AllCaseEqs()] >> rw[] >> TRY (PairCases_on ‘z’) >> gvs[] >>
+  TRY (drule pdo_names >> simp[] >> NO_TAC) >>
+  gvs[pf_close_def, l1_close_def, AllCaseEqs(), sys_close_def] >>
+  rpt (qpat_x_assum ‘l0_do _ _ _ _ = _’ (strip_assume_tac o MATCH_MP l0_do_cases)) >>
+  gvs[ev_name_def]
+QED
+
 Theorem edo_ok:
   edo lfd pol (w, es) x = SOME (r, ws', evs) ∧ (∀p. x = EConnect p ⇒ P p) ⇒
   EVERY (e1ev_ok P) evs
 Proof
   Cases_on ‘∃p. x = EConnect p’
-  >- (gvs[] >> simp[edo_def, AllCaseEqs(), sys_connect_def] >> rw[] >>
-      drule l0_do_cases >> rw[] >> simp[e1ev_ok_def] >> metis_tac[]) >>
-  strip_tac >> irule names_ok_every >>
-  PairCases_on ‘ws'’ >> gvs[] >> drule edo_names >>
+  >- (gvs[] >> simp[edo_def, AllCaseEqs(), sys_connect_def, sys_close_def] >> rw[] >>
+      TRY (PairCases_on ‘z’) >> gvs[] >>
+      rpt (qpat_x_assum ‘l0_do _ _ _ _ = _’ (strip_assume_tac o MATCH_MP l0_do_cases)) >>
+      rpt BasicProvers.VAR_EQ_TAC >> simp[e1ev_ok_def] >> metis_tac[]) >>
+  strip_tac >> irule names_ok_every >> PairCases_on ‘ws'’ >> gvs[] >>
+  drule edo_names_nc >> impl_tac >- metis_tac[] >>
   simp[EVERY_MEM] >> rpt strip_tac >> res_tac >> gvs[]
 QED
 
@@ -74,6 +88,25 @@ Proof
   drule settle_fds_names >> simp[EVERY_MEM] >> rpt strip_tac >> res_tac >> fs[]
 QED
 
+(* The shutdown step (R3) only shuts down *)
+Theorem pf_shuts_names:
+  ∀fs w ps ws' kp sh evs.
+    pf_shuts fs (w, ps) = SOME (ws', kp, sh, evs) ⇒
+    EVERY (λev. ev_name ev = ExtCall «sys_shutdown») evs
+Proof
+  Induct >- simp[pf_shuts_def] >> Cases >> rw[pf_shuts_def, AllCaseEqs()] >>
+  TRY (first_x_assum drule >> simp[] >> NO_TAC) >>
+  rpt (pairarg_tac >> gvs[]) >> gvs[AllCaseEqs()] >>
+  first_x_assum drule >> simp[] >> strip_tac >>
+  gvs[sys_shutdown_def] >> drule l0_do_cases >> rw[] >> simp[ev_name_def]
+QED
+
+Theorem eshuts_names:
+  eshuts (w, es) = SOME (ws', evs) ⇒ EVERY (λev. ev_name ev = ExtCall «sys_shutdown») evs
+Proof
+  rw[eshuts_def] >> pairarg_tac >> gvs[] >> drule pf_shuts_names >> simp[]
+QED
+
 (* Every event of an E1 run: no listen, and a connect to a port P allows,
    if every connect the program asks for is to such a port *)
 Theorem erounds_evs_ok:
@@ -86,8 +119,11 @@ Proof
   qpat_x_assum ‘eround _ _ _ _ _ = _’ mp_tac >> simp[eround_def, AllCaseEqs()] >>
   strip_tac >> gvs[] >>
   rename1 ‘etail _ _ _ ws1 = _’ >> PairCases_on ‘ws1’ >>
+  rename1 ‘eshuts ws2 = _’ >> PairCases_on ‘ws2’ >>
+  qpat_x_assum ‘eshuts _ = _’ (assume_tac o MATCH_MP eshuts_names) >>
   drule etail_ok >> simp[] >> disch_then kall_tac >>
-  drule eacts_ok >> disch_then irule >> metis_tac[]
+  conj_tac >- (drule eacts_ok >> disch_then irule >> metis_tac[]) >>
+  irule names_ok_every >> gvs[EVERY_MEM]
 QED
 
 (* ------------------------------------------------------------------------
@@ -221,9 +257,11 @@ Proof
   first_x_assum drule >> simp[] >> disch_then kall_tac >>
   PairCases_on ‘ws’ >> PairCases_on ‘ws1’ >>
   Cases_on ‘∃p. h = EConnect p’
-  >- (gvs[edo_def, AllCaseEqs(), sys_connect_def] >> drule l0_do_cases >> rw[] >>
-      simp[ev_name_def]) >>
-  drule edo_names >> impl_tac >- metis_tac[] >>
+  >- (gvs[edo_def, AllCaseEqs(), sys_connect_def, sys_close_def] >>
+      TRY (PairCases_on ‘z’) >> gvs[] >>
+      rpt (qpat_x_assum ‘l0_do _ _ _ _ = _’ (strip_assume_tac o MATCH_MP l0_do_cases)) >>
+      rpt BasicProvers.VAR_EQ_TAC >> simp[ev_name_def]) >>
+  drule edo_names_nc >> impl_tac >- metis_tac[] >>
   simp[EVERY_MEM] >> rpt strip_tac >> res_tac >> gvs[]
 QED
 
@@ -242,8 +280,10 @@ Proof
   strip_tac >> gvs[] >>
   first_x_assum drule_all >> strip_tac >>
   rename1 ‘etail _ _ _ ws1 = _’ >> PairCases_on ‘ws1’ >>
+  rename1 ‘eshuts ws2 = _’ >> PairCases_on ‘ws2’ >>
+  qpat_x_assum ‘eshuts _ = _’ (assume_tac o MATCH_MP eshuts_names) >>
   drule eacts_noaccept >> simp[] >> disch_then kall_tac >>
-  drule etail_noaccept >> gvs[]
+  drule etail_noaccept >> gvs[EVERY_MEM]
 QED
 
 Theorem new_inr:

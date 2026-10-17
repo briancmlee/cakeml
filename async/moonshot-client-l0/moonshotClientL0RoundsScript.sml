@@ -17,7 +17,7 @@
 Theory moonshotClientL0Rounds
 Ancestors
   e1TraceChan e1TraceEvents moonshotClientTotal moonshotClientSpec moonshotClient
-  moonshotStdioClose moonshotSentGlue honestL1EPRefine honestL1EPModel l0sysEpisodes
+  moonshotStdioClose moonshotSentGlue moonshotEpRenum honestL1EPRefine honestL1EPModel l0sysEpisodes
   honestL0Outcome
 Libs
   preamble
@@ -68,7 +68,7 @@ Proof
   rename1 ‘SOME r’ >> PairCases_on ‘r’ >>
   qspecl_then [‘SUC n’, ‘cifds a N rqs’, ‘cprog a N rqs’] mp_tac
     (Q.GENL [‘N’, ‘ifds’, ‘m’] l1ep_refines_ehl_upto_sent) >>
-  impl_tac >- simp[] >>
+  impl_tac >- simp[cprog_noclose] >>
   disch_then (qspecl_then [‘SUC n’, ‘r0’, ‘(r1, r2)’, ‘r3’, ‘r4’] mp_tac) >> simp[] >> strip_tac >>
   qpat_x_assum ‘∀n'. n' < SUC n ⇒ eround_own _ _ _ _ _ _’ (qspec_then ‘n’ mp_tac) >>
   simp[eround_own_def] >> PairCases_on ‘ws1’ >>
@@ -154,10 +154,10 @@ QED
 (* A round's sends, given each sending episode's handle (small contexts) *)
 Theorem round_sent_bound:
   (∀j. l0_ep_sent j evs = [] ∨
-       ∃hd. ALOOKUP B j = SOME hd ∧ l0_ep_sent j evs ≼ hl_sent hd ps) ∧
+       ∃hd. ALOOKUP B (σ j) = SOME hd ∧ l0_ep_sent j evs ≼ hl_sent hd ps) ∧
   (∀j hd. ALOOKUP B j = SOME hd ⇒ blc lc BB j = lc hd) ∧
   (∀hd. hl_sent hd ps ≼ brequests (rqs (lc hd))) ⇒
-  ∀j. l0_ep_sent j evs ≼ brequests (rqs (blc lc BB j))
+  ∀j. l0_ep_sent j evs ≼ brequests (rqs (blc lc BB (σ j)))
 Proof
   rpt strip_tac >> qpat_x_assum ‘∀j. _ ∨ _’ (qspec_then ‘j’ strip_assume_tac) >- simp[] >>
   qpat_x_assum ‘∀j hd. ALOOKUP B j = SOME hd ⇒ _’ drule >> disch_then SUBST1_TAC >>
@@ -168,20 +168,84 @@ QED
 
 Theorem round_sent_inj:
   (∀j. l0_ep_sent j evs = [] ∨
-       ∃hd. ALOOKUP B j = SOME hd ∧ l0_ep_sent j evs ≼ hl_sent hd ps) ∧
+       ∃hd. ALOOKUP B (σ j) = SOME hd ∧ l0_ep_sent j evs ≼ hl_sent hd ps) ∧
+  (∀j j'. l0_ep_sent j evs ≠ [] ∧ l0_ep_sent j' evs ≠ [] ∧ σ j = σ j' ⇒ j = j') ∧
   (∀j hd. ALOOKUP B j = SOME hd ⇒ blc lc BB j = lc hd) ∧
   (∀hd hd'. hl_sent hd ps ≠ [] ∧ hl_sent hd' ps ≠ [] ∧ lc hd' = lc hd ⇒ hd' = hd) ∧
   ALL_DISTINCT (MAP SND B) ⇒
-  ∀j j'. l0_ep_sent j evs ≠ [] ∧ l0_ep_sent j' evs ≠ [] ∧ blc lc BB j = blc lc BB j' ⇒
+  ∀j j'. l0_ep_sent j evs ≠ [] ∧ l0_ep_sent j' evs ≠ [] ∧
+         blc lc BB (σ j) = blc lc BB (σ j') ⇒
          j = j'
 Proof
   rpt strip_tac >>
-  ‘∃hd. ALOOKUP B j = SOME hd ∧ l0_ep_sent j evs ≼ hl_sent hd ps’ by metis_tac[] >>
-  ‘∃hd'. ALOOKUP B j' = SOME hd' ∧ l0_ep_sent j' evs ≼ hl_sent hd' ps’ by metis_tac[] >>
+  ‘∃hd. ALOOKUP B (σ j) = SOME hd ∧ l0_ep_sent j evs ≼ hl_sent hd ps’ by metis_tac[] >>
+  ‘∃hd'. ALOOKUP B (σ j') = SOME hd' ∧ l0_ep_sent j' evs ≼ hl_sent hd' ps’ by metis_tac[] >>
   ‘hl_sent hd ps ≠ [] ∧ hl_sent hd' ps ≠ []’ by metis_tac[prefix_nonnil] >>
   ‘lc hd' = lc hd’ by metis_tac[] >>
   ‘hd' = hd’ by metis_tac[] >>
-  metis_tac[alookup_inj]
+  ‘σ j = σ j'’ by metis_tac[alookup_inj] >>
+  metis_tac[]
+QED
+
+(* ------------------------------------------------------------------------
+   Trace episode -> E1 channel, fixed for the whole run (R3: a transient
+   connect is an episode but no channel; moonshotEpRenum's tsig)
+   ------------------------------------------------------------------------ *)
+
+Theorem tsig_append:
+  tsig evs j = SOME c ⇒ ∀x. tsig (evs ++ x) j = SOME c
+Proof
+  rw[tsig_def, FOLDL_APPEND] >> Cases_on ‘FOLDL snext ([], 0) evs’ >> gvs[] >>
+  qspecl_then [‘evs’, ‘[]’, ‘0’] mp_tac snext_fold >>
+  impl_tac >- simp[sinj_def, sbnd_def, sat_def] >> simp[] >> strip_tac >>
+  qspecl_then [‘x’, ‘q’, ‘r’] mp_tac snext_fold >> simp[] >> strip_tac >>
+  ‘j < LENGTH q’ by (qpat_x_assum ‘sat q j = SOME c’ mp_tac >> simp[sat_def] >> rw[]) >>
+  simp[]
+QED
+
+Theorem erounds_evs_prefix:
+  ∀d n h ws evs logs h' ws' evs' logs'.
+    erounds lfd pol ifds m ws0 n = SOME (h, ws, evs, logs) ∧
+    erounds lfd pol ifds m ws0 (d + n) = SOME (h', ws', evs', logs') ⇒
+    ∃x. evs' = evs ++ x
+Proof
+  Induct >- (rw[] >> gvs[]) >> rpt gen_tac >> strip_tac >>
+  qpat_x_assum ‘erounds _ _ _ _ _ (SUC d + n) = _’ mp_tac >>
+  simp[ADD_CLAUSES, Once erounds_def, AllCaseEqs()] >> strip_tac >> gvs[] >>
+  first_x_assum drule_all >> strip_tac >> gvs[] >> metis_tac[APPEND_ASSOC]
+QED
+
+Theorem erounds_E_prefix:
+  ∀n n' evs evs'.
+    OPTION_MAP (FST o SND o SND) (erounds lfd pol ifds m ws0 n) = SOME evs ∧
+    OPTION_MAP (FST o SND o SND) (erounds lfd pol ifds m ws0 n') = SOME evs' ∧ n ≤ n' ⇒
+    ∃x. evs' = evs ++ x
+Proof
+  rw[LESS_EQ_EXISTS] >> rename1 ‘erounds _ _ _ _ _ n = SOME r’ >> PairCases_on ‘r’ >>
+  rename1 ‘erounds _ _ _ _ _ (n + p) = SOME r'’ >> PairCases_on ‘r'’ >> gvs[] >>
+  irule erounds_evs_prefix >> ONCE_REWRITE_TAC [ADD_COMM] >> metis_tac[]
+QED
+
+(* The run's episode j's channel *)
+Definition gsig_def:
+  gsig (E : num -> io_event list option) j =
+    @c. ∃n evs. E n = SOME evs ∧ tsig evs j = SOME c
+End
+
+Theorem gsig_eq:
+  (∀n n' evs evs'. E n = SOME evs ∧ E n' = SOME evs' ∧ n ≤ n' ⇒ ∃x. evs' = evs ++ x) ∧
+  E n = SOME evs ∧ tsig evs j = SOME c ⇒
+  gsig E j = c
+Proof
+  strip_tac >> simp[gsig_def] >> SELECT_ELIM_TAC >> conj_tac >- metis_tac[] >>
+  rpt strip_tac >> rename1 ‘E m = SOME evs1’ >>
+  Cases_on ‘n ≤ m’
+  >- (‘∃x. evs1 = evs ++ x’ by metis_tac[] >> gvs[] >>
+      qpat_x_assum ‘tsig evs j = _’ (mp_tac o MATCH_MP tsig_append) >>
+      disch_then (qspec_then ‘x'’ mp_tac) >> simp[])
+  >> ‘∃x. evs = evs1 ++ x’ by (first_x_assum irule >> qexistsl_tac [‘m’, ‘n’] >> simp[]) >>
+  gvs[] >> qpat_x_assum ‘tsig evs1 _ = _’ (mp_tac o MATCH_MP tsig_append) >>
+  disch_then (qspec_then ‘x'’ mp_tac) >> simp[]
 QED
 
 (* ------------------------------------------------------------------------
@@ -209,6 +273,22 @@ val inj_tac =
 val distinct_tac =
   qpat_assum ‘∀n. gchinv _ _ _ _’ (qspec_then ‘n’ mp_tac) >>
   disch_then (ACCEPT_TAC o MATCH_MP gchinv_distinct)
+
+Theorem sent_sigma:
+  (∀j. l0_ep_sent j evs =
+       case tsig evs j of NONE => [] | SOME c => cep_io l0sysEpisodes$ev_sent c [] 0 evs) ∧
+  (∀j c. tsig evs j = SOME c ⇒ σ j = c) ∧
+  (∀c. cep_io l0sysEpisodes$ev_sent c [] 0 evs = [] ∨
+       ∃hd. ALOOKUP B c = SOME hd ∧ cep_io l0sysEpisodes$ev_sent c [] 0 evs ≼ sf hd) ⇒
+  (∀j. l0_ep_sent j evs = [] ∨ ∃hd. ALOOKUP B (σ j) = SOME hd ∧ l0_ep_sent j evs ≼ sf hd) ∧
+  (∀j j'. l0_ep_sent j evs ≠ [] ∧ l0_ep_sent j' evs ≠ [] ∧ σ j = σ j' ⇒ j = j')
+Proof
+  strip_tac >> conj_tac >> rpt gen_tac >> asm_rewrite_tac[] >>
+  Cases_on ‘tsig evs j’ >> simp[]
+  >- metis_tac[] >>
+  Cases_on ‘tsig evs j'’ >> simp[] >> strip_tac >>
+  irule tsig_inj >> metis_tac[]
+QED
 
 Theorem client_rounds_safe:
   2 ≤ N ∧ N < cbound ∧ (∀i. EVERY valid_brequest (rqs i)) ∧ a < 65536 ∧
@@ -249,47 +329,66 @@ Proof
   ‘∀n n' j hd. ALOOKUP (B n) j = SOME hd ∧ n ≤ n' ⇒ ALOOKUP (B n') j = SOME hd’
     by (rpt strip_tac >> qunabbrev_tac ‘B’ >> irule ehbinds_lookup_mono >>
         qexists_tac ‘n’ >> rpt conj_tac >> first_assum ACCEPT_TAC) >>
-  qexists_tac ‘blc lc B’ >> conj_tac
-  >- (gen_tac >> irule blc_lt >> rpt conj_tac >>
+  qabbrev_tac ‘E = λn. OPTION_MAP (FST o SND o SND)
+                     (erounds lfd pol (cifds a N rqs) (cprog a N rqs) (w0, einit) n)’ >>
+  ‘∀n n' evs evs'. E n = SOME evs ∧ E n' = SOME evs' ∧ n ≤ n' ⇒ ∃x. evs' = evs ++ x’
+    by (qunabbrev_tac ‘E’ >> BETA_TAC >> MATCH_ACCEPT_TAC erounds_E_prefix) >>
+  qexists_tac ‘blc lc B o gsig E’ >> conj_tac
+  >- (gen_tac >> REWRITE_TAC [o_THM] >> irule blc_lt >> rpt conj_tac >>
       FIRST [first_assum ACCEPT_TAC, qpat_x_assum ‘2 ≤ N’ mp_tac >> simp[]]) >>
   rpt gen_tac >> strip_tac >>
   (* the round's sends, through E1's credit and the built world *)
   ‘MEM 0w (l0_used w0)’ by simp[] >>
   qspecl_then [‘w0’, ‘lfd’, ‘pol’, ‘cifds a N rqs’, ‘cprog a N rqs’] mp_tac
     (Q.GENL [‘w0’, ‘lfd’, ‘pol’, ‘ifds’, ‘m’] l0_ep_sent_run) >>
-  impl_tac >- simp[] >> disch_then drule >> strip_tac >>
+  impl_tac >- simp[cprog_noclose] >> disch_then drule >> strip_tac >>
+  qspecl_then [‘w0’, ‘lfd’, ‘pol’, ‘cifds a N rqs’, ‘cprog a N rqs’] mp_tac
+    (Q.GENL [‘w0’, ‘lfd’, ‘pol’, ‘ifds’, ‘m’] e1_nodead) >>
+  impl_tac >- simp[cprog_noclose] >> disch_then drule >> strip_tac >>
   qspecl_then [‘n’, ‘cifds a N rqs’, ‘cprog a N rqs’, ‘0’, ‘[]’] mp_tac
     (Q.GENL [‘N’, ‘ifds’, ‘m’, ‘a’, ‘calls’] l1ep_refines_ehl_upto_sent) >>
-  impl_tac >- simp[] >>
+  impl_tac >- simp[cprog_noclose] >>
   disch_then (qspecl_then [‘n’, ‘h’, ‘ws’, ‘evs’, ‘logs’] mp_tac) >> simp[] >> strip_tac >>
   ‘ehhist lfd lv (cifds a N rqs) (cprog a N rqs) PW n = h’
     by (qunabbrev_tac ‘lv’ >> qunabbrev_tac ‘PW’ >> first_assum ACCEPT_TAC) >>
-  ‘∀j. l0_ep_sent j evs = [] ∨
-       ∃hd. ALOOKUP (B n) j = SOME hd ∧
-            l0_ep_sent j evs ≼ hl_sent hd (hl_pairs (cprog a N rqs) h)’
+  ‘∀c. cep_io l0sysEpisodes$ev_sent c [] 0 evs = [] ∨
+       ∃hd. ALOOKUP (B n) c = SOME hd ∧
+            cep_io l0sysEpisodes$ev_sent c [] 0 evs ≼ hl_sent hd (hl_pairs (cprog a N rqs) h)’
     by (qpat_x_assum ‘∀n. gchinv _ _ _ _’ (qspec_then ‘n’ assume_tac) >>
         qunabbrev_tac ‘lv’ >> qunabbrev_tac ‘PW’ >>
         qpat_x_assum ‘sent_inv _ _ _ _’ assume_tac >>
         drule_all sent_in_binds >>
         qpat_x_assum ‘ehhist _ _ _ _ _ n = h’ (fn th => REWRITE_TAC [th]) >>
-        qpat_x_assum ‘∀j. l0_ep_sent j evs = _’ (fn th => REWRITE_TAC [th]) >>
+        qpat_x_assum ‘∀j. cep_io _ j [] 0 evs = _’ (fn th => REWRITE_TAC [th]) >>
         simp[]) >>
+  ‘∀j. l0_ep_sent j evs =
+       case tsig evs j of NONE => [] | SOME c => cep_io l0sysEpisodes$ev_sent c [] 0 evs’
+    by (gen_tac >> REWRITE_TAC [l0_ep_sent_def] >>
+        qpat_x_assum ‘nodead l0sysEpisodes$ev_sent [] evs’ (mp_tac o MATCH_MP ep_io_renum) >>
+        simp[]) >>
+  ‘∀j c. tsig evs j = SOME c ⇒ gsig E j = c’
+    by (rpt strip_tac >> irule gsig_eq >> rpt conj_tac >- first_assum ACCEPT_TAC >>
+        qexistsl_tac [‘evs’, ‘n’] >> simp[Abbr ‘E’]) >>
+  qspecl_then [‘evs’, ‘gsig E’, ‘B n’, ‘λhd. hl_sent hd (hl_pairs (cprog a N rqs) h)’] mp_tac
+    (Q.GENL [‘evs’, ‘σ’, ‘B’, ‘sf’] sent_sigma) >>
+  impl_tac >- (BETA_TAC >> rpt conj_tac >> first_assum ACCEPT_TAC) >>
+  BETA_TAC >> strip_tac >>
   ‘EVERY (e1ev_ok (λp. p = a)) evs’
     by (drule client_evs_ok >> simp[]) >>
   ‘EVERY (λev. ev_name ev ≠ ExtCall «sys_accept») evs’
     by (drule_at (Pos last) client_noaccept >>
         impl_tac >- (rpt conj_tac >> first_assum ACCEPT_TAC) >> simp[]) >>
-  REWRITE_TAC[client_round_safe_def] >> rpt conj_tac
+  REWRITE_TAC[client_round_safe_def, o_THM] >> rpt conj_tac
   >- first_assum ACCEPT_TAC
   >- first_assum ACCEPT_TAC
-  >- (qspecl_then [‘B n’, ‘hl_pairs (cprog a N rqs) h’, ‘B’, ‘lc’, ‘rqs’, ‘evs’] mp_tac
-        (Q.GENL [‘B’, ‘ps’, ‘BB’, ‘lc’, ‘rqs’, ‘evs’] round_sent_bound) >>
+  >- (qspecl_then [‘B n’, ‘hl_pairs (cprog a N rqs) h’, ‘B’, ‘lc’, ‘rqs’, ‘evs’, ‘gsig E’] mp_tac
+        (Q.GENL [‘B’, ‘ps’, ‘BB’, ‘lc’, ‘rqs’, ‘evs’, ‘σ’] round_sent_bound) >>
       impl_tac >- (rpt conj_tac >> FIRST [first_assum ACCEPT_TAC, blc_tac, sent_tac]) >>
       disch_then ACCEPT_TAC)
-  >- (qspecl_then [‘B n’, ‘hl_pairs (cprog a N rqs) h’, ‘B’, ‘lc’, ‘evs’] mp_tac
-        (Q.GENL [‘B’, ‘ps’, ‘BB’, ‘lc’, ‘evs’] round_sent_inj) >>
+  >- (qspecl_then [‘B n’, ‘hl_pairs (cprog a N rqs) h’, ‘B’, ‘lc’, ‘evs’, ‘gsig E’] mp_tac
+        (Q.GENL [‘B’, ‘ps’, ‘BB’, ‘lc’, ‘evs’, ‘σ’] round_sent_inj) >>
       impl_tac >- (rpt conj_tac >> FIRST [first_assum ACCEPT_TAC, blc_tac, inj_tac, distinct_tac]) >>
       disch_then ACCEPT_TAC) >>
   drule_at (Pos last) erounds_no_close_stdio >>
-  impl_tac >- (rpt conj_tac >> first_assum ACCEPT_TAC) >> simp[]
+  impl_tac >- (rpt conj_tac >> TRY (first_assum ACCEPT_TAC) >> simp[cprog_noclose]) >> simp[]
 QED

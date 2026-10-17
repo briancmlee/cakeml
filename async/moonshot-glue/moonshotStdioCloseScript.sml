@@ -80,9 +80,12 @@ Proof
 QED
 
 Theorem edo_noclose:
-  edo lfd pol (w, es) a = SOME (r, (w', es'), evs) ∧ ¬MEM g (tfds es) ⇒ noclose g evs
+  edo lfd pol (w, es) a = SOME (r, (w', es'), evs) ∧ l0_rely w ∧ fds_lt w ∧ fdg_ok g w es ∧
+  honestL1EPRefine$noclose a ⇒
+  noclose g evs
 Proof
-  strip_tac >> Cases_on ‘a’ >> gvs[edo_def, AllCaseEqs()]
+  strip_tac >> Cases_on ‘a’ >>
+  gvs[edo_def, AllCaseEqs(), honestL1EPRefineTheory.noclose_def, fdg_ok_def]
   >~ [‘pdo _ _ (Accept _) = _’]
   >- (PairCases_on ‘z’ >> gvs[] >> drule pdo_accept_ostep >> simp[])
   >~ [‘pdo _ _ (Read _ _) = _’]
@@ -104,7 +107,23 @@ Proof
       ‘MEM f (MAP SND es.ctbl)’
         by (imp_res_tac ALOOKUP_MEM >> simp[MEM_MAP] >> metis_tac[SND]) >>
       ‘f ≠ g’ by (strip_tac >> gvs[tfds_def]) >>
-      drule_all l1_close_noclose >> simp[]) >>
+      drule_all l1_close_noclose >> simp[])
+  >~ [‘sys_close _ _ = SOME z’]
+  >- ((* a transient connect failure: its fresh fd, not g, closed at once *)
+      PairCases_on ‘z’ >> gvs[] >>
+      drule_all sys_connect_l0 >> strip_tac >>
+      qpat_x_assum ‘_ ≠ 0 ⇒ _’
+        (fn th => qpat_assum ‘_ ≠ 0’ (strip_assume_tac o MATCH_MP th)) >>
+      ‘n2w (honestL1EPModel$res_val out) ≠ g’ by (strip_tac >> gvs[]) >>
+      ‘l1_close (n2w (honestL1EPModel$res_val out)) (w'', ARB) =
+         SOME ((w', forget (n2w (honestL1EPModel$res_val out)) ARB), [z2])’
+        by simp[l1_close_def] >>
+      ‘noclose g [z2]’ by (drule_all l1_close_noclose >> simp[]) >>
+      ‘noclose g [ev]’
+        by (qpat_x_assum ‘sys_connect _ _ = _’ mp_tac >> simp[sys_connect_def] >> strip_tac >>
+            drule l0_do_cases >> rw[] >> simp[noclose_def] >> EVAL_TAC) >>
+      ‘[ev; z2] = [ev] ++ [z2]’ by simp[] >> pop_assum SUBST1_TAC >>
+      REWRITE_TAC [noclose_append] >> conj_tac >> first_assum ACCEPT_TAC) >>
   gvs[sys_connect_def] >> drule l0_do_cases >> rw[] >> simp[noclose_def] >> EVAL_TAC
 QED
 
@@ -138,10 +157,10 @@ QED
 
 Theorem edo_fdg:
   edo lfd pol (wl, es) a = SOME (r, (wl', es'), evs) ∧ l0_rely wl ∧ fds_lt wl ∧
-  fdg_ok g wl es ⇒
+  fdg_ok g wl es ∧ honestL1EPRefine$noclose a ⇒
   fdg_ok g wl' es'
 Proof
-  strip_tac >> Cases_on ‘a’ >> gvs[edo_def, AllCaseEqs()]
+  strip_tac >> Cases_on ‘a’ >> gvs[edo_def, AllCaseEqs(), honestL1EPRefineTheory.noclose_def]
   >~ [‘pdo _ _ (Accept _) = _’]
   >- (PairCases_on ‘z’ >> gvs[] >> drule pdo_accept_ostep >> strip_tac >>
       gvs[fdg_ok_def, tfds_def] >> Cases_on ‘es.p.acq’ >> gvs[])
@@ -167,7 +186,18 @@ Proof
         by (imp_res_tac ALOOKUP_MEM >> simp[MEM_MAP] >> metis_tac[SND]) >>
       ‘f ≠ g’ by (strip_tac >> gvs[fdg_ok_def, tfds_def]) >>
       gvs[fdg_ok_def, tfds_def, ec_del_def, MEM_FILTER] >>
-      metis_tac[MEM_SND_ADELKEY_sub]) >>
+      metis_tac[MEM_SND_ADELKEY_sub])
+  >~ [‘sys_close _ _ = SOME z’]
+  >- (PairCases_on ‘z’ >> gvs[] >>
+      drule_all sys_connect_l0 >> strip_tac >>
+      qpat_x_assum ‘_ ≠ 0 ⇒ _’
+        (fn th => qpat_assum ‘_ ≠ 0’ (strip_assume_tac o MATCH_MP th)) >>
+      drule_all sys_close_l0 >> strip_tac >>
+      qpat_x_assum ‘fdg_ok _ _ _’ mp_tac >> REWRITE_TAC [fdg_ok_def] >> strip_tac >>
+      asm_rewrite_tac [] >>
+      ‘n2w (honestL1EPModel$res_val out) ≠ g’ by (strip_tac >> gvs[]) >>
+      qpat_x_assum ‘∀g. g ≠ _ ∧ MEM g (l0_used w') ⇒ MEM g (l0_used wl')’ irule >>
+      simp[]) >>
   drule_all sys_connect_l0 >> strip_tac >> fs[fdg_ok_def, tfds_def] >>
   rpt strip_tac >> gvs[]
 QED
@@ -175,12 +205,12 @@ QED
 Theorem eacts_fdg:
   ∀acts wl es rs evs wl' es'.
     eacts lfd pol (wl, es) acts = SOME (rs, evs, (wl', es')) ∧ l0_rely wl ∧ fds_lt wl ∧
-    fd0_ok wl es ∧ fdg_ok g wl es ⇒
+    fd0_ok wl es ∧ fdg_ok g wl es ∧ EVERY honestL1EPRefine$noclose acts ⇒
     fdg_ok g wl' es' ∧ noclose g evs
 Proof
   Induct >> simp[eacts_def] >> rpt gen_tac >> simp[AllCaseEqs(), PULL_EXISTS] >>
   rpt gen_tac >> strip_tac >> PairCases_on ‘ws1’ >>
-  ‘noclose g evs1’ by (drule edo_noclose >> fs[fdg_ok_def]) >>
+  ‘noclose g evs1’ by (drule_all edo_noclose >> simp[]) >>
   drule_all edo_fdg >> strip_tac >>
   drule_all edo_fd0 >> strip_tac >>
   first_x_assum (qspecl_then [‘ws10’, ‘ws11’, ‘rs'’, ‘evs'’, ‘wl'’, ‘es'’] mp_tac) >>
@@ -227,6 +257,7 @@ QED
 Theorem erounds_fdg:
   l0_rely w0 ∧ fds_lt w0 ∧ MEM lfd (l0_used w0) ∧ MEM 0w (l0_used w0) ∧
   MEM g (l0_used w0) ∧
+  (∀hh. EVERY honestL1EPRefine$noclose (new_actions (log_of m) hh)) ∧
   (∀n. SND (ecm lfd pol ifds m w0 n) + 1 < dimword (:64)) ⇒
   ∀n h ws evs logs.
     erounds lfd pol ifds m (w0, einit) n = SOME (h, ws, evs, logs) ⇒
@@ -245,13 +276,33 @@ Proof
   rename1 ‘eacts _ _ ws' _ = SOME (rs, aevs, ws1)’ >>
   PairCases_on ‘ws'’ >> PairCases_on ‘ws1’ >> PairCases_on ‘ws’ >> fs[] >>
   (* l0_rely, fds_lt and fd0_ok at round n *)
-  mp_tac (Q.INST [‘N’ |-> ‘n’] l1ep_refines_ehl_upto_sent) >> impl_tac >- fs[] >>
-  disch_then (qspecl_then [‘n’, ‘h'’, ‘(ws'0, ws'1)’, ‘evs'’, ‘logs'’] mp_tac) >>
-  simp[] >> strip_tac >>
+  mp_tac (Q.INST [‘N’ |-> ‘SUC n’] l1ep_refines_ehl_upto_sent) >> impl_tac >- fs[] >>
+  disch_then (fn th =>
+    qspecl_then [‘n’, ‘h'’, ‘(ws'0, ws'1)’, ‘evs'’, ‘logs'’] mp_tac th >>
+    qspecl_then [‘SUC n’, ‘h' ++ [ssnap rdy rs]’, ‘(ws0, ws1)’, ‘evs' ++ (aevs ++ tevs ++ shevs)’,
+                 ‘logs' ++ [log]’] mp_tac th) >>
+  simp[] >> rpt (disch_then strip_assume_tac) >>
   ‘fd0_ok ws'0 ws'1’
     by (mp_tac l0_ep_sent_run >> impl_tac >- fs[] >>
         disch_then (qspecl_then [‘n’, ‘h'’, ‘(ws'0, ws'1)’, ‘evs'’, ‘logs'’] mp_tac) >>
         simp[]) >>
+  ‘eown lfd ws11’
+    by (qpat_x_assum ‘∀n'. n' < SUC n ⇒ eround_own _ _ _ _ _ _’ (qspec_then ‘n’ mp_tac) >>
+        simp[eround_own_def] >>
+        disch_then (qspecl_then [‘LENGTH (new_actions (log_of m) h')’, ‘rs’, ‘aevs’,
+                                 ‘ws10’, ‘ws11’] mp_tac) >> simp[TAKE_LENGTH_ID]) >>
+  ‘EVERY honestL1EPRefine$noclose (new_actions (log_of m) h')’
+    by (qpat_assum ‘∀hh. EVERY _ _’ (qspec_then ‘h'’ ACCEPT_TAC)) >>
+  (* no EShut in E1 (eown): the shutdown step is the identity *)
+  PairCases_on ‘ws2’ >>
+  ‘ws21.shq = []’
+    by (qpat_x_assum ‘etail _ _ _ _ = _’ (mp_tac o MATCH_MP etail_shq) >>
+        qpat_x_assum ‘eown lfd ws11’ mp_tac >> simp[eown_def]) >>
+  qpat_x_assum ‘eshuts _ = _’ mp_tac >>
+  qpat_x_assum ‘ws21.shq = []’ (fn th => simp[MATCH_MP eshuts_nil th]) >> strip_tac >>
+  qpat_x_assum ‘ws20 = ws0’ SUBST_ALL_TAC >> qpat_x_assum ‘ws21 = ws1’ SUBST_ALL_TAC >>
+  qpat_x_assum ‘shevs = []’ SUBST_ALL_TAC >> RULE_ASSUM_TAC (REWRITE_RULE [APPEND_NIL]) >>
+  REWRITE_TAC [APPEND_NIL] >>
   qpat_x_assum ‘eacts _ _ _ _ = _’ assume_tac >>
   drule_all eacts_fdg >> strip_tac >>
   drule_all eacts_fd0 >> strip_tac >>
@@ -262,6 +313,7 @@ QED
 Theorem erounds_no_close_stdio:
   l0_rely w0 ∧ fds_lt w0 ∧ MEM lfd (l0_used w0) ∧
   MEM 0w (l0_used w0) ∧ MEM 1w (l0_used w0) ∧ MEM 2w (l0_used w0) ∧
+  (∀hh. EVERY honestL1EPRefine$noclose (new_actions (log_of m) hh)) ∧
   (∀n. SND (ecm lfd pol ifds m w0 n) + 1 < dimword (:64)) ⇒
   ∀n h ws evs logs.
     erounds lfd pol ifds m (w0, einit) n = SOME (h, ws, evs, logs) ⇒

@@ -127,7 +127,11 @@ Proof
   gvs[ec_del_def, conn_hdls_def] >>
   TRY (drule_then strip_assume_tac pdo_count) >>
   TRY (drule_then strip_assume_tac l1_close_nxt) >>
-  every_case_tac >> gvs[conn_hdls_def]
+  every_case_tac >> gvs[conn_hdls_def] >>
+  (* R3: EClose on an L2 handle (pf_close) *)
+  gvs[honestL1PFCloseTheory.pf_close_def, AllCaseEqs(), honestL1PFCloseTheory.pf_release_def] >>
+  TRY (PairCases_on ‘z’) >> gvs[] >>
+  TRY (drule_then strip_assume_tac l1_close_nxt) >> gvs[]
 QED
 
 Theorem eacts_count:
@@ -141,6 +145,24 @@ Proof
   PairCases_on ‘ws1’ >> drule edo_count >> strip_tac >>
   first_x_assum drule >> strip_tac >>
   once_rewrite_tac[conn_hdls_CONS] >> simp[]
+QED
+
+(* R3's shutdown step keeps the handle counter and the queue *)
+Theorem pf_shuts_count:
+  ∀fs w ps w' ps' kp sh evs.
+    pf_shuts fs (w, ps) = SOME ((w', ps'), kp, sh, evs) ⇒ ps'.b.nxt = ps.b.nxt ∧ ps'.acq = ps.acq
+Proof
+  Induct >- simp[honestL1PFCloseTheory.pf_shuts_def] >> Cases >>
+  rw[honestL1PFCloseTheory.pf_shuts_def, AllCaseEqs()] >>
+  TRY (first_x_assum drule >> simp[] >> NO_TAC) >>
+  rpt (pairarg_tac >> gvs[]) >> gvs[AllCaseEqs()] >>
+  first_x_assum drule >> simp[drop_out_def, set_outbox_def]
+QED
+
+Theorem eshuts_count:
+  eshuts (w, es) = SOME ((w', es'), evs) ⇒ es'.p.b.nxt = es.p.b.nxt ∧ es'.p.acq = es.p.acq
+Proof
+  rw[eshuts_def] >> pairarg_tac >> gvs[] >> drule pf_shuts_count >> simp[]
 QED
 
 (* MAIN (U1): L1's channel count is at most its handle counter plus its
@@ -163,6 +185,8 @@ Proof
   rename1 ‘eacts _ _ wsa _ = SOME (rs, aevs, ws1)’ >>
   rename1 ‘etail _ _ _ _ = SOME (rdy, ws2, log, tevs)’ >>
   PairCases_on ‘wsa’ >> PairCases_on ‘ws1’ >> PairCases_on ‘ws2’ >> fs[] >>
+  rename1 ‘eshuts _ = SOME (ws3, _)’ >> PairCases_on ‘ws3’ >>
+  qpat_x_assum ‘eshuts _ = _’ (strip_assume_tac o MATCH_MP eshuts_count) >>
   drule eacts_count >> strip_tac >>
   drule etail_acq >> strip_tac >>
   ‘eacts_of lfd pol ifds m w0 n = SOME (rs, aevs, (ws10, ws11))’ by simp[eacts_of_def] >>
@@ -180,7 +204,8 @@ Proof
   rename1 ‘_ = (as, ck)’ >> PairCases_on ‘ck’ >>
   ‘ecm lfd pol ifds m w0 (SUC n) = (ck0, ck1)’ by simp[ecm_SUC] >>
   drule arrs_count >> strip_tac >>
-  simp[] >> fs[rfds_length, GSYM LENGTH_fconns]
+  simp[] >> fs[rfds_length, GSYM LENGTH_fconns] >>
+  ‘LENGTH ws11.p.acq ≤ 1’ by simp[] >> gvs[]
 QED
 
 (* ------------------------------------------------------------------------
@@ -189,6 +214,7 @@ QED
 
 Theorem ehst_nxt_SUC:
   l0_rely w0 ∧ fds_lt w0 ∧ MEM lfd (l0_used w0) ∧
+  (∀hh. EVERY noclose (new_actions (log_of m) hh)) ∧
   (∀n'. n' ≤ n ⇒ SND (ecm lfd pol ifds m w0 n') + 1 < dimword (:64)) ∧
   erounds lfd pol ifds m (w0, einit) (SUC n) = SOME (hh, wss, evss, logss) ⇒
   (SND (ehst lfd (elv lfd pol ifds m w0) ifds m (pew lfd a pol ifds m w0 calls) (SUC n))).nxt =
@@ -245,14 +271,18 @@ Proof
         qpat_x_assum ‘MEM _ (cnew _ _)’ mp_tac >> fs[Abbr ‘fs’]) >>
   ‘∀i hd. i < LENGTH (new_actions (log_of m) (ehhist lfd lv ifds m W0 n)) ∧
           EL i (new_actions (log_of m) (ehhist lfd lv ifds m W0 n)) = ELevel hd ⇒
-          EL i rs = ELvl (lv n (0 + i))’
+          EL i rs = case lv n (0 + i) of SOME l => ELvl l | NONE => EGone’
     by (rpt strip_tac >>
         qpat_assum ‘eacts _ _ _ _ = _’ assume_tac >>
         qpat_assum ‘erounds _ _ _ _ _ n = _’ assume_tac >>
-        drule_all level_true >> strip_tac >> simp[Abbr ‘lv’]) >>
+        drule_all level_true >> strip_tac >> simp[Abbr ‘lv’] >> rw[]) >>
+  ‘EVERY noclose (new_actions (log_of m) (ehhist lfd lv ifds m W0 n))’
+    by (qpat_assum ‘∀hh. EVERY noclose _’ (qspec_then ‘ehhist lfd lv ifds m W0 n’ ACCEPT_TAC)) >>
   qpat_x_assum ‘eacts _ _ _ _ = _’ assume_tac >>
   drule_all ev_acts >> strip_tac >>
   rename1 ‘etail _ _ _ _ = SOME (rdy, wsf, log, tevs)’ >> PairCases_on ‘wsf’ >>
+  rename1 ‘eshuts _ = SOME (ws3, _)’ >> PairCases_on ‘ws3’ >>
+  qpat_x_assum ‘eshuts _ = _’ (strip_assume_tac o MATCH_MP eshuts_count) >>
   qpat_x_assum ‘etail _ _ _ _ = _’ (strip_assume_tac o MATCH_MP etail_acq) >>
   qpat_x_assum ‘ehs_rel hs' _’ (strip_assume_tac o REWRITE_RULE [ehs_rel_def]) >>
   ‘ehrounds lfd lv ifds m W0 n = (ehhist lfd lv ifds m W0 n, (w, hs))’
@@ -271,6 +301,7 @@ QED
 Theorem ecm_bound:
   (∀n. erounds lfd pol ifds m (w0, einit) n ≠ NONE) ∧
   l0_rely w0 ∧ fds_lt w0 ∧ MEM lfd (l0_used w0) ∧
+  (∀hh. EVERY noclose (new_actions (log_of m) hh)) ∧
   (∀n. (SND (ehst lfd (elv lfd pol ifds m w0) ifds m (pew lfd a pol ifds m w0 calls) n)).nxt + 2
        < dimword (:64)) ⇒
   ∀n. SND (ecm lfd pol ifds m w0 n) + 1 < dimword (:64)

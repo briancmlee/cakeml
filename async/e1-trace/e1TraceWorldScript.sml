@@ -13,7 +13,7 @@
 *)
 Theory e1TraceWorld
 Ancestors
-  clientLiveCopy honestL1EPModel honestL1PFRound honestL1PFModel honestL1Model
+  clientLiveCopy honestL1EPModel honestL1PFClose honestL1PFRound honestL1PFModel honestL1Model
   honestL0WorldProps honestL0Rely honestL0World honestL0
 Libs
   preamble
@@ -145,12 +145,44 @@ Proof
   irule eplays_cons >> goal_assum drule >> first_assum ACCEPT_TAC
 QED
 
+Theorem eplays_pf_close:
+  pf_close f (w, ps) = SOME ((w', ps'), evs) ⇒ eplays w w' evs
+Proof
+  rw[pf_close_def] >> gvs[] >> pairarg_tac >> gvs[] >> drule eplays_close >> simp[]
+QED
+
 Theorem eplays_edo:
   edo lfd pol (w, es) a = SOME (r, (w', es'), evs) ⇒ eplays w w' evs
 Proof
   Cases_on ‘a’ >> rw[edo_def, AllCaseEqs()] >> gvs[] >>
   rpt (pairarg_tac >> gvs[]) >>
-  imp_res_tac eplays_sys >> imp_res_tac eplays_close >> imp_res_tac eplays_pdo >> gvs[]
+  imp_res_tac eplays_sys >> imp_res_tac eplays_close >> imp_res_tac eplays_pdo >> gvs[] >>
+  (* R3: a transient connect failure closes its fresh fd at once *)
+  imp_res_tac eplays_pf_close >>
+  TRY (irule eplays_cons >> qexists_tac ‘w''’ >> simp[])
+QED
+
+Theorem eplays_shutdown:
+  sys_shutdown f w = SOME (out, w', ev) ⇒ eplays w w' [ev]
+Proof
+  rw[sys_shutdown_def] >> irule eplays_do >> metis_tac[]
+QED
+
+Theorem eplays_shuts:
+  ∀fs w ps w' ps' kp sh evs.
+    pf_shuts fs (w, ps) = SOME ((w', ps'), kp, sh, evs) ⇒ eplays w w' evs
+Proof
+  Induct >- simp[pf_shuts_def] >> Cases >> rw[pf_shuts_def, AllCaseEqs()] >>
+  TRY (first_x_assum drule >> simp[] >> NO_TAC) >>
+  rpt (pairarg_tac >> gvs[]) >> gvs[AllCaseEqs()] >>
+  imp_res_tac eplays_shutdown >> first_x_assum drule >> strip_tac >>
+  irule eplays_cons >> metis_tac[]
+QED
+
+Theorem eplays_eshuts:
+  eshuts (w, es) = SOME ((w', es'), evs) ⇒ eplays w w' evs
+Proof
+  rw[eshuts_def] >> pairarg_tac >> gvs[] >> drule eplays_shuts >> simp[]
 QED
 
 Theorem eplays_eacts:
@@ -174,9 +206,9 @@ QED
 Theorem eplays_eround:
   eround lfd pol hs (w, es) acts = SOME (snap, (w', es'), log, evs) ⇒ eplays w w' evs
 Proof
-  rw[eround_def, AllCaseEqs()] >> PairCases_on ‘ws1’ >>
-  imp_res_tac eplays_eacts >> imp_res_tac eplays_etail >>
-  irule eplays_trans >> metis_tac[]
+  rw[eround_def, AllCaseEqs()] >> PairCases_on ‘ws1’ >> PairCases_on ‘ws2’ >>
+  imp_res_tac eplays_eacts >> imp_res_tac eplays_etail >> imp_res_tac eplays_eshuts >>
+  metis_tac[eplays_trans]
 QED
 
 (* MAIN: an E1 run's events replay from its start world to its world *)

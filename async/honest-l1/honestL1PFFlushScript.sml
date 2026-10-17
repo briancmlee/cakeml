@@ -549,8 +549,6 @@ Proof
           gvs[after_send_def] >>
           ‘csent w1 c = csent w c’
             by (drule sys_send_csent >> disch_then (qspecl_then [‘f’, ‘c’] mp_tac) >>
-                impl_tac >- (gvs[sys_send_def] >> drule l0_do_cases >> strip_tac >>
-                             gvs[small_send_def]) >>
                 simp[]) >>
           first_x_assum drule_all >> strip_tac >> simp[] >> metis_tac[]) >>
       (* not retried: the outbox shrank *)

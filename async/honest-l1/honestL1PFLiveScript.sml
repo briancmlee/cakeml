@@ -111,8 +111,10 @@ End
    a server's run only once f is no longer fetched, which is all
    late_rounds needs.  S3 as stated fails for a peer whose data is always
    ready (the round's actions empty f's inbox, and the same round's fetch
-   refills it); S3w does not.  S3 ⇒ S3w and S4 ⇒ S4w, so the theorems
-   below are stronger than with S3 and S4 *)
+   refills it); S3w does not.  S4w asks only that the Writes on f's handle
+   carry no bytes, not that there are none (a Write h [] leaves f's outbox
+   as long as it was).  S3 ⇒ S3w and S4 ⇒ S4w, so the theorems below are
+   stronger than with S3 and S4 *)
 Definition S3w_def:
   S3w lfd pol ifds m w0 ⇔
     ∀n f. (∀k. n ≤ k ⇒ ¬fetched f (EL k (SND (SND (SND (prun lfd pol ifds m w0 (SUC k))))))) ⇒
@@ -125,8 +127,9 @@ Definition S4w_def:
         ∃n'. n ≤ n' ∧
              ∀n''. n' ≤ n'' ⇒
                    LENGTH (outbox_of (rstate lfd pol ifds m w0 n'').b f) ≤ hw ∧
-                   ∀h bs. ALOOKUP (rstate lfd pol ifds m w0 n'').b.tbl h = SOME f ⇒
-                          ¬MEM (Write h bs) (new_actions (log_of m) (rhist lfd pol ifds m w0 n''))
+                   ∀h bs. ALOOKUP (rstate lfd pol ifds m w0 n'').b.tbl h = SOME f ∧
+                          MEM (Write h bs) (new_actions (log_of m) (rhist lfd pol ifds m w0 n'')) ⇒
+                          bs = []
 End
 
 Theorem S3_S3w:
@@ -143,7 +146,8 @@ Proof
   disch_then (qspec_then ‘n’ strip_assume_tac) >>
   qexists_tac ‘n'’ >> simp[] >> gen_tac >> strip_tac >>
   first_x_assum (qspec_then ‘n''’ mp_tac) >>
-  impl_tac >> simp[] >> rpt strip_tac >> first_x_assum irule >> decide_tac
+  impl_tac >- (simp[] >> rpt strip_tac >> first_x_assum irule >> decide_tac) >>
+  metis_tac[]
 QED
 
 (* ------------------------------------------------------------------------
@@ -464,10 +468,11 @@ Proof
     by (qpat_assum ‘fkeep _ _ _ (rstate _ _ _ _ _ k)’
           (strip_assume_tac o REWRITE_RULE [fkeep_def]) >> first_assum ACCEPT_TAC) >>
   ‘LENGTH (outbox_of (rstate lfd pol ifds m w0 k).b f) ≤ hw ∧
-   ∀bs. ¬MEM (Write h bs) (new_actions (log_of m) (rhist lfd pol ifds m w0 k))’
+   ∀bs. MEM (Write h bs) (new_actions (log_of m) (rhist lfd pol ifds m w0 k)) ⇒ bs = []’
     by (qpat_assum ‘∀n''. n1 ≤ n'' ⇒ _’ (qspec_then ‘k’ mp_tac) >> impl_tac
         >- decide_tac >>
-        strip_tac >> conj_tac >- simp[] >> gen_tac >> first_x_assum irule >> simp[]) >>
+        strip_tac >> conj_tac >- simp[] >> rpt strip_tac >>
+        first_x_assum (qspecl_then [‘h’, ‘bs’] mp_tac) >> simp[]) >>
   ‘MEM h (ifds (rhist lfd pol ifds m w0 k))’
     by (qpat_assum ‘S1 _ _ _ _ _’ (mp_tac o CONJUNCT1 o REWRITE_RULE [S1_def]) >>
         disch_then drule >> simp[]) >>

@@ -343,22 +343,43 @@ Definition flushed_ch_def:
             c < LENGTH w.chans ∧ (EL c w.chans).broken ∧ (EL c w.chans).inbox = []
 End
 
-(* The main (weakened) forms.  D28 (user decision): echo_live_l0 is also
-   excused on a channel whose unread input the kernel discarded (it broke
+(* D32 (user decision, amending D28): channel c broke and its unread input
+   was discarded while episode j was open, before any close call on the
+   episode's fd *)
+Definition flushed_open_def:
+  flushed_open w0 io j c ⇔
+    ∃pre ev post f w.
+      LPREFIX (fromList (pre ++ [ev] ++ post)) io ∧ LENGTH (l0_accepted pre) = j ∧
+      l0_event_accepted ev = SOME f ∧ ¬EXISTS (l0_close_call f) post ∧
+      world_at w0 (pre ++ [ev] ++ post) = SOME w ∧
+      c < LENGTH w.chans ∧ (EL c w.chans).broken ∧ (EL c w.chans).inbox = []
+End
+
+(* D32 is strictly stronger than D28's excuse *)
+Theorem flushed_open_ch:
+  flushed_open w0 io j c ⇒ flushed_ch w0 io c
+Proof
+  rw[flushed_open_def, flushed_ch_def] >> metis_tac[]
+QED
+
+(* The main (weakened) forms.  D28 (user decision), narrowed by D32:
+   echo_live_l0 is also excused on a channel whose unread input the kernel
+   discarded while the episode was open, before its close call (it broke
    with data the program had not read, which then is never echoed); the
    corollary echo_live_l0_noflush below drops that excuse when no channel
-   is flushed *)
+   is flushed so *)
 Definition echo_live_l0_def:
   echo_live_l0 K w0 io ⇔
     echo_live_unless (λj c. T)
-      (λj c. ep_hard_err j io ∨ ep_timed_out K j io ∨ flushed_ch w0 io c) w0 io
+      (λj c. ep_hard_err j io ∨ ep_timed_out K j io ∨ flushed_open w0 io j c) w0 io
 End
 
-(* D28's corollary: with no flushed channel in the run, only the observed
-   excuses remain.  The hypothesis is a fact about the world (whether the
-   kernel discarded unread input), not observable on the trace *)
+(* D28's corollary (hypothesis as narrowed by D32): with no channel
+   flushed while its episode is open, only the observed excuses remain.
+   The hypothesis is a fact about the world (whether the kernel discarded
+   unread input), not observable on the trace *)
 Theorem echo_live_l0_noflush:
-  echo_live_l0 Kw w0 io ∧ (∀c. ¬flushed_ch w0 io c) ⇒
+  echo_live_l0 Kw w0 io ∧ (∀j c. ¬flushed_open w0 io j c) ⇒
   echo_live_unless (λj c. T) (λj c. ep_hard_err j io ∨ ep_timed_out Kw j io) w0 io
 Proof
   rw[echo_live_l0_def, echo_live_unless_def] >> first_x_assum drule_all >> rw[] >> gvs[]

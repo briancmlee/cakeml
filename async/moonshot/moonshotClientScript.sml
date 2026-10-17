@@ -1493,3 +1493,98 @@ Theorem cinv_all:
 Proof
   strip_tac >> Induct >- metis_tac[cinv_0] >> metis_tac[cinv_SUC]
 QED
+
+Overload cH[local] = “λa N rqs lfd w0. ehhist lfd (cifds a N rqs) (cprog a N rqs) w0”
+Overload cS[local] = “λa N rqs lfd w0. ehst lfd (cifds a N rqs) (cprog a N rqs) w0”
+Overload cst[local] = “λa N rqs lfd w0 n. cstate a N rqs (ehhist lfd (cifds a N rqs) (cprog a N rqs) w0 n)”
+
+Theorem cinv_crel:
+  client_world lfd c w0 ∧ N < cbound ⇒
+  ∀n. crel a N rqs lfd (cst a N rqs lfd w0 n) (K (crdy (cH a N rqs lfd w0 n)))
+    (hl_pairs (cprog a N rqs) (cH a N rqs lfd w0 n))
+    (FST (cS a N rqs lfd w0 n)) (SND (cS a N rqs lfd w0 n))
+Proof
+  rpt strip_tac >> drule_all cinv_all >> simp[cinv_def]
+QED
+
+Theorem ehhist_SUC:
+  ∀lfd ifds m w0 n. ∃s. ehhist lfd ifds m w0 (SUC n) = ehhist lfd ifds m w0 n ++ [s]
+Proof
+  rpt gen_tac >> simp[ehhist_def, ehrounds_def] >> rpt (pairarg_tac >> simp[])
+QED
+
+Theorem ehhist_LENGTH:
+  LENGTH (ehhist lfd ifds m w0 n) = n
+Proof
+  Induct_on ‘n’ >- simp[ehhist_def, ehrounds_def] >>
+  qspecl_then [‘lfd’, ‘ifds’, ‘m’, ‘w0’, ‘n’] strip_assume_tac ehhist_SUC >> simp[]
+QED
+
+(* ------------------------------------------------------------------------
+   Each handle's logical connection
+   ------------------------------------------------------------------------ *)
+
+Theorem cupd_hlc:
+  ∀xs rs st. ∃l. (cupd rqs st xs rs).hlc = l ++ st.hlc
+Proof
+  Induct >> simp[cupd_def] >> rpt gen_tac >> PairCases_on ‘h’ >> Cases_on ‘rs’ >>
+  simp[cupd_def] >>
+  qmatch_goalsub_abbrev_tac ‘cupd rqs st1 xs t’ >>
+  first_x_assum (qspecl_then [‘t’, ‘st1’] strip_assume_tac) >>
+  simp[Abbr ‘st1’] >> qexists_tac ‘l ++ case new_hd h' of NONE => [] | SOME hd => [(hd, h0)]’ >>
+  simp[]
+QED
+
+Theorem cst_hlc_mono:
+  ∀n'. n ≤ n' ⇒ ∃l. (cst a N rqs lfd w0 n').hlc = l ++ (cst a N rqs lfd w0 n).hlc
+Proof
+  Induct >> rpt strip_tac
+  >- (‘n = 0’ by simp[] >> qexists_tac ‘[]’ >> simp[]) >>
+  Cases_on ‘n = SUC n'’ >- (qexists_tac ‘[]’ >> simp[]) >>
+  ‘n ≤ n'’ by simp[] >> first_x_assum drule >> strip_tac >>
+  qspecl_then [‘lfd’, ‘cifds a N rqs’, ‘cprog a N rqs’, ‘w0’, ‘n'’] strip_assume_tac
+    ehhist_SUC >>
+  simp[cstate_SNOC, cstep_def] >>
+  qspecl_then [‘(cst a N rqs lfd w0 n').last’, ‘s.results’, ‘cst a N rqs lfd w0 n'’]
+    strip_assume_tac cupd_hlc >>
+  simp[] >> qexists_tac ‘l' ++ l’ >> simp[]
+QED
+
+Theorem ALOOKUP_APPEND_distinct:
+  ALL_DISTINCT (MAP FST (l ++ L)) ∧ ALOOKUP L k = SOME v ⇒ ALOOKUP (l ++ L) k = SOME v
+Proof
+  rw[ALOOKUP_APPEND] >> CASE_TAC >> imp_res_tac ALOOKUP_MEM >>
+  fs[ALL_DISTINCT_APPEND, MEM_MAP, EXISTS_PROD] >> metis_tac[]
+QED
+
+Theorem cst_ALOOKUP_mono:
+  client_world lfd c w0 ∧ N < cbound ∧ n1 ≤ n2 ∧
+  ALOOKUP (cst a N rqs lfd w0 n1).hlc hd = SOME i ⇒
+  ALOOKUP (cst a N rqs lfd w0 n2).hlc hd = SOME i
+Proof
+  strip_tac >>
+  ‘ALL_DISTINCT (MAP FST (cst a N rqs lfd w0 n2).hlc)’
+    by (drule_all cinv_crel >> disch_then (qspecl_then [‘rqs’, ‘a’, ‘n2’] mp_tac) >> simp[crel_def]) >>
+  drule cst_hlc_mono >> disch_then (qspecl_then [‘w0’, ‘rqs’, ‘lfd’, ‘a’, ‘N’] strip_assume_tac) >>
+  pop_assum (fn th => REWRITE_TAC [th] >> RULE_ASSUM_TAC (REWRITE_RULE [th])) >>
+  irule ALOOKUP_APPEND_distinct >> conj_tac >> first_assum ACCEPT_TAC
+QED
+
+Definition clc_def:
+  clc a N rqs lfd w0 hd = @i. ∃n. ALOOKUP (cst a N rqs lfd w0 n).hlc hd = SOME i
+End
+
+Theorem clc_eq:
+  client_world lfd c w0 ∧ N < cbound ∧ ALOOKUP (cst a N rqs lfd w0 n).hlc hd = SOME i ⇒
+  clc a N rqs lfd w0 hd = i
+Proof
+  strip_tac >> simp[clc_def] >> SELECT_ELIM_TAC >> conj_tac >- metis_tac[] >>
+  rpt strip_tac >> rename1 ‘ALOOKUP (cst a N rqs lfd w0 n').hlc hd = SOME j’ >>
+  ‘ALOOKUP (cst a N rqs lfd w0 (MAX n n')).hlc hd = SOME i’
+    by (irule cst_ALOOKUP_mono >> simp[] >> conj_tac >- (qexists_tac ‘n’ >> simp[]) >>
+        metis_tac[]) >>
+  ‘ALOOKUP (cst a N rqs lfd w0 (MAX n n')).hlc hd = SOME j’
+    by (irule cst_ALOOKUP_mono >> simp[] >> conj_tac >- (qexists_tac ‘n'’ >> simp[]) >>
+        metis_tac[]) >>
+  fs[]
+QED

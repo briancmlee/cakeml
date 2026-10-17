@@ -31,6 +31,11 @@ ancestor (`ffiSpikeSocketFFI` → `socketWorld`, names.tsv). It includes
   channel whose reset error is still pending, and a later send reports it;
 - D22: no model change ([X5], Linux's shutdown of a pending connect,
   which L1 never calls).
+- D33 (design/50 (c2), user decision; from `spike/stdio-c2` @e083021aa):
+  `sys_fdok` asks whether one fd is open (`fcntl(fd, F_GETFD)`; [P fcntl]
+  makes the answer exact) and leaves the world unchanged. The C
+  constructor no longer checks fds 0-2: the programs ask about them first
+  and stop if one is closed (`stdio_closed`, L3-00).
 
 Design: `design/36-honest-ffi.md` (§§3–4, §3.6 for D20, §9 for the decisions). The names
 are the spike names, provisionally.

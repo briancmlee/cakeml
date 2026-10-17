@@ -12,7 +12,7 @@
 *)
 Theory moonshotClientTotal
 Ancestors
-  moonshotClient moonshotClientSpec honestL1EPTotal honestL1EPRefine honestL1EPModel
+  moonshotClient moonshotClientSpec honestL1EPBund honestL1EPTotal honestL1EPRefine honestL1EPModel
   endpointHLModel asyncCore honestL0Rely
 Libs
   preamble

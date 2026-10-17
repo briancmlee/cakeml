@@ -13,7 +13,7 @@
 Theory e1TraceChan
 Ancestors
   moonshotClient moonshotClientSpec endpointHLModel endpointWorld asyncHLModel socketV2FFI alist
-  honestL1EPTotal
+  honestL1EPBund honestL1EPTotal
 Libs
   preamble
 

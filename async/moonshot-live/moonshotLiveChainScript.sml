@@ -151,7 +151,7 @@ End
       (needs jb to drain), and what arrived on jb to ja (needs ja);
     - KV answers what arrived on jk (needs jk to drain);
     - the client reads (recv) whatever arrived on jc, as its episode jep;
-    - an end of the chain lost before the client is served is X: a break
+    - an end of the chain lost (from m on) before the client is served is X: a break
       is sys_excuse's; a close before then is excluded by the programs'
       close clauses ([R3]: each closes only after the EOF it relays) *)
 Definition chain_served_claim_def:
@@ -172,7 +172,7 @@ Definition chain_served_claim_def:
       (sys_drains ss (px, ja) ⇒ X ∨ ev_ext m (dlv_at ss (px, jb)) (sent_at ss (px, ja))) ∧
       (X ∨ ev_ext m (dlv_at ss (cl, jc)) (λn. l0_ep_recvd jep (ptr rs cl n))) ∧
       (* a chain end lost before the client is served *)
-      (∀n e. MEM e [(cl, jc); (px, ja); (px, jb); (kv, jk)] ∧ lost ss e n ∧
+      (∀n e. m ≤ n ∧ MEM e [(cl, jc); (px, ja); (px, jb); (kv, jk)] ∧ lost ss e n ∧
              ¬served_by rs cl jep rq n ⇒ X) ⇒
       X ∨ ∃n. served_by rs cl jep rq n
 End

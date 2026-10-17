@@ -715,3 +715,221 @@ Proof
     by gvs[l0_chan_of_def, AllCaseEqs()] >>
   first_x_assum drule >> rw[chin_def, pinchan_def, flushed_def] >> gvs[]
 QED
+
+(* ------------------------------------------------------------------------
+   The start of an episode (for the echo chain): a client has no data
+   before its accept round, and none while its fd waits in acq
+   ------------------------------------------------------------------------ *)
+
+Theorem arrs_keep:
+  ∀l cm k as cm' k'. arrs lfd (cm, k) l = (as, (cm', k')) ∧ ¬MEM f (log_conns l) ⇒
+    ALOOKUP cm' f = ALOOKUP cm f
+Proof
+  Induct >> simp[arrs_def] >> Cases >> rpt gen_tac >> simp[arrs_def] >>
+  pairarg_tac >> simp[] >> strip_tac >> gvs[] >> first_x_assum drule >> simp[]
+QED
+
+Theorem arrs_mono:
+  ∀l cm k as cm' k'. arrs lfd (cm, k) l = (as, (cm', k')) ∧
+    EVERY (λi. i < k) (MAP SND cm) ⇒
+    k ≤ k' ∧ EVERY (λi. i < k') (MAP SND cm') ∧
+    (∀g. MEM g (MAP FST cm') ⇒ MEM g (MAP FST cm) ∨ MEM g (log_conns l))
+Proof
+  Induct >> simp[arrs_def] >> Cases >> rpt gen_tac >> simp[arrs_def] >>
+  pairarg_tac >> simp[] >> strip_tac >> gvs[] >>
+  first_x_assum drule >>
+  (impl_tac >- (fs[EVERY_MEM] >> rw[] >> res_tac >> simp[])) >>
+  rw[] >> gvs[EVERY_MEM] >> rw[] >> res_tac >> gvs[]
+QED
+
+Theorem arrs_conn_ge:
+  ∀l cm k as cm' k'. arrs lfd (cm, k) l = (as, (cm', k')) ∧ MEM f (log_conns l) ⇒
+    ∃j. ALOOKUP cm' f = SOME j ∧ k ≤ j
+Proof
+  Induct >> simp[arrs_def] >> Cases >> rpt gen_tac >> simp[arrs_def] >>
+  pairarg_tac >> simp[] >> Cases_on ‘MEM f (log_conns l)’ >> strip_tac >> rveq >> gvs[] >>
+  TRY (first_x_assum drule >> strip_tac >> qexists_tac ‘j’ >> simp[] >> NO_TAC) >>
+  drule_all arrs_keep >> simp[]
+QED
+
+(* A Data2 i of a log comes from an FData g of it, i = g's client before
+   the log, provided the log's fds are all known and none is connected in
+   it *)
+Theorem arrs_data:
+  ∀l cm k as cm' k'. arrs lfd (cm, k) l = (as, (cm', k')) ∧
+    (∀g. MEM g (log_fds l) ⇒ MEM g (MAP FST cm) ∧ ¬MEM g (log_conns l)) ⇒
+    ∀i bs. MEM (Data2 i bs) as ⇒ ∃g. MEM (FData g bs) l ∧ ALOOKUP cm g = SOME i
+Proof
+  Induct >> simp[arrs_def] >> Cases >> rpt gen_tac >> simp[arrs_def] >>
+  pairarg_tac >> simp[] >> strip_tac >> rveq >> rpt gen_tac >> strip_tac >> gvs[] >>
+  TRY     (qexists_tac ‘c’ >> simp[cl_def] >> ‘MEM c (MAP FST cm)’ by metis_tac[] >>
+     CASE_TAC >> gvs[ALOOKUP_NONE] >> NO_TAC) >>
+  TRY (first_x_assum (qspecl_then [‘(c, k) :: cm’, ‘k + 1’, ‘as'’, ‘cm'’, ‘k'’] mp_tac) >>
+     impl_tac >- (simp[] >> metis_tac[]) >> disch_then drule >> strip_tac >>
+     ‘MEM g (log_fds l)’
+       by (simp[log_fds_def, MEM_FLAT, MEM_MAP, PULL_EXISTS] >> qexists_tac ‘FData g bs’ >> simp[]) >>
+     qexists_tac ‘g’ >> res_tac >> gvs[] >> NO_TAC) >>
+  TRY (first_x_assum (qspecl_then [‘cm’, ‘k’, ‘as'’, ‘cm'’, ‘k'’] mp_tac) >>
+     impl_tac >- (simp[] >> metis_tac[]) >> disch_then drule >> strip_tac >>
+     qexists_tac ‘g’ >> metis_tac[] >> NO_TAC)
+QED
+
+Theorem run_pcm_lt:
+  run_ok lfd pol ifds m w0 ⇒
+  ∀n. EVERY (λi. i < SND (pcm lfd pol ifds m w0 n)) (MAP SND (FST (pcm lfd pol ifds m w0 n))) ∧
+      ∀n'. n ≤ n' ⇒ SND (pcm lfd pol ifds m w0 n) ≤ SND (pcm lfd pol ifds m w0 n')
+Proof
+  strip_tac >>
+  ‘∀n. EVERY (λi. i < SND (pcm lfd pol ifds m w0 n)) (MAP SND (FST (pcm lfd pol ifds m w0 n))) ∧
+       SND (pcm lfd pol ifds m w0 n) ≤ SND (pcm lfd pol ifds m w0 (SUC n))’
+    by (Induct
+        >- (simp[pcm_def] >>
+            Cases_on ‘arrs lfd ([], 0) (plog lfd pol ifds m w0 0)’ >> PairCases_on ‘r’ >>
+            simp[]) >>
+        fs[] >> simp[Once pcm_def] >>
+        Cases_on ‘pcm lfd pol ifds m w0 n’ >> gvs[] >>
+        Cases_on ‘arrs lfd (q, r) (plog lfd pol ifds m w0 n)’ >> PairCases_on ‘r'’ >> gvs[] >>
+        drule_all arrs_mono >> strip_tac >> simp[] >>
+        simp[pcm_def] >>
+        Cases_on ‘arrs lfd (r'0, r'1) (plog lfd pol ifds m w0 (SUC n))’ >> rename1 ‘_ = (qq, ck)’ >>
+        PairCases_on ‘ck’ >> drule_all arrs_mono >> simp[]) >>
+  simp[] >> rpt strip_tac >> Induct_on ‘n'’ >> simp[] >> strip_tac >>
+  Cases_on ‘n = SUC n'’ >> simp[] >>
+  irule LESS_EQ_TRANS >> qexists_tac ‘SND (pcm lfd pol ifds m w0 n')’ >> simp[]
+QED
+
+Theorem fdata_nil:
+  ¬MEM f (log_fds l) ⇒ fdata f l = []
+Proof
+  Induct_on ‘l’ >> simp[] >> Cases >> simp[] >> rw[] >> gvs[]
+QED
+
+Theorem cdata_nil:
+  (∀i bs. MEM (Data2 i bs) as ⇒ i ≠ j) ⇒ cdata j as = []
+Proof
+  Induct_on ‘as’ >> simp[] >> Cases >> simp[] >> rw[] >> gvs[] >> metis_tac[]
+QED
+
+(* A round's log reads only fds L1 holds at its end (not ones it accepted
+   in it), and they were known clients at its start *)
+Theorem log_fds_run:
+  oassm lfd pol ifds m w0 ⇒
+  ∀n g. MEM g (log_fds (rlog lfd pol ifds m w0 n)) ⇒
+        MEM g (MAP SND (rstate lfd pol ifds m w0 (SUC n)).b.tbl) ∧
+        ¬MEM g (log_conns (rlog lfd pol ifds m w0 n)) ∧
+        MEM g (MAP FST (FST (pcm lfd pol ifds m w0 n)))
+Proof
+  strip_tac >> rpt gen_tac >> strip_tac >>
+  ‘run_ok lfd pol ifds m w0’ by fs[oassm_def] >>
+  drule prun_round' >> disch_then (qspecl_then [‘ARB’, ‘n’] strip_assume_tac) >>
+  drule_all run_rel >> disch_then (qspec_then ‘SUC n’ strip_assume_tac) >>
+  ‘∀k. winv (rworld lfd pol ifds m w0 k)’ by metis_tac[winv_run, oassm_def] >>
+  qpat_x_assum ‘pround _ _ _ _ _ = _’ mp_tac >>
+  simp[pround_def, AllCaseEqs()] >> strip_tac >> PairCases_on ‘ws1’ >> gvs[] >>
+  drule tail_tbl >> strip_tac >>
+  qpat_x_assum ‘pf_tail _ _ _ _ = _’ mp_tac >> simp[pf_tail_def, AllCaseEqs()] >>
+  strip_tac >> gvs[] >>
+  drule pf_fetch_fds >> disch_then drule >> strip_tac >>
+  gvs[MEM_FILTER] >>
+  drule in_fds_poll_set >> simp[] >> strip_tac >>
+  ‘MEM g (MAP SND (rstate lfd pol ifds m w0 (SUC n)).b.tbl)’ by gvs[] >>
+  ‘winv ws10’ by metis_tac[pacts_winv] >>
+  ‘winv w1’ by metis_tac[l1_polls_winv] >>
+  ‘winv w2’ by metis_tac[l1_flush_winv] >>
+  drule_all pf_fetch_lfd >> strip_tac >>
+  ‘¬MEM g (log_conns (rlog lfd pol ifds m w0 n))’
+    by (strip_tac >>
+        ‘MEM g (rstate lfd pol ifds m w0 (SUC n)).acq’
+          by (qpat_x_assum ‘_ = rstate _ _ _ _ _ _’ (SUBST1_TAC o SYM) >>
+              simp[stall_step_def]) >>
+        qpat_x_assum ‘pown _ (rstate _ _ _ _ _ (SUC n))’ mp_tac >>
+        simp[pown_def, ALL_DISTINCT_APPEND] >> metis_tac[]) >>
+  simp[] >>
+  ‘MEM g (MAP FST (FST (pcm lfd pol ifds m w0 (SUC n))))’
+    by (qpat_x_assum ‘MEM g (MAP SND _)’ mp_tac >> simp[MEM_MAP] >> strip_tac >>
+        PairCases_on ‘y’ >> gvs[] >>
+        qpat_x_assum ‘pv_rel _ _ (rstate _ _ _ _ _ (SUC n)) _’ mp_tac >>
+        simp[pv_rel_def] >> strip_tac >>
+        ‘ALOOKUP (rstate lfd pol ifds m w0 (SUC n)).b.tbl y0 = SOME g’
+          by (irule ALOOKUP_ALL_DISTINCT_MEM >> gvs[pown_def]) >>
+        res_tac >> gvs[MEM_MAP] >> metis_tac[]) >>
+  drule run_pcm_lt >> disch_then (qspec_then ‘n’ strip_assume_tac) >>
+  qpat_x_assum ‘MEM g (MAP FST (FST (pcm _ _ _ _ _ (SUC n))))’ mp_tac >>
+  simp[pcm_def] >> Cases_on ‘pcm lfd pol ifds m w0 n’ >> gvs[] >>
+  Cases_on ‘arrs lfd (q, r) (plog lfd pol ifds m w0 n)’ >> PairCases_on ‘r'’ >> gvs[] >>
+  drule_all arrs_mono >> strip_tac >> strip_tac >> res_tac >> gvs[plog_rlog]
+QED
+
+(* While f waits in acq (pre-accepted, not yet given a handle), a round
+   fetches nothing on it, and its client gets no data *)
+Theorem acq_quiet:
+  oassm lfd pol ifds m w0 ∧ MEM f (rstate lfd pol ifds m w0 (SUC k)).acq ⇒
+  fdata f (rlog lfd pol ifds m w0 k) = [] ∧
+  cdata (cl (FST (pcm lfd pol ifds m w0 (SUC k))) f) (parr lfd pol ifds m w0 k) = []
+Proof
+  strip_tac >> ‘run_ok lfd pol ifds m w0’ by fs[oassm_def] >>
+  drule_all run_rel >> disch_then (qspec_then ‘SUC k’ strip_assume_tac) >>
+  drule log_fds_run >> strip_tac >>
+  ‘¬MEM f (log_fds (rlog lfd pol ifds m w0 k))’
+    by (strip_tac >> first_x_assum drule >> strip_tac >>
+        qpat_x_assum ‘pown _ (rstate _ _ _ _ _ (SUC k))’ mp_tac >>
+        simp[pown_def, ALL_DISTINCT_APPEND] >> metis_tac[]) >>
+  simp[fdata_nil] >>
+  qabbrev_tac ‘cm1 = FST (pcm lfd pol ifds m w0 (SUC k))’ >>
+  irule cdata_nil >> simp[parr_def] >>
+  Cases_on ‘pcm lfd pol ifds m w0 k’ >> rename1 ‘_ = (cm, ck)’ >>
+  Cases_on ‘arrs lfd (cm, ck) (plog lfd pol ifds m w0 k)’ >> PairCases_on ‘r’ >>
+  ‘cm1 = r0’ by simp[Abbr ‘cm1’, pcm_def] >>
+  gvs[plog_rlog] >> rpt strip_tac >>
+  ‘∃g. MEM (FData g bs) (rlog lfd pol ifds m w0 k) ∧ ALOOKUP cm g = SOME (cl cm1 f)’
+    by (drule arrs_data >> disch_then irule >> simp[] >>
+        rpt strip_tac >> first_x_assum drule >> simp[]) >>
+  ‘MEM g (log_fds (rlog lfd pol ifds m w0 k))’
+    by (simp[log_fds_def, MEM_FLAT, MEM_MAP, PULL_EXISTS] >>
+        qexists_tac ‘FData g bs’ >> simp[]) >>
+  first_x_assum drule >> strip_tac >>
+  ‘g ≠ f’ by (strip_tac >> gvs[]) >>
+  ‘ALOOKUP cm1 g = SOME (cl cm1 f)’ by (drule_all arrs_keep >> simp[]) >>
+  qpat_x_assum ‘pv_rel _ _ (rstate _ _ _ _ _ (SUC k)) _’
+    (strip_assume_tac o REWRITE_RULE [pv_rel_def]) >>
+  ‘MEM f (MAP FST cm1)’ by metis_tac[] >>
+  ‘ALOOKUP cm1 f = SOME (cl cm1 f)’
+    by (simp[cl_def] >> CASE_TAC >> gvs[ALOOKUP_NONE]) >>
+  ‘MEM g (MAP FST cm1)’
+    by (imp_res_tac ALOOKUP_MEM >> simp[MEM_MAP, EXISTS_PROD] >> metis_tac[]) >>
+  imp_res_tac ALOOKUP_MEM >> metis_tac[snd_unique]
+QED
+
+(* A new client has no data before the round that accepts its fd *)
+Theorem cdata_before_conn:
+  oassm lfd pol ifds m w0 ∧ MEM (FConn f) (rlog lfd pol ifds m w0 a) ⇒
+  cdata (cl (FST (pcm lfd pol ifds m w0 (SUC a))) f) (pars lfd pol ifds m w0 0 a) = []
+Proof
+  strip_tac >> ‘run_ok lfd pol ifds m w0’ by fs[oassm_def] >>
+  qabbrev_tac ‘j = cl (FST (pcm lfd pol ifds m w0 (SUC a))) f’ >>
+  ‘SND (pcm lfd pol ifds m w0 a) ≤ j’
+    by (‘∃j'. ALOOKUP (FST (pcm lfd pol ifds m w0 (SUC a))) f = SOME j' ∧
+              SND (pcm lfd pol ifds m w0 a) ≤ j'’
+          by (simp[pcm_def] >> Cases_on ‘pcm lfd pol ifds m w0 a’ >>
+              Cases_on ‘arrs lfd (q, r) (plog lfd pol ifds m w0 a)’ >> PairCases_on ‘r'’ >>
+              gvs[plog_rlog] >> irule arrs_conn_ge >>
+              simp[log_conns_FConn] >> metis_tac[]) >>
+        gvs[Abbr ‘j’, cl_def]) >>
+  drule log_fds_run >> strip_tac >>
+  drule run_pcm_lt >> strip_tac >>
+  ‘∀d. d ≤ a ⇒ cdata j (pars lfd pol ifds m w0 0 d) = []’ suffices_by simp[] >>
+  Induct >- simp[pars_def] >> strip_tac >> fs[pars_rlogs_SUC] >>
+  irule cdata_nil >> simp[parr_def] >>
+  Cases_on ‘pcm lfd pol ifds m w0 d’ >> rename1 ‘_ = (cm, ck)’ >>
+  Cases_on ‘arrs lfd (cm, ck) (plog lfd pol ifds m w0 d)’ >> PairCases_on ‘r’ >>
+  gvs[plog_rlog] >> rpt strip_tac >>
+  ‘∃g. MEM (FData g bs) (rlog lfd pol ifds m w0 d) ∧ ALOOKUP cm g = SOME j’
+    by (drule arrs_data >> disch_then irule >> simp[] >>
+        rpt strip_tac >> first_x_assum drule >> simp[]) >>
+  first_x_assum (qspec_then ‘d’ strip_assume_tac) >> gvs[EVERY_MEM] >>
+  imp_res_tac ALOOKUP_MEM >>
+  ‘j < ck’ by (first_x_assum irule >> simp[MEM_MAP, EXISTS_PROD] >> metis_tac[]) >>
+  ‘ck ≤ SND (pcm lfd pol ifds m w0 a)’
+    by (qpat_x_assum ‘∀n'. d ≤ n' ⇒ _’ (qspec_then ‘a’ mp_tac) >> simp[]) >>
+  decide_tac
+QED

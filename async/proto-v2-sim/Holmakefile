@@ -1,0 +1,13 @@
+# design/43: every protocol server on the version-2 handle layer.  The
+# echo2 simulation (close-v2-sim) made generic over the server, and the
+# generic proto pipeline (http-proto) carried over per episode.
+INCLUDES = ../model ../cf-spike ../cf-actions ../cf-reactive ../ffi-spike \
+           ../m3-assembly ../m4-server ../m4-common ../spec ../m4-safety \
+           ../runnable ../machine-code ../m4-echospec ../m4-liveness \
+           ../m4-echospec-live ../socket-v2 ../socket-v2-cf ../close-v2-loop \
+           ../close-v2-sim ../http-model ../http-impl ../http-safety \
+           ../headline ../http-headers ../http-liveness ../http-liveness-h \
+           ../http-bodies ../library-liveness ../http-proto ../http-proto-inst
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

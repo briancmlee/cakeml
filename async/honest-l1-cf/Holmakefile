@@ -1,0 +1,6 @@
+# The prefetching L1 in CakeML (design/36 §6, decision (A)), on the L0 wrappers.
+
+INCLUDES = ../honest-l0-cf ../honest-ffi ../ffi-spike ../honest-l0 ../honest-l1 ../m4-safety ../m4-common ../m4-server ../m3-assembly ../model ../cf-spike ../cf-actions ../cf-reactive ../spec $(CAKEMLDIR)/characteristic
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

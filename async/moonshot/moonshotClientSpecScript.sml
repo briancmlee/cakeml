@@ -178,14 +178,14 @@ End
    ------------------------------------------------------------------------ *)
 
 (* The client, in every client world with the run-local rely.  cprog a N
-   rqs and cifds are the client's computation and interest (to be defined:
-   a pure step function, design/44) *)
+   rqs and cifds a N rqs are the client's computation and interest (to be
+   defined: a pure step function, design/44) *)
 Definition client_hl_claim_def:
   client_hl_claim cprog cifds ⇔
     ∀a N rqs lfd c W.
       2 ≤ (N:num) ∧ N < cbound ∧ (∀i. EVERY valid_brequest (rqs i)) ∧
-      client_world lfd c W ∧ run_rely lfd cifds (cprog a N rqs) W ⇒
-      client_guar' a N rqs lfd cifds (cprog a N rqs) W
+      client_world lfd c W ∧ run_rely lfd (cifds a N rqs) (cprog a N rqs) W ⇒
+      client_guar' a N rqs lfd (cifds a N rqs) (cprog a N rqs) W
 End
 
 (* Through E1: along EVERY run of the honest L1 in an L0 world, running the
@@ -197,9 +197,9 @@ Definition client_l1_claim_def:
     ∀a N rqs lfd c hw w0 calls.
       2 ≤ (N:num) ∧ N < cbound ∧ (∀i. EVERY valid_brequest (rqs i)) ∧
       l0_rely w0 ∧ fds_lt w0 ∧ MEM lfd (l0_used w0) ∧
-      (∀n. SND (ecm lfd hw cifds (cprog a N rqs) w0 n) + 1 < dimword (:64)) ∧
+      (∀n. SND (ecm lfd hw (cifds a N rqs) (cprog a N rqs) w0 n) + 1 < dimword (:64)) ∧
       (* the client's L1 run never fails (no misuse, no handle overflow) *)
-      (∀n. erounds lfd hw cifds (cprog a N rqs) (w0, einit) n ≠ NONE) ⇒
-      client_guar' a N rqs lfd cifds (cprog a N rqs)
-        (pew lfd c hw cifds (cprog a N rqs) w0 calls)
+      (∀n. erounds lfd hw (cifds a N rqs) (cprog a N rqs) (w0, einit) n ≠ NONE) ⇒
+      client_guar' a N rqs lfd (cifds a N rqs) (cprog a N rqs)
+        (pew lfd c hw (cifds a N rqs) (cprog a N rqs) w0 calls)
 End

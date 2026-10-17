@@ -1588,3 +1588,155 @@ Proof
         metis_tac[]) >>
   fs[]
 QED
+
+(* ------------------------------------------------------------------------
+   The guarantee's safety clauses
+   ------------------------------------------------------------------------ *)
+
+Theorem MEM_ZIP_FST:
+  ∀l1 l2. MEM (x, r) (ZIP (l1, l2)) ⇒ MEM x l1
+Proof
+  Induct >> Cases_on ‘l2’ >> simp[ZIP_def] >> metis_tac[]
+QED
+
+Theorem cstate_last:
+  ∃rdy. (cstate a N rqs h).last = cacts a (cstate a N rqs h) rdy
+Proof
+  Cases_on ‘h’ using SNOC_CASES
+  >- (simp[cstate_def, cinit_def] >> qexists_tac ‘∅’ >> simp[cacts_def]) >>
+  simp[SNOC_APPEND, cstate_SNOC, cstep_def] >> metis_tac[]
+QED
+
+Theorem MEM_cacts:
+  MEM x (MAP SND (cacts a st rdy)) ⇔ ∃i. i < LENGTH st.cs ∧ MEM x (cact1 a st.nh (EL i st.cs) rdy)
+Proof
+  simp[cacts_def, MEM_MAP, MEM_FLAT, MEM_GENLIST, PULL_EXISTS] >> metis_tac[]
+QED
+
+Theorem cprog_acts_ok:
+  MEM (x, r) (hl_pairs (cprog a N rqs) h) ⇒ (∀p. x = EConnect p ⇒ p = a) ∧ ∀l. x ≠ EAccept l
+Proof
+  simp[hl_pairs_def, MEM_FLAT, MEM_GENLIST, PULL_EXISTS] >> rpt gen_tac >> strip_tac >>
+  imp_res_tac MEM_ZIP_FST >> fs[cprog_new_actions] >>
+  qspecl_then [‘a’, ‘N’, ‘rqs’, ‘TAKE k h’] strip_assume_tac (Q.GENL [‘a’, ‘N’, ‘rqs’, ‘h’] cstate_last) >>
+  fs[MEM_cacts] >> Cases_on ‘EL i (cstate a N rqs (TAKE k h)).cs’ >> fs[cact1_def] >>
+  qpat_x_assum ‘MEM x _’ mp_tac >> rw[] >> simp[]
+QED
+
+Theorem cst_tbl_ifds:
+  client_world lfd c w0 ∧ N < cbound ∧ MEM hd (MAP FST (SND (cS a N rqs lfd w0 n)).tbl) ⇒
+  MEM hd (cifds a N rqs (cH a N rqs lfd w0 n))
+Proof
+  strip_tac >> drule_all cinv_crel >> disch_then (qspecl_then [‘rqs’, ‘a’, ‘n’] mp_tac) >>
+  simp[crel_def] >> strip_tac >> gvs[] >>
+  simp[cifds_def, MEM_FLAT, MEM_MAP] >> metis_tac[EL_MEM]
+QED
+
+Theorem cst_sink:
+  client_world lfd c w0 ∧ N < cbound ∧
+  hd ∈ (LAST (cH a N rqs lfd w0 (SUC n))).ready ∧
+  MEM hd (MAP FST (SND (cS a N rqs lfd w0 (SUC n))).tbl) ⇒
+  ∃k. MEM (ERead hd k) (new_actions (log_of (cprog a N rqs)) (cH a N rqs lfd w0 (SUC n)))
+Proof
+  strip_tac >> drule_all cinv_all >> disch_then (qspecl_then [‘rqs’, ‘a’, ‘SUC n’] mp_tac) >>
+  simp[cinv_def, crdy_def] >>
+  ‘cH a N rqs lfd w0 (SUC n) ≠ []’
+    by (strip_tac >> qspecl_then [‘lfd’, ‘cifds a N rqs’, ‘cprog a N rqs’, ‘w0’, ‘SUC n’] mp_tac
+          (Q.GENL [‘lfd’, ‘ifds’, ‘m’, ‘w0’, ‘n’] ehhist_LENGTH) >> simp[]) >>
+  simp[crel_def] >> strip_tac >> gvs[] >>
+  simp[cprog_new_actions, MEM_cacts] >> qexists_tac ‘cread’ >> qexists_tac ‘i’ >> simp[] >>
+  Cases_on ‘EL i (cst a N rqs lfd w0 (SUC n)).cs’ >> gvs[chd_def, cact1_def]
+QED
+
+Theorem cst_lookup_clc:
+  client_world lfd c w0 ∧ N < cbound ∧ MEM hd (MAP FST (cst a N rqs lfd w0 n).hlc) ⇒
+  ALOOKUP (cst a N rqs lfd w0 n).hlc hd = SOME (clc a N rqs lfd w0 hd) ∧
+  clc a N rqs lfd w0 hd < N
+Proof
+  strip_tac >>
+  Cases_on ‘ALOOKUP (cst a N rqs lfd w0 n).hlc hd’ >- gvs[ALOOKUP_NONE] >>
+  drule_all clc_eq >> strip_tac >> gvs[] >>
+  drule_all cinv_crel >> disch_then (qspecl_then [‘rqs’, ‘a’, ‘n’] mp_tac) >>
+  simp[crel_def] >> metis_tac[]
+QED
+
+(* The guarantee's clauses on handles, at round n *)
+Theorem cst_handles:
+  client_world lfd c w0 ∧ N < cbound ⇒
+  let ps = hl_pairs (cprog a N rqs) (cH a N rqs lfd w0 n); lc = clc a N rqs lfd w0 in
+    (∀hd. MEM hd (hl_conn_handles ps) ⇒ lc hd < N) ∧
+    (∀hd. hl_sent hd ps ≼ brequests (rqs (lc hd))) ∧
+    (∀hd hd'. hl_sent hd ps ≠ [] ∧ hl_sent hd' ps ≠ [] ∧ lc hd' = lc hd ⇒ hd' = hd) ∧
+    (∀hd. ¬(hl_refused hd ps ∧ hl_eof hd ps))
+Proof
+  strip_tac >> simp[] >>
+  drule_all cinv_crel >> disch_then (qspecl_then [‘rqs’, ‘a’, ‘n’] assume_tac) >>
+  ‘∀hd. MEM hd (MAP FST (cst a N rqs lfd w0 n).hlc) ⇒
+        ALOOKUP (cst a N rqs lfd w0 n).hlc hd = SOME (clc a N rqs lfd w0 hd) ∧
+        clc a N rqs lfd w0 hd < N’ by metis_tac[cst_lookup_clc] >>
+  qpat_x_assum ‘crel _ _ _ _ _ _ _ _ _’ (strip_assume_tac o REWRITE_RULE [crel_def]) >>
+  rpt conj_tac
+  >- metis_tac[]
+  >- (gen_tac >> Cases_on ‘hl_sent hd (hl_pairs (cprog a N rqs) (cH a N rqs lfd w0 n)) = []’
+      >- simp[] >> metis_tac[])
+  >- metis_tac[]
+  >> metis_tac[]
+QED
+
+Theorem cst_done:
+  client_world lfd c w0 ∧ N < cbound ∧
+  (∀i. i < N ⇒ ∃hd. clc a N rqs lfd w0 hd = i ∧
+                    hl_eof hd (hl_pairs (cprog a N rqs) (cH a N rqs lfd w0 n))) ⇒
+  (cprog a N rqs (cH a N rqs lfd w0 n)).result = SOME ()
+Proof
+  strip_tac >>
+  drule_all cinv_crel >> disch_then (qspecl_then [‘rqs’, ‘a’, ‘n’] assume_tac) >>
+  ‘∀hd. MEM hd (MAP FST (cst a N rqs lfd w0 n).hlc) ⇒
+        ALOOKUP (cst a N rqs lfd w0 n).hlc hd = SOME (clc a N rqs lfd w0 hd)’
+    by metis_tac[cst_lookup_clc] >>
+  qpat_x_assum ‘crel _ _ _ _ _ _ _ _ _’ (strip_assume_tac o REWRITE_RULE [crel_def]) >>
+  simp[cprog_def, call_done_def, EVERY_EL] >> rpt strip_tac >>
+  first_x_assum drule >> strip_tac >> metis_tac[]
+QED
+
+(* ------------------------------------------------------------------------
+   Liveness (D16)
+   ------------------------------------------------------------------------ *)
+
+Theorem client_live:
+  client_world lfd c w0 ∧ N < cbound ∧
+  conn_fair lfd (cifds a N rqs) (cprog a N rqs) w0 ∧ i < N ⇒
+  ∃n. (∃hd. clc a N rqs lfd w0 hd = i ∧ ever_up lfd (cifds a N rqs) (cprog a N rqs) w0 n hd ∧
+            hl_sent hd (hl_pairs (cprog a N rqs) (cH a N rqs lfd w0 n)) = brequests (rqs i)) ∨
+      (∃hd. MEM hd (hl_conn_handles (hl_pairs (cprog a N rqs) (cH a N rqs lfd w0 n))) ∧
+            clc a N rqs lfd w0 hd = i ∧
+            hl_eof hd (hl_pairs (cprog a N rqs) (cH a N rqs lfd w0 n)) ∧
+            hl_sent hd (hl_pairs (cprog a N rqs) (cH a N rqs lfd w0 n)) ≠ brequests (rqs i)) ∨
+      cbound ≤ LENGTH (hl_conn_handles (hl_pairs (cprog a N rqs) (cH a N rqs lfd w0 n)))
+Proof
+  cheat
+QED
+
+(* ------------------------------------------------------------------------
+   The claim
+   ------------------------------------------------------------------------ *)
+
+Theorem client_hl_claim_holds:
+  client_hl_claim cprog cifds
+Proof
+  simp[client_hl_claim_def] >> rpt gen_tac >> rename1 ‘client_world lfd c w0’ >> strip_tac >>
+  simp[client_guar'_def] >> qexists_tac ‘clc a N rqs lfd w0’ >>
+  ‘N < cbound’ by simp[] >>
+  rpt conj_tac
+  >- (gen_tac >> drule_all cinv_all >> strip_tac >> irule (cj 2 cinv_SUC) >> simp[])
+  >- (rpt gen_tac >> strip_tac >> drule cprog_acts_ok >> simp[])
+  >- (drule_all cst_handles >> simp[] >> metis_tac[])
+  >- (drule_all cst_handles >> simp[] >> metis_tac[])
+  >- (drule_all cst_handles >> simp[] >> metis_tac[])
+  >- (rpt strip_tac >> drule_all cst_tbl_ifds >> simp[])
+  >- (rpt strip_tac >> drule_all cst_sink >> simp[])
+  >- (drule_all cst_handles >> simp[] >> metis_tac[])
+  >- (rpt strip_tac >> drule_all client_live >> simp[])
+  >> rpt strip_tac >> qexists_tac ‘n’ >> simp[] >> irule cst_done >>
+  simp[] >> metis_tac[]
+QED

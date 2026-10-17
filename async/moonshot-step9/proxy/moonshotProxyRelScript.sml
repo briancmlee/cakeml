@@ -1,0 +1,1920 @@
+(*
+  The proxy's state and the endpoint handle layer's: the relation prel,
+  kept by every action of a round and by the poll.  From it: no misuse,
+  fresh distinct handles, and the relay invariants (moonshotProxySafe).
+
+  Per pair (pok): the front is open until it reads EOF, Up and not shut;
+  the backend, once connected, is open until it reads EOF or is refused,
+  never shut, Up once it has answered a read, and otherwise Up, Refused,
+  or still Connecting (clean, and not reported ready); and the relay:
+  what was written to each side, then what is pending for it, is what was
+  read from the other.
+*)
+Theory moonshotProxyRel
+Ancestors
+  moonshotProxy moonshotClient proxyHLStmts moonshotClientSpec endpointHLModel
+  endpointWorld honestL1Steps asyncLevel1 asyncCore asyncHLModel socketV2FFI
+Libs
+  preamble
+
+(* Every handle a pair holds (open or not) *)
+Definition phds_def:
+  phds p = p.fh :: (case p.bh of SOME c => [c] | NONE => [])
+End
+
+Theorem popen_phds:
+  MEM h (popen p) ⇒ MEM h (phds p)
+Proof
+  rw[popen_def, phds_def] >> every_case_tac >> gvs[]
+QED
+
+(* Handle h has fd f, open on channel j *)
+Definition hch_def:
+  hch (w : eworld) (hs : ehstate) h j ⇔
+    ∃f. ALOOKUP hs.tbl h = SOME f ∧ ALOOKUP w.open_fds f = SOME j ∧ j < LENGTH w.chans
+End
+
+Definition pok_def:
+  pok (w : eworld) (hs : ehstate) ps (rdy : word64 set) p ⇔
+    ¬hl_refused p.fh ps ∧ (p.fo ⇔ ¬hl_eof p.fh ps) ∧
+    (p.fo ⇒ ∃j. hch w hs p.fh j ∧ (EL j w.chans).status = Up ∧ ¬(EL j w.chans).shut) ∧
+    (¬p.fo ⇒ ¬MEM p.fh (MAP FST hs.tbl)) ∧
+    case p.bh of
+    | NONE => hl_read p.fh ps = [] ∧ hl_sent p.fh ps = [] ∧ p.fq = [] ∧ p.bq = [] ∧
+              ¬p.bo ∧ ¬p.bup
+    | SOME c =>
+        (p.bo ⇔ ¬hl_eof c ps ∧ ¬hl_refused c ps) ∧ (p.bup ⇔ hl_up c ps) ∧
+        (¬p.bo ⇒ ¬MEM c (MAP FST hs.tbl)) ∧
+        (p.bo ⇒ ∃j. hch w hs c j ∧ ¬(EL j w.chans).shut ∧
+                    (p.bup ⇒ (EL j w.chans).status = Up) ∧
+                    ((EL j w.chans).status = Up ∨ (EL j w.chans).status = Refused ∨
+                     (EL j w.chans).status = Connecting ∧ (EL j w.chans).inbox = [] ∧
+                     ¬(EL j w.chans).peer_eof ∧ c ∉ rdy)) ∧
+        hl_sent c ps ++ p.fq = hl_read p.fh ps ∧
+        hl_sent p.fh ps ++ p.bq = hl_read c ps ∧
+        (hl_read p.fh ps ≠ [] ⇒ p.bup)
+End
+
+Definition prel_def:
+  prel lfd st (rdy : word64 set) ps (w : eworld) (hs : ehstate) ⇔
+    w.takes = (λj b n. n) ∧ alloc_ok w.alloc ∧ w.reserved = [] ∧
+    (∃a q. w.listening = [(lfd, a, q)] ∧ ALL_DISTINCT q ∧
+           EVERY (λj. j < LENGTH w.chans ∧ (EL j w.chans).status = Up ∧
+                      ¬(EL j w.chans).shut ∧ ¬MEM j (MAP SND w.open_fds)) q) ∧
+    ALL_DISTINCT (MAP FST hs.tbl) ∧ ALL_DISTINCT (MAP SND hs.tbl) ∧
+    ALL_DISTINCT (MAP FST w.open_fds) ∧ ALL_DISTINCT (MAP SND w.open_fds) ∧
+    EVERY (λj. j < LENGTH w.chans) (MAP SND w.open_fds) ∧
+    ¬MEM lfd (MAP FST w.open_fds) ∧
+    (∀f. MEM f (MAP FST w.open_fds) ⇔ MEM f (MAP SND hs.tbl)) ∧
+    (* the handles: fresh, one per issue, two per pair at most *)
+    ALL_DISTINCT (FLAT (MAP phds st.pc)) ∧ LENGTH (FLAT (MAP phds st.pc)) = hs.nxt ∧
+    (∀h. MEM h (FLAT (MAP phds st.pc)) ⇒ ∃k. k < hs.nxt ∧ h = hdl lfd k) ∧
+    2 * LENGTH st.pc ≤ cbound ∧
+    (∀h. MEM h (MAP FST hs.tbl) ⇒ ∃p. MEM p st.pc ∧ MEM h (popen p)) ∧
+    EVERY (pok w hs ps rdy) st.pc ∧
+    (* the history mentions only the pairs' handles *)
+    (∀h. hl_sent h ps ≠ [] ∨ hl_read h ps ≠ [] ∨ hl_eof h ps ∨ hl_refused h ps ∨
+         hl_up h ps ⇒ MEM h (FLAT (MAP phds st.pc))) ∧
+    (∀h. h ∈ rdy ⇒ h = lfd ∨ MEM h (FLAT (MAP phds st.pc))) ∧
+    (∀hd. MEM hd (hl_acc_handles ps) ⇔ ∃p. MEM p st.pc ∧ p.fh = hd) ∧
+    (∀c. MEM c (hl_conn_handles ps) ⇔ ∃p. MEM p st.pc ∧ p.bh = SOME c)
+End
+
+(* ------------------------------------------------------------------------
+   The history, one more pair
+   ------------------------------------------------------------------------ *)
+
+Theorem hl_up_APPEND[simp]:
+  (hl_up c (ps1 ++ ps2) ⇔ hl_up c ps1 ∨ hl_up c ps2) ∧ ¬hl_up c [] ∧
+  (hl_up c [(x, r)] ⇔ ∃k r'. x = ERead c k ∧ r = EGot r')
+Proof
+  simp[hl_up_def] >> metis_tac[]
+QED
+
+Theorem hl_acc_APPEND[simp]:
+  hl_acc_handles (ps1 ++ ps2) = hl_acc_handles ps1 ++ hl_acc_handles ps2 ∧
+  hl_acc_handles [] = [] ∧
+  hl_acc_handles [(x, r)] =
+    (case (x, r) of (EAccept l, EAccepted (SOME hd)) => [hd] | _ => [])
+Proof
+  simp[hl_acc_handles_def]
+QED
+
+(* An action on handle h0 (or none) says nothing of another handle h *)
+Theorem hl_other:
+  (∀k. x ≠ ERead h k) ∧ (∀bs. x ≠ EWrite h bs) ⇒
+  hl_sent h [(x, r)] = [] ∧ hl_read h [(x, r)] = [] ∧ ¬hl_eof h [(x, r)] ∧
+  ¬hl_refused h [(x, r)] ∧ ¬hl_up h [(x, r)]
+Proof
+  Cases_on ‘x’ >> Cases_on ‘r’ >> simp[] >> rw[] >> every_case_tac >> gvs[]
+QED
+
+(* ------------------------------------------------------------------------
+   The frame: an action that keeps every other handle's fd and channel
+   ------------------------------------------------------------------------ *)
+
+(* The history of handle h, unchanged *)
+Definition hsame_def:
+  hsame h ps ps' ⇔
+    hl_sent h ps' = hl_sent h ps ∧ hl_read h ps' = hl_read h ps ∧
+    (hl_eof h ps' ⇔ hl_eof h ps) ∧ (hl_refused h ps' ⇔ hl_refused h ps) ∧
+    (hl_up h ps' ⇔ hl_up h ps)
+End
+
+Theorem hsame_other:
+  (∀k. x ≠ ERead h k) ∧ (∀bs. x ≠ EWrite h bs) ⇒ hsame h ps (ps ++ [(x, r)])
+Proof
+  strip_tac >> drule_all hl_other >> disch_then (qspec_then ‘r’ strip_assume_tac) >>
+  simp[hsame_def]
+QED
+
+Theorem pok_frame:
+  pok w hs ps rdy p ∧ (∀h. MEM h (phds p) ⇒ hsame h ps ps') ∧
+  (∀h j. MEM h (phds p) ∧ hch w hs h j ⇒ hch w1 hs1 h j ∧ EL j w1.chans = EL j w.chans) ∧
+  (∀h. MEM h (phds p) ∧ ¬MEM h (MAP FST hs.tbl) ⇒ ¬MEM h (MAP FST hs1.tbl)) ⇒
+  pok w1 hs1 ps' rdy p
+Proof
+  simp[phds_def, hsame_def] >> strip_tac >>
+  qpat_x_assum ‘pok _ _ _ _ _’ mp_tac >> Cases_on ‘p.bh’ >>
+  simp[pok_def] >> strip_tac >> gvs[] >>
+  rpt conj_tac >> rpt strip_tac >> gvs[] >>
+  TRY (first_x_assum drule_all >> strip_tac >> qexists_tac ‘j’ >> gvs[] >> NO_TAC) >>
+  metis_tac[]
+QED
+
+(* ------------------------------------------------------------------------
+   Handles
+   ------------------------------------------------------------------------ *)
+
+Theorem hdln_lt_cbound:
+  k ≤ cbound ⇒ hdln (w2n (lfd : word64)) k < dimword (:64)
+Proof
+  rw[hdln_def, cbound_def, dimword_def] >> simp[]
+QED
+
+(* The next handle is new, and not the listener *)
+Theorem prel_fresh:
+  prel lfd st rdy ps w hs ∧ hs.nxt ≤ cbound ⇒
+  ¬MEM (hdl lfd hs.nxt) (FLAT (MAP phds st.pc)) ∧ hdl lfd hs.nxt ≠ lfd ∧
+  hdl lfd hs.nxt ∉ rdy ∧ ¬MEM (hdl lfd hs.nxt) (MAP FST hs.tbl) ∧
+  hl_sent (hdl lfd hs.nxt) ps = [] ∧ hl_read (hdl lfd hs.nxt) ps = [] ∧
+  ¬hl_eof (hdl lfd hs.nxt) ps ∧ ¬hl_refused (hdl lfd hs.nxt) ps ∧ ¬hl_up (hdl lfd hs.nxt) ps
+Proof
+  strip_tac >>
+  ‘hdln (w2n lfd) hs.nxt < dimword (:64)’ by simp[hdln_lt_cbound] >>
+  ‘¬MEM (hdl lfd hs.nxt) (FLAT (MAP phds st.pc))’
+    by (strip_tac >> fs[prel_def] >> first_x_assum drule >> strip_tac >>
+        ‘hdl lfd k ≠ hdl lfd hs.nxt’ by (irule hdl_fresh >> simp[]) >> fs[]) >>
+  ‘hdl lfd hs.nxt ≠ lfd’ by simp[hdl_not_lfd] >>
+  simp[] >> fs[prel_def] >> rpt conj_tac
+  >- metis_tac[]
+  >- (strip_tac >> first_x_assum drule >> strip_tac >>
+      fs[MEM_FLAT, MEM_MAP, PULL_EXISTS] >> metis_tac[popen_phds])
+  >> metis_tac[]
+QED
+
+Theorem LENGTH_phds_le:
+  LENGTH (FLAT (MAP phds pc)) ≤ 2 * LENGTH pc
+Proof
+  Induct_on ‘pc’ >> simp[phds_def] >> rw[] >> every_case_tac >> simp[]
+QED
+
+Theorem pupd_one[simp]:
+  pupd st [(i, x)] [r] =
+    case (x, r) of
+    | (ELevel h, ELvl l) => st with lv := (h, l) :: st.lv
+    | (EAccept _, EAccepted (SOME hd)) => st with pc := st.pc ++ [pnew hd]
+    | (EAccept _, _) => st
+    | _ => st with pc := LUPDATE (pres (EL i st.pc) x r) i st.pc
+Proof
+  simp[pupd_def]
+QED
+
+(* ------------------------------------------------------------------------
+   An action the history ignores, in an unchanged world
+   ------------------------------------------------------------------------ *)
+
+Theorem pok_quiet:
+  pok w hs ps rdy p ∧ (∀h. hsame h ps ps') ⇒ pok w hs ps' rdy p
+Proof
+  strip_tac >> irule pok_frame >> simp[] >> metis_tac[]
+QED
+
+Theorem prel_quiet:
+  prel lfd st rdy ps w hs ∧ (∀h. hsame h ps ps') ∧
+  hl_acc_handles ps' = hl_acc_handles ps ∧ hl_conn_handles ps' = hl_conn_handles ps ⇒
+  prel lfd st rdy ps' w hs
+Proof
+  simp[prel_def] >> strip_tac >> simp[] >> rpt conj_tac
+  >- (fs[EVERY_MEM] >> rpt strip_tac >> irule pok_quiet >> metis_tac[])
+  >> fs[hsame_def] >> metis_tac[]
+QED
+
+(* An action on no handle: the history of each is unchanged *)
+Theorem hsame_quiet:
+  (∀h k. x ≠ ERead h k) ∧ (∀h bs. x ≠ EWrite h bs) ⇒ ∀h. hsame h ps (ps ++ [(x, r)])
+Proof
+  rpt strip_tac >> irule hsame_other >> simp[]
+QED
+
+Theorem prel_nconnects[simp]:
+  prel lfd st rdy ps (w with nconnects := n) hs ⇔ prel lfd st rdy ps w hs
+Proof
+  ‘pok (w with nconnects := n) hs ps rdy = pok w hs ps rdy’
+    by simp[FUN_EQ_THM, pok_def, hch_def] >>
+  simp[prel_def]
+QED
+
+Theorem prel_lv[simp]:
+  prel lfd (st with lv := x) = prel lfd st ∧ prel lfd (st with last := y) = prel lfd st
+Proof
+  simp[FUN_EQ_THM, prel_def]
+QED
+
+(* ------------------------------------------------------------------------
+   The accept
+   ------------------------------------------------------------------------ *)
+
+Theorem phds_pnew[simp]:
+  phds (pnew hd) = [hd] ∧ popen (pnew hd) = [hd]
+Proof
+  simp[phds_def, popen_def, pnew_def]
+QED
+
+Theorem pok_pnew:
+  hch w hs hd j ∧ (EL j w.chans).status = Up ∧ ¬(EL j w.chans).shut ∧
+  hl_sent hd ps = [] ∧ hl_read hd ps = [] ∧ ¬hl_eof hd ps ∧ ¬hl_refused hd ps ⇒
+  pok w hs ps rdy (pnew hd)
+Proof
+  rw[pok_def, pnew_def] >> metis_tac[]
+QED
+
+Theorem prel_accept:
+  prel lfd st rdy ps w hs ∧ 2 * LENGTH st.pc + 2 ≤ cbound ⇒
+  ∃r w1 hs1. ehdo lfd v (w, hs) (EAccept lfd) = SOME (r, (w1, hs1)) ∧
+    prel lfd (pupd st [(i, EAccept lfd)] [r]) rdy (ps ++ [(EAccept lfd, r)]) w1 hs1 ∧
+    (pupd st [(i, EAccept lfd)] [r]).lv = st.lv ∧
+    (pupd st [(i, EAccept lfd)] [r]).last = st.last ∧
+    ∃new. (pupd st [(i, EAccept lfd)] [r]).pc = st.pc ++ new
+Proof
+  strip_tac >>
+  ‘∃a q. w.listening = [(lfd, a, q)]’ by fs[prel_def] >>
+  ‘hs.nxt + 2 ≤ cbound’
+    by (fs[prel_def] >> mp_tac (Q.INST [‘pc’ |-> ‘st.pc’] LENGTH_phds_le) >> simp[]) >>
+  simp[ehdo_def, ep_accept_def] >>
+  Cases_on ‘q’ >> simp[]
+  >- (irule prel_quiet >> simp[] >> qexists_tac ‘ps’ >> simp[hsame_quiet]) >>
+  rename1 ‘(lfd, a, j :: q)’ >>
+  Cases_on ‘ep_alloc w j’ >> simp[]
+  >- (irule prel_quiet >> simp[] >> qexists_tac ‘ps’ >> simp[hsame_quiet]) >>
+  rename1 ‘ep_alloc w j = SOME fw’ >> PairCases_on ‘fw’ >>
+  qpat_x_assum ‘ep_alloc _ _ = _’ mp_tac >> simp[ep_alloc_def] >> strip_tac >> gvs[] >>
+  simp[hdln_lt_cbound] >>
+  qabbrev_tac ‘f = w.alloc j (ep_used w)’ >>
+  qabbrev_tac ‘hd = hdl lfd hs.nxt’ >>
+  ‘hs.nxt ≤ cbound’ by simp[] >>
+  drule_all prel_fresh >> simp[] >> strip_tac >>
+  ‘¬MEM f (ep_used w)’ by (fs[prel_def, alloc_ok_def, Abbr ‘f’]) >>
+  ‘¬MEM f (MAP FST w.open_fds) ∧ f ≠ lfd’ by (qpat_x_assum ‘¬MEM f _’ mp_tac >> simp[ep_used_def] >> fs[prel_def]) >>
+  ‘¬MEM f (MAP SND hs.tbl)’ by (fs[prel_def] >> metis_tac[]) >>
+  qpat_x_assum ‘prel _ _ _ _ _ _’ (strip_assume_tac o REWRITE_RULE [prel_def]) >>
+  ‘q' = j :: q’
+    by (qpat_x_assum ‘w.listening = [(lfd, a, j :: q)]’ mp_tac >>
+        qpat_x_assum ‘w.listening = [(lfd, a', q')]’ mp_tac >> simp_tac (srw_ss()) []) >>
+  pop_assum SUBST_ALL_TAC >>
+  ‘j < LENGTH w.chans ∧ (EL j w.chans).status = Up ∧ ¬(EL j w.chans).shut ∧
+   ¬MEM j (MAP SND w.open_fds) ∧ EVERY (λj'. j' < LENGTH w.chans ∧ (EL j' w.chans).status = Up ∧
+     ¬(EL j' w.chans).shut ∧ ¬MEM j' (MAP SND w.open_fds)) q’
+    by fs[] >>
+  conj_tac >- (mp_tac (Q.INST [‘k’ |-> ‘hs.nxt’, ‘lfd’ |-> ‘lfd’] hdln_lt_cbound) >> simp[]) >>
+  REWRITE_TAC [prel_def] >> simp_tac (srw_ss()) [eh_new_def, AFUPDKEY_def] >>
+  rpt conj_tac >> TRY (first_assum ACCEPT_TAC) >>
+  TRY (asm_simp_tac (srw_ss()) [] >> NO_TAC) >>
+  TRY (qpat_x_assum ‘ALL_DISTINCT (j::q)’ mp_tac >> simp_tac (srw_ss()) [] >> NO_TAC) >>
+  TRY (qpat_x_assum ‘ALL_DISTINCT (j::q)’ mp_tac >> qpat_x_assum ‘EVERY _ q’ mp_tac >>
+       simp_tac (srw_ss()) [EVERY_MEM] >> rpt strip_tac >> res_tac >> gvs[] >> NO_TAC) >>
+  TRY (qpat_x_assum ‘¬MEM hd (MAP FST _)’ mp_tac >> simp[Abbr ‘hd’] >> NO_TAC) >>
+  TRY (strip_tac >> qpat_x_assum ‘f ≠ lfd’ mp_tac >> asm_rewrite_tac [] >> NO_TAC) >>
+  TRY (gen_tac >> qpat_x_assum ‘∀f. MEM f (MAP FST _) ⇔ _’ (qspec_then ‘f'’ SUBST1_TAC) >>
+       simp[] >> NO_TAC) >>
+  TRY (simp[ALL_DISTINCT_APPEND] >> NO_TAC)
+  >~ [‘hs.nxt + 1’]
+  >- (rpt strip_tac
+      >- (qpat_x_assum ‘∀h. MEM h (FLAT _) ⇒ ∃k. _’ drule >> strip_tac >>
+          qexists_tac ‘k’ >> simp[])
+      >> qexists_tac ‘hs.nxt’ >> simp[Abbr ‘hd’])
+  >~ [‘pok _ _ _ _ (pnew _)’]
+  >- (irule pok_pnew >> simp[hch_def, Abbr ‘hd’] >> TRY (qexists_tac ‘j’) >> simp[])
+  >~ [‘EVERY (pok _ _ (_ ++ _) _) _’]
+  >- (simp[EVERY_MEM] >> rpt strip_tac >> rename1 ‘MEM p st.pc’ >> irule pok_frame >>
+      qexistsl_tac [‘hs’, ‘ps’, ‘w’] >>
+      ‘∀h. MEM h (phds p) ⇒ h ≠ hd’
+        by (rpt strip_tac >> qpat_x_assum ‘¬MEM hd (FLAT _)’ mp_tac >>
+            simp[MEM_FLAT, MEM_MAP, PULL_EXISTS] >> qexists_tac ‘p’ >> gvs[]) >>
+      rpt conj_tac >>
+      TRY (qpat_x_assum ‘EVERY (pok _ _ _ _) _’ mp_tac >> simp[EVERY_MEM] >> NO_TAC) >>
+      TRY (rpt strip_tac >> irule hsame_other >> simp[] >> NO_TAC) >>
+      TRY (rpt strip_tac >> first_x_assum drule >> simp[Abbr ‘hd’] >> NO_TAC) >>
+      rpt strip_tac >> qpat_x_assum ‘hch _ _ _ _’ mp_tac >> simp[hch_def] >>
+      strip_tac >>
+      ‘h ≠ hd’ by (first_x_assum drule >> simp[]) >>
+      ‘f' ≠ f’ by (strip_tac >> rveq >> imp_res_tac ALOOKUP_MEM >>
+                   qpat_x_assum ‘¬MEM f (MAP SND hs.tbl)’ mp_tac >>
+                   simp[MEM_MAP, EXISTS_PROD] >> qexists_tac ‘h’ >> simp[]) >>
+      simp[])
+  >~ [‘_ = hdl lfd hs.nxt ∨ _’]
+  >- (rpt strip_tac
+      >- (qexists_tac ‘pnew hd’ >> simp[Abbr ‘hd’])
+      >> qpat_x_assum ‘∀h. MEM h (MAP FST hs.tbl) ⇒ _’ drule >> strip_tac >>
+      qexists_tac ‘p’ >> simp[])
+  >~ [‘(MEM _ (hl_acc_handles _) ∨ _) ⇔ _’]
+  >- (gen_tac >>
+      qpat_x_assum ‘∀hd. MEM hd (hl_acc_handles ps) ⇔ _’ (qspec_then ‘hd'’ SUBST1_TAC) >>
+      rpt (pop_assum kall_tac) >> eq_tac >> rw[] >>
+      TRY (qexists_tac ‘p’ >> simp[] >> NO_TAC) >>
+      TRY (qexists_tac ‘pnew hd’ >> simp[pnew_def] >> NO_TAC) >>
+      gvs[pnew_def] >> metis_tac[]) >>
+  gen_tac >>
+  qpat_x_assum ‘∀c. MEM c (hl_conn_handles ps) ⇔ _’ (qspec_then ‘c’ SUBST1_TAC) >>
+  rpt (pop_assum kall_tac) >> eq_tac >> rw[] >>
+  TRY (qexists_tac ‘p’ >> simp[] >> NO_TAC) >> gvs[pnew_def]
+QED
+
+(* ------------------------------------------------------------------------
+   An action on one pair's handle h0 (channel j0): the world changes only
+   at j0, and h0 is kept or closed
+   ------------------------------------------------------------------------ *)
+
+Definition wstep_def:
+  wstep h0 j0 (w : eworld) (hs : ehstate) (w1 : eworld) (hs1 : ehstate) ⇔
+    w1.takes = w.takes ∧ w1.alloc = w.alloc ∧ w1.reserved = w.reserved ∧
+    w1.listening = w.listening ∧ LENGTH w1.chans = LENGTH w.chans ∧
+    (∀j. j ≠ j0 ⇒ EL j w1.chans = EL j w.chans) ∧ hs1.nxt = hs.nxt ∧
+    (w1.open_fds = w.open_fds ∧ hs1.tbl = hs.tbl ∨
+     ∃f0. ALOOKUP hs.tbl h0 = SOME f0 ∧ w1.open_fds = ADELKEY f0 w.open_fds ∧
+          hs1.tbl = ADELKEY h0 hs.tbl)
+End
+
+Theorem ALOOKUP_ADELKEY_other:
+  k ≠ k0 ⇒ ALOOKUP (ADELKEY k0 l) k = ALOOKUP l k
+Proof
+  simp[ALOOKUP_ADELKEY]
+QED
+
+Theorem wstep_hch:
+  wstep h0 j0 w hs w1 hs1 ∧ hch w hs h0 j0 ∧ hch w hs h j ∧ h ≠ h0 ∧
+  ALL_DISTINCT (MAP SND hs.tbl) ∧ ALL_DISTINCT (MAP SND w.open_fds) ⇒
+  hch w1 hs1 h j ∧ j ≠ j0 ∧ EL j w1.chans = EL j w.chans
+Proof
+  simp[hch_def, wstep_def] >> strip_tac >>
+  ‘f ≠ f'’ by (strip_tac >> gvs[] >> metis_tac[ALOOKUP_SND_inj]) >>
+  ‘j ≠ j0’ by (strip_tac >> gvs[] >> metis_tac[ALOOKUP_SND_inj]) >>
+  gvs[ALOOKUP_ADELKEY_other]
+QED
+
+Theorem wstep_tbl:
+  wstep h0 j0 w hs w1 hs1 ⇒
+  (∀h. h ≠ h0 ⇒ (MEM h (MAP FST hs1.tbl) ⇔ MEM h (MAP FST hs.tbl))) ∧
+  (MEM h0 (MAP FST hs1.tbl) ⇒ MEM h0 (MAP FST hs.tbl))
+Proof
+  simp[wstep_def] >> strip_tac >> gvs[MAP_FST_ADELKEY, MEM_FILTER]
+QED
+
+Theorem phds_disjoint:
+  ALL_DISTINCT (FLAT (MAP phds pc)) ∧ i < LENGTH pc ∧ i' < LENGTH pc ∧ i ≠ i' ∧
+  MEM h (phds (EL i pc)) ⇒ ¬MEM h (phds (EL i' pc))
+Proof
+  rw[] >> fs[ALL_DISTINCT_FLAT, EL_MAP] >>
+  Cases_on ‘i < i'’
+  >- (first_x_assum (qspecl_then [‘i’, ‘i'’] mp_tac) >> simp[EL_MAP] >> metis_tac[])
+  >> first_x_assum (qspecl_then [‘i'’, ‘i’] mp_tac) >> simp[EL_MAP] >> metis_tac[]
+QED
+
+Theorem wstep_fds:
+  wstep h0 j0 w hs w1 hs1 ∧ ALL_DISTINCT (MAP FST hs.tbl) ∧ ALL_DISTINCT (MAP SND hs.tbl) ∧
+  ALL_DISTINCT (MAP FST w.open_fds) ∧ ALL_DISTINCT (MAP SND w.open_fds) ∧
+  (∀f. MEM f (MAP FST w.open_fds) ⇔ MEM f (MAP SND hs.tbl)) ⇒
+  (∀f. MEM f (MAP FST w1.open_fds) ⇒ MEM f (MAP FST w.open_fds)) ∧
+  (∀j. MEM j (MAP SND w1.open_fds) ⇒ MEM j (MAP SND w.open_fds)) ∧
+  ALL_DISTINCT (MAP FST w1.open_fds) ∧ ALL_DISTINCT (MAP SND w1.open_fds) ∧
+  ALL_DISTINCT (MAP FST hs1.tbl) ∧ ALL_DISTINCT (MAP SND hs1.tbl) ∧
+  (∀f. MEM f (MAP FST w1.open_fds) ⇔ MEM f (MAP SND hs1.tbl))
+Proof
+  simp[wstep_def] >> strip_tac >> simp[] >>
+  simp[ALL_DISTINCT_ADELKEY, MAP_FST_ADELKEY, MEM_FILTER] >>
+  rpt conj_tac
+  >- (simp[ADELKEY_def, MEM_MAP, MEM_FILTER, PULL_EXISTS] >> rpt strip_tac >>
+      qexists_tac ‘y’ >> simp[])
+  >> drule_at (Pos last) MEM_SND_ADELKEY >> (impl_tac >- simp[]) >> strip_tac >> simp[] >>
+  metis_tac[]
+QED
+
+Theorem queue_keep:
+  EVERY (λj. j < LENGTH w.chans ∧ (EL j w.chans).status = Up ∧ ¬(EL j w.chans).shut ∧
+             ¬MEM j (MAP SND w.open_fds)) q ∧
+  MEM j0 (MAP SND w.open_fds) ∧ LENGTH w1.chans = LENGTH w.chans ∧
+  (∀j. j ≠ j0 ⇒ EL j w1.chans = EL j w.chans) ∧
+  (∀j. MEM j (MAP SND w1.open_fds) ⇒ MEM j (MAP SND w.open_fds)) ⇒
+  EVERY (λj. j < LENGTH w1.chans ∧ (EL j w1.chans).status = Up ∧ ¬(EL j w1.chans).shut ∧
+             ¬MEM j (MAP SND w1.open_fds)) q
+Proof
+  simp[EVERY_MEM] >> rpt strip_tac >> first_x_assum drule >> strip_tac >>
+  ‘j ≠ j0’ by (strip_tac >> gvs[]) >> gvs[] >> strip_tac >> res_tac
+QED
+
+Theorem MEM_LUPDATE_new:
+  i < LENGTH l ⇒ MEM x (LUPDATE x i l)
+Proof
+  simp[MEM_EL, EL_LUPDATE] >> strip_tac >> qexists_tac ‘i’ >> simp[]
+QED
+
+Theorem MEM_LUPDATE_old:
+  n < LENGTH l ∧ n ≠ i ∧ y = EL n l ⇒ MEM y (LUPDATE x i l)
+Proof
+  simp[MEM_EL, EL_LUPDATE] >> strip_tac >> qexists_tac ‘n’ >> simp[]
+QED
+
+Theorem MAP_phds_LUPDATE:
+  i < LENGTH pc ∧ p'.fh = (EL i pc).fh ∧ p'.bh = (EL i pc).bh ⇒
+  MAP phds (LUPDATE p' i pc) = MAP phds pc
+Proof
+  strip_tac >> simp[LUPDATE_MAP] >>
+  ‘phds p' = EL i (MAP phds pc)’ by simp[EL_MAP, phds_def] >>
+  simp[LUPDATE_SAME]
+QED
+
+Theorem hl_one_other:
+  ((∃k. x = ERead h0 k) ∨ (∃bs. x = EWrite h0 bs)) ∧ h ≠ h0 ⇒ hsame h ps (ps ++ [(x, r)])
+Proof
+  strip_tac >> irule hsame_other >> gvs[]
+QED
+
+Theorem pok_others:
+  EVERY (pok w hs ps rdy) pc ∧ ALL_DISTINCT (FLAT (MAP phds pc)) ∧ i < LENGTH pc ∧
+  MEM h0 (phds (EL i pc)) ∧ hch w hs h0 j0 ∧ wstep h0 j0 w hs w1 hs1 ∧
+  ALL_DISTINCT (MAP SND hs.tbl) ∧ ALL_DISTINCT (MAP SND w.open_fds) ∧
+  ((∃k. x = ERead h0 k) ∨ (∃bs. x = EWrite h0 bs)) ∧ pok w1 hs1 (ps ++ [(x, r)]) rdy p' ⇒
+  EVERY (pok w1 hs1 (ps ++ [(x, r)]) rdy) (LUPDATE p' i pc)
+Proof
+  disch_then (fn th => MAP_EVERY assume_tac (CONJUNCTS th)) >>
+  simp[EVERY_EL, EL_LUPDATE] >> rpt strip_tac >> Cases_on ‘i = n’ >- gvs[] >>
+  simp[] >>
+  ‘pok w hs ps rdy (EL n pc)’ by fs[EVERY_EL] >>
+  ‘¬MEM h0 (phds (EL n pc))’ by (irule phds_disjoint >> simp[] >> qexists_tac ‘i’ >> simp[]) >>
+  ‘∀h. MEM h (phds (EL n pc)) ⇒ h ≠ h0’ by (rpt strip_tac >> fs[]) >>
+  irule pok_frame >> qexistsl_tac [‘hs’, ‘ps’, ‘w’] >> rpt conj_tac >>
+  TRY (first_assum ACCEPT_TAC) >>
+  TRY (rpt strip_tac >> irule hl_one_other >> qexists_tac ‘h0’ >> res_tac >> simp[] >> NO_TAC) >>
+  TRY (rpt strip_tac >> ‘h ≠ h0’ by res_tac >> drule_all wstep_hch >> simp[] >> NO_TAC) >>
+  rpt strip_tac >> ‘h ≠ h0’ by res_tac >> drule wstep_tbl >> strip_tac >>
+  qpat_x_assum ‘∀h. h ≠ h0 ⇒ _’ (qspec_then ‘h’ mp_tac) >> simp[]
+QED
+
+(* MAIN of this part: an action on pair i's handle h0 that only touches
+   h0's channel j0, keeps the pair's handles, and leaves the pair good,
+   keeps the relation *)
+Theorem prel_step_pair:
+  prel lfd st rdy ps w hs ∧ i < LENGTH st.pc ∧ MEM h0 (popen (EL i st.pc)) ∧
+  hch w hs h0 j0 ∧ wstep h0 j0 w hs w1 hs1 ∧
+  ((∃k. x = ERead h0 k) ∨ (∃bs. x = EWrite h0 bs)) ∧
+  p'.fh = (EL i st.pc).fh ∧ p'.bh = (EL i st.pc).bh ∧
+  (∀h. MEM h (popen (EL i st.pc)) ∧ MEM h (MAP FST hs1.tbl) ⇒ MEM h (popen p')) ∧
+  pok w1 hs1 (ps ++ [(x, r)]) rdy p' ⇒
+  prel lfd (st with pc := LUPDATE p' i st.pc) rdy (ps ++ [(x, r)]) w1 hs1
+Proof
+  disch_then (fn th => MAP_EVERY assume_tac (CONJUNCTS th)) >>
+  ‘MAP phds (LUPDATE p' i st.pc) = MAP phds st.pc’ by (irule MAP_phds_LUPDATE >> simp[]) >>
+  ‘MEM h0 (phds (EL i st.pc))’ by metis_tac[popen_phds] >>
+  ‘MEM h0 (FLAT (MAP phds st.pc))’
+    by (simp[MEM_FLAT, MEM_MAP, PULL_EXISTS] >> qexists_tac ‘EL i st.pc’ >> simp[EL_MEM]) >>
+  ‘∀h. h ≠ h0 ⇒ hl_sent h [(x, r)] = [] ∧ hl_read h [(x, r)] = [] ∧ ¬hl_eof h [(x, r)] ∧
+                 ¬hl_refused h [(x, r)] ∧ ¬hl_up h [(x, r)]’
+    by (rpt gen_tac >> strip_tac >>
+        qpat_x_assum ‘(∃k. _) ∨ _’ strip_assume_tac >> qpat_x_assum ‘x = _’ SUBST_ALL_TAC >>
+        Cases_on ‘r’ >> simp[] >> TRY (rename1 ‘EGot oo’ >> Cases_on ‘oo’ >> simp[])) >>
+  ‘hl_acc_handles [(x, r)] = [] ∧ hl_conn_handles [(x, r)] = []’
+    by (qpat_x_assum ‘(∃k. _) ∨ _’ strip_assume_tac >> qpat_x_assum ‘x = _’ SUBST_ALL_TAC >> Cases_on ‘r’ >> simp[]) >>
+  ‘ALL_DISTINCT (MAP SND hs.tbl) ∧ ALL_DISTINCT (MAP SND w.open_fds)’ by fs[prel_def] >>
+  ‘∃f0. ALOOKUP hs.tbl h0 = SOME f0 ∧ ALOOKUP w.open_fds f0 = SOME j0 ∧ j0 < LENGTH w.chans’
+    by fs[hch_def] >>
+  ‘MEM j0 (MAP SND w.open_fds)’
+    by (imp_res_tac ALOOKUP_MEM >> simp[MEM_MAP, EXISTS_PROD] >> metis_tac[]) >>
+  qpat_x_assum ‘prel _ _ _ _ _ _’ (strip_assume_tac o REWRITE_RULE [prel_def]) >>
+  ‘w1.takes = w.takes ∧ w1.alloc = w.alloc ∧ w1.reserved = w.reserved ∧
+   w1.listening = w.listening ∧ LENGTH w1.chans = LENGTH w.chans ∧
+   (∀j. j ≠ j0 ⇒ EL j w1.chans = EL j w.chans) ∧ hs1.nxt = hs.nxt’ by fs[wstep_def] >>
+  ‘(∀f. MEM f (MAP FST w1.open_fds) ⇒ MEM f (MAP FST w.open_fds)) ∧
+   (∀j. MEM j (MAP SND w1.open_fds) ⇒ MEM j (MAP SND w.open_fds)) ∧
+   ALL_DISTINCT (MAP FST w1.open_fds) ∧ ALL_DISTINCT (MAP SND w1.open_fds) ∧
+   ALL_DISTINCT (MAP FST hs1.tbl) ∧ ALL_DISTINCT (MAP SND hs1.tbl) ∧
+   (∀f. MEM f (MAP FST w1.open_fds) ⇔ MEM f (MAP SND hs1.tbl))’
+    by (drule wstep_fds >> (impl_tac >- simp[]) >> simp[]) >>
+  qabbrev_tac ‘st' = st with pc := LUPDATE p' i st.pc’ >>
+  ‘st'.pc = LUPDATE p' i st.pc’ by simp[Abbr ‘st'’] >>
+  ‘LENGTH st'.pc = LENGTH st.pc’ by simp[] >>
+  ‘FLAT (MAP phds st'.pc) = FLAT (MAP phds st.pc)’ by simp[] >>
+  ‘∀q'. MEM q' st'.pc ⇔ ∃n. n < LENGTH st.pc ∧ q' = if n = i then p' else EL n st.pc’
+    by (simp[MEM_EL, EL_LUPDATE] >> rpt strip_tac >> eq_tac >> rpt strip_tac >>
+        qexists_tac ‘n’ >> simp[]) >>
+  (* the listener's queue *)
+  ‘EVERY (λj. j < LENGTH w1.chans ∧ (EL j w1.chans).status = Up ∧
+              ¬(EL j w1.chans).shut ∧ ¬MEM j (MAP SND w1.open_fds)) q’
+    by (irule queue_keep >> qexistsl_tac [‘j0’, ‘w’] >> simp[]) >>
+  ‘EVERY (λj. j < LENGTH w1.chans) (MAP SND w1.open_fds)’
+    by (qpat_x_assum ‘EVERY _ (MAP SND w.open_fds)’ mp_tac >> simp[EVERY_MEM] >>
+        rpt strip_tac >> res_tac >> simp[]) >>
+  ‘¬MEM lfd (MAP FST w1.open_fds)’ by (strip_tac >> res_tac) >>
+  ‘∀h. MEM h (MAP FST hs1.tbl) ⇒ ∃p. MEM p st'.pc ∧ MEM h (popen p)’
+    by (rpt strip_tac >>
+        ‘MEM h (MAP FST hs.tbl)’
+          by (drule wstep_tbl >> strip_tac >> Cases_on ‘h = h0’
+              >- (pop_assum SUBST_ALL_TAC >> qpat_x_assum ‘MEM h0 _ ⇒ _’ irule >> simp[])
+              >> qpat_x_assum ‘∀h. h ≠ h0 ⇒ (MEM h _ ⇔ _)’ (qspec_then ‘h’ mp_tac) >> simp[]) >>
+        qpat_x_assum ‘∀h. MEM h (MAP FST hs.tbl) ⇒ _’ drule >> strip_tac >>
+        qpat_x_assum ‘MEM p st.pc’ (strip_assume_tac o REWRITE_RULE [MEM_EL]) >>
+        Cases_on ‘n = i’
+        >- (qexists_tac ‘p'’ >> conj_tac >- (simp[] >> qexists_tac ‘i’ >> simp[]) >>
+            qpat_x_assum ‘∀h. MEM h (popen _) ∧ _ ⇒ MEM h (popen p')’ irule >> gvs[])
+        >> qexists_tac ‘p’ >> simp[] >> qexists_tac ‘n’ >> simp[]) >>
+  ‘EVERY (pok w1 hs1 (ps ++ [(x, r)]) rdy) st'.pc’
+    by (simp[] >> mp_tac (Q.INST [‘pc’ |-> ‘st.pc’] pok_others) >> impl_tac >- simp[] >> simp[]) >>
+  ‘∀h. hl_sent h (ps ++ [(x, r)]) ≠ [] ∨ hl_read h (ps ++ [(x, r)]) ≠ [] ∨
+       hl_eof h (ps ++ [(x, r)]) ∨ hl_refused h (ps ++ [(x, r)]) ∨ hl_up h (ps ++ [(x, r)]) ⇒
+       MEM h (FLAT (MAP phds st.pc))’
+    by (rpt gen_tac >> Cases_on ‘h = h0’ >- simp[] >>
+        qpat_x_assum ‘∀h. h ≠ h0 ⇒ hl_sent _ _ = _ ∧ _’ (qspec_then ‘h’ mp_tac) >>
+        (impl_tac >- first_assum ACCEPT_TAC) >> strip_tac >>
+        asm_rewrite_tac [hl_APPEND, hl_up_APPEND, APPEND_NIL] >> disch_then assume_tac >>
+        qpat_x_assum ‘∀h. hl_sent h ps ≠ [] ∨ _ ⇒ _’ irule >> fs[]) >>
+  ‘hl_acc_handles (ps ++ [(x, r)]) = hl_acc_handles ps ∧
+   hl_conn_handles (ps ++ [(x, r)]) = hl_conn_handles ps’
+    by (REWRITE_TAC [CONJUNCT1 hl_acc_APPEND, hl_APPEND] >> asm_rewrite_tac [APPEND_NIL]) >>
+  ‘∀hd. MEM hd (hl_acc_handles (ps ++ [(x, r)])) ⇔ ∃p. MEM p st'.pc ∧ p.fh = hd’
+    by (gen_tac >> asm_rewrite_tac [] >>
+        qpat_x_assum ‘∀hd. MEM hd (hl_acc_handles ps) ⇔ _’ (qspec_then ‘hd’ SUBST1_TAC) >>
+        eq_tac >> strip_tac
+        >- (qpat_x_assum ‘MEM p st.pc’ (strip_assume_tac o REWRITE_RULE [MEM_EL]) >>
+            qexists_tac ‘if n = i then p' else EL n st.pc’ >>
+            conj_tac >- (qexists_tac ‘n’ >> simp[]) >> rw[] >> gvs[])
+        >> qexists_tac ‘EL n st.pc’ >> simp[EL_MEM] >> Cases_on ‘n = i’ >> gvs[]) >>
+  ‘∀c. MEM c (hl_conn_handles (ps ++ [(x, r)])) ⇔ ∃p. MEM p st'.pc ∧ p.bh = SOME c’
+    by (gen_tac >> asm_rewrite_tac [] >>
+        qpat_x_assum ‘∀c. MEM c (hl_conn_handles ps) ⇔ _’ (qspec_then ‘c’ SUBST1_TAC) >>
+        eq_tac >> strip_tac
+        >- (qpat_x_assum ‘MEM p st.pc’ (strip_assume_tac o REWRITE_RULE [MEM_EL]) >>
+            qexists_tac ‘if n = i then p' else EL n st.pc’ >>
+            conj_tac >- (qexists_tac ‘n’ >> simp[]) >> rw[] >> gvs[])
+        >> qexists_tac ‘EL n st.pc’ >> simp[EL_MEM] >> Cases_on ‘n = i’ >> gvs[]) >>
+  REWRITE_TAC [prel_def] >> rpt conj_tac >> TRY (first_assum ACCEPT_TAC) >>
+  TRY (asm_simp_tac (srw_ss()) [] >> NO_TAC) >>
+  TRY (qpat_x_assum ‘FLAT (MAP phds st'.pc) = _’ SUBST1_TAC >> first_assum ACCEPT_TAC >> NO_TAC) >>
+  qexistsl_tac [‘a’, ‘q’] >> asm_simp_tac (srw_ss()) []
+QED
+
+(* ------------------------------------------------------------------------
+   The pair's actions
+   ------------------------------------------------------------------------ *)
+
+Theorem hch_inj:
+  hch w hs h1 j ∧ hch w hs h2 j ∧ ALL_DISTINCT (MAP SND hs.tbl) ∧
+  ALL_DISTINCT (MAP SND w.open_fds) ⇒ h1 = h2
+Proof
+  rw[hch_def] >> ‘f = f'’ by metis_tac[ALOOKUP_SND_inj] >> gvs[] >>
+  metis_tac[ALOOKUP_SND_inj]
+QED
+
+Theorem phds_distinct:
+  ALL_DISTINCT (FLAT (MAP phds pc)) ∧ MEM p pc ⇒ ALL_DISTINCT (phds p)
+Proof
+  rw[ALL_DISTINCT_FLAT, MEM_MAP] >> metis_tac[]
+QED
+
+Theorem prel_pok:
+  prel lfd st rdy ps w hs ∧ i < LENGTH st.pc ⇒ pok w hs ps rdy (EL i st.pc)
+Proof
+  rw[prel_def, EVERY_EL]
+QED
+
+Theorem prel_pair_distinct:
+  prel lfd st rdy ps w hs ∧ i < LENGTH st.pc ∧ (EL i st.pc).bh = SOME c ⇒
+  c ≠ (EL i st.pc).fh
+Proof
+  rw[prel_def] >> ‘MEM (EL i st.pc) st.pc’ by simp[EL_MEM] >>
+  drule_all phds_distinct >> simp[phds_def]
+QED
+
+(* The write to the front: all of bq is taken *)
+Theorem prel_write_front:
+  prel lfd st rdy ps w hs ∧ i < LENGTH st.pc ∧ (EL i st.pc).fo ∧ (EL i st.pc).bq ≠ [] ⇒
+  ∃w1. ehdo lfd v (w, hs) (EWrite (EL i st.pc).fh (EL i st.pc).bq) =
+         SOME (EWrote (LENGTH (EL i st.pc).bq), (w1, hs)) ∧
+       prel lfd (pupd st [(i, EWrite (EL i st.pc).fh (EL i st.pc).bq)]
+                         [EWrote (LENGTH (EL i st.pc).bq)]) rdy
+         (ps ++ [(EWrite (EL i st.pc).fh (EL i st.pc).bq, EWrote (LENGTH (EL i st.pc).bq))])
+         w1 hs
+Proof
+  strip_tac >> qabbrev_tac ‘p = EL i st.pc’ >>
+  ‘pok w hs ps rdy p’ by (simp[Abbr ‘p’] >> irule prel_pok >> metis_tac[]) >>
+  ‘∃c. p.bh = SOME c’ by (Cases_on ‘p.bh’ >> fs[pok_def]) >>
+  ‘c ≠ p.fh’ by (simp[Abbr ‘p’] >> irule prel_pair_distinct >> metis_tac[]) >>
+  ‘∃j. hch w hs p.fh j ∧ (EL j w.chans).status = Up ∧ ¬(EL j w.chans).shut’
+    by fs[pok_def] >>
+  ‘w.takes = (λj b n. n) ∧ ALL_DISTINCT (MAP SND hs.tbl) ∧ ALL_DISTINCT (MAP SND w.open_fds)’
+    by fs[prel_def] >>
+  ‘∃f. ALOOKUP hs.tbl p.fh = SOME f ∧ ALOOKUP w.open_fds f = SOME j ∧ j < LENGTH w.chans’
+    by fs[hch_def] >>
+  drule_all ehdo_write_up >> disch_then (qspecl_then [‘v’, ‘lfd’, ‘p.bq’] assume_tac) >>
+  simp[] >>
+  qabbrev_tac ‘w1 = upd_chan j (λc. c with <| sent := c.sent ++ p.bq;
+                                              inflight := c.inflight + LENGTH p.bq |>) w’ >>
+  ‘pres p (EWrite p.fh p.bq) (EWrote (LENGTH p.bq)) = p with bq := []’
+    by simp[pres_def] >>
+  simp[] >>
+  ‘wstep p.fh j w hs w1 hs’
+    by simp[wstep_def, Abbr ‘w1’, upd_chan_def, EL_LUPDATE] >>
+  ‘∀j'. j' ≠ j ⇒ EL j' w1.chans = EL j' w.chans’ by simp[Abbr ‘w1’, upd_chan_def, EL_LUPDATE] >>
+  ‘(EL j w1.chans).status = Up ∧ ¬(EL j w1.chans).shut ∧ LENGTH w1.chans = LENGTH w.chans ∧
+   w1.open_fds = w.open_fds’
+    by simp[Abbr ‘w1’, upd_chan_def, EL_LUPDATE] >>
+  ‘pok w1 hs (ps ++ [(EWrite p.fh p.bq, EWrote (LENGTH p.bq))]) rdy (p with bq := [])’
+    by (qpat_x_assum ‘pok _ _ _ _ _’ mp_tac >> simp[pok_def] >> strip_tac >>
+        ‘hl_sent c [(EWrite p.fh p.bq, EWrote (LENGTH p.bq))] = [] ∧
+         hl_read c [(EWrite p.fh p.bq, EWrote (LENGTH p.bq))] = [] ∧
+         hl_read p.fh [(EWrite p.fh p.bq, EWrote (LENGTH p.bq))] = [] ∧
+         hl_sent p.fh [(EWrite p.fh p.bq, EWrote (LENGTH p.bq))] = p.bq’
+          by simp[TAKE_LENGTH_ID] >>
+        gvs[] >> rpt conj_tac >>
+        TRY (qexists_tac ‘j’ >> simp[hch_def] >> qexists_tac ‘f’ >> simp[] >> NO_TAC) >>
+        strip_tac >>
+        qpat_x_assum ‘¬hl_eof c ps ∧ ¬hl_refused c ps ⇒ _’ mp_tac >>
+        (impl_tac >- simp[]) >> strip_tac >>
+        rename1 ‘hch w hs c jc’ >> qexists_tac ‘jc’ >>
+        ‘jc ≠ j’ by (strip_tac >> qpat_x_assum ‘c ≠ p.fh’ mp_tac >> simp[] >>
+                     irule hch_inj >> qexistsl_tac [‘hs’, ‘j’, ‘w’] >> gvs[]) >>
+        qpat_x_assum ‘hch w hs c jc’ (strip_assume_tac o REWRITE_RULE [hch_def]) >>
+        simp[hch_def] >> rpt strip_tac >> gvs[]) >>
+  ‘MEM p.fh (popen p)’ by simp[popen_def] >>
+  irule prel_step_pair >> rpt conj_tac >>
+  TRY (simp[popen_def] >> NO_TAC) >>
+  TRY (qpat_x_assum ‘pok w1 _ _ _ _’ mp_tac >> simp[Abbr ‘w1’] >> NO_TAC) >>
+  qexistsl_tac [‘p.fh’, ‘hs’, ‘j’, ‘w’] >> simp[] >>
+  qpat_x_assum ‘wstep _ _ _ _ w1 _’ mp_tac >> simp[Abbr ‘w1’]
+QED
+
+(* The write to the backend: it has answered a read, so it is Up; all of fq
+   is taken *)
+Theorem prel_write_back:
+  prel lfd st rdy ps w hs ∧ i < LENGTH st.pc ∧ (EL i st.pc).bh = SOME c ∧
+  (EL i st.pc).bo ∧ (EL i st.pc).fq ≠ [] ⇒
+  ∃w1. ehdo lfd v (w, hs) (EWrite c (EL i st.pc).fq) =
+         SOME (EWrote (LENGTH (EL i st.pc).fq), (w1, hs)) ∧
+       prel lfd (pupd st [(i, EWrite c (EL i st.pc).fq)] [EWrote (LENGTH (EL i st.pc).fq)]) rdy
+         (ps ++ [(EWrite c (EL i st.pc).fq, EWrote (LENGTH (EL i st.pc).fq))]) w1 hs
+Proof
+  strip_tac >> qabbrev_tac ‘p = EL i st.pc’ >>
+  ‘pok w hs ps rdy p’ by (simp[Abbr ‘p’] >> irule prel_pok >> metis_tac[]) >>
+  ‘c ≠ p.fh’ by (simp[Abbr ‘p’] >> irule prel_pair_distinct >> metis_tac[]) >>
+  ‘p.bup’
+    by (qpat_x_assum ‘pok _ _ _ _ _’ mp_tac >> simp[pok_def] >> strip_tac >>
+        ‘hl_read p.fh ps ≠ []’ by (strip_tac >> gvs[]) >> gvs[]) >>
+  ‘∃j. hch w hs c j ∧ (EL j w.chans).status = Up ∧ ¬(EL j w.chans).shut’
+    by (qpat_x_assum ‘pok _ _ _ _ _’ mp_tac >> simp[pok_def] >> strip_tac >> gvs[] >>
+        qexists_tac ‘j’ >> gvs[]) >>
+  ‘w.takes = (λj b n. n) ∧ ALL_DISTINCT (MAP SND hs.tbl) ∧ ALL_DISTINCT (MAP SND w.open_fds)’
+    by fs[prel_def] >>
+  ‘∃f. ALOOKUP hs.tbl c = SOME f ∧ ALOOKUP w.open_fds f = SOME j ∧ j < LENGTH w.chans’
+    by fs[hch_def] >>
+  drule_all ehdo_write_up >> disch_then (qspecl_then [‘v’, ‘lfd’, ‘p.fq’] assume_tac) >>
+  simp[] >>
+  qabbrev_tac ‘w1 = upd_chan j (λc. c with <| sent := c.sent ++ p.fq;
+                                              inflight := c.inflight + LENGTH p.fq |>) w’ >>
+  ‘pres p (EWrite c p.fq) (EWrote (LENGTH p.fq)) = p with fq := []’
+    by simp[pres_def] >>
+  simp[] >>
+  ‘wstep c j w hs w1 hs’
+    by simp[wstep_def, Abbr ‘w1’, upd_chan_def, EL_LUPDATE] >>
+  ‘∀j'. j' ≠ j ⇒ EL j' w1.chans = EL j' w.chans’ by simp[Abbr ‘w1’, upd_chan_def, EL_LUPDATE] >>
+  ‘(EL j w1.chans).status = Up ∧ ¬(EL j w1.chans).shut ∧ LENGTH w1.chans = LENGTH w.chans ∧
+   w1.open_fds = w.open_fds’
+    by simp[Abbr ‘w1’, upd_chan_def, EL_LUPDATE] >>
+  ‘pok w1 hs (ps ++ [(EWrite c p.fq, EWrote (LENGTH p.fq))]) rdy (p with fq := [])’
+    by (qpat_x_assum ‘pok _ _ _ _ _’ mp_tac >> simp[pok_def] >> strip_tac >>
+        ‘hl_sent p.fh [(EWrite c p.fq, EWrote (LENGTH p.fq))] = [] ∧
+         hl_read p.fh [(EWrite c p.fq, EWrote (LENGTH p.fq))] = [] ∧
+         hl_read c [(EWrite c p.fq, EWrote (LENGTH p.fq))] = [] ∧
+         hl_sent c [(EWrite c p.fq, EWrote (LENGTH p.fq))] = p.fq’
+          by simp[TAKE_LENGTH_ID] >>
+        gvs[] >> rpt conj_tac >>
+        TRY (qexists_tac ‘j’ >> simp[hch_def] >> qexists_tac ‘f’ >> simp[] >> NO_TAC) >>
+        strip_tac >> fs[] >>
+        rename1 ‘hch w hs p.fh jf’ >> qexists_tac ‘jf’ >>
+        ‘jf ≠ j’ by (strip_tac >> qpat_x_assum ‘c ≠ p.fh’ mp_tac >> simp[] >>
+                     irule hch_inj >> qexistsl_tac [‘hs’, ‘j’, ‘w’] >> gvs[]) >>
+        qpat_x_assum ‘hch w hs p.fh jf’ (strip_assume_tac o REWRITE_RULE [hch_def]) >>
+        simp[hch_def] >> rpt strip_tac >> gvs[]) >>
+  ‘MEM c (popen p)’ by simp[popen_def] >>
+  irule prel_step_pair >> rpt conj_tac >>
+  TRY (simp[popen_def] >> NO_TAC) >>
+  TRY (qpat_x_assum ‘pok w1 _ _ _ _’ mp_tac >> simp[Abbr ‘w1’] >> NO_TAC) >>
+  qexistsl_tac [‘c’, ‘hs’, ‘j’, ‘w’] >> simp[] >>
+  qpat_x_assum ‘wstep _ _ _ _ w1 _’ mp_tac >> simp[Abbr ‘w1’]
+QED
+
+Theorem pread_bounds[simp]:
+  0 < pread ∧ pread < 256 ** 8
+Proof
+  simp[pread_def]
+QED
+
+Theorem wframe_wstep:
+  wframe j w w1 ∧ hs1.nxt = hs.nxt ∧
+  (w1.open_fds = w.open_fds ∧ hs1.tbl = hs.tbl ∨
+   ∃f0. ALOOKUP hs.tbl h0 = SOME f0 ∧ w1.open_fds = ADELKEY f0 w.open_fds ∧
+        hs1.tbl = ADELKEY h0 hs.tbl) ⇒
+  wstep h0 j w hs w1 hs1
+Proof
+  rw[wframe_def, wstep_def] >> metis_tac[]
+QED
+
+(* The other handle of a pair keeps its fd and channel across an action on
+   h0 at channel j that touches only channel j and maybe closes h0 *)
+Theorem hch_keep_other:
+  hch w hs h jh ∧ hch w hs h0 j ∧ h ≠ h0 ∧ wstep h0 j w hs w1 hs1 ∧
+  ALL_DISTINCT (MAP SND hs.tbl) ∧ ALL_DISTINCT (MAP SND w.open_fds) ⇒
+  hch w1 hs1 h jh ∧ jh ≠ j ∧ EL jh w1.chans = EL jh w.chans
+Proof
+  strip_tac >> drule_all wstep_hch >> simp[]
+QED
+
+(* The read of the front (its backend has answered a read): data goes to
+   fq; EOF closes it; would-block changes nothing *)
+Theorem prel_read_front:
+  prel lfd st rdy ps w hs ∧ i < LENGTH st.pc ∧ (EL i st.pc).fo ∧
+  (EL i st.pc).bh = SOME c ∧ (EL i st.pc).bup ⇒
+  ∃r w1 hs1. ehdo lfd v (w, hs) (ERead (EL i st.pc).fh pread) = SOME (r, (w1, hs1)) ∧
+    prel lfd (pupd st [(i, ERead (EL i st.pc).fh pread)] [r]) rdy
+      (ps ++ [(ERead (EL i st.pc).fh pread, r)]) w1 hs1
+Proof
+  strip_tac >> qabbrev_tac ‘p = EL i st.pc’ >>
+  ‘pok w hs ps rdy p’ by (simp[Abbr ‘p’] >> irule prel_pok >> metis_tac[]) >>
+  ‘c ≠ p.fh’ by (simp[Abbr ‘p’] >> irule prel_pair_distinct >> metis_tac[]) >>
+  ‘∃j. hch w hs p.fh j ∧ (EL j w.chans).status = Up ∧ ¬(EL j w.chans).shut’
+    by fs[pok_def] >>
+  ‘ALL_DISTINCT (MAP SND hs.tbl) ∧ ALL_DISTINCT (MAP SND w.open_fds) ∧
+   ALL_DISTINCT (MAP FST hs.tbl) ∧ ALL_DISTINCT (MAP FST w.open_fds)’ by fs[prel_def] >>
+  ‘∃f. ALOOKUP hs.tbl p.fh = SOME f ∧ ALOOKUP w.open_fds f = SOME j ∧ j < LENGTH w.chans’
+    by fs[hch_def] >>
+  ‘0 < pread ∧ pread < 256 ** 8’ by simp[] >>
+  drule_all ehdo_read >>
+  disch_then (qspecl_then [‘v’, ‘lfd’]
+    (qx_choosel_then [‘r’, ‘w1’, ‘hs1’]
+       (CONJUNCTS_THEN2 assume_tac (CONJUNCTS_THEN2 assume_tac assume_tac)))) >>
+  qexistsl_tac [‘r’, ‘w1’, ‘hs1’] >> simp[] >>
+  ‘MEM p.fh (popen p)’ by simp[popen_def] >>
+  ‘hl_sent c [(ERead p.fh pread, r)] = [] ∧ hl_read c [(ERead p.fh pread, r)] = [] ∧
+   ¬hl_eof c [(ERead p.fh pread, r)] ∧ ¬hl_refused c [(ERead p.fh pread, r)] ∧
+   ¬hl_up c [(ERead p.fh pread, r)] ∧ hl_sent p.fh [(ERead p.fh pread, r)] = [] ∧
+   ¬hl_refused p.fh [(ERead p.fh pread, r)] ∧ ¬hl_up c [(ERead p.fh pread, r)]’
+    by (Cases_on ‘r’ >> simp[] >> TRY (rename1 ‘EGot oo’ >> Cases_on ‘oo’) >> simp[] >>
+        gvs[]) >>
+  qpat_x_assum ‘_ ∨ _ ∨ _ ∨ _’ strip_assume_tac
+  >- gvs[]
+  >- ((* data *)
+      qabbrev_tac ‘d = TAKE pread (EL j w.chans).inbox’ >>
+      ‘d ≠ []’ by (simp[Abbr ‘d’] >> Cases_on ‘(EL j w.chans).inbox’ >> gvs[]) >>
+      ‘pres p (ERead p.fh pread) r = p with fq := p.fq ++ d’
+        by (gvs[] >> Cases_on ‘d’ >> gvs[pres_def]) >>
+      ‘wstep p.fh j w hs w1 hs1’ by (irule wframe_wstep >> gvs[]) >>
+      ‘hl_read p.fh [(ERead p.fh pread, r)] = d ∧ ¬hl_eof p.fh [(ERead p.fh pread, r)]’
+        by (gvs[] >> Cases_on ‘d’ >> gvs[]) >>
+      ‘(EL j w1.chans).status = Up ∧ ¬(EL j w1.chans).shut ∧ LENGTH w1.chans = LENGTH w.chans’
+        by fs[wframe_def] >>
+      ‘hch w1 hs1 p.fh j’ by (gvs[hch_def] >> fs[wframe_def]) >>
+      ‘pok w1 hs1 (ps ++ [(ERead p.fh pread, r)]) rdy (p with fq := p.fq ++ d)’
+        by (qpat_x_assum ‘pok _ _ _ _ _’ mp_tac >> simp[pok_def] >> strip_tac >> gvs[] >>
+            rpt conj_tac >>
+            TRY (qexists_tac ‘j’ >> simp[] >> NO_TAC) >>
+            strip_tac >>
+            qpat_x_assum ‘¬hl_eof c ps ∧ ¬hl_refused c ps ⇒ _’ mp_tac >>
+            (impl_tac >- simp[]) >> strip_tac >>
+            rename1 ‘hch w hs c jc’ >> qexists_tac ‘jc’ >>
+            mp_tac (Q.INST [‘h’ |-> ‘c’, ‘jh’ |-> ‘jc’, ‘h0’ |-> ‘p.fh’, ‘hs1’ |-> ‘hs’] hch_keep_other) >>
+            (impl_tac >- simp[]) >> strip_tac >> gvs[]) >>
+      irule prel_step_pair >> rpt conj_tac >>
+      TRY (simp[popen_def] >> NO_TAC) >>
+      TRY (first_assum ACCEPT_TAC >> NO_TAC) >>
+      TRY (qpat_x_assum ‘pok w1 _ _ _ _’ mp_tac >> gvs[] >> NO_TAC) >>
+      qexistsl_tac [‘p.fh’, ‘hs’, ‘j’, ‘w’] >> gvs[])
+  >- ((* EOF: the front is closed *)
+      ‘pres p (ERead p.fh pread) r = p with fo := F’ by gvs[pres_def] >>
+      ‘wstep p.fh j w hs w1 hs1’
+        by (irule wframe_wstep >> gvs[eh_del_def] >> disj2_tac >> qexists_tac ‘f’ >> simp[]) >>
+      ‘hl_read p.fh [(ERead p.fh pread, r)] = [] ∧ hl_eof p.fh [(ERead p.fh pread, r)]’
+        by gvs[] >>
+      ‘hs1.tbl = ADELKEY p.fh hs.tbl’ by gvs[eh_del_def] >>
+      ‘¬MEM p.fh (MAP FST hs1.tbl)’ by simp[MAP_FST_ADELKEY, MEM_FILTER] >>
+      ‘∀h. ¬MEM h (MAP FST hs.tbl) ⇒ ¬MEM h (MAP FST hs1.tbl)’
+        by simp[MAP_FST_ADELKEY, MEM_FILTER] >>
+      ‘pok w1 hs1 (ps ++ [(ERead p.fh pread, r)]) rdy (p with fo := F)’
+        by (qpat_x_assum ‘pok _ _ _ _ _’ mp_tac >> simp[pok_def] >> strip_tac >> gvs[] >>
+            rpt conj_tac >>
+            TRY (rpt strip_tac >> gvs[MAP_FST_ADELKEY, MEM_FILTER] >> NO_TAC) >>
+            strip_tac >>
+            qpat_x_assum ‘¬hl_eof c ps ∧ ¬hl_refused c ps ⇒ _’ mp_tac >>
+            (impl_tac >- simp[]) >> strip_tac >>
+            rename1 ‘hch w hs c jc’ >> qexists_tac ‘jc’ >>
+            mp_tac (Q.INST [‘h’ |-> ‘c’, ‘jh’ |-> ‘jc’, ‘h0’ |-> ‘p.fh’,
+                            ‘hs1’ |-> ‘eh_del p.fh hs’] hch_keep_other) >>
+            (impl_tac >- simp[]) >> strip_tac >> gvs[]) >>
+      irule prel_step_pair >> rpt conj_tac >>
+      TRY (simp[popen_def] >> rpt strip_tac >> gvs[] >> NO_TAC) >>
+      TRY (first_assum ACCEPT_TAC >> NO_TAC) >>
+      TRY (qpat_x_assum ‘pok w1 _ _ _ _’ mp_tac >> gvs[] >> NO_TAC) >>
+      qexistsl_tac [‘p.fh’, ‘hs’, ‘j’, ‘w’] >> gvs[])
+  >> (* would-block: nothing changes *)
+  ‘pres p (ERead p.fh pread) r = p’ by gvs[pres_def] >>
+  ‘wstep p.fh j w hs w1 hs1’ by (gvs[] >> simp[wstep_def]) >>
+  ‘pok w1 hs1 (ps ++ [(ERead p.fh pread, r)]) rdy p’
+    by (gvs[] >> qpat_x_assum ‘pok _ _ _ _ _’ mp_tac >> simp[pok_def]) >>
+  irule prel_step_pair >> rpt conj_tac >>
+  TRY (simp[popen_def] >> rpt strip_tac >> gvs[] >> NO_TAC) >>
+  TRY (first_assum ACCEPT_TAC >> NO_TAC) >>
+  TRY (qpat_x_assum ‘pok w1 _ _ _ _’ mp_tac >> gvs[] >> NO_TAC) >>
+  qexistsl_tac [‘p.fh’, ‘hs’, ‘j’, ‘w’] >> gvs[]
+QED
+
+(* The read of the backend (not reported ready only if it has answered
+   before): refused closes it; otherwise it is Up, data goes to bq, EOF
+   closes it *)
+Theorem prel_read_back:
+  prel lfd st rdy ps w hs ∧ i < LENGTH st.pc ∧ (EL i st.pc).bh = SOME c ∧
+  (EL i st.pc).bo ∧ (¬(EL i st.pc).bup ⇒ c ∈ rdy) ⇒
+  ∃r w1 hs1. ehdo lfd v (w, hs) (ERead c pread) = SOME (r, (w1, hs1)) ∧
+    prel lfd (pupd st [(i, ERead c pread)] [r]) rdy (ps ++ [(ERead c pread, r)]) w1 hs1
+Proof
+  strip_tac >> qabbrev_tac ‘p = EL i st.pc’ >>
+  ‘pok w hs ps rdy p’ by (simp[Abbr ‘p’] >> irule prel_pok >> metis_tac[]) >>
+  ‘c ≠ p.fh’ by (simp[Abbr ‘p’] >> irule prel_pair_distinct >> metis_tac[]) >>
+  ‘p.fh ≠ c’ by (strip_tac >> fs[]) >>
+  ‘∃j. hch w hs c j ∧ ¬(EL j w.chans).shut ∧
+       (p.bup ⇒ (EL j w.chans).status = Up) ∧
+       (EL j w.chans).status ≠ Connecting ∧ (EL j w.chans).status ≠ Failed’
+    by (qpat_x_assum ‘pok _ _ _ _ _’ mp_tac >> simp[pok_def] >> strip_tac >> gvs[] >>
+        qexists_tac ‘j’ >> simp[] >> Cases_on ‘p.bup’ >> gvs[] >>
+        Cases_on ‘(EL j w.chans).status’ >> gvs[]) >>
+  ‘ALL_DISTINCT (MAP SND hs.tbl) ∧ ALL_DISTINCT (MAP SND w.open_fds) ∧
+   ALL_DISTINCT (MAP FST hs.tbl) ∧ ALL_DISTINCT (MAP FST w.open_fds)’ by fs[prel_def] >>
+  ‘∃f. ALOOKUP hs.tbl c = SOME f ∧ ALOOKUP w.open_fds f = SOME j ∧ j < LENGTH w.chans’
+    by fs[hch_def] >>
+  ‘0 < pread ∧ pread < 256 ** 8’ by simp[] >>
+  drule_all ehdo_read >>
+  disch_then (qspecl_then [‘v’, ‘lfd’]
+    (qx_choosel_then [‘r’, ‘w1’, ‘hs1’]
+       (CONJUNCTS_THEN2 assume_tac (CONJUNCTS_THEN2 assume_tac assume_tac)))) >>
+  qexistsl_tac [‘r’, ‘w1’, ‘hs1’] >> simp[] >>
+  ‘MEM c (popen p)’ by simp[popen_def] >>
+  ‘hl_sent p.fh [(ERead c pread, r)] = [] ∧ hl_read p.fh [(ERead c pread, r)] = [] ∧
+   ¬hl_eof p.fh [(ERead c pread, r)] ∧ ¬hl_refused p.fh [(ERead c pread, r)] ∧
+   hl_sent c [(ERead c pread, r)] = []’
+    by (Cases_on ‘r’ >> simp[] >> TRY (rename1 ‘EGot oo’ >> Cases_on ‘oo’) >> simp[] >>
+        gvs[]) >>
+  qpat_x_assum ‘_ ∨ _ ∨ _ ∨ _’ strip_assume_tac
+  >- ((* refused: closed *)
+      ‘pres p (ERead c pread) r = p with bo := F’ by gvs[pres_def] >>
+      ‘wstep c j w hs w1 hs1’
+        by (irule wframe_wstep >> gvs[eh_del_def] >> disj2_tac >> qexists_tac ‘f’ >> simp[]) >>
+      ‘hl_refused c [(ERead c pread, r)] ∧ hl_read c [(ERead c pread, r)] = [] ∧
+       ¬hl_up c [(ERead c pread, r)]’ by gvs[] >>
+      ‘pok w1 hs1 (ps ++ [(ERead c pread, r)]) rdy (p with bo := F)’
+        by (qpat_x_assum ‘pok _ _ _ _ _’ mp_tac >> simp[pok_def] >> strip_tac >> gvs[] >>
+            rpt conj_tac >>
+            TRY (rpt strip_tac >> gvs[MAP_FST_ADELKEY, MEM_FILTER, eh_del_def] >> NO_TAC) >>
+            TRY (strip_tac >>
+                 qpat_x_assum ‘_ ⇒ ∃j. hch w hs p.fh j ∧ _’ mp_tac >> (impl_tac >- simp[]) >>
+                 strip_tac >> rename1 ‘hch w hs p.fh jf’ >> qexists_tac ‘jf’ >>
+                 mp_tac (Q.INST [‘h’ |-> ‘p.fh’, ‘jh’ |-> ‘jf’, ‘h0’ |-> ‘c’, ‘hs1’ |-> ‘eh_del c hs’]
+                           hch_keep_other) >>
+                 (impl_tac >- simp[]) >> strip_tac >> gvs[] >> NO_TAC) >>
+            TRY (rename1 ‘hch w hs p.fh jf’ >> qexists_tac ‘jf’ >>
+                 mp_tac (Q.INST [‘h’ |-> ‘p.fh’, ‘jh’ |-> ‘jf’, ‘h0’ |-> ‘c’, ‘hs1’ |-> ‘eh_del c hs’]
+                           hch_keep_other) >>
+                 (impl_tac >- simp[]) >> strip_tac >> gvs[] >> NO_TAC) >>
+            rpt strip_tac >> gvs[MAP_FST_ADELKEY, MEM_FILTER, eh_del_def]) >>
+      irule prel_step_pair >> rpt conj_tac >>
+      TRY (simp[popen_def] >> rpt strip_tac >> gvs[eh_del_def, MAP_FST_ADELKEY, MEM_FILTER, popen_def] >> NO_TAC) >>
+      TRY (first_assum ACCEPT_TAC >> NO_TAC) >>
+      TRY (qpat_x_assum ‘pok w1 _ _ _ _’ mp_tac >> gvs[] >> NO_TAC) >>
+      TRY (qexistsl_tac [‘c’, ‘hs’, ‘j’, ‘w’] >> gvs[] >> NO_TAC) >>
+      qexistsl_tac [‘hs’, ‘j’, ‘w’] >> gvs[])
+  >- ((* data *)
+      ‘(EL j w.chans).status = Up’
+    by (Cases_on ‘(EL j w.chans).status’ >> gvs[]) >>
+      qabbrev_tac ‘d = TAKE pread (EL j w.chans).inbox’ >>
+      ‘d ≠ []’ by (simp[Abbr ‘d’] >> Cases_on ‘(EL j w.chans).inbox’ >> gvs[]) >>
+      ‘pres p (ERead c pread) r = p with <| bup := T; bq := p.bq ++ d |>’
+        by (gvs[] >> Cases_on ‘d’ >> gvs[pres_def]) >>
+      ‘wstep c j w hs w1 hs1’ by (irule wframe_wstep >> gvs[]) >>
+      ‘hl_read c [(ERead c pread, r)] = d ∧ ¬hl_eof c [(ERead c pread, r)] ∧
+       ¬hl_refused c [(ERead c pread, r)] ∧ hl_up c [(ERead c pread, r)]’
+        by (gvs[] >> Cases_on ‘d’ >> gvs[]) >>
+      ‘(EL j w1.chans).status = Up ∧ ¬(EL j w1.chans).shut ∧ LENGTH w1.chans = LENGTH w.chans’
+        by fs[wframe_def] >>
+      ‘hch w1 hs1 c j’ by (gvs[hch_def] >> fs[wframe_def]) >>
+      ‘pok w1 hs1 (ps ++ [(ERead c pread, r)]) rdy (p with <| bup := T; bq := p.bq ++ d |>)’
+        by (qpat_x_assum ‘pok _ _ _ _ _’ mp_tac >> simp[pok_def] >> strip_tac >> gvs[] >>
+            rpt conj_tac >>
+            TRY (qexists_tac ‘j’ >> simp[] >> NO_TAC) >>
+            TRY (strip_tac >>
+                 qpat_x_assum ‘_ ⇒ ∃j. hch w hs p.fh j ∧ _’ mp_tac >> (impl_tac >- simp[]) >>
+                 strip_tac >> rename1 ‘hch w hs p.fh jf’ >> qexists_tac ‘jf’ >>
+                 mp_tac (Q.INST [‘h’ |-> ‘p.fh’, ‘jh’ |-> ‘jf’, ‘h0’ |-> ‘c’, ‘hs1’ |-> ‘hs’]
+                           hch_keep_other) >>
+                 (impl_tac >- simp[]) >> strip_tac >> gvs[] >> NO_TAC) >>
+            TRY (rename1 ‘hch w hs p.fh jf’ >> qexists_tac ‘jf’ >>
+                 mp_tac (Q.INST [‘h’ |-> ‘p.fh’, ‘jh’ |-> ‘jf’, ‘h0’ |-> ‘c’, ‘hs1’ |-> ‘hs’]
+                           hch_keep_other) >>
+                 (impl_tac >- simp[]) >> strip_tac >> gvs[] >> NO_TAC) >>
+            rpt strip_tac >> gvs[]) >>
+      irule prel_step_pair >> rpt conj_tac >>
+      TRY (simp[popen_def] >> rpt strip_tac >> gvs[eh_del_def, MAP_FST_ADELKEY, MEM_FILTER, popen_def] >> NO_TAC) >>
+      TRY (first_assum ACCEPT_TAC >> NO_TAC) >>
+      TRY (qpat_x_assum ‘pok w1 _ _ _ _’ mp_tac >> gvs[] >> NO_TAC) >>
+      TRY (qexistsl_tac [‘c’, ‘hs’, ‘j’, ‘w’] >> gvs[] >> NO_TAC) >>
+      qexistsl_tac [‘hs’, ‘j’, ‘w’] >> gvs[])
+  >- ((* EOF: closed *)
+      ‘(EL j w.chans).status = Up’
+    by (Cases_on ‘(EL j w.chans).status’ >> gvs[]) >>
+      ‘pres p (ERead c pread) r = p with <| bo := F; bup := T |>’ by gvs[pres_def] >>
+      ‘wstep c j w hs w1 hs1’
+        by (irule wframe_wstep >> gvs[eh_del_def] >> disj2_tac >> qexists_tac ‘f’ >> simp[]) >>
+      ‘hl_eof c [(ERead c pread, r)] ∧ hl_read c [(ERead c pread, r)] = [] ∧
+       hl_up c [(ERead c pread, r)]’ by gvs[] >>
+      ‘pok w1 hs1 (ps ++ [(ERead c pread, r)]) rdy (p with <| bo := F; bup := T |>)’
+        by (qpat_x_assum ‘pok _ _ _ _ _’ mp_tac >> simp[pok_def] >> strip_tac >> gvs[] >>
+            rpt conj_tac >>
+            TRY (rpt strip_tac >> gvs[MAP_FST_ADELKEY, MEM_FILTER, eh_del_def] >> NO_TAC) >>
+            TRY (strip_tac >>
+                 qpat_x_assum ‘_ ⇒ ∃j. hch w hs p.fh j ∧ _’ mp_tac >> (impl_tac >- simp[]) >>
+                 strip_tac >> rename1 ‘hch w hs p.fh jf’ >> qexists_tac ‘jf’ >>
+                 mp_tac (Q.INST [‘h’ |-> ‘p.fh’, ‘jh’ |-> ‘jf’, ‘h0’ |-> ‘c’, ‘hs1’ |-> ‘eh_del c hs’]
+                           hch_keep_other) >>
+                 (impl_tac >- simp[]) >> strip_tac >> gvs[] >> NO_TAC) >>
+            TRY (rename1 ‘hch w hs p.fh jf’ >> qexists_tac ‘jf’ >>
+                 mp_tac (Q.INST [‘h’ |-> ‘p.fh’, ‘jh’ |-> ‘jf’, ‘h0’ |-> ‘c’, ‘hs1’ |-> ‘eh_del c hs’]
+                           hch_keep_other) >>
+                 (impl_tac >- simp[]) >> strip_tac >> gvs[] >> NO_TAC) >>
+            rpt strip_tac >> gvs[MAP_FST_ADELKEY, MEM_FILTER, eh_del_def]) >>
+      irule prel_step_pair >> rpt conj_tac >>
+      TRY (simp[popen_def] >> rpt strip_tac >> gvs[eh_del_def, MAP_FST_ADELKEY, MEM_FILTER, popen_def] >> NO_TAC) >>
+      TRY (first_assum ACCEPT_TAC >> NO_TAC) >>
+      TRY (qpat_x_assum ‘pok w1 _ _ _ _’ mp_tac >> gvs[] >> NO_TAC) >>
+      TRY (qexistsl_tac [‘c’, ‘hs’, ‘j’, ‘w’] >> gvs[] >> NO_TAC) >>
+      qexistsl_tac [‘hs’, ‘j’, ‘w’] >> gvs[])
+  >> (* would-block: it has answered *)
+  ‘(EL j w.chans).status = Up’
+    by (Cases_on ‘(EL j w.chans).status’ >> gvs[]) >>
+  ‘pres p (ERead c pread) r = p with bup := T’ by gvs[pres_def] >>
+  ‘wstep c j w hs w1 hs1’ by (gvs[] >> simp[wstep_def]) >>
+  ‘hl_read c [(ERead c pread, r)] = [] ∧ ¬hl_eof c [(ERead c pread, r)] ∧
+   ¬hl_refused c [(ERead c pread, r)] ∧ hl_up c [(ERead c pread, r)]’ by gvs[] >>
+  ‘pok w1 hs1 (ps ++ [(ERead c pread, r)]) rdy (p with bup := T)’
+    by (qpat_x_assum ‘pok _ _ _ _ _’ mp_tac >> simp[pok_def] >> strip_tac >> gvs[] >>
+        rpt conj_tac >> TRY (qexists_tac ‘j’ >> simp[] >> NO_TAC) >>
+        TRY (strip_tac >>
+             qpat_x_assum ‘_ ⇒ ∃j. hch w hs p.fh j ∧ _’ mp_tac >> (impl_tac >- simp[]) >>
+             strip_tac >> rename1 ‘hch w hs p.fh jf’ >> qexists_tac ‘jf’ >>
+             mp_tac (Q.INST [‘h’ |-> ‘p.fh’, ‘jh’ |-> ‘jf’, ‘h0’ |-> ‘c’, ‘hs1’ |-> ‘hs’]
+                       hch_keep_other) >>
+             (impl_tac >- simp[]) >> strip_tac >> gvs[] >> NO_TAC) >>
+        rpt strip_tac >> gvs[]) >>
+  irule prel_step_pair >> rpt conj_tac >>
+  TRY (simp[popen_def] >> rpt strip_tac >> gvs[eh_del_def, MAP_FST_ADELKEY, MEM_FILTER, popen_def] >> NO_TAC) >>
+  TRY (first_assum ACCEPT_TAC >> NO_TAC) >>
+  TRY (qpat_x_assum ‘pok w1 _ _ _ _’ mp_tac >> gvs[] >> NO_TAC) >>
+  TRY (qexistsl_tac [‘c’, ‘hs’, ‘j’, ‘w’] >> gvs[] >> NO_TAC) >>
+  qexistsl_tac [‘hs’, ‘j’, ‘w’] >> gvs[]
+QED
+
+(* ------------------------------------------------------------------------
+   The connect: the pair gets its backend, a new Connecting channel
+   ------------------------------------------------------------------------ *)
+
+Theorem LUPDATE_split:
+  ∀l i x. i < LENGTH l ⇒ LUPDATE x i l = TAKE i l ++ x :: DROP (SUC i) l
+Proof
+  Induct >> Cases_on ‘i’ >> simp[LUPDATE_def]
+QED
+
+Theorem list_split_at:
+  i < LENGTH l ⇒
+  l = TAKE i l ++ EL i l :: DROP (SUC i) l ∧
+  LUPDATE x i l = TAKE i l ++ x :: DROP (SUC i) l
+Proof
+  strip_tac >> simp[LUPDATE_split] >>
+  ‘DROP i l = EL i l :: DROP (SUC i) l’ by simp[DROP_CONS_EL] >>
+  REWRITE_TAC [GSYM APPEND_ASSOC, APPEND] >> pop_assum (SUBST1_TAC o SYM) >> simp[TAKE_DROP]
+QED
+
+Theorem phds_LUPDATE_extend:
+  i < LENGTH pc ∧ phds p' = phds (EL i pc) ++ [cn] ⇒
+  PERM (FLAT (MAP phds (LUPDATE p' i pc))) (cn :: FLAT (MAP phds pc))
+Proof
+  strip_tac >> drule list_split_at >> disch_then (qspec_then ‘p'’ strip_assume_tac) >>
+  qpat_x_assum ‘LUPDATE _ _ _ = _’ SUBST1_TAC >>
+  qpat_x_assum ‘pc = _’ (fn th => CONV_TAC (RAND_CONV (ONCE_REWRITE_CONV [th]))) >>
+  simp[FLAT_APPEND] >>
+  ONCE_REWRITE_TAC [PERM_SYM] >> simp[PERM_CONS_EQ_APPEND] >>
+  qexistsl_tac [‘FLAT (MAP phds (TAKE i pc)) ++ phds (EL i pc)’,
+                ‘FLAT (MAP phds (DROP (SUC i) pc))’] >> simp[]
+QED
+
+Theorem LENGTH_phds_lt:
+  ∀pc. MEM p pc ∧ p.bh = NONE ⇒ LENGTH (FLAT (MAP phds pc)) < 2 * LENGTH pc
+Proof
+  Induct >> simp[] >> rpt strip_tac >> gvs[phds_def]
+  >- (qspec_then ‘pc’ mp_tac (Q.GEN ‘pc’ LENGTH_phds_le) >> simp[]) >>
+  res_tac >> Cases_on ‘h.bh’ >> simp[]
+QED
+
+Theorem prel_connect:
+  prel lfd st rdy ps w hs ∧ i < LENGTH st.pc ∧ (EL i st.pc).bh = NONE ⇒
+  ∃r w1 hs1. ehdo lfd v (w, hs) (EConnect b) = SOME (r, (w1, hs1)) ∧
+    prel lfd (pupd st [(i, EConnect b)] [r]) rdy (ps ++ [(EConnect b, r)]) w1 hs1
+Proof
+  strip_tac >> qabbrev_tac ‘p = EL i st.pc’ >>
+  ‘pok w hs ps rdy p’ by (simp[Abbr ‘p’] >> irule prel_pok >> metis_tac[]) >>
+  ‘hs.nxt + 1 ≤ cbound’
+    by (fs[prel_def] >> mp_tac (Q.INST [‘pc’ |-> ‘st.pc’] LENGTH_phds_le) >>
+        ‘MEM p st.pc’ by simp[Abbr ‘p’, EL_MEM] >>
+        ‘LENGTH (FLAT (MAP phds st.pc)) < 2 * LENGTH st.pc’
+          by (irule LENGTH_phds_lt >> qexists_tac ‘p’ >> simp[]) >>
+        simp[]) >>
+  simp[ehdo_connect] >>
+  IF_CASES_TAC
+  >- (‘pres p (EConnect b) (EConnected NONE) = p’ by simp[pres_def] >>
+      simp[] >> ‘LUPDATE p i st.pc = st.pc’ by simp[Abbr ‘p’, LUPDATE_SAME] >>
+      ‘st with pc := st.pc = st’ by simp[moonshotProxyTheory.pst_component_equality] >>
+      simp[] >> irule prel_quiet >> simp[] >> qexists_tac ‘ps’ >> simp[hsame_quiet]) >>
+  ‘hs.nxt ≤ cbound’ by simp[] >>
+  simp[hdln_lt_cbound] >>
+  drule_all prel_fresh >> strip_tac >>
+  qabbrev_tac ‘cn = hdl lfd hs.nxt’ >>
+  qabbrev_tac ‘f' = w.alloc (LENGTH w.chans) (ep_used w)’ >>
+  qabbrev_tac ‘J = LENGTH w.chans’ >>
+  ‘LENGTH (ep_used w) < dimword (:64)’ by fs[] >>
+  ‘¬MEM f' (ep_used w)’ by fs[prel_def, alloc_ok_def, Abbr ‘f'’] >>
+  ‘¬MEM f' (MAP FST w.open_fds) ∧ f' ≠ lfd’
+    by (qpat_x_assum ‘¬MEM f' _’ mp_tac >> simp[ep_used_def] >> fs[prel_def]) >>
+  ‘pres p (EConnect b) (EConnected (SOME cn)) = p with <| bh := SOME cn; bo := T |>’
+    by simp[pres_def] >>
+  simp[] >>
+  qabbrev_tac ‘p' = p with <| bh := SOME cn; bo := T |>’ >>
+  qabbrev_tac ‘w1 = w with <| chans := w.chans ++ [new_chan (SOME b) Connecting];
+                              open_fds := (f', J) :: w.open_fds;
+                              nconnects := w.nconnects + 1 |>’ >>
+  qabbrev_tac ‘hs1 = eh_new lfd f' hs with settling := cn :: hs.settling’ >>
+  ‘MEM p st.pc’ by simp[Abbr ‘p’, EL_MEM] >>
+  ‘w1.takes = w.takes ∧ w1.alloc = w.alloc ∧ w1.reserved = w.reserved ∧
+   w1.listening = w.listening ∧ LENGTH w1.chans = J + 1 ∧
+   (∀j. j < J ⇒ EL j w1.chans = EL j w.chans) ∧ EL J w1.chans = new_chan (SOME b) Connecting ∧
+   w1.open_fds = (f', J) :: w.open_fds ∧ hs1.tbl = (cn, f') :: hs.tbl ∧ hs1.nxt = hs.nxt + 1’
+    by simp[Abbr ‘w1’, Abbr ‘hs1’, eh_new_def, EL_APPEND1, EL_APPEND2, Abbr ‘J’] >>
+  ‘phds p' = phds p ++ [cn]’ by simp[Abbr ‘p'’, phds_def] >>
+  ‘PERM (FLAT (MAP phds (LUPDATE p' i st.pc))) (cn :: FLAT (MAP phds st.pc))’
+    by (irule phds_LUPDATE_extend >> simp[Abbr ‘p’]) >>
+  qpat_x_assum ‘prel _ _ _ _ _ _’ (strip_assume_tac o REWRITE_RULE [prel_def]) >>
+  ‘∀j. MEM j (MAP SND w.open_fds) ⇒ j < J’
+    by (fs[EVERY_MEM, Abbr ‘J’]) >>
+  ‘∀h j. hch w hs h j ∧ h ≠ cn ⇒ hch w1 hs1 h j ∧ EL j w1.chans = EL j w.chans’
+    by (rpt gen_tac >> simp[hch_def] >> strip_tac >>
+        ‘MEM f (MAP FST w.open_fds)’
+          by (imp_res_tac ALOOKUP_MEM >> simp[MEM_MAP] >> qexists_tac ‘(h, f)’ >> simp[]) >>
+        ‘f ≠ f'’ by (strip_tac >> fs[]) >>
+        ‘j < J’ by simp[Abbr ‘J’] >> simp[]) >>
+  qabbrev_tac ‘ps1 = ps ++ [(EConnect b, EConnected (SOME cn))]’ >>
+  ‘∀h. hsame h ps ps1’ by simp[Abbr ‘ps1’, hsame_quiet] >>
+  ‘hl_acc_handles ps1 = hl_acc_handles ps ∧ hl_conn_handles ps1 = hl_conn_handles ps ++ [cn]’
+    by simp[Abbr ‘ps1’] >>
+  ‘¬MEM J (MAP SND w.open_fds)’ by (strip_tac >> res_tac >> fs[]) >>
+  ‘EVERY (λj. j < LENGTH w1.chans ∧ (EL j w1.chans).status = Up ∧ ¬(EL j w1.chans).shut ∧
+              ¬MEM j (MAP SND w1.open_fds)) q’
+    by (qpat_x_assum ‘EVERY _ q’ mp_tac >> simp[EVERY_MEM] >> rpt strip_tac >>
+        first_x_assum drule >> strip_tac >> ‘j < J’ by simp[Abbr ‘J’] >> simp[]) >>
+  ‘ALL_DISTINCT (FLAT (MAP phds (LUPDATE p' i st.pc))) ∧
+   LENGTH (FLAT (MAP phds (LUPDATE p' i st.pc))) = hs.nxt + 1 ∧
+   ∀h. MEM h (FLAT (MAP phds (LUPDATE p' i st.pc))) ⇔ h = cn ∨ MEM h (FLAT (MAP phds st.pc))’
+    by (rpt conj_tac
+        >- (drule ALL_DISTINCT_PERM >> simp[])
+        >- (drule PERM_LENGTH >> simp[])
+        >> drule PERM_MEM_EQ >> simp[]) >>
+  ‘∀q'. MEM q' (LUPDATE p' i st.pc) ⇔
+        ∃n. n < LENGTH st.pc ∧ q' = if n = i then p' else EL n st.pc’
+    by (simp[MEM_EL, EL_LUPDATE] >> rpt strip_tac >> eq_tac >> rpt strip_tac >>
+        qexists_tac ‘n’ >> simp[]) >>
+  ‘pok w1 hs1 ps1 rdy p'’
+    by (qpat_x_assum ‘pok _ _ _ _ p’ mp_tac >>
+        ‘MEM p.fh (FLAT (MAP phds st.pc))’
+          by (simp[MEM_FLAT, MEM_MAP, PULL_EXISTS] >> qexists_tac ‘p’ >> simp[phds_def]) >>
+        ‘p.fh ≠ cn’ by (strip_tac >> fs[]) >>
+        ‘hsame p.fh ps ps1 ∧ hsame cn ps ps1’ by simp[] >>
+        fs[hsame_def] >>
+        simp[pok_def, Abbr ‘p'’] >> strip_tac >> simp[] >> rpt conj_tac >>
+        TRY (qexists_tac ‘J’ >> simp[hch_def, new_chan_def] >> NO_TAC) >>
+        strip_tac >> qpat_x_assum ‘_ ⇒ ∃j. hch w hs p.fh j ∧ _’ mp_tac >>
+        (impl_tac >- fs[]) >> strip_tac >> qexists_tac ‘j’ >>
+        qpat_x_assum ‘∀h j. hch w hs h j ∧ h ≠ cn ⇒ _’ (qspecl_then [‘p.fh’, ‘j’] mp_tac) >>
+        simp[]) >>
+  ‘EVERY (pok w1 hs1 ps1 rdy) (LUPDATE p' i st.pc)’
+    by (simp[EVERY_EL, EL_LUPDATE] >> rpt strip_tac >> Cases_on ‘i = n’ >- gvs[] >>
+        simp[] >> ‘pok w hs ps rdy (EL n st.pc)’ by fs[EVERY_EL] >>
+        irule pok_frame >> qexistsl_tac [‘hs’, ‘ps’, ‘w’] >> simp[] >>
+        ‘∀h. MEM h (phds (EL n st.pc)) ⇒ h ≠ cn’
+          by (rpt strip_tac >> qpat_x_assum ‘¬MEM cn (FLAT _)’ mp_tac >>
+              simp[MEM_FLAT, MEM_MAP, PULL_EXISTS] >> qexists_tac ‘EL n st.pc’ >>
+              gvs[EL_MEM]) >>
+        rpt conj_tac >> rpt strip_tac >> res_tac >> gvs[]) >>
+  ‘EL i st.pc = p’ by simp[Abbr ‘p’] >>
+  ‘p'.fh = p.fh ∧ p'.bh = SOME cn ∧ p'.fo = p.fo ∧ p'.bo’ by simp[Abbr ‘p'’] >>
+  ‘MEM p' (LUPDATE p' i st.pc)’ by (simp[] >> qexists_tac ‘i’ >> simp[]) >>
+  ‘∀n. n < LENGTH st.pc ∧ n ≠ i ⇒ MEM (EL n st.pc) (LUPDATE p' i st.pc)’
+    by (rpt strip_tac >> simp[] >> qexists_tac ‘n’ >> simp[]) >>
+  ‘∀h. hl_sent h ps1 ≠ [] ∨ hl_read h ps1 ≠ [] ∨ hl_eof h ps1 ∨ hl_refused h ps1 ∨
+       hl_up h ps1 ⇒ MEM h (FLAT (MAP phds (LUPDATE p' i st.pc)))’
+    by (rpt gen_tac >>
+        qpat_x_assum ‘∀h. hsame h ps ps1’
+          (qspec_then ‘h’ (strip_assume_tac o REWRITE_RULE [hsame_def])) >>
+        asm_rewrite_tac [] >> disch_then assume_tac >>
+        qpat_x_assum ‘∀h. MEM h (FLAT (MAP phds (LUPDATE _ _ _))) ⇔ _’
+          (fn th => REWRITE_TAC [th]) >> disj2_tac >>
+        qpat_x_assum ‘∀h. hl_sent h ps ≠ [] ∨ _ ⇒ _’ irule >> first_assum ACCEPT_TAC) >>
+  ‘∀hd. MEM hd (hl_acc_handles ps1) ⇔ ∃q'. MEM q' (LUPDATE p' i st.pc) ∧ q'.fh = hd’
+    by (gen_tac >> qpat_x_assum ‘hl_acc_handles ps1 = _’ SUBST1_TAC >>
+        qpat_x_assum ‘∀hd. MEM hd (hl_acc_handles ps) ⇔ _’ (qspec_then ‘hd’ SUBST1_TAC) >>
+        eq_tac >> strip_tac
+        >- (qpat_x_assum ‘MEM _ st.pc’ (strip_assume_tac o REWRITE_RULE [MEM_EL]) >>
+            Cases_on ‘n = i’
+            >- (qexists_tac ‘p'’ >> rveq >> asm_rewrite_tac [] >> rfs[])
+            >> qexists_tac ‘EL n st.pc’ >> rveq >> simp[])
+        >> qpat_x_assum ‘MEM q' (LUPDATE _ _ _)’
+             (strip_assume_tac o REWRITE_RULE [MEM_EL, EL_LUPDATE]) >>
+        Cases_on ‘n = i’ >> fs[]
+        >- (qexists_tac ‘p’ >> rveq >> fs[])
+        >> qexists_tac ‘EL n st.pc’ >> simp[EL_MEM]) >>
+  ‘∀c. MEM c (hl_conn_handles ps1) ⇔ ∃q'. MEM q' (LUPDATE p' i st.pc) ∧ q'.bh = SOME c’
+    by (gen_tac >> qpat_x_assum ‘hl_conn_handles ps1 = _’ SUBST1_TAC >>
+        REWRITE_TAC [MEM_APPEND, MEM, OR_CLAUSES] >>
+        qpat_x_assum ‘∀c. MEM c (hl_conn_handles ps) ⇔ _’ (qspec_then ‘c’ SUBST1_TAC) >>
+        eq_tac >> strip_tac
+        >- (qpat_x_assum ‘MEM _ st.pc’ (strip_assume_tac o REWRITE_RULE [MEM_EL]) >>
+            Cases_on ‘n = i’
+            >- (rveq >> rfs[])
+            >> qexists_tac ‘EL n st.pc’ >> rveq >> simp[])
+        >- (qexists_tac ‘p'’ >> rveq >> simp[])
+        >> qpat_x_assum ‘MEM q' (LUPDATE _ _ _)’
+             (strip_assume_tac o REWRITE_RULE [MEM_EL, EL_LUPDATE]) >>
+        Cases_on ‘n = i’ >> fs[] >>
+        TRY (disj2_tac >> rveq >> fs[] >> NO_TAC) >>
+        disj1_tac >> qexists_tac ‘EL n st.pc’ >> simp[EL_MEM]) >>
+  ‘∀h. MEM h (MAP FST hs1.tbl) ⇒ ∃q'. MEM q' (LUPDATE p' i st.pc) ∧ MEM h (popen q')’
+    by (qpat_x_assum ‘hs1.tbl = _’ SUBST1_TAC >> REWRITE_TAC [MAP, MEM] >> rpt strip_tac
+        >- (qexists_tac ‘p'’ >> rveq >> asm_rewrite_tac [] >> simp[popen_def])
+        >> qpat_x_assum ‘∀h. MEM h (MAP FST hs.tbl) ⇒ _’ drule >> strip_tac >>
+        qpat_x_assum ‘MEM p'' st.pc’ (strip_assume_tac o REWRITE_RULE [MEM_EL]) >>
+        Cases_on ‘n = i’
+        >- (qexists_tac ‘p'’ >> asm_rewrite_tac [] >> rveq >> rfs[popen_def])
+        >> qexists_tac ‘EL n st.pc’ >> rveq >> simp[]) >>
+  REWRITE_TAC [prel_def] >> simp_tac (srw_ss()) [] >>
+  rpt conj_tac >> TRY (first_assum ACCEPT_TAC) >>
+  TRY (simp[hdln_lt_cbound] >> NO_TAC) >>
+  TRY (qexistsl_tac [‘a’, ‘q’] >> simp[] >> NO_TAC) >>
+  TRY (asm_simp_tac (srw_ss()) [] >> NO_TAC) >>
+  ‘¬MEM f' (MAP SND hs.tbl)’
+    by (strip_tac >> qpat_x_assum ‘∀f. MEM f (MAP FST w.open_fds) ⇔ _’ (qspec_then ‘f'’ mp_tac) >>
+        simp[]) >>
+  TRY (mp_tac (Q.INST [‘k’ |-> ‘hs.nxt’] hdln_lt_cbound) >> simp[] >> NO_TAC) >>
+  TRY (asm_simp_tac (srw_ss()) [] >> NO_TAC) >>
+  TRY (simp[EVERY_MEM] >> rpt strip_tac >> res_tac >> simp[] >> NO_TAC) >>
+  (* the handles' numbers *)
+  TRY (rpt strip_tac >> qpat_x_assum ‘MEM _ (FLAT (MAP phds (LUPDATE _ _ _)))’ mp_tac >>
+       asm_rewrite_tac [] >> strip_tac
+       >- (qexists_tac ‘hs.nxt’ >> simp[Abbr ‘cn’])
+       >> qpat_x_assum ‘∀h. MEM h (FLAT (MAP phds st.pc)) ⇒ ∃k. _’ drule >> strip_tac >>
+       qexists_tac ‘k’ >> simp[] >> NO_TAC) >>
+  gen_tac >> strip_tac >> qpat_x_assum ‘∀h. hl_sent h ps1 ≠ [] ∨ _ ⇒ _’ irule >>
+  CCONTR_TAC >> fs[]
+QED
+
+(* ------------------------------------------------------------------------
+   A pair's actions, one at a time
+   ------------------------------------------------------------------------ *)
+
+(* Action x can be taken for pair k in state st *)
+Definition pstep_ok_def:
+  pstep_ok b (rdy : word64 set) st k x ⇔
+    k < LENGTH st.pc ∧
+    let p = EL k st.pc in
+      (x = EConnect b ∧ p.bh = NONE) ∨
+      (x = EWrite p.fh p.bq ∧ p.fo ∧ p.bq ≠ []) ∨
+      (∃c. p.bh = SOME c ∧ x = EWrite c p.fq ∧ p.bo ∧ p.fq ≠ []) ∨
+      (∃c. p.bh = SOME c ∧ x = ERead p.fh pread ∧ p.fo ∧ p.bup) ∨
+      (∃c. p.bh = SOME c ∧ x = ERead c pread ∧ p.bo ∧ (¬p.bup ⇒ c ∈ rdy))
+End
+
+Theorem pupd_pc_keep:
+  (∀l. x ≠ ELevel l) ∧ (∀l. x ≠ EAccept l) ⇒
+  pupd st [(k, x)] [r] = st with pc := LUPDATE (pres (EL k st.pc) x r) k st.pc
+Proof
+  Cases_on ‘x’ >> simp[]
+QED
+
+(* Every write takes all its bytes *)
+Definition wfull_def:
+  wfull xs rs ⇔ LIST_REL (λx r. ∀h d. x = EWrite h d ⇒ r = EWrote (LENGTH d)) xs rs
+End
+
+Theorem wfull_APPEND:
+  wfull xs rs ∧ wfull ys qs ⇒ wfull (xs ++ ys) (rs ++ qs)
+Proof
+  simp[wfull_def, LIST_REL_APPEND_suff]
+QED
+
+Theorem wfull_nowrite:
+  ∀xs rs. EVERY (λx. ∀h d. x ≠ EWrite h d) xs ∧ LENGTH rs = LENGTH xs ⇒ wfull xs rs
+Proof
+  Induct >> Cases_on ‘rs’ >> simp[wfull_def] >> rpt strip_tac >> fs[wfull_def]
+QED
+
+Theorem prel_step:
+  prel lfd st rdy ps w hs ∧ pstep_ok b rdy st k x ⇒
+  ∃r w1 hs1. ehdo lfd v (w, hs) x = SOME (r, (w1, hs1)) ∧
+    prel lfd (pupd st [(k, x)] [r]) rdy (ps ++ [(x, r)]) w1 hs1 ∧
+    (∀h d. x = EWrite h d ⇒ r = EWrote (LENGTH d))
+Proof
+  strip_tac >>
+  qpat_x_assum ‘pstep_ok _ _ _ _ _’ (strip_assume_tac o SIMP_RULE bool_ss [pstep_ok_def, LET_THM]) >>
+  rveq
+  >- (drule_all prel_connect >> disch_then (qspecl_then [‘v’, ‘b’] strip_assume_tac) >>
+      qexistsl_tac [‘r’, ‘w1’, ‘hs1’] >> asm_rewrite_tac [] >> simp[])
+  >- (drule_all prel_write_front >> disch_then (qspec_then ‘v’ strip_assume_tac) >>
+      qexistsl_tac [‘EWrote (LENGTH (EL k st.pc).bq)’, ‘w1’, ‘hs’] >> asm_rewrite_tac [] >> simp[])
+  >- (drule_all prel_write_back >> disch_then (qspec_then ‘v’ strip_assume_tac) >>
+      qexistsl_tac [‘EWrote (LENGTH (EL k st.pc).fq)’, ‘w1’, ‘hs’] >> asm_rewrite_tac [] >> simp[])
+  >- (drule_all prel_read_front >> disch_then (qspec_then ‘v’ strip_assume_tac) >>
+      qexistsl_tac [‘r’, ‘w1’, ‘hs1’] >> asm_rewrite_tac [] >> simp[])
+  >> drule_all prel_read_back >> disch_then (qspec_then ‘v’ strip_assume_tac) >>
+  qexistsl_tac [‘r’, ‘w1’, ‘hs1’] >> asm_rewrite_tac [] >> simp[]
+QED
+
+(* A list of actions for pair k, each possible after the ones before,
+   whatever their results *)
+Definition pseq_ok_def:
+  pseq_ok b rdy st k [] = T ∧
+  pseq_ok b rdy st k (x :: xs) =
+    (pstep_ok b rdy st k x ∧ ∀r. pseq_ok b rdy (pupd st [(k, x)] [r]) k xs)
+End
+
+Theorem pupd_cons:
+  pupd st ((i, x) :: xs) (r :: rs) = pupd (pupd st [(i, x)] [r]) xs rs
+Proof
+  simp[Once pupd_def] >> simp[pupd_def]
+QED
+
+Theorem prel_seq:
+  ∀xs st ps w hs ix.
+    prel lfd st rdy ps w hs ∧ pseq_ok b rdy st k xs ⇒
+    ∃rs w1 hs1. ehacts lfd lv n ix (w, hs) xs = SOME (rs, (w1, hs1)) ∧
+      LENGTH rs = LENGTH xs ∧
+      prel lfd (pupd st (MAP (λx. (k, x)) xs) rs) rdy (ps ++ ZIP (xs, rs)) w1 hs1 ∧
+      wfull xs rs
+Proof
+  Induct >- (simp[ehacts_def, pupd_def, wfull_def]) >>
+  rpt gen_tac >> REWRITE_TAC [pseq_ok_def] >> strip_tac >>
+  drule_all prel_step >> disch_then (qspec_then ‘lv n ix’ strip_assume_tac) >>
+  qpat_x_assum ‘∀r. pseq_ok _ _ _ _ _’ (qspec_then ‘r’ assume_tac) >>
+  qpat_x_assum ‘∀st ps w hs ix. _’ drule_all >>
+  disch_then (qspec_then ‘ix + 1’ strip_assume_tac) >>
+  qexistsl_tac [‘r :: rs’, ‘w1'’, ‘hs1'’] >>
+  simp[ehacts_def] >> ONCE_REWRITE_TAC [pupd_cons] >>
+  conj_tac >- full_simp_tac std_ss [GSYM APPEND_ASSOC, APPEND] >>
+  fs[wfull_def]
+QED
+
+Theorem pres_EWrite:
+  (pres p (EWrite h bs) r).fh = p.fh ∧ (pres p (EWrite h bs) r).fo = p.fo ∧
+  (pres p (EWrite h bs) r).bh = p.bh ∧ (pres p (EWrite h bs) r).bo = p.bo ∧
+  (pres p (EWrite h bs) r).bup = p.bup ∧
+  (h = p.fh ⇒ (pres p (EWrite h bs) r).fq = p.fq)
+Proof
+  Cases_on ‘r’ >> rw[pres_def]
+QED
+
+Theorem pres_ERead_front:
+  h = p.fh ⇒
+  (pres p (ERead h n) r).fh = p.fh ∧ (pres p (ERead h n) r).bh = p.bh ∧
+  (pres p (ERead h n) r).bo = p.bo ∧ (pres p (ERead h n) r).bup = p.bup
+Proof
+  strip_tac >> Cases_on ‘r’ >> rw[pres_def] >> every_case_tac >> simp[]
+QED
+
+Theorem pseq_ok_one:
+  pstep_ok b rdy st k x ⇒ pseq_ok b rdy st k [x]
+Proof
+  simp[pseq_ok_def]
+QED
+
+(* A pair's actions of the round can be taken one after the other *)
+Theorem pone_ok:
+  prel lfd st rdy ps w hs ∧ k < LENGTH st.pc ⇒
+  pseq_ok b rdy st k (pone b hw lvs lw nw rdy (EL k st.pc))
+Proof
+  strip_tac >>
+  ‘pok w hs ps rdy (EL k st.pc)’ by (irule prel_pok >> metis_tac[]) >>
+  qabbrev_tac ‘p = EL k st.pc’ >>
+  Cases_on ‘p.bh’
+  >- (‘p.bq = []’ by fs[pok_def] >>
+      simp[pone_def, pconnects_def, pwrites_def, preads_def] >>
+      irule pseq_ok_one >> simp[pstep_ok_def]) >>
+  rename1 ‘p.bh = SOME c’ >>
+  simp[pone_def, pconnects_def, pwrites_def, preads_def] >>
+  rw[] >>
+  simp[pseq_ok_def, pstep_ok_def, EL_LUPDATE, pres_EWrite, pres_ERead_front] >>
+  rpt strip_tac >>
+  simp[pseq_ok_def, pstep_ok_def, EL_LUPDATE, pres_EWrite, pres_ERead_front] >>
+  rpt strip_tac >>
+  simp[pseq_ok_def, pstep_ok_def, EL_LUPDATE, pres_EWrite, pres_ERead_front] >>
+  rpt strip_tac >>
+  simp[pseq_ok_def, pstep_ok_def, EL_LUPDATE, pres_EWrite, pres_ERead_front]
+QED
+
+(* ------------------------------------------------------------------------
+   The round's actions
+   ------------------------------------------------------------------------ *)
+
+Theorem pupd_APPEND:
+  ∀xs rs st. LENGTH rs = LENGTH xs ⇒ pupd st (xs ++ ys) (rs ++ rs') = pupd (pupd st xs rs) ys rs'
+Proof
+  Induct >> simp[pupd_def] >> rpt gen_tac >> PairCases_on ‘h’ >> Cases_on ‘rs’ >>
+  simp[] >> strip_tac >> ONCE_REWRITE_TAC [pupd_cons] >> simp[]
+QED
+
+(* Actions on pair k only (no Level, no accept) leave the other pairs, the
+   Level answers and the last actions *)
+Theorem pupd_frame:
+  ∀xs rs st. EVERY (λx. (∀l. x ≠ ELevel l) ∧ (∀l. x ≠ EAccept l)) xs ∧ k < LENGTH st.pc ⇒
+    LENGTH (pupd st (MAP (λx. (k, x)) xs) rs).pc = LENGTH st.pc ∧
+    (∀j. j ≠ k ⇒ EL j (pupd st (MAP (λx. (k, x)) xs) rs).pc = EL j st.pc) ∧
+    (pupd st (MAP (λx. (k, x)) xs) rs).lv = st.lv ∧
+    (pupd st (MAP (λx. (k, x)) xs) rs).last = st.last
+Proof
+  Induct >- simp[pupd_def] >> rpt gen_tac >> Cases_on ‘rs’ >- simp[pupd_def] >>
+  REWRITE_TAC [MAP, EVERY_DEF] >> BETA_TAC >> strip_tac >> ONCE_REWRITE_TAC [pupd_cons] >>
+  ‘pupd st [(k, h)] [h'] = st with pc := LUPDATE (pres (EL k st.pc) h h') k st.pc’
+    by (irule pupd_pc_keep >> simp[]) >>
+  pop_assum SUBST1_TAC >>
+  first_x_assum (qspecl_then [‘t’, ‘st with pc := LUPDATE (pres (EL k st.pc) h h') k st.pc’]
+                   mp_tac) >>
+  simp[EL_LUPDATE]
+QED
+
+Definition pupto_def:
+  pupto f pc m = FLAT (GENLIST (λi. MAP (λx. (i, x)) (f (EL i pc))) m)
+End
+
+Theorem pupto_SUC:
+  pupto f pc (SUC m) = pupto f pc m ++ MAP (λx. (m, x)) (f (EL m pc))
+Proof
+  simp[pupto_def, GENLIST, SNOC_APPEND, FLAT_APPEND]
+QED
+
+Theorem pall_pupto:
+  pall f pc = pupto f pc (LENGTH pc)
+Proof
+  simp[pall_def, pupto_def]
+QED
+
+Theorem pone_noLevel:
+  EVERY (λx. (∀l. x ≠ ELevel l) ∧ (∀l. x ≠ EAccept l)) (pone b hw lvs lw nw rdy p)
+Proof
+  rw[pone_def, pconnects_def, pwrites_def, preads_def] >> every_case_tac >> rw[]
+QED
+
+(* ------------------------------------------------------------------------
+   The pairs across a round: a pair keeps its front, and its backend once
+   it has one; pairs are only added
+   ------------------------------------------------------------------------ *)
+
+Theorem pres_fh[simp]:
+  (pres p x r).fh = p.fh
+Proof
+  Cases_on ‘x’ >> Cases_on ‘r’ >> rw[pres_def] >> every_case_tac >> simp[]
+QED
+
+Theorem pres_bh:
+  (∀a. x ≠ EConnect a) ⇒ (pres p x r).bh = p.bh
+Proof
+  Cases_on ‘x’ >> Cases_on ‘r’ >> rw[pres_def] >> every_case_tac >> simp[]
+QED
+
+Definition pkeep_def:
+  pkeep (pc : pconn list) pc' ⇔
+    LENGTH pc ≤ LENGTH pc' ∧
+    ∀i. i < LENGTH pc ⇒ (EL i pc').fh = (EL i pc).fh ∧
+                        ((EL i pc).bh ≠ NONE ⇒ (EL i pc').bh = (EL i pc).bh)
+End
+
+Theorem pkeep_refl[simp]:
+  pkeep pc pc
+Proof
+  simp[pkeep_def]
+QED
+
+Theorem pkeep_trans:
+  pkeep pc1 pc2 ∧ pkeep pc2 pc3 ⇒ pkeep pc1 pc3
+Proof
+  rw[pkeep_def] >> res_tac >> ‘i < LENGTH pc2’ by simp[] >> res_tac >> gvs[] >>
+  strip_tac >> gvs[]
+QED
+
+(* Pair k's actions keep the pairs, if they connect only a pair with no
+   backend *)
+Theorem pupd_pkeep_one:
+  ∀xs rs st. EVERY (λx. (∀l. x ≠ ELevel l) ∧ (∀l. x ≠ EAccept l)) xs ∧ k < LENGTH st.pc ∧
+    (EVERY (λx. ∀a. x ≠ EConnect a) xs ∨ (EL k st.pc).bh = NONE ∧ ∃a. xs = [EConnect a]) ⇒
+    pkeep st.pc (pupd st (MAP (λx. (k, x)) xs) rs).pc
+Proof
+  Induct >- simp[pupd_def] >> rpt gen_tac >> Cases_on ‘rs’ >- simp[pupd_def] >>
+  REWRITE_TAC [MAP, EVERY_DEF] >> BETA_TAC >>
+  disch_then (fn th => MAP_EVERY assume_tac (CONJUNCTS th)) >> ONCE_REWRITE_TAC [pupd_cons] >>
+  ‘pupd st [(k, h)] [h'] = st with pc := LUPDATE (pres (EL k st.pc) h h') k st.pc’
+    by (irule pupd_pc_keep >> simp[]) >>
+  pop_assum SUBST1_TAC >>
+  irule pkeep_trans >> qexists_tac ‘LUPDATE (pres (EL k st.pc) h h') k st.pc’ >>
+  conj_tac
+  >- (simp[pkeep_def, EL_LUPDATE] >> rw[] >> rw[] >> fs[] >> gvs[pres_bh])
+  >> first_x_assum (qspecl_then [‘t’, ‘st with pc := LUPDATE (pres (EL k st.pc) h h') k st.pc’]
+                      mp_tac) >>
+  simp[EL_LUPDATE] >> impl_tac >- (fs[] >> gvs[]) >> simp[]
+QED
+
+Theorem pone_connect_shape:
+  pok w hs ps rdy p ⇒
+  ∀b hw lvs lw nw rdy'.
+  EVERY (λx. ∀a. x ≠ EConnect a) (pone b hw lvs lw nw rdy' p) ∨
+  p.bh = NONE ∧ ∃a. pone b hw lvs lw nw rdy' p = [EConnect a]
+Proof
+  strip_tac >> rpt gen_tac >>
+  rw[pone_def, pconnects_def, pwrites_def, preads_def] >> Cases_on ‘p.bh’ >> fs[pok_def] >>
+  rw[] >> every_case_tac >> fs[]
+QED
+
+Theorem prel_pairs:
+  prel lfd st rdy ps w hs ∧ LENGTH pc0 ≤ LENGTH st.pc ∧
+  (∀j. j < LENGTH pc0 ⇒ EL j st.pc = EL j pc0) ⇒
+  ∀m. m ≤ LENGTH pc0 ⇒
+    ∃rs w1 hs1.
+      ehacts lfd lv n ix (w, hs) (MAP SND (pupto (pone b hw lvs lw nw rdy) pc0 m)) =
+        SOME (rs, (w1, hs1)) ∧
+      LENGTH rs = LENGTH (pupto (pone b hw lvs lw nw rdy) pc0 m) ∧
+      wfull (MAP SND (pupto (pone b hw lvs lw nw rdy) pc0 m)) rs ∧
+      prel lfd (pupd st (pupto (pone b hw lvs lw nw rdy) pc0 m) rs) rdy
+        (ps ++ ZIP (MAP SND (pupto (pone b hw lvs lw nw rdy) pc0 m), rs)) w1 hs1 ∧
+      LENGTH (pupd st (pupto (pone b hw lvs lw nw rdy) pc0 m) rs).pc = LENGTH st.pc ∧
+      (∀j. m ≤ j ∧ j < LENGTH pc0 ⇒
+           EL j (pupd st (pupto (pone b hw lvs lw nw rdy) pc0 m) rs).pc = EL j pc0) ∧
+      (pupd st (pupto (pone b hw lvs lw nw rdy) pc0 m) rs).lv = st.lv ∧
+      (pupd st (pupto (pone b hw lvs lw nw rdy) pc0 m) rs).last = st.last ∧
+      pkeep st.pc (pupd st (pupto (pone b hw lvs lw nw rdy) pc0 m) rs).pc
+Proof
+  strip_tac >> Induct
+  >- (simp[pupto_def, ehacts_def, pupd_def, wfull_def]) >>
+  strip_tac >> fs[] >>
+  qabbrev_tac ‘F' = pone b hw lvs lw nw rdy’ >>
+  qabbrev_tac ‘st1 = pupd st (pupto F' pc0 m) rs’ >>
+  ‘m < LENGTH st1.pc ∧ EL m st1.pc = EL m pc0’ by simp[] >>
+  ‘pseq_ok b rdy st1 m (F' (EL m pc0))’
+    by (qpat_x_assum ‘EL m st1.pc = _’ (SUBST1_TAC o SYM) >> qunabbrev_tac ‘F'’ >>
+        irule pone_ok >> conj_tac >- simp[] >>
+        qexistsl_tac [‘hs1’, ‘lfd’,
+                      ‘ps ++ ZIP (MAP SND (pupto (pone b hw lvs lw nw rdy) pc0 m), rs)’, ‘w1’] >>
+        first_assum ACCEPT_TAC) >>
+  drule_all prel_seq >>
+  disch_then (qspecl_then [‘n’, ‘lv’, ‘ix + LENGTH (pupto F' pc0 m)’] strip_assume_tac) >>
+  qexistsl_tac [‘rs ++ rs'’, ‘w1'’, ‘hs1'’] >>
+  ‘MAP SND (pupto F' pc0 (SUC m)) = MAP SND (pupto F' pc0 m) ++ F' (EL m pc0)’
+    by simp[pupto_SUC, MAP_MAP_o, combinTheory.o_DEF] >>
+  ‘pupd st (pupto F' pc0 (SUC m)) (rs ++ rs') = pupd st1 (MAP (λx. (m, x)) (F' (EL m pc0))) rs'’
+    by (simp[pupto_SUC, Abbr ‘st1’] >> irule pupd_APPEND >> simp[]) >>
+  ‘EVERY (λx. (∀l. x ≠ ELevel l) ∧ (∀l. x ≠ EAccept l)) (F' (EL m pc0))’
+    by simp[Abbr ‘F'’, pone_noLevel] >>
+  drule_all pupd_frame >> disch_then (qspec_then ‘rs'’ strip_assume_tac) >>
+  rpt conj_tac
+  >- (simp[] >> irule ehacts_APPEND >> simp[] >> qexists_tac ‘(w1, hs1)’ >> simp[] >>
+      fs[])
+  >- simp[pupto_SUC]
+  >- (asm_rewrite_tac [] >> irule wfull_APPEND >> asm_rewrite_tac [])
+  >- (‘ZIP (MAP SND (pupto F' pc0 m) ++ F' (EL m pc0), rs ++ rs') =
+       ZIP (MAP SND (pupto F' pc0 m), rs) ++ ZIP (F' (EL m pc0), rs')’
+        by (irule (GSYM ZIP_APPEND) >> simp[]) >>
+      asm_rewrite_tac [APPEND_ASSOC])
+  >- simp[]
+  >- (rpt strip_tac >> simp[] >> ‘j ≠ m ∧ m ≤ j’ by simp[] >> simp[])
+  >- simp[]
+  >- simp[]
+  >> asm_rewrite_tac [] >> irule pkeep_trans >> qexists_tac ‘st1.pc’ >> asm_rewrite_tac [] >>
+  irule pupd_pkeep_one >> simp[] >>
+  ‘pok w1 hs1 (ps ++ ZIP (MAP SND (pupto F' pc0 m), rs)) rdy (EL m st1.pc)’
+    by (irule prel_pok >> simp[] >> qexists_tac ‘lfd’ >> first_assum ACCEPT_TAC) >>
+  pop_assum (fn th => assume_tac (Q.SPECL [‘b’, ‘hw’, ‘lvs’, ‘lw’, ‘nw’, ‘rdy’]
+                                   (MATCH_MP pone_connect_shape th))) >>
+  qpat_x_assum ‘EL m st1.pc = _’ (fn th => RULE_ASSUM_TAC (REWRITE_RULE [th])) >>
+  fs[Abbr ‘F'’]
+QED
+
+Theorem ehdo_level:
+  ehdo lfd v st (ELevel h) = SOME (ELvl v, st)
+Proof
+  PairCases_on ‘st’ >> simp[ehdo_def]
+QED
+
+Theorem prel_levels:
+  ∀xs st ps ix.
+    EVERY (λx. ∃h. SND x = ELevel h) xs ⇒
+    ∃rs. ehacts lfd lv n ix (w, hs) (MAP SND xs) = SOME (rs, (w, hs)) ∧
+      LENGTH rs = LENGTH xs ∧
+      (prel lfd st rdy ps w hs ⇒
+       prel lfd (pupd st xs rs) rdy (ps ++ ZIP (MAP SND xs, rs)) w hs) ∧
+      (pupd st xs rs).pc = st.pc ∧ (pupd st xs rs).last = st.last
+Proof
+  Induct >- simp[ehacts_def, pupd_def] >>
+  rpt gen_tac >> PairCases_on ‘h’ >> simp[] >> strip_tac >> gvs[] >>
+  simp[ehacts_def, ehdo_level] >>
+  first_x_assum (qspecl_then [‘st with lv := (h, lv n ix) :: st.lv’,
+                           ‘ps ++ [(ELevel h, ELvl (lv n ix))]’, ‘ix + 1’] strip_assume_tac) >>
+  qexists_tac ‘ELvl (lv n ix) :: rs’ >> simp[] >>
+  ONCE_REWRITE_TAC [pupd_cons] >> simp[] >> strip_tac >>
+  qpat_x_assum ‘_ ⇒ prel _ _ _ _ _ _’ mp_tac >>
+  impl_tac >- (simp[] >> irule prel_quiet >> simp[] >> qexists_tac ‘ps’ >> simp[hsame_quiet]) >>
+  REWRITE_TAC [GSYM APPEND_ASSOC, APPEND]
+QED
+
+Theorem pall_plevels:
+  EVERY (λx. ∃h. SND x = ELevel h) (pall plevels pc)
+Proof
+  simp[pall_def, EVERY_MEM, MEM_FLAT, MEM_GENLIST, MEM_MAP, plevels_def, PULL_EXISTS] >>
+  rw[] >> simp[]
+QED
+
+(* MAIN of this part: a round's actions keep the relation *)
+Theorem prel_round_acts:
+  prel lfd st rdy ps w hs ∧ st'.pc = st.pc ⇒
+  ∃rs w1 hs1.
+    ehacts lfd lv n 0 (w, hs) (MAP SND (pacts lfd b hw st' rdy)) = SOME (rs, (w1, hs1)) ∧
+    wfull (MAP SND (pacts lfd b hw st' rdy)) rs ∧
+    prel lfd (pupd st (pacts lfd b hw st' rdy) rs) rdy
+      (ps ++ ZIP (MAP SND (pacts lfd b hw st' rdy), rs)) w1 hs1 ∧
+    (pupd st (pacts lfd b hw st' rdy) rs).last = st.last ∧
+    pkeep st.pc (pupd st (pacts lfd b hw st' rdy) rs).pc
+Proof
+  strip_tac >>
+  qabbrev_tac ‘L = pall plevels st'.pc’ >>
+  qabbrev_tac ‘Acc = if 2 * LENGTH st'.pc + 2 ≤ cbound then [(0n, EAccept lfd)] else []’ >>
+  qabbrev_tac ‘F' = pone b hw st'.lv (MAP SND st'.last) (FLAT (MAP pwrites st'.pc)) rdy’ >>
+  ‘pacts lfd b hw st' rdy = L ++ Acc ++ pupto F' st'.pc (LENGTH st'.pc)’
+    by simp[pacts_def, Abbr ‘L’, Abbr ‘Acc’, Abbr ‘F'’, pall_pupto] >>
+  pop_assum SUBST1_TAC >>
+  (* the Levels *)
+  ‘EVERY (λx. ∃h. SND x = ELevel h) L’ by simp[Abbr ‘L’, pall_plevels] >>
+  drule prel_levels >>
+  disch_then (qspecl_then [‘w’, ‘rdy’, ‘n’, ‘lv’, ‘lfd’, ‘hs’, ‘st’, ‘ps’, ‘0’] strip_assume_tac) >>
+  qabbrev_tac ‘st1 = pupd st L rs’ >>
+  ‘prel lfd st1 rdy (ps ++ ZIP (MAP SND L, rs)) w hs’ by simp[Abbr ‘st1’] >>
+  (* the accept *)
+  ‘∃rs2 w2 hs2.
+     ehacts lfd lv n (LENGTH L) (w, hs) (MAP SND Acc) = SOME (rs2, (w2, hs2)) ∧
+     LENGTH rs2 = LENGTH Acc ∧
+     prel lfd (pupd st1 Acc rs2) rdy (ps ++ ZIP (MAP SND L, rs) ++ ZIP (MAP SND Acc, rs2)) w2 hs2 ∧
+     (∃new. (pupd st1 Acc rs2).pc = st1.pc ++ new) ∧ (pupd st1 Acc rs2).last = st1.last’
+    by (simp[Abbr ‘Acc’] >> IF_CASES_TAC
+        >- (‘2 * LENGTH st1.pc + 2 ≤ cbound’ by fs[Abbr ‘st1’] >>
+            drule_all prel_accept >>
+            disch_then (qspecl_then [‘lv n (LENGTH L)’, ‘0’] strip_assume_tac) >>
+            qexistsl_tac [‘[r]’, ‘w1’, ‘hs1’] >> REWRITE_TAC [MAP, ZIP_def, SND, LENGTH] >>
+            rpt conj_tac >> TRY (first_assum ACCEPT_TAC >> NO_TAC) >>
+            TRY (simp[ehacts_def] >> NO_TAC) >>
+            qexists_tac ‘new’ >> first_assum ACCEPT_TAC)
+        >> simp[ehacts_def, pupd_def]) >>
+  qabbrev_tac ‘st2 = pupd st1 Acc rs2’ >>
+  (* the pairs *)
+  ‘LENGTH st'.pc ≤ LENGTH st2.pc ∧ ∀j. j < LENGTH st'.pc ⇒ EL j st2.pc = EL j st'.pc’
+    by (fs[Abbr ‘st1’] >> simp[EL_APPEND1]) >>
+  qabbrev_tac ‘ps2 = ps ++ ZIP (MAP SND L, rs) ++ ZIP (MAP SND Acc, rs2)’ >>
+  mp_tac (Q.INST [‘st’ |-> ‘st2’, ‘pc0’ |-> ‘(st' : pst).pc’, ‘ps’ |-> ‘ps2’, ‘w’ |-> ‘w2’,
+                  ‘hs’ |-> ‘hs2’,
+                  ‘ix’ |-> ‘LENGTH (L : (num # eact) list) + LENGTH (Acc : (num # eact) list)’,
+                  ‘lvs’ |-> ‘(st' : pst).lv’,
+                  ‘lw’ |-> ‘MAP SND (st' : pst).last’,
+                  ‘nw’ |-> ‘FLAT (MAP pwrites (st' : pst).pc)’] prel_pairs) >>
+  impl_tac >- simp[Abbr ‘st2’, Abbr ‘ps2’] >>
+  disch_then (qspec_then ‘LENGTH (st' : pst).pc’ mp_tac) >> simp[] >> strip_tac >>
+  qabbrev_tac ‘P = pupto F' st'.pc (LENGTH st'.pc)’ >>
+  qexistsl_tac [‘rs ++ rs2 ++ rs'’, ‘w1’, ‘hs1’] >>
+  ‘LENGTH (MAP SND L) = LENGTH rs ∧ LENGTH (MAP SND Acc) = LENGTH rs2’ by simp[] >>
+  rpt conj_tac
+  >- (REWRITE_TAC [MAP_APPEND] >> irule ehacts_APPEND >> qexists_tac ‘(w2, hs2)’ >>
+      conj_tac
+      >- (irule ehacts_APPEND >> qexists_tac ‘(w, hs)’ >> simp[])
+      >> ‘0 + LENGTH (MAP SND L ++ MAP SND Acc) = LENGTH Acc + LENGTH L’ by simp[] >>
+      pop_assum SUBST1_TAC >> fs[Abbr ‘P’])
+  >- (REWRITE_TAC [MAP_APPEND] >> rpt (irule wfull_APPEND >> rpt conj_tac) >>
+      TRY (fs[Abbr ‘P’] >> NO_TAC) >> irule wfull_nowrite >> simp[] >>
+      simp[Abbr ‘L’, Abbr ‘Acc’, EVERY_MEM, pall_def, MEM_FLAT, MEM_GENLIST, MEM_MAP,
+           PULL_EXISTS, plevels_def] >> rw[] >> simp[])
+  >- (‘pupd st (L ++ Acc ++ P) (rs ++ rs2 ++ rs') = pupd st2 P rs'’
+        by (simp[Abbr ‘st2’, Abbr ‘st1’] >> REWRITE_TAC [GSYM APPEND_ASSOC] >>
+            simp[pupd_APPEND]) >>
+      ‘ZIP (MAP SND (L ++ Acc ++ P), rs ++ rs2 ++ rs') =
+       ZIP (MAP SND L, rs) ++ ZIP (MAP SND Acc, rs2) ++ ZIP (MAP SND P, rs')’
+        by (REWRITE_TAC [MAP_APPEND] >> ‘LENGTH (MAP SND P) = LENGTH rs'’ by fs[Abbr ‘P’] >>
+            ‘ZIP (MAP SND L ++ MAP SND Acc ++ MAP SND P, rs ++ rs2 ++ rs') =
+             ZIP (MAP SND L ++ MAP SND Acc, rs ++ rs2) ++ ZIP (MAP SND P, rs')’
+              by (irule (GSYM ZIP_APPEND) >> simp[]) >>
+            pop_assum SUBST1_TAC >>
+            ‘ZIP (MAP SND L ++ MAP SND Acc, rs ++ rs2) =
+             ZIP (MAP SND L, rs) ++ ZIP (MAP SND Acc, rs2)’
+              by (irule (GSYM ZIP_APPEND) >> simp[]) >>
+            simp[]) >>
+      ‘P = pupto F' st.pc (LENGTH st.pc)’ by simp[Abbr ‘P’] >>
+      pop_assum (fn th => RULE_ASSUM_TAC (REWRITE_RULE [GSYM th]) >> REWRITE_TAC [GSYM th]) >>
+      qpat_x_assum ‘ZIP _ = _’ mp_tac >> REWRITE_TAC [MAP_APPEND] >> disch_then SUBST1_TAC >>
+      qpat_x_assum ‘pupd st _ _ = _’ SUBST1_TAC >>
+      fs[Abbr ‘ps2’, APPEND_ASSOC])
+  >> ‘pupd st (L ++ Acc ++ P) (rs ++ rs2 ++ rs') = pupd st2 P rs'’
+       by (simp[Abbr ‘st2’, Abbr ‘st1’] >> REWRITE_TAC [GSYM APPEND_ASSOC] >>
+           simp[pupd_APPEND]) >>
+  ‘P = pupto F' st.pc (LENGTH st.pc)’ by simp[Abbr ‘P’] >>
+  pop_assum (fn th => RULE_ASSUM_TAC (REWRITE_RULE [GSYM th]) >> REWRITE_TAC [GSYM th]) >>
+  qpat_x_assum ‘pupd st _ _ = _’ SUBST1_TAC >> TRY (first_assum ACCEPT_TAC >> NO_TAC) >>
+  irule pkeep_trans >> qexists_tac ‘st2.pc’ >> conj_tac
+  >- (‘st2.pc = st.pc ++ new’ by fs[Abbr ‘st1’] >> simp[pkeep_def, EL_APPEND1])
+  >> ‘st2.pc = st.pc ++ new’ by fs[Abbr ‘st1’] >> asm_rewrite_tac []
+QED
+
+(* ------------------------------------------------------------------------
+   The poll
+   ------------------------------------------------------------------------ *)
+
+(* The listener's queue across arrivals *)
+Definition qinv_def:
+  qinv lfd (w : eworld) ⇔
+    ∃a q. w.listening = [(lfd, a, q)] ∧ ALL_DISTINCT q ∧
+          EVERY (λj. j < LENGTH w.chans ∧ (EL j w.chans).status = Up ∧
+                     ¬(EL j w.chans).shut ∧ ¬MEM j (MAP SND w.open_fds)) q ∧
+          EVERY (λj. j < LENGTH w.chans) (MAP SND w.open_fds)
+End
+
+Theorem qinv_deliver:
+  qinv lfd w ⇒ qinv lfd (ep_deliver w x) ∧ (ep_deliver w x).open_fds = w.open_fds
+Proof
+  simp[qinv_def] >> strip_tac >> Cases_on ‘x’ >>
+  simp[ep_deliver_def, upd_chan_def] >> rw[] >>
+  TRY (fs[EVERY_MEM, EL_LUPDATE] >> rw[] >> res_tac >> gvs[] >> NO_TAC) >>
+  every_case_tac >> gvs[] >> simp[AFUPDKEY_def] >>
+  fs[EVERY_MEM, EL_APPEND1, EL_APPEND2, ALL_DISTINCT_APPEND, new_chan_def] >>
+  rpt strip_tac >> res_tac >>
+  TRY (Cases_on ‘j = n’ >> gvs[EL_LUPDATE] >> NO_TAC) >> fs[]
+QED
+
+Theorem qinv_FOLDL:
+  ∀xs w. qinv lfd w ⇒ qinv lfd (FOLDL ep_deliver w xs) ∧ (FOLDL ep_deliver w xs).open_fds = w.open_fds
+Proof
+  Induct >> simp[] >> rpt gen_tac >> strip_tac >>
+  drule qinv_deliver >> disch_then (qspec_then ‘h’ strip_assume_tac) >>
+  first_x_assum drule >> simp[]
+QED
+
+Theorem qinv_tick:
+  qinv lfd w ⇒ qinv lfd (ep_tick w)
+Proof
+  simp[ep_tick_def] >> strip_tac >> irule (cj 1 (SPEC_ALL qinv_FOLDL)) >>
+  fs[qinv_def]
+QED
+
+Theorem hch_tick:
+  hch w hs h j ∧ tick_rel w w' ∧ hs'.tbl = hs.tbl ⇒ hch w' hs' h j
+Proof
+  rw[hch_def, tick_rel_def] >> simp[]
+QED
+
+Theorem pok_tick:
+  pok w hs ps rdy p ∧ tick_rel w w' ∧ hs'.tbl = hs.tbl ∧
+  (∀h j. hch w hs h j ∧ (EL j w'.chans).status = Connecting ∧ (EL j w'.chans).inbox = [] ∧
+         ¬(EL j w'.chans).peer_eof ⇒ h ∉ rdy') ⇒
+  pok w' hs' ps rdy' p
+Proof
+  simp[pok_def] >> strip_tac >> simp[] >>
+  ‘∀h j. hch w hs h j ⇒ hch w' hs' h j ∧ j < LENGTH w.chans’
+    by (rpt strip_tac >- metis_tac[hch_tick] >> fs[hch_def]) >>
+  rpt conj_tac
+  >- (strip_tac >> qpat_x_assum ‘p.fo ⇒ _’ mp_tac >> (impl_tac >- simp[]) >> strip_tac >>
+      qexists_tac ‘j’ >> res_tac >> simp[] >>
+      qpat_x_assum ‘tick_rel _ _’ (strip_assume_tac o REWRITE_RULE [tick_rel_def]) >>
+      first_x_assum drule >> rw[] >> gvs[])
+  >> Cases_on ‘p.bh’ >> gvs[] >> rpt conj_tac >> rpt strip_tac >>
+  TRY (qpat_x_assum ‘_ ∨ _ ⇒ ¬MEM _ _’ mp_tac >> simp[] >> NO_TAC) >>
+  qpat_x_assum ‘_ ⇒ ∃j. hch w hs _ j ∧ ¬_ ∧ _’ mp_tac >> (impl_tac >- simp[]) >> strip_tac >>
+  qexists_tac ‘j’ >> res_tac >> simp[] >>
+  qpat_x_assum ‘tick_rel _ _’ (strip_assume_tac o REWRITE_RULE [tick_rel_def]) >>
+  first_x_assum drule >> strip_tac >> gvs[] >>
+  Cases_on ‘(EL j w'.chans).status’ >> gvs[] >> metis_tac[]
+QED
+
+(* MAIN of this part: the poll keeps the relation, with the ready handles it
+   reports *)
+Theorem prel_poll:
+  prel lfd st rdy ps w hs ∧ ehpoll lfd hs hfds w = (rdy', w', hs') ∧
+  (∀h. MEM h hfds ⇒ h = lfd ∨ MEM h (FLAT (MAP phds st.pc))) ⇒
+  prel lfd st (set rdy') ps w' hs'
+Proof
+  strip_tac >> qpat_x_assum ‘ehpoll _ _ _ _ = _’ mp_tac >> simp[ehpoll_def] >> strip_tac >>
+  qpat_x_assum ‘ep_tick w = w'’ (SUBST_ALL_TAC o SYM) >>
+  ‘tick_rel w (ep_tick w)’ by simp[tick_rel_tick] >>
+  ‘qinv lfd (ep_tick w)’ by (irule qinv_tick >> fs[prel_def, qinv_def]) >>
+  qabbrev_tac ‘w1 = ep_tick w’ >>
+  ‘hs'.tbl = hs.tbl ∧ hs'.nxt = hs.nxt’ by gvs[] >>
+  ‘∀h j. hch w hs h j ∧ (EL j w1.chans).status = Connecting ∧ (EL j w1.chans).inbox = [] ∧
+         ¬(EL j w1.chans).peer_eof ⇒ ¬MEM h rdy'’
+    by (rpt strip_tac >> qpat_x_assum ‘_ = rdy'’ (SUBST_ALL_TAC o SYM) >>
+        fs[MEM_FILTER, hch_def] >>
+        ‘f ≠ lfd’
+          by (strip_tac >> gvs[] >> imp_res_tac ALOOKUP_MEM >> fs[prel_def] >>
+              qpat_x_assum ‘¬MEM lfd (MAP FST _)’ mp_tac >> simp[MEM_MAP, EXISTS_PROD] >>
+              metis_tac[]) >>
+        qpat_x_assum ‘qinv _ _’ (strip_assume_tac o REWRITE_RULE [qinv_def]) >>
+        ‘w1.open_fds = w.open_fds’ by fs[tick_rel_def] >>
+        ‘j < LENGTH w1.chans’ by fs[tick_rel_def] >>
+        gvs[ep_readable_def, ep_chan_of_def, chan_status_def]) >>
+  ‘∃a q. w1.listening = [(lfd, a, q)] ∧ ALL_DISTINCT q ∧
+         EVERY (λj. j < LENGTH w1.chans ∧ (EL j w1.chans).status = Up ∧ ¬(EL j w1.chans).shut ∧
+                    ¬MEM j (MAP SND w1.open_fds)) q’
+    by (qpat_x_assum ‘qinv _ _’ mp_tac >> simp[qinv_def] >> metis_tac[]) >>
+  ‘EVERY (pok w1 hs' ps (set rdy')) st.pc’
+    by (qpat_x_assum ‘prel _ _ _ _ _ _’ mp_tac >> simp[prel_def, EVERY_MEM] >> rpt strip_tac >>
+        irule pok_tick >> qexistsl_tac [‘hs’, ‘rdy’, ‘w’] >> simp[] >> metis_tac[]) >>
+  qpat_x_assum ‘prel _ _ _ _ _ _’ (strip_assume_tac o REWRITE_RULE [prel_def]) >>
+  qpat_x_assum ‘tick_rel _ _’ (fn th => assume_tac th >> strip_assume_tac (REWRITE_RULE [tick_rel_def] th)) >>
+  REWRITE_TAC [prel_def] >> rpt conj_tac >> TRY (first_assum ACCEPT_TAC) >>
+  TRY (asm_simp_tac (srw_ss()) [] >> NO_TAC) >>
+  TRY (fs[EVERY_MEM] >> rpt strip_tac >> res_tac >> simp[] >> NO_TAC) >>
+  TRY (qpat_x_assum ‘qinv _ _’ (strip_assume_tac o REWRITE_RULE [qinv_def]) >>
+       asm_simp_tac (srw_ss()) [] >> NO_TAC) >>
+  TRY (rpt strip_tac >> qpat_x_assum ‘_ = rdy'’ (SUBST_ALL_TAC o SYM) >> fs[MEM_FILTER] >>
+       NO_TAC) >>
+  qexistsl_tac [‘a'’, ‘q'’] >> simp[]
+QED
+
+(* The pairs' handles are the history's accepted and connected handles *)
+Theorem prel_phds:
+  prel lfd st rdy ps w hs ⇒
+  ∀h. MEM h (FLAT (MAP phds st.pc)) ⇔ MEM h (hl_acc_handles ps) ∨ MEM h (hl_conn_handles ps)
+Proof
+  simp[prel_def] >> strip_tac >>
+  qpat_x_assum ‘∀hd. MEM hd (hl_acc_handles ps) ⇔ _’ (fn th => REWRITE_TAC [th]) >>
+  qpat_x_assum ‘∀c. MEM c (hl_conn_handles ps) ⇔ _’ (fn th => REWRITE_TAC [th]) >>
+  rpt (pop_assum kall_tac) >> simp[MEM_FLAT, MEM_MAP, PULL_EXISTS, phds_def] >>
+  gen_tac >> eq_tac >> rw[] >> TRY (qexists_tac ‘p’ >> simp[] >> NO_TAC) >>
+  TRY (disj1_tac >> qexists_tac ‘y’ >> simp[] >> NO_TAC) >>
+  Cases_on ‘y.bh’ >> fs[] >> disj2_tac >> qexists_tac ‘y’ >> simp[]
+QED
+
+(* ------------------------------------------------------------------------
+   The run
+   ------------------------------------------------------------------------ *)
+
+Definition prdy_def:
+  prdy (h : (word64, eresp) snapshot list) = if h = [] then ∅ else (LAST h).ready
+End
+
+Theorem prel_init:
+  proxy_world lfd a W0 ⇒ prel lfd (pinit lfd b hw) ∅ [] W0 ehinit
+Proof
+  rw[proxy_world_def, prel_def, pinit_def, ehinit_def,
+     endpointSpecFormsTheory.no_backpressure_def] >>
+  simp[FUN_EQ_THM]
+QED
+
+(* The invariant at round n of the proxy's run in W0 *)
+Definition pinv_def:
+  pinv lfd b hw lv W0 n ⇔
+    let h = ehhist lfd lv (pifds lfd b hw) (pprog lfd b hw) W0 n;
+        st = pstate lfd b hw h in
+      prel lfd st (prdy h) (hl_pairs (pprog lfd b hw) h)
+        (FST (ehst lfd lv (pifds lfd b hw) (pprog lfd b hw) W0 n))
+        (SND (ehst lfd lv (pifds lfd b hw) (pprog lfd b hw) W0 n)) ∧
+      ∃st'. st'.pc = st.pc ∧ st.last = pacts lfd b hw st' (prdy h)
+End
+
+Theorem pinv_0:
+  proxy_world lfd a W0 ⇒ pinv lfd b hw lv W0 0
+Proof
+  strip_tac >> drule prel_init >> disch_then (qspecl_then [‘hw’, ‘b’] assume_tac) >>
+  simp[pinv_def, ehhist_def, ehst_def, ehrounds_def, pstate_def, prdy_def, hl_pairs_def] >>
+  simp[pinit_def] >> qexists_tac ‘<|pc := []; last := []; lv := []|>’ >> simp[]
+QED
+
+Theorem pinv_SUC:
+  pinv lfd b hw lv W0 n ⇒
+  pinv lfd b hw lv W0 (SUC n) ∧
+  ehacts lfd lv n 0 (ehst lfd lv (pifds lfd b hw) (pprog lfd b hw) W0 n)
+    (new_actions (log_of (pprog lfd b hw)) (ehhist lfd lv (pifds lfd b hw) (pprog lfd b hw) W0 n))
+    ≠ NONE ∧
+  pkeep (pstate lfd b hw (ehhist lfd lv (pifds lfd b hw) (pprog lfd b hw) W0 n)).pc
+        (pstate lfd b hw (ehhist lfd lv (pifds lfd b hw) (pprog lfd b hw) W0 (SUC n))).pc
+Proof
+  qmatch_goalsub_abbrev_tac ‘ehst lfd lv ifds m W0 n’ >>
+  simp[pinv_def] >> strip_tac >>
+  qabbrev_tac ‘h = ehhist lfd lv ifds m W0 n’ >>
+  qabbrev_tac ‘st = pstate lfd b hw h’ >>
+  Cases_on ‘ehst lfd lv ifds m W0 n’ >> rename1 ‘_ = (w, hs)’ >> fs[] >>
+  ‘new_actions (log_of m) h = MAP SND st.last’ by simp[Abbr ‘m’, Abbr ‘st’, pprog_new_actions] >>
+  ‘st'.pc = (st with lv := []).pc’ by simp[] >>
+  ‘prel lfd (st with lv := []) (prdy h) (hl_pairs m h) w hs’ by simp[] >>
+  drule_all prel_round_acts >>
+  disch_then (qspecl_then [‘n’, ‘lv’, ‘hw’, ‘b’] strip_assume_tac) >>
+  ‘ehacts_tot lfd lv n (w, hs) (MAP SND st.last) = (rs, (w1, hs1))’
+    by gvs[ehacts_tot_def] >>
+  Cases_on ‘ehpoll lfd hs1 (ifds h) w1’ >> rename1 ‘_ = (rdy', r2)’ >>
+  PairCases_on ‘r2’ >> rename1 ‘_ = (rdy', w2, hs2)’ >>
+  ‘ehhist lfd lv ifds m W0 (SUC n) = h ++ [ssnap rdy' rs] ∧
+   ehst lfd lv ifds m W0 (SUC n) = (w2, hs2)’
+    by (qunabbrev_tac ‘h’ >> irule honestL1EPRefineTheory.ehround_step >> gvs[]) >>
+  qabbrev_tac ‘st1 = pupd (st with lv := []) (pacts lfd b hw st' (prdy h)) rs’ >>
+  ‘pstate lfd b hw (h ++ [ssnap rdy' rs]) = st1 with last := pacts lfd b hw st1 (set rdy')’
+    by (simp[pstate_SNOC, pstep_def, asyncM3WorldTheory.ssnap_def, Abbr ‘st1’] >>
+        qpat_x_assum ‘st.last = _’ (fn th => simp[GSYM th]) >> simp[Abbr ‘st’]) >>
+  ‘prdy (h ++ [ssnap rdy' rs]) = set rdy'’ by simp[prdy_def, asyncM3WorldTheory.ssnap_def] >>
+  ‘hl_pairs m (h ++ [ssnap rdy' rs]) = hl_pairs m h ++ ZIP (MAP SND st.last, rs)’
+    by simp[hl_pairs_SNOC, asyncM3WorldTheory.ssnap_def] >>
+  ‘ifds h = lfd :: FLAT (MAP popen st.pc)’ by simp[Abbr ‘ifds’, pifds_def, Abbr ‘st’] >>
+  ‘prel lfd st1 (prdy h) (hl_pairs m h ++ ZIP (MAP SND st.last, rs)) w1 hs1’
+    by (qpat_x_assum ‘st.last = _’ SUBST1_TAC >> simp[Abbr ‘st1’]) >>
+  ‘∀x. MEM x (ifds h) ⇒ x = lfd ∨ MEM x (FLAT (MAP phds st1.pc))’
+    by (asm_rewrite_tac [MEM] >> rpt strip_tac >> simp[] >> disj2_tac >>
+        ‘MEM x (FLAT (MAP phds st.pc))’
+          by (fs[MEM_FLAT, MEM_MAP] >> metis_tac[popen_phds]) >>
+        qpat_x_assum ‘prel _ st1 _ _ _ _’ (fn th => REWRITE_TAC [MATCH_MP prel_phds th]) >>
+        qpat_x_assum ‘prel _ st _ _ _ _’ (fn th => mp_tac (MATCH_MP prel_phds th)) >>
+        simp[] >> strip_tac >> fs[]) >>
+  drule_all prel_poll >> strip_tac >>
+  simp[] >> rpt conj_tac
+  >- (qpat_x_assum ‘st.last = _’ (fn th => fs[GSYM th]))
+  >- (qexists_tac ‘st1’ >> simp[])
+  >> fs[]
+QED
+
+(* Every round's writes take all their bytes *)
+Theorem pinv_wfull:
+  pinv lfd b hw lv W0 n ⇒
+  ∃s. ehhist lfd lv (pifds lfd b hw) (pprog lfd b hw) W0 (SUC n) =
+        ehhist lfd lv (pifds lfd b hw) (pprog lfd b hw) W0 n ++ [s] ∧
+      wfull (MAP SND (pstate lfd b hw (ehhist lfd lv (pifds lfd b hw) (pprog lfd b hw) W0 n)).last)
+        s.results
+Proof
+  qmatch_goalsub_abbrev_tac ‘ehhist lfd lv ifds m W0 n’ >>
+  simp[pinv_def] >> strip_tac >>
+  qabbrev_tac ‘h = ehhist lfd lv ifds m W0 n’ >>
+  qabbrev_tac ‘st = pstate lfd b hw h’ >>
+  Cases_on ‘ehst lfd lv ifds m W0 n’ >> rename1 ‘_ = (w, hs)’ >> fs[] >>
+  ‘new_actions (log_of m) h = MAP SND st.last’ by simp[Abbr ‘m’, Abbr ‘st’, pprog_new_actions] >>
+  ‘st'.pc = (st with lv := []).pc’ by simp[] >>
+  ‘prel lfd (st with lv := []) (prdy h) (hl_pairs m h) w hs’ by simp[] >>
+  drule_all prel_round_acts >>
+  disch_then (qspecl_then [‘n’, ‘lv’, ‘hw’, ‘b’] strip_assume_tac) >>
+  ‘ehacts_tot lfd lv n (w, hs) (MAP SND st.last) = (rs, (w1, hs1))’
+    by gvs[ehacts_tot_def] >>
+  Cases_on ‘ehpoll lfd hs1 (ifds h) w1’ >> rename1 ‘_ = (rdy', r2)’ >>
+  PairCases_on ‘r2’ >> rename1 ‘_ = (rdy', w2, hs2)’ >>
+  ‘ehhist lfd lv ifds m W0 (SUC n) = h ++ [ssnap rdy' rs] ∧
+   ehst lfd lv ifds m W0 (SUC n) = (w2, hs2)’
+    by (qunabbrev_tac ‘h’ >> irule honestL1EPRefineTheory.ehround_step >> gvs[]) >>
+  qexists_tac ‘ssnap rdy' rs’ >> simp[asyncM3WorldTheory.ssnap_def] >>
+  qpat_x_assum ‘st.last = _’ SUBST1_TAC >> first_assum ACCEPT_TAC
+QED
+
+Theorem pinv_all:
+  proxy_world lfd a W0 ⇒ ∀n. pinv lfd b hw lv W0 n
+Proof
+  strip_tac >> Induct >- metis_tac[pinv_0] >> metis_tac[pinv_SUC]
+QED
+
+(* MAIN (no misuse): every round's actions run in the layer *)
+Theorem proxy_no_misuse:
+  proxy_world lfd a W0 ⇒
+  ∀n. ehacts lfd lv n 0 (ehst lfd lv (pifds lfd b hw) (pprog lfd b hw) W0 n)
+        (new_actions (log_of (pprog lfd b hw))
+           (ehhist lfd lv (pifds lfd b hw) (pprog lfd b hw) W0 n)) ≠ NONE
+Proof
+  rpt strip_tac >> drule pinv_all >> disch_then (qspecl_then [‘lv’, ‘hw’, ‘b’, ‘n’] assume_tac) >>
+  drule pinv_SUC >> simp[]
+QED
+
+

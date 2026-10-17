@@ -11,25 +11,28 @@
        - the proxy pprog a b listens on a and connects to b;
        - KV kprog b listens on b.
 
-  2. isolated: nothing outside the system talks to its episodes.  It is
-     stated as a CLOSED system, over the run's labels and states:
-       - no environment step at all (no Env (EIncoming / EConnUp /
-         EArrive));
-       - every connect that the L0 state says connected at once was paired
-         with a listener of the system (sys_step's "s' = s2 ∨ pair").
-     This is stronger than design/45 §4.1's sketch ("no outside process
-     listens on, or connects to, a or b"), and has to be.  An outside peer
-     on the client's private port c could feed bytes to a client episode
-     that no KV episode backs, and the client then reads them, against
-     kv_client_safe.  design/45's later generalisation (foreign clients)
-     would relax this.
-     isolated refers to the run's states ss.  So the headline is stated
-     over l0sys_iso_run: l0sys_run with the same s0 and ss, plus isolated.
+  2. isolated a b: no OUTSIDE peer on the system's ports a and b
+     (design/45 §4.1's form; user ruling 2026-10-17, the middle option).
+     Over the run's labels and states:
+       - no outside process connects to a listener on a or b (no Env
+         (EIncoming k p) with p ∈ {a, b});
+       - no connect to a or b completes with, or gets bytes from, an
+         outside process (no Env (EConnUp k j) or Env (EArrive …) on an end
+         whose target is a or b);
+       - every connect to a or b that the L0 state says connected at once
+         was paired with a listener of the system.
+     Outside traffic on any other port, e.g. the client's private port c,
+     is allowed.  It is also irrelevant: the headline speaks only of the
+     client's CONNECT episodes, its connections to the proxy (conn_only).
+     isolated reads the run's states ss, so the headline uses
+     l0sys_iso_run: l0sys_run with the same s0 and ss, plus isolated.
 
   3. b2_iso_stmt (for m4-server, B2's isolated variant): in an isolated
-     run, B2's pairing also has b2_quiet.  An unpaired end gets bytes only
-     from an Env step (EArrive) or from a peer (Move), and isolated rules
-     out both.
+     run, B2's pairing also has b2_quiet_ab: an episode on a or b (its role
+     is Connected or Accepted on a or b) that conn leaves unpaired reads
+     nothing.  An unpaired end gets bytes only from an outside peer (Env
+     EArrive) or from a peer in the system (Move).  On a and b, isolated
+     rules out the outside peer, and an end with a system peer is paired.
 
   4. topology_stmt: moonshot_sys plus the three claims' port clauses
      (listens_only / connects_only / no_connects on each process's whole
@@ -44,12 +47,12 @@
          statement must add it);
        - KV: kv_claim_safe, what step 11 must deliver (kv_safe_g at
          l0_ep_recvd / l0_ep_sent, plus T7/T8).
-     The stdio_closed disjunct (honestL0Outcome, D33) is added to all
-     three once honest-ffi's D33 lands on the s4g line.
+     Each allows the early outcomes stdio_closed (honestL0Outcome, D33)
+     and l0_listen_failed.
 
   6. moonshot_safe_stmt: THE HEADLINE (design/45 §4.1), exactly as it will
-     be proved.  The client's whole trace in every isolated run of the
-     system is linearizable against KV.
+     be proved.  In every run with no outsider on a or b, the client's
+     view of its connections to the proxy is linearizable against KV.
 *)
 Theory moonshotStep12Stmts
 Ancestors
@@ -85,33 +88,50 @@ End
    2. isolated
    ------------------------------------------------------------------------ *)
 
-(* No environment step, and every at-once connect is paired *)
+(* An end's target is a or b *)
+Definition on_ab_def:
+  on_ab (a : num) (b : num) (s : sysstate) e ⇔ s.target e = SOME a ∨ s.target e = SOME b
+End
+
+(* No outside peer on the ports a and b; at-once connects to them are paired *)
 Definition isolated_def:
-  isolated (rs : syslabel list) (ss : sysstate list) ⇔
-    (∀e. ¬MEM (Env e) rs) ∧
-    ∀i k conf bytes out.
-      i < LENGTH rs ∧ EL i rs = Call k «sys_connect» conf bytes out ∧
-      LENGTH (EL k (EL (SUC i) ss).procs).chans = LENGTH (EL k (EL i ss).procs).chans + 1 ∧
-      ¬(sys_chan (EL (SUC i) ss) (k, LENGTH (EL k (EL i ss).procs).chans)).connecting ∧
-      ¬(sys_chan (EL (SUC i) ss) (k, LENGTH (EL k (EL i ss).procs).chans)).broken ⇒
-      (EL (SUC i) ss).peer (k, LENGTH (EL k (EL i ss).procs).chans) ≠ NONE
+  isolated a b (rs : syslabel list) (ss : sysstate list) ⇔
+    ∀i. i < LENGTH rs ⇒
+      (∀k p. EL i rs = Env (EIncoming k p) ⇒ p ≠ a ∧ p ≠ b) ∧
+      (∀k j. EL i rs = Env (EConnUp k j) ⇒ ¬on_ab a b (EL i ss) (k, j)) ∧
+      (∀k x j. EL i rs = Env (EArrive k x) ∧ env_arrival_chan x = SOME j ⇒
+               ¬on_ab a b (EL i ss) (k, j)) ∧
+      ∀k conf bytes out.
+        EL i rs = Call k «sys_connect» conf bytes out ∧ (w22n conf = a ∨ w22n conf = b) ∧
+        LENGTH (EL k (EL (SUC i) ss).procs).chans = LENGTH (EL k (EL i ss).procs).chans + 1 ∧
+        ¬(sys_chan (EL (SUC i) ss) (k, LENGTH (EL k (EL i ss).procs).chans)).connecting ∧
+        ¬(sys_chan (EL (SUC i) ss) (k, LENGTH (EL k (EL i ss).procs).chans)).broken ⇒
+        (EL (SUC i) ss).peer (k, LENGTH (EL k (EL i ss).procs).chans) ≠ NONE
 End
 
 (* An l0sys run that is isolated, along its own states *)
 Definition l0sys_iso_run_def:
-  l0sys_iso_run (S : dec list list) rs ⇔
+  l0sys_iso_run (S : dec list list) a b rs ⇔
     ∃s0 ss. sys_init S s0 ∧ sys_steps s0 rs ss ∧
             (∀k. k < LENGTH S ⇒ prog_makes (EL k S) (proc_events k rs)) ∧
-            isolated rs ss
+            isolated a b rs ss
 End
 
 (* ------------------------------------------------------------------------
    3. B2, isolated (for m4-server)
    ------------------------------------------------------------------------ *)
 
+(* An episode on a or b that cn leaves unpaired reads nothing *)
+Definition b2_quiet_ab_def:
+  b2_quiet_ab a b rs cn ⇔
+    ∀k j t r. cn (k, j) = NONE ∧ l0_ep_role j (proc_events k rs) = SOME r ∧
+              MEM r [Connected a; Connected b; Accepted a; Accepted b] ⇒
+              l0_ep_recvd j (proc_events k (TAKE t rs)) = []
+End
+
 Definition b2_iso_stmt_def:
   b2_iso_stmt ⇔
-    ∀S rs. l0sys_iso_run S rs ⇒
+    ∀S a b rs. l0sys_iso_run S a b rs ⇒
       ∃cn. (∀e e'. cn e = SOME e' ⇔ cn e' = SOME e) ∧
            (∀k j k' j'. cn (k, j) = SOME (k', j') ⇒
               k < LENGTH S ∧ k' < LENGTH S ∧
@@ -121,7 +141,7 @@ Definition b2_iso_stmt_def:
                    l0_ep_role j' (proc_events k' rs) = SOME (Connected p)) ∧
               ∀t. l0_ep_recvd j' (proc_events k' (TAKE t rs)) ≼
                   l0_ep_sent j (proc_events k (TAKE t rs))) ∧
-           b2_quiet rs cn
+           b2_quiet_ab a b rs cn
 End
 
 (* ------------------------------------------------------------------------
@@ -138,14 +158,6 @@ End
    level: a connect that got no socket opens none) *)
 Definition connects_only_def:
   connects_only p evs ⇔ ∀ev f q. MEM ev evs ∧ ev_new ev = SOME (f, INL q) ⇒ q = p
-End
-
-(* It never closes its stdio fds (with the fdok check of D33, this gives W2:
-   no open returns fd 0) *)
-Definition no_close_stdio_def:
-  no_close_stdio evs ⇔
-    ∀conf bs. MEM (IO_event (ExtCall «sys_close») conf bs) evs ∧ LENGTH conf = 8 ⇒
-              bytes_fd conf ≠ 0w ∧ bytes_fd conf ≠ 1w ∧ bytes_fd conf ≠ 2w
 End
 
 Definition no_connects_def:
@@ -173,7 +185,7 @@ Definition proxy_claim_safe_def:
   proxy_claim_safe Bnd pprog ⇔
     ∀a b w0. a < 65536 ∧ b < 65536 ∧ a ≠ b ∧ l0_rely w0 ∧ l0_fresh w0 ∧ fds_lt w0 ⇒
       ∃beh. semantics_prog (init_state (l0_ffi w0)) init_env (pprog a b) beh ∧ beh ≠ Fail ∧
-            (l0_listen_failed beh ∨
+            (stdio_closed beh ∨ l0_listen_failed beh ∨
              (∃pr. proxy_safe_l0 Bnd a b pr (beh_io beh)) ∧
              ∀evs. LPREFIX (fromList evs) (beh_io beh) ⇒ no_close_stdio evs)
 End
@@ -184,7 +196,7 @@ Definition kv_claim_safe_def:
   kv_claim_safe kprog ⇔
     ∀b w0. b < 65536 ∧ l0_rely w0 ∧ l0_fresh w0 ∧ fds_lt w0 ⇒
       ∃beh. semantics_prog (init_state (l0_ffi w0)) init_env (kprog b) beh ∧ beh ≠ Fail ∧
-            (l0_listen_failed beh ∨
+            (stdio_closed beh ∨ l0_listen_failed beh ∨
              kv_safe_g l0_ep_recvd l0_ep_sent (beh_io beh) ∧
              ∀evs. LPREFIX (fromList evs) (beh_io beh) ⇒ listens_only b evs ∧ no_connects evs)
 End
@@ -193,14 +205,22 @@ End
    6. THE HEADLINE
    ------------------------------------------------------------------------ *)
 
-(* In every isolated run of the system, the client observes one sequential
-   store: its whole trace is linearizable against KV *)
+(* The client's view of episode j: only if j is a connect episode (its
+   connections to the proxy; any other episode shows nothing) *)
+Definition conn_only_def:
+  conn_only sel j evs = if (∃p. l0_ep_role j evs = SOME (Connected p)) then sel j evs else []
+End
+
+(* In every run with no outsider on a or b, the client observes one
+   sequential store: its view of its connections to the proxy is
+   linearizable against KV *)
 Definition moonshot_safe_stmt_def:
   moonshot_safe_stmt Bnd cprog pprog kprog ⇔
     l0_client_claim cprog ∧ proxy_claim_safe Bnd pprog ∧ kv_claim_safe kprog ⇒
     ∀a b c N rqs rs.
       a < 65536 ∧ b < 65536 ∧ c < 65536 ∧ a ≠ b ∧ c ≠ a ∧ c ≠ b ∧
       2 ≤ N ∧ (∀i. EVERY valid_brequest (rqs i)) ∧
-      l0sys_iso_run (moonshot_sys cprog pprog kprog a b c N rqs) rs ⇒
-      kv_client_safe l0_ep_sent l0_ep_recvd (fromList (proc_events client_ix rs))
+      l0sys_iso_run (moonshot_sys cprog pprog kprog a b c N rqs) a b rs ⇒
+      kv_client_safe (conn_only l0_ep_sent) (conn_only l0_ep_recvd)
+                     (fromList (proc_events client_ix rs))
 End

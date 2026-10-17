@@ -29,6 +29,7 @@
    - nothing is sent on an accepted episode;
    - each connect episode serves a logical connection lc j < N and sends a
      prefix of its requests brequests (rqs (lc j));
+   - it never closes fds 0–2 (no_close_stdio, approved 2026-10-17);
    - at most one episode sends anything per logical connection (a refused
      or broken connection's retry sends nothing on the old one; design/45
      §2.5, client_guar' at the handle layer).
@@ -36,20 +37,35 @@
   moonshot_safe).
 
   [D] l0_listen_failed: the proxy's listen_failed (honestL1BStmts, on
-  spike/echo-live-pol), reworded for this branch; to merge with it.
+  spike/echo-live-pol), reworded for this branch and preceded by D33's
+  three sys_fdok calls; to merge with it.  stdio_closed (honestL0Outcome,
+  D33) is the other early outcome.
 *)
 Theory moonshotClientL0Stmts
 Ancestors
   l0sysBridges l0sysInv l0sysEpisodes proxyL0StmtsCopy honestEchoL0SpecCopy
-  HttpSpecBodies
+  HttpSpecBodies honestL0Outcome
 Libs
   preamble
 
-(* The first call, a listen, failed, and the program stopped *)
+(* After the stdio check (D33: sys_fdok on 0, 1, 2, all open), the first
+   real call, a listen, failed, and the program stopped *)
 Definition l0_listen_failed_def:
   l0_listen_failed b ⇔
-    ∃conf bs. b = Terminate Success [IO_event (ExtCall «sys_listen») conf bs] ∧
-              ∀k. l0_ev_res bs ≠ SOME (Ok k)
+    ∃i0 i1 i2 conf bs.
+      b = Terminate Success [IO_event (ExtCall «sys_fdok») [0w] [(i0, 1w)];
+                             IO_event (ExtCall «sys_fdok») [1w] [(i1, 1w)];
+                             IO_event (ExtCall «sys_fdok») [2w] [(i2, 1w)];
+                             IO_event (ExtCall «sys_listen») conf bs] ∧
+      ∀k. l0_ev_res bs ≠ SOME (Ok k)
+End
+
+(* It never closes its stdio fds (approved 2026-10-17; with D33's fdok
+   check this gives W2: no open returns fd 0) *)
+Definition no_close_stdio_def:
+  no_close_stdio evs ⇔
+    ∀conf bs. MEM (IO_event (ExtCall «sys_close») conf bs) evs ∧ LENGTH conf = 8 ⇒
+              bytes_fd conf ≠ 0w ∧ bytes_fd conf ≠ 1w ∧ bytes_fd conf ≠ 2w
 End
 
 (* Safety, at every prefix (no fairness) *)
@@ -68,7 +84,9 @@ Definition client_safe_l0_def:
       (∀j p. l0_ep_role j evs = SOME (Connected p) ⇒
              lc j < N ∧ l0_ep_sent j evs ≼ brequests (rqs (lc j))) ∧
       (* at most one sending episode per logical connection *)
-      (∀j j'. l0_ep_sent j evs ≠ [] ∧ l0_ep_sent j' evs ≠ [] ∧ lc j = lc j' ⇒ j = j')
+      (∀j j'. l0_ep_sent j evs ≠ [] ∧ l0_ep_sent j' evs ≠ [] ∧ lc j = lc j' ⇒ j = j') ∧
+      (* it never closes its stdio fds *)
+      no_close_stdio evs
 End
 
 (* The claim, for the client binary cprog a c N rqs: in every world of B1's
@@ -81,5 +99,6 @@ Definition l0_client_claim_def:
       l0_rely w0 ∧ l0_fresh w0 ∧ fds_lt w0 ⇒
       ∃beh. semantics_prog (init_state (l0_ffi w0)) init_env (cprog a c N rqs) beh ∧
             beh ≠ Fail ∧
-            (l0_listen_failed beh ∨ ∃lc. client_safe_l0 a c N rqs lc (beh_io beh))
+            (stdio_closed beh ∨ l0_listen_failed beh ∨
+             ∃lc. client_safe_l0 a c N rqs lc (beh_io beh))
 End

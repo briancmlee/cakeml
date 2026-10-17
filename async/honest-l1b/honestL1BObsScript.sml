@@ -91,19 +91,17 @@ Proof
 QED
 
 Theorem EVERY_closed_nopoll[local]:
-  EVERY (λe. l0_event_closed e ≠ SOME f) (nopoll l) ⇔
-  EVERY (λe. l0_event_closed e ≠ SOME f) l
+  EVERY (λe. ¬ep_ends f e) (nopoll l) ⇔ EVERY (λe. ¬ep_ends f e) l
 Proof
   Induct_on ‘l’ >> simp[nopoll_def] >> rw[] >> fs[nopoll_def] >>
-  imp_res_tac poll_not_accepted >> simp[]
+  imp_res_tac poll_not_accepted >> simp[ep_ends_def]
 QED
 
 Theorem EXISTS_closed_nopoll[local]:
-  EXISTS (λe. l0_event_closed e = SOME f) (nopoll l) ⇔
-  EXISTS (λe. l0_event_closed e = SOME f) l
+  EXISTS (ep_ends f) (nopoll l) ⇔ EXISTS (ep_ends f) l
 Proof
   Induct_on ‘l’ >> simp[nopoll_def] >> rw[] >> fs[nopoll_def] >>
-  imp_res_tac poll_not_accepted >> simp[]
+  imp_res_tac poll_not_accepted >> simp[ep_ends_def]
 QED
 
 Theorem accepted_not_poll[local]:

@@ -44,13 +44,12 @@ QED
 
 Theorem pf_fetch_feof_mem[local]:
   ∀fs w ps w' ps' log evs.
-    pf_fetch lfd pol fs (w, ps) = SOME ((w', ps'), log, evs) ∧ MEM (FEof f) log ⇒
+    pf_fetch lfd pol fs (w, ps) = SOME ((w', ps'), log, evs) ∧
+    (MEM (FEof f) log ∨ MEM (FReset f) log) ⇒
     MEM f fs ∧ f ≠ lfd
 Proof
   Induct >> simp[pf_fetch_def] >> rpt gen_tac >> rw[AllCaseEqs()] >>
-  TRY (first_x_assum drule_all >> simp[] >> NO_TAC) >>
-  pairarg_tac >> gvs[AllCaseEqs()] >>
-  first_x_assum drule_all >> simp[]
+  TRY (pairarg_tac >> gvs[AllCaseEqs()]) >> metis_tac[]
 QED
 
 Theorem FOLDL_drop_out_eof[local]:
@@ -77,13 +76,14 @@ QED
 Theorem pround_off_nofeof:
   pround lfd pol hs (w, ps) acts = SOME (snap, (w', ps'), log, evs) ∧ winv w ∧
   ¬MEM f (MAP SND ps.b.tbl) ∧ ¬MEM f ps.acq ⇒
-  ¬MEM (FEof f) log
+  ¬MEM (FEof f) log ∧ ¬MEM (FReset f) log
 Proof
   simp[pround_def, AllCaseEqs()] >> strip_tac >> PairCases_on ‘ws1’ >> gvs[] >>
   drule_all pacts_off >> strip_tac >>
   qpat_x_assum ‘pf_tail _ _ _ _ = _’ mp_tac >>
-  simp[pf_tail_def, AllCaseEqs()] >> strip_tac >> gvs[] >> strip_tac >>
-  drule_all pf_fetch_feof_mem >> simp[MEM_FILTER] >> metis_tac[in_fds_poll_set]
+  simp[pf_tail_def, AllCaseEqs()] >> strip_tac >> gvs[] >>
+  conj_tac >> strip_tac >>
+  drule pf_fetch_feof_mem >> simp[MEM_FILTER] >> metis_tac[in_fds_poll_set]
 QED
 
 (* MAIN: the last round that put f at end-of-file *)
@@ -118,6 +118,19 @@ Proof
   ‘¬MEM f (MAP SND (rstate lfd pol ifds m w0 k).b.tbl) ∧
    ¬MEM f (rstate lfd pol ifds m w0 k).acq’
     by (gvs[pown_def, ALL_DISTINCT_APPEND] >> metis_tac[]) >>
+  drule prun_round' >> disch_then (qspecl_then [‘f’, ‘k’] strip_assume_tac) >>
+  ‘winv (rworld lfd pol ifds m w0 k)’ by (drule_all winv_run >> simp[]) >>
+  drule_all pround_off_nofeof >> simp[]
+QED
+
+(* An fd whose EOF or reset L1 fetches in round k was in its table or
+   pending at k's start *)
+Theorem run_fetched_known:
+  run_ok lfd pol ifds m w0 ∧ winv w0 ∧
+  (MEM (FEof f) (rlog lfd pol ifds m w0 k) ∨ MEM (FReset f) (rlog lfd pol ifds m w0 k)) ⇒
+  MEM f (MAP SND (rstate lfd pol ifds m w0 k).b.tbl) ∨ MEM f (rstate lfd pol ifds m w0 k).acq
+Proof
+  strip_tac >> CCONTR_TAC >> fs[] >>
   drule prun_round' >> disch_then (qspecl_then [‘f’, ‘k’] strip_assume_tac) >>
   ‘winv (rworld lfd pol ifds m w0 k)’ by (drule_all winv_run >> simp[]) >>
   drule_all pround_off_nofeof >> simp[]

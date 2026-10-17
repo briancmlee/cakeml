@@ -4,14 +4,14 @@
    - No round listens, and every connect is to a port the program asked
      for (erounds_evs_ok): the T3/T4 shape of the L0 claims.
    - l0sysEpisodes' episodes are monotone under trace prefixes
-     (l0_ep_role_mono, l0_ep_sent_mono), and a start whose events make no
+     (l0_ep_role_mono; l0_ep_sent_mono is e1TraceRound's), and a start whose events make no
      episode and send nothing (the stdio check, the listen) changes no
      episode's role kind or sent bytes (l0_ep_role_quiet, l0_ep_sent_quiet).
 *)
 Theory e1TraceEvents
 Ancestors
   moonshotSentGlue honestL1EPModel honestL1PFConnRun honestL1PFRound honestL1Model
-  l0sysEpisodes
+  l0sysEpisodes e1TraceRound
 Libs
   preamble
 
@@ -100,11 +100,7 @@ Proof
   simp[ep_io_append]
 QED
 
-Theorem l0_ep_sent_mono:
-  xs ≼ ys ⇒ l0_ep_sent j xs ≼ l0_ep_sent j ys
-Proof
-  rw[IS_PREFIX_APPEND] >> simp[l0_ep_sent_def, ep_io_append]
-QED
+(* l0_ep_sent_mono: e1TraceRound's (same statement). *)
 
 Theorem ep_roles_prefix:
   ∀xs lst. ep_roles lst xs ≼ ep_roles lst (xs ++ ys)

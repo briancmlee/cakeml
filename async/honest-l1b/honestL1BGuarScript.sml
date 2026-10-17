@@ -17,6 +17,7 @@ Ancestors
 Libs
   preamble
 
+
 Theorem echo2_guar_transfer:
   bquiet m ifds bz ∧ l0_rely w0 ∧ l0wf w0 ∧ lone lfd w0 ∧ ps0 = pinit ∧
   (∀n. brounds lfd hw ifds bz m (w0, ps0) n ≠ NONE) ∧
@@ -29,6 +30,7 @@ Theorem echo2_guar_transfer:
        dimword (:64)) ∧
   S1 lfd hw ifds m (reindex (btr lfd hw ifds bz m (w0, ps0)) w0) ∧
   (∀j. ep_timed_out KK j io_p ⇒ ep_timed_out KK j io_b) ∧
+  flush_ok lfd hw ifds bz m w0 ps0 ∧
   echo2_guar_l0 KK (reindex (btr lfd hw ifds bz m (w0, ps0)) w0) io_p ⇒
   echo2_guar_l0 KK w0 io_b
 Proof
@@ -58,6 +60,7 @@ Theorem echo2_guar_transfer_ok:
        dimword (:64)) ∧
   S1 lfd hw ifds m (reindex (btr lfd hw ifds bz m (w0, pinit)) w0) ∧
   (∀j. ep_timed_out KK j io_p ⇒ ep_timed_out KK j io_b) ∧
+  flush_ok lfd hw ifds bz m w0 pinit ∧
   echo2_guar_l0 KK (reindex (btr lfd hw ifds bz m (w0, pinit)) w0) io_p ⇒
   echo2_guar_l0 KK w0 io_b
 Proof

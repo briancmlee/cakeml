@@ -59,6 +59,7 @@ Definition echo_pf_facts_def:
     S1 (elfd k) epol (eifds k) (esrv k) (epfw k w1) ∧
     S2 (elfd k) epol (eifds k) (esrv k) (epfw k w1) ∧
     SQ (elfd k) epol (eifds k) (K F) (esrv k) (epfw k w1) ∧
+    flush_ok (elfd k) epol (eifds k) (K F) (esrv k) w1 pinit ∧
     ∀io_p. ptrace (elfd k) epol (eifds k) (K F) (esrv k) w1 pinit io_p ⇒
            echo2_guar_l0 KK (epfw k w1) io_p
 End
@@ -262,14 +263,24 @@ Proof
   metis_tac[]
 QED
 
-(* MAIN: the claim (L3-00's quiet_on_kernel_claim, unamended), under the
+(* MAIN: the claim (L3-00's quiet_on_kernel_claim, with D29's cut-off
+   excuse since c2b12a300, which this instance does not need), under the
    facts at every startup world *)
 Theorem echo_l0b_quiet:
   (∀w0 out w1 ev k. l0_server_world w0 ∧ sys_listen_echo w0 = SOME (out, w1, ev) ∧
                     listen_fd out = SOME k ⇒ echo_pf_facts KK k w1) ⇒
   quiet_on_kernel_claim (echo2_guar_l0 KK) echo_l0b_prog
 Proof
-  rw[quiet_on_kernel_claim_def] >> irule echo_l0b_quiet_world >> metis_tac[]
+  rw[quiet_on_kernel_claim_def] >>
+  ‘∃b. semantics_prog (init_state (l0_ffi w0)) init_env echo_l0b_prog b ∧
+       (listen_failed b ∨
+        (∃io. b = Diverge io ∧ echo2_guar_l0 KK w0 io) ∨
+        (∃io. asleep_l0 b io ∧ echo2_guar_l0 KK w0 (fromList io))) ∧
+       (arrivals_finite_l0 w0 ⇒
+        listen_failed b ∨ (∃io. asleep_l0 b io) ∨
+        ∃io. b = Diverge io ∧ (¬F1_io io ∨ accepts_fail_io io))’
+    by (irule echo_l0b_quiet_world >> metis_tac[]) >>
+  qexists_tac ‘b’ >> metis_tac[]
 QED
 
 (* The amended form (#3) follows *)
@@ -278,7 +289,6 @@ Theorem echo_l0b_quiet_a:
                     listen_fd out = SOME k ⇒ echo_pf_facts KK k w1) ⇒
   quiet_on_kernel_claim_a (echo2_guar_l0 KK) echo_l0b_prog
 Proof
-  rw[quiet_on_kernel_claim_a_def] >>
-  drule_then (qspec_then ‘w0’ mp_tac) (SIMP_RULE std_ss [quiet_on_kernel_claim_def] echo_l0b_quiet) >>
-  simp[] >> metis_tac[]
+  strip_tac >> drule echo_l0b_quiet >>
+  simp[quiet_on_kernel_claim_def, quiet_on_kernel_claim_a_def]
 QED

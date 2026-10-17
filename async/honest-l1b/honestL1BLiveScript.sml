@@ -87,11 +87,52 @@ Proof
   >> metis_tac[ep_closed_nopoll]
 QED
 
-(* MAIN: the echo's raw liveness (PF ⇒ blocking), given D19's transfer *)
+Theorem close_call_not_poll:
+  l0_close_call f ev ⇒ ¬is_poll ev
+Proof
+  Cases_on ‘ev’ >> rw[l0_close_call_def, is_poll_def] >> simp[]
+QED
+
+(* D27: a close call on episode j's fd while it is open, from PF to blocking *)
+Theorem close_call_transfer:
+  bquiet m ifds bz ∧ l0_rely w0 ∧ (∀n. brounds lfd hw ifds bz m (w0, ps0) n ≠ NONE) ∧
+  btrace lfd hw ifds bz m w0 ps0 io_b ∧ ptrace lfd hw ifds bz m w0 ps0 io_p ∧
+  LPREFIX (fromList (pp ++ [ev])) io_p ∧ ep_open j pp ∧
+  l0_close_call (EL j (l0_accepted pp)) ev ⇒
+  ∃bp. LPREFIX (fromList (bp ++ [ev])) io_b ∧ ep_open j bp ∧
+       l0_close_call (EL j (l0_accepted bp)) ev
+Proof
+  strip_tac >>
+  ‘ppre lfd hw ifds m (reindex (btr lfd hw ifds bz m (w0, ps0)) w0, ps0) (pp ++ [ev])’
+    by metis_tac[ptrace_def] >>
+  ‘¬is_poll ev’ by metis_tac[close_call_not_poll] >> drule_all p2b_last >> strip_tac >>
+  qexists_tac ‘bp’ >> rpt conj_tac
+  >- metis_tac[btrace_def]
+  >- metis_tac[ep_open_nopoll]
+  >> metis_tac[nopoll_accepted]
+QED
+
+(* D32's excuse, PF ⇒ blocking, for an episode open on the blocking trace
+   with channel c: an OPEN obligation (to be proved: while the episode is
+   open its fd is polled for input, so a break wakes the blocking poll) *)
+Definition flush_ok_def:
+  flush_ok lfd hw ifds bz m w0 ps0 ⇔
+    ∀io_b io_p evs j c w.
+      btrace lfd hw ifds bz m w0 ps0 io_b ∧ ptrace lfd hw ifds bz m w0 ps0 io_p ∧
+      LPREFIX (fromList evs) io_b ∧ ep_open j evs ∧ world_at w0 evs = SOME w ∧
+      l0_chan_of w (EL j (l0_accepted evs)) = SOME c ∧
+      flushed_open (reindex (btr lfd hw ifds bz m (w0, ps0)) w0) io_p j c ⇒
+      flushed_open w0 io_b j c
+End
+
+(* MAIN: the echo's raw liveness (PF ⇒ blocking), given D19's transfer.
+   D23's ep_timed_out and D32's flushed_open excuses are taken across as
+   premises (to be proved) *)
 Theorem echo_live_transfer:
   bquiet m ifds bz ∧ l0_rely w0 ∧ (∀n. brounds lfd hw ifds bz m (w0, ps0) n ≠ NONE) ∧
   btrace lfd hw ifds bz m w0 ps0 io_b ∧ ptrace lfd hw ifds bz m w0 ps0 io_p ∧
   (∀j. ep_timed_out KK j io_p ⇒ ep_timed_out KK j io_b) ∧
+  flush_ok lfd hw ifds bz m w0 ps0 ∧
   echo_live_l0 KK (reindex (btr lfd hw ifds bz m (w0, ps0)) w0) io_p ⇒
   echo_live_l0 KK w0 io_b
 Proof
@@ -110,10 +151,10 @@ Proof
       >> metis_tac[drains_transfer]) >>
   strip_tac
   >- (disj1_tac >> disj1_tac >> irule ep_hard_err_transfer >> metis_tac[])
-  >- (disj1_tac >> disj2_tac >> metis_tac[])
+  >- (disj1_tac >> disj2_tac >> disj1_tac >> metis_tac[])
+  >- (disj1_tac >> disj2_tac >> disj2_tac >> fs[flush_ok_def] >> metis_tac[])
   >> disj2_tac >> fs[] >> conj_tac
   >- (drule_all sent_transfer >> disch_then (qspec_then ‘j’ strip_assume_tac) >>
       metis_tac[])
-  >> strip_tac >> fs[] >> drule_all sent_transfer >>
-  disch_then (qspec_then ‘j’ strip_assume_tac) >> metis_tac[]
+  >> strip_tac >> fs[] >> metis_tac[close_call_transfer]
 QED

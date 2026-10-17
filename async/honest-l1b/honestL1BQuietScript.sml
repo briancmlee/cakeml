@@ -42,6 +42,7 @@ Theorem l1b_quiet:
   S1 lfd hw ifds m (reindex (btr lfd hw ifds bz m (w0, pinit)) w0) ∧
   S2 lfd hw ifds m (reindex (btr lfd hw ifds bz m (w0, pinit)) w0) ∧
   SQ lfd hw ifds bz m (reindex (btr lfd hw ifds bz m (w0, pinit)) w0) ∧
+  flush_ok lfd hw ifds bz m w0 pinit ∧
   echo2_guar_l0 KK (reindex (btr lfd hw ifds bz m (w0, pinit)) w0) io_p ⇒
   (∀n. brounds lfd hw ifds bz m (w0, pinit) n ≠ NONE) ∧
   echo2_guar_l0 KK w0 io_b ∧

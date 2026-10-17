@@ -214,6 +214,16 @@ Proof
   fs[LPREFIX_LCONS, ep_open_listen, l0_accepted_listen]
 QED
 
+(* D32 *)
+Theorem flushed_open_shift:
+  listen_ev ev ∧ l0_step (SOME W0) (ev_lcall ev) = SOME w1 ∧ flushed_open w1 io j c ⇒
+  flushed_open W0 (LCONS ev io) j c
+Proof
+  rw[flushed_open_def] >> drule world_at_cons >> strip_tac >>
+  qexistsl_tac [‘ev :: pre’, ‘ev'’, ‘post’, ‘f’, ‘w’] >>
+  fs[LPREFIX_LCONS, l0_accepted_listen]
+QED
+
 Theorem echo_live_shift:
   listen_ev ev ∧ l0_step (SOME W0) (ev_lcall ev) = SOME w1 ∧ echo_live_l0 KK w1 io ⇒
   echo_live_l0 KK W0 (LCONS ev io)
@@ -227,11 +237,13 @@ Proof
   impl_tac >- (simp[] >> irule drains_shift >> metis_tac[]) >>
   rw[]
   >- (disj1_tac >> disj1_tac >> irule ep_hard_err_shift >> simp[])
-  >- (disj1_tac >> disj2_tac >> irule ep_timed_out_shift >> simp[])
+  >- (disj1_tac >> disj2_tac >> disj1_tac >> irule ep_timed_out_shift >> simp[])
+  >- (disj1_tac >> disj2_tac >> disj2_tac >> irule flushed_open_shift >> metis_tac[])
   >> disj2_tac >> conj_tac
   >- (qexists_tac ‘ev :: evs''’ >> fs[LPREFIX_LCONS, l0_sent_listen])
   >> strip_tac >> gvs[] >>
-  qexists_tac ‘ev :: evs'³'’ >> fs[LPREFIX_LCONS, ep_closed_listen]
+  qexistsl_tac [‘ev :: evs'³'’, ‘ev'’] >>
+  fs[LPREFIX_LCONS, ep_open_listen, l0_accepted_listen]
 QED
 
 Theorem conn_live_shift:

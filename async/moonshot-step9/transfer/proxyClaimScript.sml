@@ -60,9 +60,9 @@ Proof
 QED
 
 (* The run's events after the start close no stdio fd *)
-Theorem proxy_run_no_close0:
+Theorem proxy_run_no_close_stdio:
   proxy_start a w0 pre w4 k ∧ b < 65536 ∧
-  LPREFIX (fromList ft) (proxy_run_io b hw k w4 pre) ⇒ no_close0 ft
+  LPREFIX (fromList ft) (proxy_run_io b hw k w4 pre) ⇒ no_close_stdio ft
 Proof
   strip_tac >> drule_all proxy_ptot >> disch_then (qspec_then ‘hw’ strip_assume_tac) >>
   drule_all proxy_run_cover >> strip_tac >>
@@ -80,7 +80,7 @@ Proof
           (Q.GENL [‘w0’, ‘lfd’, ‘pol’, ‘ifds’, ‘m’] erounds_no_close_stdio) >>
         impl_tac >- (simp[GSYM fds_lt_copy] >> rpt conj_tac >> first_assum ACCEPT_TAC) >>
         disch_then drule >> simp[]) >>
-  irule no_close0_stdio >> rpt gen_tac >> strip_tac >>
+  rewrite_tac[honestL0OutcomeTheory.no_close_stdio_def] >> rpt gen_tac >> strip_tac >>
   qpat_x_assum ‘no_close_stdio _’ mp_tac >> rewrite_tac[honestL0OutcomeTheory.no_close_stdio_def] >>
   disch_then irule >> simp[] >>
   ‘MEM (IO_event (ExtCall «sys_close») conf bs) (pre ++ FST (SND (SND PEn)))’
@@ -89,6 +89,15 @@ Proof
   qpat_x_assum ‘sys_listen_port _ _ = _’ (strip_assume_tac o MATCH_MP honestL1PFRoundTheory.l0_do_cases o
                                           REWRITE_RULE [sys_listen_port_def]) >>
   qpat_x_assum ‘MEM _ (pre ++ _)’ mp_tac >> simp[]
+QED
+
+Theorem proxy_run_no_close0:
+  proxy_start a w0 pre w4 k ∧ b < 65536 ∧
+  LPREFIX (fromList ft) (proxy_run_io b hw k w4 pre) ⇒ no_close0 ft
+Proof
+  strip_tac >> drule_all proxy_run_no_close_stdio >>
+  rewrite_tac[honestL0OutcomeTheory.no_close_stdio_def] >> strip_tac >>
+  irule no_close0_stdio >> first_assum ACCEPT_TAC
 QED
 
 Theorem proxy_run_ep_ok:

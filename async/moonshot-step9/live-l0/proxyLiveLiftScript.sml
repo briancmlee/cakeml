@@ -17,7 +17,7 @@
 *)
 Theory proxyLiveLift
 Ancestors
-  proxyL0Run proxyL0Stmts honestL1BStmts honestL1PFModel e1DriverLoop
+  proxyStart proxyL1Claim proxyL0Run proxyL0Stmts honestL1BStmts honestL1PFModel e1DriverLoop
   moonshotProxyLive moonshotProxySafe moonshotProxyRel proxyHLStmts e1TraceAccBind e1TraceKind
   e1TraceRole e1TraceChan moonshotProxy moonshotClientSpec endpointHLModel endpointWorld
   honestEchoL0Spec l0sysEpisodes

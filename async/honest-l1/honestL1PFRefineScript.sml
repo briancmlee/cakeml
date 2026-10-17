@@ -441,12 +441,12 @@ Proof
   simp[pv_rel_def, pown_def, l0own_def, inb_of_def]
 QED
 
-Theorem rel_hup[simp]:
-  (pv_rel lfd cm (hup_step hfs ob log ps) s ⇔ pv_rel lfd cm ps s) ∧
-  (pown lfd (hup_step hfs ob log ps) ⇔ pown lfd ps) ∧
-  (l0own lfd w (hup_step hfs ob log ps) ⇔ l0own lfd w ps) ∧
-  hs_of (hup_step hfs ob log ps) = hs_of ps ∧
-  inb_of (hup_step hfs ob log ps) f = inb_of ps f
+Theorem rel_stall[simp]:
+  (pv_rel lfd cm (stall_step hfs ob log ps) s ⇔ pv_rel lfd cm ps s) ∧
+  (pown lfd (stall_step hfs ob log ps) ⇔ pown lfd ps) ∧
+  (l0own lfd w (stall_step hfs ob log ps) ⇔ l0own lfd w ps) ∧
+  hs_of (stall_step hfs ob log ps) = hs_of ps ∧
+  inb_of (stall_step hfs ob log ps) f = inb_of ps f
 Proof
   simp[pv_rel_def, pown_def, l0own_def, hs_of_def, inb_of_def]
 QED
@@ -1155,7 +1155,7 @@ Proof
   qmatch_asmsub_abbrev_tac ‘pf_fetch _ _ fs (w2, ps2)’ >>
   Cases_on ‘pf_fetch lfd pol fs (w2, ps2)’ >> gvs[] >> rename1 ‘_ = SOME z’ >>
   PairCases_on ‘z’ >> rename1 ‘pf_fetch _ _ _ _ = SOME ((w3, ps3f), log3, gevs)’ >> gvs[] >>
-  qabbrev_tac ‘ps3 = hup_step (hup_fds rv) (outbox_of ps.b) log3 ps3f’ >>
+  qabbrev_tac ‘ps3 = stall_step (pf_held ps3f) (outbox_of ps.b) log3 ps3f’ >>
   ‘ps3f.b.closing = ps3.b.closing ∧ ps3f.pause = ps3.pause’ by simp[Abbr ‘ps3’] >>
   pop_assum (fn th => RULE_ASSUM_TAC (REWRITE_RULE [th]) >> REWRITE_TAC [th]) >>
   Cases_on ‘l1_reap ps3.b.closing (w3, ps3.b)’ >> gvs[] >> rename1 ‘_ = SOME u’ >>

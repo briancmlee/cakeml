@@ -558,7 +558,7 @@ Proof
   ‘fkeep lfd h f (pa with b := b2)’ by (irule fkeep_b_same >> fs[]) >>
   drule_all pf_fetch_winv >> strip_tac >>
   drule_all pf_fetch_stream >> strip_tac >> simp[] >>
-  qabbrev_tac ‘ps3 = hup_step (hup_fds rv) (outbox_of pa.b) log ps3'’ >>
+  qabbrev_tac ‘ps3 = stall_step (pf_held ps3') (outbox_of pa.b) log ps3'’ >>
   ‘fkeep lfd h f ps3’ by simp[Abbr ‘ps3’] >>
   ‘ps3'.b.closing = ps3.b.closing’ by simp[Abbr ‘ps3’] >>
   pop_assum (fn th => RULE_ASSUM_TAC (REWRITE_RULE [th])) >>
@@ -709,8 +709,8 @@ End
 Theorem stream_progress:
   run_ok lfd pol ifds m w0 ∧ winv w0 ∧ MEM lfd (l0_used w0) ∧
   (∀n. SND (pcm lfd pol ifds m w0 n) + 1 < dimword (:64)) ∧
-  F1 lfd pol ifds m w0 ∧ S1 lfd pol ifds m w0 ∧ S3 lfd pol ifds m w0 ∧
-  pol_ok hw pol ∧ S4 lfd pol hw ifds m w0 f ⇒
+  F1 lfd pol ifds m w0 ∧ S1 lfd pol ifds m w0 ∧ S3w lfd pol ifds m w0 ∧
+  pol_ok hw pol ∧ S4w lfd pol hw ifds m w0 f ⇒
   ∀R n0 h. ALOOKUP (rstate lfd pol ifds m w0 n0).b.tbl h = SOME f ∧
            ¬MEM f (rstate lfd pol ifds m w0 n0).eof ∧ fl (rworld lfd pol ifds m w0 n0) f R ⇒
            ∃d. fopen lfd pol ifds m w0 h f n0 d ∧
@@ -785,8 +785,8 @@ QED
 Theorem live_data_kernel:
   run_ok lfd pol ifds m w0 ∧ winv w0 ∧ MEM lfd (l0_used w0) ∧
   (∀n. SND (pcm lfd pol ifds m w0 n) + 1 < dimword (:64)) ∧
-  F1 lfd pol ifds m w0 ∧ S1 lfd pol ifds m w0 ∧ S3 lfd pol ifds m w0 ∧
-  pol_ok hw pol ∧ S4 lfd pol hw ifds m w0 f ⇒
+  F1 lfd pol ifds m w0 ∧ S1 lfd pol ifds m w0 ∧ S3w lfd pol ifds m w0 ∧
+  pol_ok hw pol ∧ S4w lfd pol hw ifds m w0 f ⇒
   ∀n0 h j. ALOOKUP (rstate lfd pol ifds m w0 n0).b.tbl h = SOME f ∧
            ¬MEM f (rstate lfd pol ifds m w0 n0).eof ∧
            l0_chan_of (rworld lfd pol ifds m w0 n0) f = SOME j ⇒

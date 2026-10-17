@@ -33,7 +33,13 @@
      true levels is proved at L1 level (honestL1EPRefine's level_true:
      on L1's run, E1 runs this layer with lv = L1's answers, which are
      its outbox lengths) or takes a hypothesis on lv.  No world call, no
-     tick.
+     tick.  The oracle may also answer EGone ([R3](a), design note
+     work/workers/r3-close/design-r3-close.md §4): L1 answers it for a
+     handle whose fd it dropped (D23's write timeout, a reset, a hard
+     send error), so the program can close the pair; lv n k = NONE;
+   - EClose h / EShut h ([R3](a)): PLACEHOLDER, NONE in this layer.  The
+     HL semantics are close-v2's (to the orchestrator for review); until
+     then nothing may rely on these cases (spike/r3-close only).
 *)
 Theory endpointHLModel
 Ancestors
@@ -43,12 +49,13 @@ Libs
 
 Datatype:
   eact = EAccept word64 | ERead word64 num | EWrite word64 (word8 list) | EConnect num
-       | ELevel word64
+       | ELevel word64 | EClose word64 | EShut word64
 End
 
 Datatype:
   eresp = EAccepted (word64 option) | EGot ((word8 list) option) | EWrote num
         | EConnected (word64 option) | ERefused | ELvl num
+        | EGone | EClosed | EShutDone
 End
 
 (* The open handles and their fds; handles issued; connect handles whose
@@ -115,12 +122,16 @@ Definition ehdo_def:
     | SOME f =>
         if chan_status w f = SOME Connecting then NONE
         else OPTION_MAP (λ(k, w'). (EWrote k, (w', hs))) (ep_send f bs w)) ∧
-  ehdo lfd v (w, hs) (ELevel h) = SOME (ELvl v, (w, hs))
+  ehdo lfd v (w, hs) (ELevel h) =
+    SOME ((case v of SOME l => ELvl l | NONE => EGone), (w, hs)) ∧
+  (* PLACEHOLDER ([R3](a)): close-v2's HL cases replace these *)
+  ehdo lfd v (w, hs) (EClose h) = NONE ∧
+  ehdo lfd v (w, hs) (EShut h) = NONE
 End
 
 (* The actions of round n from the k-th on (lv: the Level oracle) *)
 Definition ehacts_def:
-  ehacts lfd (lv : num -> num -> num) (n : num) (k : num) st [] = SOME ([], st) ∧
+  ehacts lfd (lv : num -> num -> num option) (n : num) (k : num) st [] = SOME ([], st) ∧
   ehacts lfd lv n k st (a :: acts) =
     case ehdo lfd (lv n k) st a of
     | NONE => NONE

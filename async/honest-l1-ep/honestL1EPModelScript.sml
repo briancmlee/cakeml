@@ -30,7 +30,7 @@
 *)
 Theory honestL1EPModel
 Ancestors
-  honestL1PFModel honestL1Model endpointHLModel honestL0 honestL0World
+  honestL1PFClose honestL1PFModel honestL1Model endpointHLModel honestL0 honestL0World
   asyncCore asyncLevel1 asyncM3World alist
 Libs
   preamble
@@ -44,13 +44,17 @@ Datatype:
          ; ctbl : (word64 # word64) list        (* connect handle, its fd: not yet up *)
          ; cst : (word64 # cstat) list          (* fd: its connect's status *)
          ; settling : word64 list               (* connect handles not yet reported *)
-         ; early : (word64 # cstat) list |>     (* fd: a connect's outcome known at
+         ; early : (word64 # cstat) list        (* fd: a connect's outcome known at
                                                    once (up or refused), applied at
                                                    the round's tail *)
+         ; shq : word64 list                    (* handles with a Shutdown queued
+                                                   ([R3]; handles are never reused) *)
+         ; shut : word64 list |>                (* handles shut: writes take nothing *)
 End
 
 Definition einit_def:
-  einit = <| p := pinit; ctbl := []; cst := []; settling := []; early := [] |>
+  einit = <| p := pinit; ctbl := []; cst := []; settling := []; early := [];
+             shq := []; shut := [] |>
 End
 
 Definition cstat_of_def:
@@ -87,6 +91,12 @@ End
 Definition elevel_def:
   elevel es h =
     case ALOOKUP es.p.b.tbl h of SOME f => LENGTH (outbox_of es.p.b f) | NONE => 0
+End
+
+(* [R3]: h's fd was dropped (D23's write timeout, a reset, a hard send
+   error); ELevel reports it, so the program can close the pair *)
+Definition egone_def:
+  egone es h ⇔ case ALOOKUP es.p.b.tbl h of SOME f => MEM f es.p.b.gone | NONE => F
 End
 
 Definition edo_def:
@@ -130,14 +140,53 @@ Definition edo_def:
                        ((case r of Got x => EGot x | _ => EGot NONE), (w', es with p := ps'), evs))
            (pdo lfd (w, es.p) (Read h n))) ∧
   edo lfd pol (w, es) (EWrite h bs) =
-    (case ALOOKUP es.ctbl h of
+    (if MEM h es.shq ∨ MEM h es.shut then SOME (EWrote 0, (w, es), [])  (* after EShut *)
+     else
+     case ALOOKUP es.ctbl h of
      | SOME f => if cstat_of es f = CRefused then SOME (EWrote 0, (w, es), []) else NONE
      | NONE =>
          OPTION_MAP (λ(r, (w', ps'), evs).
                        (EWrote (if ALOOKUP es.p.b.tbl h = NONE then 0 else LENGTH bs),
                         (w', es with p := ps'), evs))
            (pdo lfd (w, es.p) (Write h bs))) ∧
-  edo lfd pol (w, es) (ELevel h) = SOME (ELvl (elevel es h), (w, es), [])
+  edo lfd pol (w, es) (ELevel h) =
+    SOME ((if egone es h then EGone else ELvl (elevel es h)), (w, es), []) ∧
+  (* [R3] Close: a connect handle's socket is closed and forgotten; a PF
+     handle takes the EOF closing path (pf_close: at once, or once its
+     outbox is flushed or dropped); unread input is discarded.  An unknown
+     or closed handle: nothing (idempotent) *)
+  edo lfd pol (w, es) (EClose h) =
+    (if h = lfd then NONE
+     else
+       case ALOOKUP es.ctbl h of
+       | SOME f =>
+           OPTION_MAP (λ((w', b'), evs).
+                         (EClosed, (w', ec_del h f (es with <| p := es.p with b := b';
+                                                              early := ADELKEY f es.early |>)), evs))
+             (l1_close f (w, es.p.b))
+       | NONE =>
+           case ALOOKUP es.p.b.tbl h of
+           | NONE => SOME (EClosed, (w, es), [])
+           | SOME f =>
+               OPTION_MAP (λ((w', ps'), evs). (EClosed, (w', es with p := ps'), evs))
+                 (pf_close f (w, pf_release h f (set_inb f [] es.p)))) ∧
+  (* [R3] Shutdown: queued (eshuts fires it once the outbox is flushed, and
+     a connect only once it is up); a repeated, refused, gone or unknown
+     handle: nothing (idempotent) *)
+  edo lfd pol (w, es) (EShut h) =
+    (if h = lfd then NONE
+     else if MEM h es.shq ∨ MEM h es.shut then SOME (EShutDone, (w, es), [])
+     else
+       case ALOOKUP es.ctbl h of
+       | SOME f =>
+           if cstat_of es f = CRefused then SOME (EShutDone, (w, es), [])
+           else SOME (EShutDone, (w, es with shq := es.shq ++ [h]), [])
+       | NONE =>
+           case ALOOKUP es.p.b.tbl h of
+           | SOME f =>
+               if MEM f es.p.b.gone then SOME (EShutDone, (w, es), [])
+               else SOME (EShutDone, (w, es with shq := es.shq ++ [h]), [])
+           | NONE => SOME (EShutDone, (w, es), []))
 End
 
 Definition eacts_def:
@@ -234,6 +283,20 @@ Definition etail_def:
                         in SOME (rdy, (w5, es7), log, pevs ++ fevs ++ gevs ++ cevs ++ sevs)
 End
 
+(* [R3] The round's last step: the queued shutdowns (pf_shuts).  A handle
+   no longer open leaves the queue; a connect handle not yet up stays *)
+Definition eshuts_def:
+  eshuts (w, es) =
+    let qs = FLAT (MAP (λh. case ALOOKUP es.p.b.tbl h of
+                            | SOME f => [(h, f)]
+                            | NONE => case ALOOKUP es.ctbl h of
+                                      | SOME f => [(h, f)]
+                                      | NONE => []) es.shq) in
+      OPTION_MAP (λ((w', ps'), kp, sh, evs).
+                    ((w', es with <| p := ps'; shq := kp; shut := sh ++ es.shut |>), evs))
+        (pf_shuts qs (w, es.p))
+End
+
 Definition eround_def:
   eround lfd pol hs ws acts =
     case eacts lfd pol ws acts of
@@ -241,8 +304,19 @@ Definition eround_def:
     | SOME (rs, evs, ws1) =>
         case etail lfd pol hs ws1 of
         | NONE => NONE
-        | SOME (rdy, ws2, log, tevs) => SOME (ssnap rdy rs, ws2, log, evs ++ tevs)
+        | SOME (rdy, ws2, log, tevs) =>
+            case eshuts ws2 of
+            | NONE => NONE
+            | SOME (ws3, shevs) => SOME (ssnap rdy rs, ws3, log, evs ++ tevs ++ shevs)
 End
+
+(* With nothing queued the shutdown step does nothing (every run without
+   EShut) *)
+Theorem eshuts_nil:
+  es.shq = [] ⇒ eshuts (w, es) = SOME ((w, es), [])
+Proof
+  rw[eshuts_def, pf_shuts_def] >> simp[theorem "l1e_component_equality"]
+QED
 
 Definition erounds_def:
   erounds lfd pol ifds m ws0 0 = SOME ([], ws0, [], []) ∧

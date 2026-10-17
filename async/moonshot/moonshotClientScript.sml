@@ -2770,6 +2770,20 @@ QED
    Through E1: the client's guarantee of the honest L1's own run
    ------------------------------------------------------------------------ *)
 
+(* The client neither closes nor shuts a handle (E1's noclose) *)
+Theorem cprog_noclose:
+  EVERY noclose (new_actions (log_of (cprog a N rqs)) h)
+Proof
+  ‘∃st rdy. (cstate a N rqs h).last = cacts a st rdy’
+    by (Cases_on ‘h’ using SNOC_CASES
+        >- (simp[cstate_def, cinit_def] >> metis_tac[]) >>
+        REWRITE_TAC [SNOC_APPEND, cstate_SNOC] >> simp[cstep_def] >> metis_tac[]) >>
+  simp[cprog_new_actions, EVERY_MEM, MEM_cacts] >> rpt strip_tac >>
+  rename1 ‘MEM x (cact1 _ _ (EL i st.cs) _)’ >>
+  Cases_on ‘EL i st.cs’ >> gvs[cact1_def, AllCaseEqs(), honestL1EPRefineTheory.noclose_def] >>
+  rpt (pop_assum mp_tac) >> rw[] >> simp[]
+QED
+
 Theorem client_l1_claim_holds:
   client_l1_claim cprog cifds
 Proof
@@ -2778,7 +2792,7 @@ Proof
                ‘λlv W. client_guar' a N rqs lfd lv (cifds a N rqs) (cprog a N rqs) W’,
                ‘lfd’, ‘cifds a N rqs’, ‘cprog a N rqs’, ‘c’, ‘pol’, ‘w0’, ‘calls’] mp_tac
     (Q.GENL [‘P’, ‘G’, ‘lfd’, ‘ifds’, ‘m’, ‘a’, ‘pol’, ‘w0’, ‘calls’] l1_of_hl) >>
-  simp[] >> impl_tac >- (
+  simp[cprog_noclose] >> impl_tac >- (
     conj_tac
     >- (rpt strip_tac >> mp_tac client_hl_claim_holds >> simp[client_hl_claim_def] >>
         disch_then irule >> simp[run_rely_def] >> metis_tac[]) >>

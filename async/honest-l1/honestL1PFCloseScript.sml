@@ -10,7 +10,8 @@
      `closing`, and the round's reap closes it once it is flushed or gone
      (D23 times out a closing fd like any held fd, so the close always
      happens).  pdo's EOF branch is exactly pf_close (pdo_read_eof);
-   - pf_shuts: the deferred half-close.  Each queued fd that has a handle,
+   - pf_shuts: the deferred half-close.  Each queued fd (with the caller's
+     key for it) that has a handle,
      is not gone, and whose outbox is empty gets one sys_shutdown
      (SHUT_WR): success fires it; a transient error keeps it queued; any
      other error (ENOTCONN, a broken channel) drops its outbox (gone, as a
@@ -43,22 +44,23 @@ Definition pf_close_def:
     else SOME ((w, ps with b := ps.b with closing := f :: ps.b.closing), [])
 End
 
-(* The queued shutdowns fs: the next state, the fds still queued, the fds
+(* The queued shutdowns fs, each an fd with a key (the caller's name for
+   it, e.g. its handle): the next state, the keys still queued, the keys
    shut, and the events *)
 Definition pf_shuts_def:
   pf_shuts [] ws = SOME (ws, [], [], []) ∧
-  pf_shuts (f :: fs) (w, ps) =
+  pf_shuts ((k, f) :: fs) (w, ps) =
     if MEM f ps.b.gone then pf_shuts fs (w, ps)
     else if ¬MEM f (MAP SND ps.b.tbl) ∨ outbox_of ps.b f ≠ [] then
-      OPTION_MAP (λ(ws, kp, sh, evs). (ws, f :: kp, sh, evs)) (pf_shuts fs (w, ps))
+      OPTION_MAP (λ(ws, kp, sh, evs). (ws, k :: kp, sh, evs)) (pf_shuts fs (w, ps))
     else
       case sys_shutdown f w of
       | NONE => NONE
       | SOME (out, w1, ev) =>
           let (ps1, kp1, sh1) =
                 case l0_res_of out of
-                | Ok _ => (ps, [], [f])
-                | Fail e _ => if l1_transient e then (ps, [f], [])
+                | Ok _ => (ps, [], [k])
+                | Fail e _ => if l1_transient e then (ps, [k], [])
                               else (ps with b := drop_out ps.b f, [], [])
           in
             OPTION_MAP (λ(ws, kp, sh, evs). (ws, kp1 ++ kp, sh1 ++ sh, ev :: evs))
@@ -140,7 +142,7 @@ Theorem pf_shuts_ok:
                        ps'.b.closing = ps.b.closing
 Proof
   Induct >- simp[pf_shuts_def] >>
-  rpt gen_tac >> strip_tac >> rename1 ‘f :: fs’ >>
+  rpt gen_tac >> strip_tac >> rename1 ‘kf :: fs’ >> PairCases_on ‘kf’ >> rename1 ‘(k, f) :: fs’ >>
   simp[Once pf_shuts_def] >>
   IF_CASES_TAC >- (first_x_assum irule >> simp[]) >>
   IF_CASES_TAC
@@ -161,10 +163,11 @@ QED
 Theorem pf_shuts_sub:
   ∀fs w ps ws kp sh evs.
     pf_shuts fs (w, ps) = SOME (ws, kp, sh, evs) ⇒
-    (∀f. MEM f kp ⇒ MEM f fs) ∧ (∀f. MEM f sh ⇒ MEM f fs)
+    (∀k. MEM k kp ⇒ MEM k (MAP FST fs)) ∧ (∀k. MEM k sh ⇒ MEM k (MAP FST fs))
 Proof
   Induct >- simp[pf_shuts_def] >>
-  rpt gen_tac >> rename1 ‘f :: fs’ >> simp[Once pf_shuts_def] >>
+  rpt gen_tac >> rename1 ‘kf :: fs’ >> PairCases_on ‘kf’ >> rename1 ‘(k, f) :: fs’ >>
+  simp[Once pf_shuts_def] >>
   IF_CASES_TAC
   >- (strip_tac >> first_x_assum drule >> simp[] >> metis_tac[]) >>
   IF_CASES_TAC
@@ -175,7 +178,7 @@ Proof
   pairarg_tac >> simp[] >> strip_tac >> gvs[] >>
   PairCases_on ‘z’ >> gvs[] >>
   first_x_assum drule >> strip_tac >>
-  ‘(∀g. MEM g kp1 ⇒ g = f) ∧ (∀g. MEM g sh1 ⇒ g = f)’
+  ‘(∀g. MEM g kp1 ⇒ g = k) ∧ (∀g. MEM g sh1 ⇒ g = k)’
     by (qpat_x_assum ‘_ = (ps1, kp1, sh1)’ mp_tac >> rw[AllCaseEqs()] >> gvs[]) >>
   metis_tac[]
 QED

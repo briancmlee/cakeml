@@ -9,7 +9,7 @@
 *)
 Theory honestL1EPOut
 Ancestors
-  honestL1EPModel honestL1PFOut honestL1PFRefine honestL1PFRound honestL1PFModel
+  honestL1EPModel honestL1PFClose honestL1PFOut honestL1PFRefine honestL1PFRound honestL1PFModel
   honestL1Steps honestL1Props honestL1Model honestL0WorldProps honestL0Rely honestL0World
   endpointHLModel endpointWorld
 Libs
@@ -254,12 +254,63 @@ Proof
   rw[sys_connect_def] >> drule l0_do_cases >> rw[] >> simp[ev_sent_def]
 QED
 
+(* [R3] EClose on a PF handle h of fd f: f leaves the table and is closed
+   at once or joins closing; nothing is sent, every fd still held keeps its
+   account *)
+Theorem ostep_tbl:
+  ostep g (b with tbl := t) b' evs adw ⇔ ostep g b b' evs adw
+Proof
+  simp[ostep_def, outbox_of_def]
+QED
+
+Theorem eclose_pf:
+  pf_close f (w, pf_release h f (set_inb f [] ps)) = SOME ((w', ps'), evs) ∧ pown lfd ps ∧
+  ALOOKUP ps.b.tbl h = SOME f ⇒
+  (l0_rely w ⇒ l0_rely w') ∧ (∀g. evs_sent g evs = []) ∧ ps'.acq = ps.acq ∧
+  (∀g. held ps'.b g ⇒ held ps.b g ∧ ostep g ps.b ps'.b evs []) ∧
+  (okeys ps.b ⇒ okeys ps'.b)
+Proof
+  strip_tac >>
+  ‘ALL_DISTINCT (MAP SND ps.b.tbl) ∧ ALL_DISTINCT (MAP FST ps.b.tbl) ∧ ¬MEM f ps.b.closing’
+    by (gvs[honestL1PFRefineTheory.pown_def, ALL_DISTINCT_APPEND] >> imp_res_tac ALOOKUP_MEM >>
+        gvs[MEM_MAP] >> metis_tac[SND]) >>
+  ‘¬MEM f (MAP SND (ADELKEY h ps.b.tbl))’ by metis_tac[ADELKEY_SND_distinct] >>
+  ‘∀g. MEM g (MAP SND (ADELKEY h ps.b.tbl)) ⇒ MEM g (MAP SND ps.b.tbl)’
+    by metis_tac[honestL1PFRefineTheory.MEM_SND_ADELKEY_sub] >>
+  ‘MEM f (MAP SND ps.b.tbl)’ by (imp_res_tac ALOOKUP_MEM >> simp[MEM_MAP] >> metis_tac[SND]) >>
+  qpat_x_assum ‘pf_close _ _ = _’ mp_tac >>
+  simp[pf_close_def, pf_release_def, set_inb_def] >>
+  ‘outbox_of (ps.b with tbl := ADELKEY h ps.b.tbl) f = outbox_of ps.b f’ by simp[outbox_of_def] >>
+  pop_assum (fn th => REWRITE_TAC [th]) >>
+  IF_CASES_TAC
+  >- (simp[PULL_EXISTS, FORALL_PROD] >> rpt gen_tac >> strip_tac >> gvs[] >>
+      rename1 ‘l1_close _ _ = SOME ((_, b2), _)’ >>
+      drule l1_close_ostep >> strip_tac >> gvs[] >>
+      ‘∀g. held b2 g ⇒ g ≠ f ∧ held ps.b g’ by
+        (gen_tac >> simp[held_def] >> strip_tac >> gvs[] >> metis_tac[]) >>
+      rpt strip_tac >>
+      TRY (qpat_x_assum ‘∀g. held _ g ⇒ g ≠ f ∧ _’ drule >> simp[] >> NO_TAC) >>
+      TRY (‘g ≠ f’ by metis_tac[] >>
+           qpat_x_assum ‘∀f'. f' ≠ f ⇒ ostep _ _ _ _ _’ (qspec_then ‘g’ mp_tac) >>
+           simp[ostep_tbl] >> NO_TAC) >>
+      qpat_x_assum ‘l1_close _ _ = _’ mp_tac >>
+      simp[l1_close_def, AllCaseEqs(), PULL_EXISTS] >> rpt strip_tac >> gvs[] >>
+      irule okeys_close >> simp[]) >>
+  strip_tac >> gvs[] >> rpt strip_tac >>
+  TRY (simp[ostep_def, outbox_of_def] >> NO_TAC) >>
+  TRY (gvs[held_def] >> metis_tac[] >> NO_TAC) >>
+  irule okeys_flushing >> simp[]
+QED
+
 (* What an E1 action writes on fd f (a connect handle's writes take
    nothing: pending is a misuse, refused takes 0) *)
 Definition ewbytes_def:
-  ewbytes f (es : l1e) (EWrite h bs) = (if ALOOKUP es.p.b.tbl h = SOME f then bs else []) ∧
+  ewbytes f (es : l1e) (EWrite h bs) =
+    (if MEM h es.shq ∨ MEM h es.shut then []  (* after EShut: nothing *)
+     else if ALOOKUP es.p.b.tbl h = SOME f then bs else []) ∧
   ewbytes f es (ERead h n) = [] ∧ ewbytes f es (EAccept l) = [] ∧
-  ewbytes f es (EConnect a) = [] ∧ ewbytes f es (ELevel h) = []
+  ewbytes f es (EConnect a) = [] ∧ ewbytes f es (ELevel h) = [] ∧
+  ewbytes f es (EClose h) = [] ∧ ewbytes f es (EShut h) = []
 End
 
 (* What the output side needs of L1's own invariant (E1's eown implies it) *)
@@ -307,11 +358,15 @@ Proof
       simp[ewbytes_def] >> rpt strip_tac >>
       first_x_assum (qspec_then ‘f’ assume_tac) >> gvs[wbytes_def] >>
       metis_tac[ostep_ostepc])
-  (* a refused connect handle, read: closed *)
-  >~ [‘l1_close _ _ = _’]
-  >- (PairCases_on ‘z’ >> gvs[] >> drule l1_close_ostep >> strip_tac >>
-      simp[ec_del_def, ewbytes_def] >> rpt strip_tac >>
-      metis_tac[ostep_ostepc, eown_ctbl_lookup])
+  (* a refused connect handle, read: closed; a connect handle, EClose *)
+  >>~- ([‘l1_close _ _ = _’],
+        PairCases_on ‘z’ >> gvs[] >> drule l1_close_ostep >> strip_tac >>
+        simp[ec_del_def, ewbytes_def] >> rpt strip_tac >>
+        metis_tac[ostep_ostepc, eown_ctbl_lookup])
+  (* a PF handle, EClose *)
+  >~ [‘pf_close _ _ = _’]
+  >- (PairCases_on ‘z’ >> gvs[] >> drule_all eclose_pf >> strip_tac >>
+      simp[ewbytes_def, ostepc_def] >> metis_tac[])
   (* EConnect *)
   >~ [‘sys_connect _ _ = _’]
   >- (drule sys_connect_quiet >> strip_tac >>
@@ -346,7 +401,14 @@ Proof
   TRY (PairCases_on ‘z’) >> gvs[] >>
   TRY (drule_all pdo_keys >> simp[] >> NO_TAC) >>
   TRY (gvs[okeys_def, outbox_of_def] >> NO_TAC) >>
+  TRY (drule_all eclose_pf >> simp[] >> NO_TAC) >>
   gvs[ec_del_def, l1_close_def, AllCaseEqs()] >> irule okeys_forget >> simp[]
+QED
+
+Theorem pf_close_acq:
+  pf_close f (w, ps) = SOME ((w', ps'), evs) ⇒ ps'.acq = ps.acq
+Proof
+  rw[pf_close_def] >> gvs[] >> pairarg_tac >> gvs[]
 QED
 
 Theorem edo_acq:
@@ -354,6 +416,7 @@ Theorem edo_acq:
 Proof
   Cases_on ‘a’ >> rw[edo_def, AllCaseEqs()] >>
   TRY (PairCases_on ‘z’) >> gvs[ec_del_def] >>
+  TRY (imp_res_tac pf_close_acq >> fs[pf_release_def, set_inb_def] >> NO_TAC) >>
   gvs[pdo_def, AllCaseEqs()] >> TRY (PairCases_on ‘z’) >> gvs[]
 QED
 
@@ -387,9 +450,12 @@ Proof
       metis_tac[honestL1PFRefineTheory.MEM_SND_ADELKEY_sub])
   >~ [‘pdo _ _ (Write _ _) = _’]
   >- (PairCases_on ‘z’ >> gvs[] >> drule pdo_write_held >> strip_tac >> gvs[held_def])
-  >~ [‘l1_close _ _ = _’]
-  >- (PairCases_on ‘z’ >> gvs[] >> drule l1_close_ostep >> strip_tac >>
-      gvs[ec_del_def, held_def] >> metis_tac[])
+  >>~- ([‘l1_close _ _ = _’],
+        PairCases_on ‘z’ >> gvs[] >> drule l1_close_ostep >> strip_tac >>
+        gvs[ec_del_def, held_def] >> metis_tac[])
+  >~ [‘pf_close _ _ = _’]
+  >- (PairCases_on ‘z’ >> gvs[] >> ‘pown lfd es.p’ by fs[oown_def] >>
+      drule_all eclose_pf >> strip_tac >> simp[] >> metis_tac[])
   >> gvs[held_def]
 QED
 
@@ -432,9 +498,12 @@ Proof
       first_x_assum (qspec_then ‘f’ mp_tac) >> simp[ostep_def, wbytes_def] >>
       ‘∀h. ALOOKUP es.p.b.tbl h = SOME f ⇔ F’ by metis_tac[] >> simp[] >>
       Cases_on ‘MEM f z2.b.gone’ >> simp[] >> gvs[held_def])
-  >~ [‘l1_close _ _ = _’]
-  >- (PairCases_on ‘z’ >> gvs[] >> drule l1_close_ostep >> strip_tac >>
-      gvs[ec_del_def, held_def] >> metis_tac[])
+  >>~- ([‘l1_close _ _ = _’],
+        PairCases_on ‘z’ >> gvs[] >> drule l1_close_ostep >> strip_tac >>
+        gvs[ec_del_def, held_def] >> metis_tac[])
+  >~ [‘pf_close _ _ = _’]
+  >- (PairCases_on ‘z’ >> gvs[] >> ‘pown lfd es.p’ by fs[oown_def] >>
+      drule_all eclose_pf >> strip_tac >> simp[] >> metis_tac[])
   >> TRY (drule sys_connect_quiet >> strip_tac) >> gvs[held_def]
 QED
 
@@ -771,14 +840,15 @@ QED
    connect that came up, an accepted connection, FConn) starts empty
    ------------------------------------------------------------------------ *)
 
+(* The round up to its tail ([R3]: eround then fires the queued shutdowns,
+   eshuts; E1 has none, eshuts_nil) *)
 Theorem eround_live:
-  eround lfd pol hs (w, es) acts = SOME (snap, (w', es'), log, evs) ∧
+  eacts lfd pol (w, es) acts = SOME (rs, aevs, (w1, es1)) ∧
+  etail lfd pol hs (w1, es1) = SOME (rdy, (w', es'), log, tevs) ∧ evs = aevs ++ tevs ∧
   (∀i rs0 evs0 wi esi.
      i ≤ LENGTH acts ∧ eacts lfd pol (w, es) (TAKE i acts) = SOME (rs0, evs0, (wi, esi)) ⇒
      oown lfd esi) ∧
   pown lfd es'.p ∧ okeys es.p.b ∧ l0_rely w ⇒
-  ∃rs aevs w1 es1.
-    eacts lfd pol (w, es) acts = SOME (rs, aevs, (w1, es1)) ∧
     l0_rely w' ∧ okeys es'.p.b ∧
     (∀f. MEM f (MAP SND es'.ctbl) ⇒ MEM f (MAP SND es1.ctbl)) ∧
     (∀f. live es' f ⇒ live es1 f ∨ MEM f (MAP SND es1.ctbl) ∨ MEM (FConn f) log) ∧
@@ -790,10 +860,7 @@ Theorem eround_live:
         (live es' f ∧ (¬live es1 f ∨ MEM (FConn f) log) ⇒
          outbox_of es'.p.b f = [] ∧ ¬MEM f es'.p.b.gone)
 Proof
-  simp[eround_def, AllCaseEqs(), PULL_EXISTS] >> rpt gen_tac >> strip_tac >>
-  rename1 ‘eacts _ _ _ _ = SOME (rs, aevs, ws1)’ >> PairCases_on ‘ws1’ >>
-  rename1 ‘eacts _ _ _ _ = SOME (rs, aevs, (w1, es1))’ >>
-  gvs[] >>
+  strip_tac >> gvs[] >>
   ‘oown lfd es1’
     by (first_x_assum (qspec_then ‘LENGTH acts’ mp_tac) >> simp[TAKE_LENGTH_ID_rwt]) >>
   drule eacts_live >> impl_tac >- (simp[] >> metis_tac[LESS_IMP_LESS_OR_EQ]) >> strip_tac >>

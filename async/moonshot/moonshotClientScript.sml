@@ -293,6 +293,7 @@ Definition crel_def:
     ALL_DISTINCT (MAP FST hs.tbl) ∧ ALL_DISTINCT (MAP SND hs.tbl) ∧
     ALL_DISTINCT (MAP FST w.open_fds) ∧ ALL_DISTINCT (MAP SND w.open_fds) ∧
     EVERY (λj. j < LENGTH w.chans) (MAP SND w.open_fds) ∧
+    (∀f. MEM f (MAP FST w.open_fds) ⇒ ¬MEM f (MAP FST w.listening)) ∧
     (∀f. MEM f (MAP FST w.open_fds) ⇔ MEM f (MAP SND hs.tbl)) ∧
     (* the open handles: the connections', one each *)
     (∀hd. MEM hd (MAP FST hs.tbl) ⇔ ∃i. i < N ∧ MEM hd (chd (EL i st.cs))) ∧
@@ -424,7 +425,7 @@ Proof
   qabbrev_tac ‘hd = hdl lfd hs.nxt’ >>
   qpat_x_assum ‘crel _ _ _ _ _ _ _ _ _’ (strip_assume_tac o REWRITE_RULE [crel_def]) >>
   ‘¬MEM f (ep_used w)’ by (fs[alloc_ok_def, Abbr ‘f’]) >>
-  ‘¬MEM f (MAP FST w.open_fds)’ by fs[ep_used_def] >>
+  ‘¬MEM f (MAP FST w.open_fds) ∧ ¬MEM f (MAP FST w.listening)’ by fs[ep_used_def] >>
   ‘¬MEM f (MAP SND hs.tbl)’
     by (qpat_x_assum ‘∀f. MEM f (MAP FST w.open_fds) ⇔ _’ (qspec_then ‘f’ mp_tac) >> simp[]) >>
   ‘∀k'. k' < hs.nxt ⇒ hdl lfd k' ≠ hd’
@@ -465,6 +466,8 @@ Proof
   (* 2 *)
   >- (qpat_x_assum ‘EVERY _ (MAP SND w.open_fds)’ mp_tac >> simp[EVERY_MEM] >>
       rpt strip_tac >> first_x_assum drule >> simp[])
+  (* 2b no listener's fd *)
+  >- (rpt strip_tac >> gvs[] >> res_tac)
   (* 3 the open handles *)
   >- (gen_tac >> simp[EL_LUPDATE] >> eq_tac
       >- (strip_tac
@@ -1199,4 +1202,120 @@ Proof
   >- (irule wkeep_trans >> qexists_tac ‘w1’ >> conj_tac >> first_assum ACCEPT_TAC)
   >- (rpt strip_tac >> ‘i ≠ m ∧ m ≤ i’ by simp[] >> metis_tac[])
   >> simp[]
+QED
+
+(* ------------------------------------------------------------------------
+   The poll keeps the relation
+   ------------------------------------------------------------------------ *)
+
+(* What time passing does to the world: arrivals only; a channel's
+   connect may settle; a channel still connecting is untouched *)
+Definition tick_rel_def:
+  tick_rel (w : eworld) w' ⇔
+    w'.open_fds = w.open_fds ∧ w'.takes = w.takes ∧ w'.alloc = w.alloc ∧
+    w'.reserved = w.reserved ∧ MAP FST w'.listening = MAP FST w.listening ∧
+    w'.nosock = w.nosock ∧ w'.nconnects = w.nconnects ∧ w'.calls = w.calls ∧
+    w'.hist = w.hist ∧ w'.env = w.env ∧ LENGTH w.chans ≤ LENGTH w'.chans ∧
+    ∀j. j < LENGTH w.chans ⇒
+        (EL j w'.chans).shut = (EL j w.chans).shut ∧
+        (EL j w'.chans).sent = (EL j w.chans).sent ∧
+        ((EL j w'.chans).status = (EL j w.chans).status ∨
+         (EL j w.chans).status = Connecting ∧
+         ((EL j w'.chans).status = Up ∨ (EL j w'.chans).status = Refused)) ∧
+        ((EL j w'.chans).status = Connecting ⇒
+         (EL j w'.chans).inbox = (EL j w.chans).inbox ∧
+         (EL j w'.chans).peer_eof = (EL j w.chans).peer_eof)
+End
+
+Theorem tick_rel_refl:
+  tick_rel w (w with clock := n)
+Proof
+  simp[tick_rel_def]
+QED
+
+Theorem tick_rel_trans:
+  tick_rel w1 w2 ∧ tick_rel w2 w3 ⇒ tick_rel w1 w3
+Proof
+  simp[tick_rel_def] >> strip_tac >> gen_tac >> strip_tac >>
+  ‘j < LENGTH w2.chans’ by simp[] >>
+  rpt (first_x_assum (qspec_then ‘j’ mp_tac)) >> simp[] >> rw[] >> gvs[]
+QED
+
+Theorem tick_rel_deliver:
+  tick_rel w (ep_deliver w x)
+Proof
+  Cases_on ‘x’ >> rw[ep_deliver_def, tick_rel_def, upd_chan_def, EL_LUPDATE] >>
+  TRY (CASE_TAC >> simp[] >> PairCases_on ‘h’ >> simp[MAP_FST_AFUPDKEY, EL_APPEND1] >> NO_TAC) >>
+  rw[] >> gvs[]
+QED
+
+Theorem tick_rel_FOLDL:
+  ∀xs w0. tick_rel w w0 ⇒ tick_rel w (FOLDL ep_deliver w0 xs)
+Proof
+  Induct >> simp[] >> rpt strip_tac >> first_x_assum irule >>
+  metis_tac[tick_rel_trans, tick_rel_deliver]
+QED
+
+Theorem tick_rel_tick:
+  tick_rel w (ep_tick w)
+Proof
+  simp[ep_tick_def] >> irule tick_rel_FOLDL >> simp[tick_rel_refl]
+QED
+
+(* One connection's channel across the poll: sett' says whether the settle
+   is still unreported; rd' whether the handle is reported ready *)
+Theorem poll_cok:
+  cok b c ch sett F sent ∧
+  ch'.shut = ch.shut ∧ ch'.sent = ch.sent ∧
+  (ch'.status = ch.status ∨ ch.status = Connecting ∧ (ch'.status = Up ∨ ch'.status = Refused)) ∧
+  (ch'.status = Connecting ⇒ ch'.inbox = ch.inbox ∧ ch'.peer_eof = ch.peer_eof) ∧
+  (sett' ⇔ sett ∧ ¬(inh ∧ ch'.status ≠ Connecting)) ∧
+  (inh ∧ sett ∧ ch'.status ≠ Connecting ⇒ rd') ∧
+  (rd' ⇒ ch'.inbox ≠ [] ∨ ch'.peer_eof ∨ ch'.status = Refused ∨ ch'.status = Failed ∨
+         sett ∧ ch'.status ≠ Connecting) ⇒
+  cok b c ch' sett' rd' sent
+Proof
+  Cases_on ‘c’ >> simp[cok_def] >> rw[] >> gvs[] >>
+  Cases_on ‘ch'.status’ >> gvs[] >> metis_tac[]
+QED
+
+Theorem crel_poll:
+  crel a N rqs lfd st (K ∅) ps w hs ∧ ehpoll lfd hs hfds w = (rdy, w', hs') ⇒
+  crel a N rqs lfd st (K (set rdy)) ps w' hs'
+Proof
+  strip_tac >> qpat_x_assum ‘ehpoll _ _ _ _ = _’ mp_tac >> simp[ehpoll_def] >> strip_tac >>
+  qabbrev_tac ‘w1 = ep_tick w’ >>
+  ‘tick_rel w w1’ by simp[Abbr ‘w1’, tick_rel_tick] >>
+  pop_assum (strip_assume_tac o REWRITE_RULE [tick_rel_def]) >>
+  qpat_x_assum ‘crel _ _ _ _ _ _ _ _ _’ (strip_assume_tac o REWRITE_RULE [crel_def]) >>
+  gvs[] >>
+  SIMP_TAC (srw_ss()) [crel_def] >> rpt conj_tac >> TRY (simp[] >> NO_TAC) >>
+  TRY (first_assum MATCH_ACCEPT_TAC >> NO_TAC) >>
+  TRY (‘LENGTH w'.listening = LENGTH w.listening’ by metis_tac[LENGTH_MAP] >> simp[] >> NO_TAC) >>
+  TRY (fs[EVERY_MEM] >> rw[] >> res_tac >> simp[] >> NO_TAC) >>
+  TRY (qpat_x_assum ‘∀hd. MEM hd (MAP FST st.hlc) ⇔ _’ (fn th => REWRITE_TAC [th]) >>
+       first_assum MATCH_ACCEPT_TAC >> NO_TAC) >>
+  TRY (qpat_x_assum ‘∀hd. MEM hd (MAP FST hs.tbl) ⇔ _’ (fn th => REWRITE_TAC [th]) >>
+       rpt strip_tac >> qpat_x_assum ‘∀hd. _ ⇒ ∀i. i < LENGTH st.cs ⇒ _’ drule >>
+       disch_then drule >> simp[] >> NO_TAC) >>
+  rpt strip_tac >> qpat_x_assum ‘∀i hd. i < LENGTH st.cs ∧ MEM hd _ ⇒ ∃f j. _’ drule_all >>
+  strip_tac >> qexistsl_tac [‘f’, ‘j’] >> simp[] >>
+  ‘j < LENGTH w.chans’
+    by (imp_res_tac ALOOKUP_MEM >> fs[EVERY_MEM, MEM_MAP, EXISTS_PROD] >> metis_tac[]) >>
+  ‘¬MEM f (MAP FST w.listening)’
+    by (imp_res_tac ALOOKUP_MEM >> fs[MEM_MAP, EXISTS_PROD] >> metis_tac[]) >>
+  ‘ep_chan_of w' f = SOME j’ by simp[ep_chan_of_def] >>
+  ‘chan_status w' f = SOME (EL j w'.chans).status’ by simp[chan_status_def] >>
+  ‘FILTER (λ(l, a, q). l = f) w'.listening = []’
+    by (simp[FILTER_EQ_NIL, EVERY_MEM, FORALL_PROD] >> rpt strip_tac >>
+        qpat_x_assum ‘¬MEM f (MAP FST w.listening)’ mp_tac >>
+        qpat_x_assum ‘MAP FST w'.listening = _’ (SUBST1_TAC o SYM) >>
+        simp[MEM_MAP, EXISTS_PROD] >> metis_tac[]) >>
+  ‘ep_readable w' f ⇔ (EL j w'.chans).inbox ≠ [] ∨ (EL j w'.chans).peer_eof ∨
+                      (EL j w'.chans).status = Refused ∨ (EL j w'.chans).status = Failed’
+    by simp[ep_readable_def] >>
+  qpat_x_assum ‘∀j. j < LENGTH w.chans ⇒ _’ (qspec_then ‘j’ mp_tac) >> simp[] >> strip_tac >>
+  irule poll_cok >>
+  qexistsl_tac [‘EL j w.chans’, ‘MEM hd hfds’, ‘MEM hd hs.settling’] >>
+  simp[MEM_FILTER] >> rpt (pop_assum kall_tac) >> metis_tac[]
 QED

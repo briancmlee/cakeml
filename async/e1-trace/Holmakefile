@@ -2,7 +2,7 @@
 # program-generic facts about E1 runs (honest-l1-ep) on the raw L0 trace and
 # on the endpoint handle layer, for the client's and the proxy's L0 claims.
 # Owners, file by file: close-v2 e1TraceChan*/e1TracePrefix*; m4-server
-# e1TraceRead*/e1TraceRound*/e1TraceUpto*.
+# e1TraceRead*/e1TraceRound*/e1TraceUpto*/e1TraceRecvInv*/e1TraceRole*.
 INCLUDES = ../moonshot-glue ../moonshot ../honest-l1-ep ../l0sys-bridges ../l0sys ../honest-l1 \
            ../endpoint-hl ../endpoint-world ../honest-l0 ../honest-ffi ../ffi-spike ../model \
            ../cf-actions ../m3-assembly ../socket-v2 ../close-v2-loop \

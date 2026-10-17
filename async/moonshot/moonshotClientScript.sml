@@ -2140,7 +2140,8 @@ Theorem acts_trans:
     (∀i. i < m ⇒
        ctr (brequests (rqs i)) (EL i st0.cs) (EL i (cupd rqs st0 (cacts_upto a st0 rdy m) rs).cs)
          (hstat (w, hs)) rdy (ZIP (MAP SND (cacts_upto a st0 rdy m), rs))) ∧
-    (∀hd. (∀i. i < m ⇒ ¬MEM hd (chd (EL i st0.cs))) ∧ MEM hd (MAP FST hs.tbl) ⇒
+    (∀hd. (∀i. i < m ∧ MEM hd (chd (EL i st0.cs)) ⇒ cact1 a st0.nh (EL i st0.cs) rdy = []) ∧
+          MEM hd (MAP FST hs.tbl) ⇒
        ALOOKUP hs1.tbl hd = ALOOKUP hs.tbl hd ∧ hstat (w1, hs1) hd = hstat (w, hs) hd)
 Proof
   strip_tac >> Induct
@@ -2193,31 +2194,44 @@ Proof
           irule ctr_qs >> qexists_tac ‘ZIP (xs, rs2)’ >> rpt conj_tac >>
           TRY (irule ctr_stat >> qexists_tac ‘hstat (wm, hsm)’ >> simp[] >>
                rpt strip_tac >>
-               qpat_x_assum ‘∀hd. (∀i. i < m ⇒ _) ∧ _ ⇒ _’ (qspec_then ‘hd’ mp_tac) >>
+               qpat_x_assum ‘∀hd. (∀i. i < m ∧ _ ⇒ _) ∧ _ ⇒ _’ (qspec_then ‘hd’ mp_tac) >>
                impl_tac
                >- (conj_tac
-                   >- (rpt strip_tac >> ‘i < N’ by simp[] >> ‘i = m’ by metis_tac[] >> fs[]) >>
-                   metis_tac[]) >>
+                   >- (rpt strip_tac >> ‘i < N’ by simp[] >> ‘i = m’ by (qpat_x_assum ‘∀i1 i2 hd. _ ⇒ i1 = i2’ irule >> simp[] >> qexists_tac ‘hd’ >> simp[]) >> fs[]) >>
+                   qpat_x_assum ‘∀hd. MEM hd (MAP FST hs.tbl) ⇔ _’ (fn th => REWRITE_TAC [th]) >>
+                   qexists_tac ‘m’ >> simp[]) >>
                simp[] >> NO_TAC) >>
           rpt strip_tac >> simp[] >>
           ‘hl_sent hd (ZIP (MAP SND A, rs1)) = []’
             by (simp[Abbr ‘A’] >> irule hl_sent_prefix >> rpt strip_tac >>
-                ‘i < N’ by simp[] >> ‘i = m’ by metis_tac[] >> fs[]) >> simp[]) >>
+                ‘i < N’ by simp[] >> ‘i = m’ by (qpat_x_assum ‘∀i1 i2 hd. _ ⇒ i1 = i2’ irule >> simp[] >> qexists_tac ‘hd’ >> simp[]) >> fs[]) >> simp[]) >>
       ‘i < m’ by simp[] >>
       ‘EL i (cupd rqs stm (MAP (λx. (m, x)) xs) rs2).cs = EL i stm.cs’
         by (irule cupd_other >> simp[EVERY_MAP]) >> simp[] >>
       irule ctr_qs >> qexists_tac ‘ZIP (MAP SND A, rs1)’ >> simp[] >> rpt strip_tac >>
       ‘hl_sent hd (ZIP (xs, rs2)) = []’
         by (simp[Abbr ‘xs’] >> irule hl_sent_block >> strip_tac >>
-            ‘i < N’ by simp[] >> ‘i = m’ by metis_tac[] >> fs[]) >> simp[]) >>
+            ‘i < N’ by simp[] >> ‘i = m’ by (qpat_x_assum ‘∀i1 i2 hd. _ ⇒ i1 = i2’ irule >> simp[] >> qexists_tac ‘hd’ >> simp[]) >> fs[]) >> simp[]) >>
   rpt strip_tac >>
   ‘ALOOKUP hsm.tbl hd = ALOOKUP hs.tbl hd ∧ hstat (wm, hsm) hd = hstat (w, hs) hd’
-    by (first_x_assum irule >> simp[]) >>
+    by (qpat_x_assum ‘∀hd. (∀i. i < m ∧ _ ⇒ _) ∧ _ ⇒ _’ (qspec_then ‘hd’ mp_tac) >>
+        impl_tac
+        >- (conj_tac >- (rpt strip_tac >> qpat_x_assum ‘∀i. i < SUC m ∧ _ ⇒ _’ irule >> simp[]) >>
+            first_assum ACCEPT_TAC) >>
+        simp[]) >>
+  Cases_on ‘MEM hd (chd (EL m st0.cs))’ >>
+  TRY (‘xs = []’
+         by (simp[Abbr ‘xs’] >> qpat_x_assum ‘∀i. i < SUC m ∧ _ ⇒ _’ irule >> simp[]) >>
+       ‘w1 = wm ∧ hs1 = hsm’
+         by (qpat_x_assum ‘ehacts _ _ _ (LENGTH (MAP SND A)) _ _ = _’ mp_tac >>
+             simp[ehacts_def]) >>
+       simp[] >> NO_TAC) >>
   ‘MEM hd (MAP FST hsm.tbl)’
-    by (Cases_on ‘ALOOKUP hs.tbl hd’ >> gvs[ALOOKUP_NONE] >>
+    by (qpat_x_assum ‘ALOOKUP hsm.tbl hd = _’ mp_tac >>
+        qpat_x_assum ‘MEM hd (MAP FST hs.tbl)’ mp_tac >> rpt (pop_assum kall_tac) >>
+        rpt strip_tac >> Cases_on ‘ALOOKUP hs.tbl hd’ >> gvs[ALOOKUP_NONE] >>
         imp_res_tac ALOOKUP_MEM >> fs[MEM_MAP] >> metis_tac[FST]) >>
-  ‘¬MEM hd (chd (EL m st0.cs))’ by simp[] >>
   ‘ALOOKUP hs1.tbl hd = ALOOKUP hsm.tbl hd ∧ hstat (w1, hs1) hd = hstat (wm, hsm) hd’
-    by (first_x_assum irule >> simp[]) >>
+    by (qpat_x_assum ‘∀hd. crel _ _ _ _ _ _ _ _ _ ∧ _ ⇒ _’ irule >> simp[]) >>
   simp[]
 QED

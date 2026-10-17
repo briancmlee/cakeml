@@ -55,3 +55,10 @@ Write-up and decisions for review: `35-endpoint-world.md`.
 - `semantics_prog_def`: use `semanticsTheory.semantics_prog_def`.
 - LUPDATE lemmas: state them first-order (`LUPDATE c j l`), since higher-order
   `irule` patterns fail.
+
+- KV on v2 (`spike/kv-v2`, PR #131): `kv2_model` is proved. Tracked TODO: unify
+  `asyncKv2Safe.kv2_safe` with `asyncKvSafe.kv_comp_safe` over a generic key
+  view (design/43, last section). Do it before the final series' KV layer.
+  The CakeML half is proved: `asyncKvSemB2.kv_prog2_spec : kv_spec2 3w kv_prog2`
+  (main2 = run_h (3,[3],([],0), kv_server 3)), on top of the KV worker's
+  `asyncKvSpec.kv_server_spec` (240614bd3), at 71ad65a1a.

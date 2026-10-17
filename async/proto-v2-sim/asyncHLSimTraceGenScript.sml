@@ -3,7 +3,8 @@
   handed-out connections and ends each connection's transcript at its EOF
   (srv_eof_last): round after round, the handle loop's events, renamed by
   rn_evs, carry per handle the bytes of the version-1 loop's events
-  (hrun_events_gen).  The proofs are asyncHLSimTrace's, with the generic
+  (hrun_events_gen; for any ifds_sub interest lists, hrun_events_if).
+  The proofs are asyncHLSimTrace's, with the generic
   lemmas of asyncRunOkGen, asyncHLEofGen and asyncHLSimRunGen.
 *)
 Theory asyncHLSimTraceGen
@@ -45,53 +46,53 @@ QED
 (* MAIN: for m, round after round, the renamed trace of the handle loop carries,
    per handle, the bytes of the version-1 loop's trace; EchoSpec2's
    bookkeeping is the handle layer's; closed handles had their EOF read *)
-Theorem hrun_events_gen:
-  uses_ok lfdn m ∧ srv_eof_last m ∧ s2.listening = [(n2w lfdn, [])] ∧ s2.clients = [] ∧ s2.open_fds = [] ∧
+Theorem hrun_events_if:
+  uses_ok lfdn m ∧ ifds_sub (n2w lfdn) ifds ∧ srv_eof_last m ∧ s2.listening = [(n2w lfdn, [])] ∧ s2.clients = [] ∧ s2.open_fds = [] ∧
   alloc_ok s2.alloc ∧ sched_wf2 s2 ⇒
-  ∀n. ep_st 0 [] (FLAT (GENLIST (hround_events (n2w lfdn) EI (srelabel m) s2) n)) =
-        ((SND (hst (n2w lfdn) EI (srelabel m) s2 n)).nxt, (FST (hst (n2w lfdn) EI (srelabel m) s2 n)).open_fds) ∧
-      closed_eof (n2w lfdn) (gperf EI (srelabel m) (v1of (n2w lfdn) s2) n)
-        (SND (hst (n2w lfdn) EI (srelabel m) s2 n)) ∧
+  ∀n. ep_st 0 [] (FLAT (GENLIST (hround_events (n2w lfdn) ifds (srelabel m) s2) n)) =
+        ((SND (hst (n2w lfdn) ifds (srelabel m) s2 n)).nxt, (FST (hst (n2w lfdn) ifds (srelabel m) s2 n)).open_fds) ∧
+      closed_eof (n2w lfdn) (gperf ifds (srelabel m) (v1of (n2w lfdn) s2) n)
+        (SND (hst (n2w lfdn) ifds (srelabel m) s2 n)) ∧
       (∀c. bytes_read_from c
-             (rn_evs (n2w lfdn) 0 [] (FLAT (GENLIST (hround_events (n2w lfdn) EI (srelabel m) s2) n))) =
-           bytes_read_from c (FLAT (GENLIST (grounds_events EI (srelabel m) (v1of (n2w lfdn) s2)) n))) ∧
+             (rn_evs (n2w lfdn) 0 [] (FLAT (GENLIST (hround_events (n2w lfdn) ifds (srelabel m) s2) n))) =
+           bytes_read_from c (FLAT (GENLIST (grounds_events ifds (srelabel m) (v1of (n2w lfdn) s2)) n))) ∧
       (∀c. bytes_written_to c
-             (rn_evs (n2w lfdn) 0 [] (FLAT (GENLIST (hround_events (n2w lfdn) EI (srelabel m) s2) n))) =
-           bytes_written_to c (FLAT (GENLIST (grounds_events EI (srelabel m) (v1of (n2w lfdn) s2)) n)))
+             (rn_evs (n2w lfdn) 0 [] (FLAT (GENLIST (hround_events (n2w lfdn) ifds (srelabel m) s2) n))) =
+           bytes_written_to c (FLAT (GENLIST (grounds_events ifds (srelabel m) (v1of (n2w lfdn) s2)) n)))
 Proof
   strip_tac >>
   qabbrev_tac ‘s1 = v1of (n2w lfdn) s2’ >>
   ‘s1.listeners = [(n2w lfdn, [])] ∧ s1.conns = []’ by simp[Abbr ‘s1’, v1of_def] >>
-  ‘grun_ok EI (srelabel m) s1’ by metis_tac[gen_grun_ok] >>
-  drule_all hrun_sim_gen >> strip_tac >>
+  ‘grun_ok ifds (srelabel m) s1’ by metis_tac[gen_grun_ok] >>
+  drule_all hrun_sim_if >> strip_tac >>
   Induct
   >- simp[ep_st_def, rn_evs_def, hst_def, hrounds_def, hinit_def, closed_eof_def] >>
   pop_assum strip_assume_tac >>
   first_x_assum (qspec_then ‘n’ strip_assume_tac) >>
-  Cases_on ‘hst (n2w lfdn) EI (srelabel m) s2 n’ >> rename1 ‘_ = (s2k, hsk)’ >> gvs[] >>
+  Cases_on ‘hst (n2w lfdn) ifds (srelabel m) s2 n’ >> rename1 ‘_ = (s2k, hsk)’ >> gvs[] >>
   (* the round's actions *)
   drule grun_ok_sock_acts >> disch_then (qspec_then ‘n’ strip_assume_tac) >>
-  ‘gok_upto EI (srelabel m) s1 n’ by simp[grun_ok_gok_upto] >>
+  ‘gok_upto ifds (srelabel m) s1 n’ by simp[grun_ok_gok_upto] >>
   drule_all gen_round_actions_ok >> strip_tac >>
-  ‘no_after_eof (gperf EI (srelabel m) s1 n) (ZIP (gacts EI (srelabel m) s1 n, gres EI (srelabel m) s1 n))’
+  ‘no_after_eof (gperf ifds (srelabel m) s1 n) (ZIP (gacts ifds (srelabel m) s1 n, gres ifds (srelabel m) s1 n))’
     by metis_tac[round_no_after_eof_gen] >>
-  qspecl_then [‘gacts EI (srelabel m) s1 n’, ‘gstate EI (srelabel m) s1 n’, ‘s2k’, ‘hsk’,
-               ‘gres EI (srelabel m) s1 n’, ‘evs’, ‘s'’, ‘gperf EI (srelabel m) s1 n’] mp_tac
-    (Q.INST [‘lfd’ |-> ‘n2w lfdn’, ‘acc’ |-> ‘wacc (gperf EI (srelabel m) s1 n)’] hacts_events) >>
+  qspecl_then [‘gacts ifds (srelabel m) s1 n’, ‘gstate ifds (srelabel m) s1 n’, ‘s2k’, ‘hsk’,
+               ‘gres ifds (srelabel m) s1 n’, ‘evs’, ‘s'’, ‘gperf ifds (srelabel m) s1 n’] mp_tac
+    (Q.INST [‘lfd’ |-> ‘n2w lfdn’, ‘acc’ |-> ‘wacc (gperf ifds (srelabel m) s1 n)’] hacts_events) >>
   impl_tac >- (rpt conj_tac >> TRY (first_assum ACCEPT_TAC) >> simp[]) >>
   strip_tac >>
-  ‘hacts_of (n2w lfdn) EI (srelabel m) s2 n = gacts EI (srelabel m) s1 n’
+  ‘hacts_of (n2w lfdn) ifds (srelabel m) s2 n = gacts ifds (srelabel m) s1 n’
     by simp[hacts_of_def, gacts_def] >>
   (* the round's events, in both loops *)
-  ‘hround_events (n2w lfdn) EI (srelabel m) s2 n =
-     evs2 ++ [spoll2_event (hpoll_fds (n2w lfdn) hs' (EI (hhist (n2w lfdn) EI (srelabel m) s2 n))) s2']’
+  ‘hround_events (n2w lfdn) ifds (srelabel m) s2 n =
+     evs2 ++ [spoll2_event (hpoll_fds (n2w lfdn) hs' (ifds (hhist (n2w lfdn) ifds (srelabel m) s2 n))) s2']’
     by simp[hround_events_alt, hacts_tot_def] >>
-  ‘grounds_events EI (srelabel m) s1 n =
-     evs ++ [spoll_event (EI (ghist EI (srelabel m) s1 n)) s']’
+  ‘grounds_events ifds (srelabel m) s1 n =
+     evs ++ [spoll_event (ifds (ghist ifds (srelabel m) s1 n)) s']’
     by (simp[grounds_events_alt, sock_acts_tot_def] >>
         qpat_assum ‘sock_acts _ _ = _’ (fn th => simp[th])) >>
-  ‘hst (n2w lfdn) EI (srelabel m) s2 (SUC n) =
-     (SND (hpoll (n2w lfdn) hs' (EI (hhist (n2w lfdn) EI (srelabel m) s2 n)) s2'), hs')’
+  ‘hst (n2w lfdn) ifds (srelabel m) s2 (SUC n) =
+     (SND (hpoll (n2w lfdn) hs' (ifds (hhist (n2w lfdn) ifds (srelabel m) s2 n)) s2'), hs')’
     by (simp[Once hst_def, hrounds_SUC] >>
         qpat_assum ‘hacts_of _ _ _ _ _ = _’ (fn th => REWRITE_TAC[th]) >>
         qpat_assum ‘hst _ _ _ _ _ = _’ (fn th => REWRITE_TAC[th]) >>
@@ -115,3 +116,20 @@ Proof
   simp[bytes_written_to_def, poll_events_kinds]
 QED
 
+(* The interest lists EI: the form used so far *)
+Theorem hrun_events_gen:
+  uses_ok lfdn m ∧ srv_eof_last m ∧ s2.listening = [(n2w lfdn, [])] ∧ s2.clients = [] ∧ s2.open_fds = [] ∧
+  alloc_ok s2.alloc ∧ sched_wf2 s2 ⇒
+  ∀n. ep_st 0 [] (FLAT (GENLIST (hround_events (n2w lfdn) EI (srelabel m) s2) n)) =
+        ((SND (hst (n2w lfdn) EI (srelabel m) s2 n)).nxt, (FST (hst (n2w lfdn) EI (srelabel m) s2 n)).open_fds) ∧
+      closed_eof (n2w lfdn) (gperf EI (srelabel m) (v1of (n2w lfdn) s2) n)
+        (SND (hst (n2w lfdn) EI (srelabel m) s2 n)) ∧
+      (∀c. bytes_read_from c
+             (rn_evs (n2w lfdn) 0 [] (FLAT (GENLIST (hround_events (n2w lfdn) EI (srelabel m) s2) n))) =
+           bytes_read_from c (FLAT (GENLIST (grounds_events EI (srelabel m) (v1of (n2w lfdn) s2)) n))) ∧
+      (∀c. bytes_written_to c
+             (rn_evs (n2w lfdn) 0 [] (FLAT (GENLIST (hround_events (n2w lfdn) EI (srelabel m) s2) n))) =
+           bytes_written_to c (FLAT (GENLIST (grounds_events EI (srelabel m) (v1of (n2w lfdn) s2)) n)))
+Proof
+  strip_tac >> irule hrun_events_if >> simp[]
+QED

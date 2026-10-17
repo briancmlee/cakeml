@@ -65,3 +65,30 @@ with `main2 u = run_h (3, [3], ([], 0), proto_server b_parse bresp_demo 3)`.
   handler, and a v2 story for the store. It is out of scope here.
 - honest-ffi's L1 (design/36 §5) targets these v2 programs. The
   handle-layer interface (`asyncHLModel`) is kept unchanged.
+
+## KV on v2 (PR #131) and a tracked TODO
+
+`kv-v2/asyncKv2Model.kv2_model` gives HttpKvSpec2's three clauses for the
+handle loop's run of `kv_server`.
+
+**Done: `kv-v2/asyncKv2Safe.kv2_safe` and `http-kv/asyncKvSafe.kv_comp_safe`
+share one order construction.**
+
+`http-kv/asyncKvOrderGen.kv_safeG_rounds` proves it once, over a generic key
+view. Its parameters are:
+- the projections RD and WR, monotone in the trace prefix;
+- the key renaming between model fds and keys (`kmap` / `kinv`);
+- the round-boundary facts (`kv_rounds`).
+
+`kv_safe` and `kv_safe2` are instances of `kv_safeG RD WR`:
+- `kv_safe_G` per fd: `bytes_read_from` / `bytes_written_to`, `n2w` / `w2n`;
+- `kv_safe2_G` per episode: `ep_read` / `ep_written`, `unh` / `hdln`.
+
+`is_order` / `is_order2` and `precedes` / `precedes2` are instances of `is_ord`
+and `precedesG`. Both theorems keep their statements: `kv_comp_safe` and
+`kv2_safe` now only supply the instance's round facts. The near-copies are
+gone from `asyncKvSafe` and `asyncKv2Safe`, including the `answered2` /
+`started2` / `commits_at2` definitions. What remains duplicated is
+`asyncKvLabel`'s `commits_at` / `commits_at_real_time` (per fd), which is no
+longer used by these proofs. It is left in place because `asyncKvLabel` is an
+ancestor of the generic theory.

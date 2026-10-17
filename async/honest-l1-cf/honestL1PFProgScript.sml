@@ -356,17 +356,21 @@ Definition set_b_def:
   set_b ps b = ps with b := b
 End
 
-(* D25: room for the handles of a round with n accepts (only an Accept
-   takes a handle): handles nxt .. nxt + n - 1 exist iff nxt + n < 2^64
-   (honestL1PFInv l1hdln_lt).  Without room the loop stops (spins without
-   I/O): after 2^64 - 1 handed-out connections, unreachable in practice; a
-   deliberate choice over wrapping the counter (which would reuse handles) *)
+(* D25, amended by D40: room for the handles of a round with n accepts
+   (only an Accept takes a handle), and 2 more: handles nxt .. nxt + n - 1
+   exist iff nxt + n < 2^64 (honestL1PFInv l1hdln_lt); the 2 keep the
+   connections L1 has taken from the kernel (handed out, plus at most one
+   pre-accepted in acq) within the 2^64 - 2 clients of the version-2 world
+   (socketV2Fair arrival_ok2), which R1 (honestL1PFRefine) needs.  Without
+   room the loop stops (spins without I/O): after 2^64 - 3 handed-out
+   connections, unreachable in practice; a deliberate choice over wrapping
+   the counter (which would reuse handles) *)
 Definition hdl_room_def:
-  hdl_room (lfd:word64) ps n ⇔ ps.b.nxt + n < dimword (:64)
+  hdl_room (lfd:word64) ps n ⇔ ps.b.nxt + n + 2 < dimword (:64)
 End
 
 Theorem hdl_room_num:
-  hdl_room (lfd:word64) ps n ⇔ ps.b.nxt + n < 18446744073709551616
+  hdl_room (lfd:word64) ps n ⇔ ps.b.nxt + n + 2 < 18446744073709551616
 Proof
   simp[hdl_room_def]
 QED
@@ -390,6 +394,11 @@ End
 
 Definition map_num_def:
   map_num (l : word64 list) = MAP (λw. w2n w) l
+End
+
+(* D26: the interest list without the handles whose Read hit end-of-file *)
+Definition drop_nums_def:
+  drop_nums (e : num list) (l : num list) = FILTER (λn. ¬MEM n e) l
 End
 
 val _ = register_type “:rstep”;
@@ -440,6 +449,7 @@ val r = tr closing_of_def;
 val r = tr filter_in_def;
 val r = tr map_w64_def;
 val r = tr map_num_def;
+val r = tr drop_nums_def;
 
 (* ------------------------------------------------------------------------
    The code: the calls, and the model's world functions around them
@@ -546,13 +556,30 @@ Quote add_cakeml:
          | Read h n => naccepts rest
          | Write h s => naccepts rest);
 
+  fun eof_reads acts rs =
+    case acts of
+      [] => []
+    | a :: acts' =>
+        (case rs of
+           [] => []
+         | r :: rs' =>
+             (case a of
+                Read h k =>
+                  (case r of
+                     Got (Some bs) =>
+                       if bs = "" then h :: eof_reads acts' rs' else eof_reads acts' rs'
+                   | _ => eof_reads acts' rs')
+              | _ => eof_reads acts' rs'));
+
+  fun live_round fds acts rs = drop_nums (eof_reads acts rs) (add_accepted fds rs);
+
   fun step_pf st =
     case st of (lfd, hw, fds, ps, c) =>
     case c of (acts, s) =>
     if not (hdl_room lfd ps (naccepts acts)) then st else
     case pacts lfd ps acts of (ps1, rs) =>
     case pf_tail lfd hw (map_w64 fds) ps1 of (rdy, ps2) =>
-      (lfd, hw, add_accepted fds rs, ps2, Async.poll c (map_num rdy, 0, rs));
+      (lfd, hw, live_round fds acts rs, ps2, Async.poll c (map_num rdy, 0, rs));
 
   fun run_pf st = run_pf (step_pf st);
 End

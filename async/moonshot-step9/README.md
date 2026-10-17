@@ -11,6 +11,13 @@ Nothing here is proved.  Three parts, each typechecked against the base it needs
 The Holmakefiles of `hl/` and `l0/` are named `.draft` so that this branch's project-wide
 Holmake scan does not try to follow their INCLUDES (which exist only on their bases).
 
+Revision 7 (user rulings): the exact bound `proxy_bnd hw = hw + pf_chunk + pread`, excused by
+the receiving side's D23 timeout (option (a); (b), unconditional, comes with [R3](a)); pairing
+liveness excused by infinitely many socketless connects (HL `hl_nosock`, L0 `l0_nosock`); D33's
+`stdio_closed` outcome and `l0_proxy_world` without fds 0–2 reserved. The L0 part needs
+`honest-l0/honestL0OutcomeScript.sml` (spike/stdio-c2 @415a1bd11, or s4g); on the echo-live-pol
+base, copy it next to the script.
+
 Revision 3: program conditions use only what the program observes (`hl_up` for `up_at`).
 
 Revision 2 (see the file headers): one-round relay lag with prefix safety, the credit gate

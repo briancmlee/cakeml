@@ -24,6 +24,11 @@
    [R4] The rely is run_rely (eh_round_ok), as for the client: valid
         along the run's own rounds; nosock (option (b)) is the world's.
 
+  REVISION 7 (user rulings): pairing liveness has the observed excuse
+  "connects return no socket infinitely often" (hl_nosock; [F4] is not
+  assumed).  The raw-trace bound is now exact, hw + pf_chunk + pread,
+  with D23's timeout excuse (proxyL0Stmts).
+
   REVISION 4: the program takes its listener: pprog lfd b hw (it accepts
   on lfd, and polls it).
 
@@ -82,6 +87,11 @@ End
    refused (the program's knowledge that c is up) *)
 Definition hl_up_def:
   hl_up c ps ⇔ ∃k r. MEM (ERead c k, EGot r) ps
+End
+
+(* The connects that returned no socket (EConnected NONE) *)
+Definition hl_nosock_def:
+  hl_nosock (ps : (eact # eresp) list) = LENGTH (FILTER (λ(x, r). r = EConnected NONE) ps)
 End
 
 Definition is_level_def:
@@ -157,11 +167,13 @@ Definition proxy_guar_hl_def:
       (∀n hd k. MEM (ERead hd k) (new_actions (log_of m) (H n)) ∧ MEM hd (hl_acc_handles (ps n)) ⇒
                 ∃c. pair hd = SOME c ∧ hl_up c (ps n) ∧ ever_up lfd lv ifds m W n c) ∧
       (* LIVENESS, under connect fairness: every accepted front gets a
-         backend that comes up or is refused.  (A socketless connect,
-         option (b), is retried by the program) *)
+         backend that comes up or is refused, unless (rev 7, user: [F4] is
+         not assumed) connects return no socket infinitely often.  (A
+         socketless connect, option (b), is retried by the program) *)
       (conn_fair lfd lv ifds m W ⇒
        ∀n hd. MEM hd (hl_acc_handles (ps n)) ⇒
-              ∃n' c. pair hd = SOME c ∧ (ever_up lfd lv ifds m W n' c ∨ hl_refused c (ps n')))
+              (∃n' c. pair hd = SOME c ∧ (ever_up lfd lv ifds m W n' c ∨ hl_refused c (ps n'))) ∨
+              ∀k. ∃n'. k ≤ hl_nosock (ps n'))
 End
 
 (* The proxy on the layer, in every proxy world with the run-local rely.

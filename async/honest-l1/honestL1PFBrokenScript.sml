@@ -717,3 +717,31 @@ Proof
       >> ‘n0 ≤ SUC k’ by decide_tac >> metis_tac[])
   >> disj1_tac >> qexists_tac ‘d’ >> simp[]
 QED
+
+(* ------------------------------------------------------------------------
+   Closing flushes: the round that releases f (held at k, not at SUC k)
+   leaves everything the server wrote to f's client taken, unless f was
+   already gone, or the round failed a send on f hard, or dropped f
+   ------------------------------------------------------------------------ *)
+
+Theorem close_flushed:
+  oassm lfd pol ifds m w0 ∧
+  (MEM f (MAP SND (rstate lfd pol ifds m w0 k).b.tbl) ∨
+   MEM f (rstate lfd pol ifds m w0 k).b.closing) ∧
+  l0_chan_of (rworld lfd pol ifds m w0 k) f = SOME c ∧
+  ¬MEM f (MAP SND (rstate lfd pol ifds m w0 (SUC k)).b.tbl) ∧
+  ¬MEM f (rstate lfd pol ifds m w0 (SUC k)).b.closing ⇒
+  csent (rworld lfd pol ifds m w0 (SUC k)) c =
+    oout lfd pol ifds m w0 (cl (FST (pcm lfd pol ifds m w0 k)) f) (SUC k) ∨
+  MEM f (rstate lfd pol ifds m w0 k).b.gone ∨
+  hard_send f (rrev lfd pol ifds m w0 k) ∨ rdrop lfd pol ifds m w0 k f
+Proof
+  disch_then (fn th => MAP_EVERY assume_tac (CONJUNCTS th)) >>
+  Cases_on ‘MEM f (rstate lfd pol ifds m w0 k).b.gone’ >> simp[] >>
+  ‘good lfd pol ifds m w0 f c (cl (FST (pcm lfd pol ifds m w0 k)) f) k’
+    by (irule good_init >> fs[]) >>
+  drule_all good_step >> strip_tac >> simp[] >>
+  ‘outbox_of (rstate lfd pol ifds m w0 (SUC k)).b f = []’
+    by (CCONTR_TAC >> mp_tac (Q.INST [‘n’ |-> ‘SUC k’] run_okeys_held) >> simp[]) >>
+  qpat_x_assum ‘good _ _ _ _ _ _ _ _ (SUC k)’ mp_tac >> simp[good_def] >> strip_tac >> gvs[]
+QED

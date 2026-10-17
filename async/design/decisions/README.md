@@ -58,3 +58,4 @@ Guiding rule (the user's): **for every L0 decision, do the honest thing, even if
 | [D37](D37.md) | Moonshot step-12 safety headline (middle isolation, connect episodes) | **approved (user, 2026-10-17)** |
 | [D38](D38.md) | Echo claim's listen-failed outcome names the echo port again | **decided (user, 2026-10-17)** |
 | [D39](D39.md) | Proxy learns the backend's status without the client gate | **decided (user, 2026-10-17)** |
+| [D40](D40.md) | Handle cut-off tightened by 2 (2^64−1 → 2^64−3); amends D25 | **decided (user, 2026-10-17); SHA pending** |

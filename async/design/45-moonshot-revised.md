@@ -897,5 +897,12 @@ Coordination (each is one message, at the step):
 | Q8 client | **accepted:** one client binary with N ≥ 2 connections first |
 | Q9 memory | **accepted:** `no_oom` is a hypothesis of liveness only. Safety tolerates OOM |
 
+**l0sys (step 2, PR #158): APPROVED** (user, via the coordinator, 2026-10-17), as drafted, with:
+- (a) several listeners may share a port (SO_REUSEADDR is loose in POSIX), so `isolated` covers our ports;
+- (b) a connection may break at any time; liveness takes the D16 form ("… unless a connection broke (observed)"), plus a corollary under an explicit no-break hypothesis;
+- (c) `Ack` is the kernel's acknowledgement; B3 (`l0sys_drains_exact`) is restated over moved bytes, not application reads.
+
+l0sys inherits the L0 model's `eof_first` (D21, user-approved; honest-ffi, d20-poll) unchanged, because each process is answered by `l0_call`. The §3.1 table's concrete EADDRINUSE is superseded by (a).
+
 The safety path (§6, steps 1–4 and 9–12) starts when its dependencies land.
 The coordinator assigns the implementation.

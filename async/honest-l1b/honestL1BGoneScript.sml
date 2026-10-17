@@ -116,9 +116,9 @@ Proof
   drule pf_fetch_b >> strip_tac >>
   rename1 ‘l1_reap _ _ = SOME ((w4, b4), _)’ >> gvs[] >>
   drule_then irule gc_reap >>
-  qmatch_goalsub_rename_tac ‘gone_clear (hup_step hfs ob lg ps3).b’ >>
+  qmatch_goalsub_rename_tac ‘gone_clear (stall_step hfs ob lg ps3).b’ >>
   qspecl_then [‘hfs’, ‘ob’, ‘lg’, ‘ps3’] strip_assume_tac
-    (Q.GENL [‘hfs’, ‘ob’, ‘log’, ‘ps’] hup_step_b) >>
+    (Q.GENL [‘hfs’, ‘ob’, ‘log’, ‘ps’] stall_step_b) >>
   simp[] >> irule gc_drop_out >> simp[]
 QED
 

@@ -2,11 +2,10 @@
   L3-09 (S3): the echo's guarantee transfers from the PF trace (in the
   reindexed world) to the blocking trace.  Safety goes PF ⇒ blocking; the
   liveness hypotheses go blocking ⇒ PF ([F1], [F2], accepts_below), and so
-  do D(c) and D19 (episode hypotheses of echo_live); the liveness
-  conclusions come back PF ⇒ blocking.
-
-  D19's transfer (hup_drains, blocking ⇒ PF) is a premise here, to be
-  discharged on the D20 base (the per-poll POLLHUP reading changes there).
+  does D(c) (echo_live's episode hypothesis); the liveness conclusions
+  come back PF ⇒ blocking, and so does D23's observed excuse
+  ep_timed_out (a premise here, to be proved: the blocking L1 does not
+  block while an outbox is pending).
 
   MAIN: echo2_guar_transfer; echo2_guar_transfer_ok, with (S1)
   (honestL1BNoFail.brounds_ok) discharging the never-fails premise.
@@ -29,8 +28,7 @@ Theorem echo2_guar_transfer:
   (∀n. SND (pcm lfd hw ifds m (reindex (btr lfd hw ifds bz m (w0, ps0)) w0) n) + 1 <
        dimword (:64)) ∧
   S1 lfd hw ifds m (reindex (btr lfd hw ifds bz m (w0, ps0)) w0) ∧
-  (∀j c. hup_drains KK w0 io_b j c ⇒
-         hup_drains KK (reindex (btr lfd hw ifds bz m (w0, ps0)) w0) io_p j c) ∧
+  (∀j. ep_timed_out KK j io_p ⇒ ep_timed_out KK j io_b) ∧
   echo2_guar_l0 KK (reindex (btr lfd hw ifds bz m (w0, ps0)) w0) io_p ⇒
   echo2_guar_l0 KK w0 io_b
 Proof
@@ -59,8 +57,7 @@ Theorem echo2_guar_transfer_ok:
   (∀n. SND (pcm lfd hw ifds m (reindex (btr lfd hw ifds bz m (w0, pinit)) w0) n) + 1 <
        dimword (:64)) ∧
   S1 lfd hw ifds m (reindex (btr lfd hw ifds bz m (w0, pinit)) w0) ∧
-  (∀j c. hup_drains KK w0 io_b j c ⇒
-         hup_drains KK (reindex (btr lfd hw ifds bz m (w0, pinit)) w0) io_p j c) ∧
+  (∀j. ep_timed_out KK j io_p ⇒ ep_timed_out KK j io_b) ∧
   echo2_guar_l0 KK (reindex (btr lfd hw ifds bz m (w0, pinit)) w0) io_p ⇒
   echo2_guar_l0 KK w0 io_b
 Proof

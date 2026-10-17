@@ -239,12 +239,12 @@ Proof
   ‘l0_rely w3’ by (imp_res_tac rplays_fetch >> fs[rplays_def]) >>
   drule_all flush_sends >> strip_tac >>
   ‘ps3'.b = b2’ by (drule pf_fetch_b >> simp[]) >>
-  qabbrev_tac ‘ps3 = hup_step (hup_fds rv) (outbox_of ps.b) log ps3'’ >>
+  qabbrev_tac ‘ps3 = stall_step (pf_held ps3') (outbox_of ps.b) log ps3'’ >>
   ‘ps3.b.tbl = b2.tbl ∧ ps3.b.closing = b2.closing ∧
    ∀g. LENGTH (outbox_of ps3.b g) ≤ LENGTH (outbox_of b2 g)’
     by (simp[Abbr ‘ps3’] >> gen_tac >>
-        qspecl_then [‘hup_fds rv’, ‘outbox_of ps.b’, ‘log’, ‘ps3'’] strip_assume_tac
-          (Q.GENL [‘hfs’, ‘ob’, ‘log’, ‘ps’] hup_step_outbox) >>
+        qspecl_then [‘pf_held ps3'’, ‘outbox_of ps.b’, ‘log’, ‘ps3'’] strip_assume_tac
+          (Q.GENL [‘hfs’, ‘ob’, ‘log’, ‘ps’] stall_step_outbox) >>
         qpat_x_assum ‘∀f. outbox_of _ f = [] ∨ _’ (qspec_then ‘g’ strip_assume_tac) >>
         simp[]) >>
   ‘ps3'.b.closing = ps.b.closing’ by simp[] >>

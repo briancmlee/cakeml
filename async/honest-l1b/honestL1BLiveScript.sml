@@ -4,8 +4,10 @@
   same non-poll events and the same channels (b2p), where the PF
   liveness applies; what it promises (a hard error, bytes sent, a close)
   is read off non-poll events, which some blocking prefix has too (p2b).
-  D(c) goes the other way (drains_transfer), and so must D19's
-  hup_drains (taken here as a premise; see honestL1BHup).
+  D(c) goes the other way (drains_transfer).  D23's observed excuse
+  ep_timed_out goes from the PF trace to the blocking one (taken here as a
+  premise, to be proved: the blocking L1 does not block while an outbox
+  is pending, so an output-poll stretch is the same in both).
 
   MAIN: echo_live_transfer.
 *)
@@ -89,8 +91,7 @@ QED
 Theorem echo_live_transfer:
   bquiet m ifds bz ∧ l0_rely w0 ∧ (∀n. brounds lfd hw ifds bz m (w0, ps0) n ≠ NONE) ∧
   btrace lfd hw ifds bz m w0 ps0 io_b ∧ ptrace lfd hw ifds bz m w0 ps0 io_p ∧
-  (∀j c. hup_drains KK w0 io_b j c ⇒
-         hup_drains KK (reindex (btr lfd hw ifds bz m (w0, ps0)) w0) io_p j c) ∧
+  (∀j. ep_timed_out KK j io_p ⇒ ep_timed_out KK j io_b) ∧
   echo_live_l0 KK (reindex (btr lfd hw ifds bz m (w0, ps0)) w0) io_p ⇒
   echo_live_l0 KK w0 io_b
 Proof
@@ -106,10 +107,10 @@ Proof
       >- metis_tac[ep_open_nopoll]
       >- simp[]
       >- fs[l0_chan_of_def]
-      >- metis_tac[drains_transfer]
-      >> first_x_assum irule >> simp[]) >>
+      >> metis_tac[drains_transfer]) >>
   strip_tac
-  >- (disj1_tac >> irule ep_hard_err_transfer >> metis_tac[])
+  >- (disj1_tac >> disj1_tac >> irule ep_hard_err_transfer >> metis_tac[])
+  >- (disj1_tac >> disj2_tac >> metis_tac[])
   >> disj2_tac >> fs[] >> conj_tac
   >- (drule_all sent_transfer >> disch_then (qspec_then ‘j’ strip_assume_tac) >>
       metis_tac[])

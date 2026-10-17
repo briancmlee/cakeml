@@ -11,6 +11,8 @@ Nothing here is proved.  Three parts, each typechecked against the base it needs
 The Holmakefiles of `hl/` and `l0/` are named `.draft` so that this branch's project-wide
 Holmake scan does not try to follow their INCLUDES (which exist only on their bases).
 
+Revision 3: program conditions use only what the program observes (`hl_up` for `up_at`).
+
 Revision 2 (see the file headers): one-round relay lag with prefix safety, the credit gate
 (Level of round n−1 plus the writes of rounds n−1 and n ≤ hw), `credit_writes` at L1, and
 Bnd = hw + 3·pf_chunk at L0.

@@ -518,3 +518,50 @@ Proof
   ‘n + (n' - n) = n'’ by decide_tac >> simp[IS_PREFIX_APPEND] >>
   strip_tac >> simp[ALOOKUP_APPEND]
 QED
+
+(* ------------------------------------------------------------------------
+   Where a binding comes from: a connect or an accept that returned it
+   ------------------------------------------------------------------------ *)
+
+Definition hl_made_def:
+  hl_made hd ps ⇔
+    (∃p. MEM (EConnect p, EConnected (SOME hd)) ps) ∨ (∃l. MEM (EAccept l, EAccepted (SOME hd)) ps)
+End
+
+Theorem ebind_made:
+  MEM (j, hd) (ebind w x r) ⇒ hl_made hd [(x, r)]
+Proof
+  simp[ebind_def, hl_made_def] >> every_case_tac >> simp[]
+QED
+
+Theorem ehbacts_made:
+  ∀acts k (st : eworld # ehstate) rs st'.
+    ehacts lfd lv n k st acts = SOME (rs, st') ∧ MEM (j, hd) (ehbacts lfd lv n k st acts) ⇒
+    hl_made hd (ZIP (acts, rs))
+Proof
+  Induct >> simp[ehacts_def, ehbacts_def] >> rpt gen_tac >>
+  simp[AllCaseEqs()] >> strip_tac >> gvs[]
+  >- (drule ebind_made >> simp[hl_made_def] >> metis_tac[]) >>
+  first_x_assum drule_all >> simp[hl_made_def] >> metis_tac[]
+QED
+
+Theorem ehbinds_made:
+  (∀n. ehacts lfd lv n 0 (ehst lfd lv ifds m W0 n)
+         (new_actions (log_of m) (ehhist lfd lv ifds m W0 n)) ≠ NONE) ⇒
+  ∀n j hd. MEM (j, hd) (ehbinds lfd lv ifds m W0 n) ⇒
+           hl_made hd (hl_pairs m (ehhist lfd lv ifds m W0 n))
+Proof
+  strip_tac >> Induct >- simp[ehbinds_def] >>
+  qpat_x_assum ‘∀n. ehacts _ _ _ _ _ _ ≠ NONE’ (qspec_then ‘n’ mp_tac) >>
+  pop_assum mp_tac >>
+  simp[ehbinds_def] >> simp[ehst_def, ehhist_def, ehrounds_def] >>
+  Cases_on ‘ehrounds lfd lv ifds m W0 n’ >> rename1 ‘(h, st)’ >> PairCases_on ‘st’ >>
+  simp[ehacts_tot_def] >> rpt strip_tac >>
+  Cases_on ‘ehacts lfd lv n 0 (st0, st1) (new_actions (log_of m) h)’ >> gvs[] >>
+  rename1 ‘SOME x’ >> PairCases_on ‘x’ >> gvs[] >>
+  Cases_on ‘ehpoll lfd x2 (ifds h) x1’ >> rename1 ‘ehpoll _ _ _ _ = (rdy, ws)’ >>
+  PairCases_on ‘ws’ >> gvs[] >>
+  simp[hl_pairs_SNOC, asyncM3WorldTheory.ssnap_def]
+  >- (first_x_assum drule >> simp[hl_made_def] >> metis_tac[]) >>
+  drule_all ehbacts_made >> simp[hl_made_def] >> metis_tac[]
+QED

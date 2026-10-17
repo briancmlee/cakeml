@@ -12,7 +12,7 @@
 *)
 Theory moonshotSentGlue
 Ancestors
-  honestL1EPRefine honestL1EPOut honestL1EPModel honestL1PFOut honestL1Model
+  honestL1EPRefine honestL1EPOut honestL1EPModel honestL1PFOut honestL1PFModel honestL1Model
   honestL1PFRefine honestL0WorldProps honestL0Rely honestL0World honestL0 Marshalling
   l0sysEpisodes
 Libs
@@ -245,4 +245,79 @@ Proof
   gvs[ev_other] >>
   simp[ev_new_def, l0_res_of_def] >>
   every_case_tac >> fs[l0_res_of_def]
+QED
+
+(* ------------------------------------------------------------------------
+   fd 0 stays open: L1 closes only fds it got from L0, which were free
+   then, so not 0
+   ------------------------------------------------------------------------ *)
+
+(* The fds in L1's tables *)
+Definition tfds_def:
+  tfds (es : l1e) = MAP SND es.p.b.tbl ++ es.p.b.closing ++ es.p.acq ++ MAP SND es.ctbl
+End
+
+Definition fd0_ok_def:
+  fd0_ok w es ⇔ MEM 0w (l0_used w) ∧ ¬MEM 0w (tfds es)
+End
+
+Theorem fds_lt_sub:
+  fds_lt w ∧ (∀g. MEM g (l0_used w') ⇒ MEM g (l0_used w)) ∧ w'.fd_limit = w.fd_limit ⇒
+  fds_lt w'
+Proof
+  rw[honestL0WorldPropsTheory.fds_lt_def] >> metis_tac[]
+QED
+
+Theorem edo_fd0:
+  edo lfd pol (wl, es) a = SOME (r, (wl', es'), evs) ∧ l0_rely wl ∧ fds_lt wl ∧
+  fd0_ok wl es ⇒
+  l0_rely wl' ∧ fds_lt wl' ∧ fd0_ok wl' es'
+Proof
+  strip_tac >> Cases_on ‘a’ >> gvs[edo_def, AllCaseEqs()]
+  >~ [‘pdo _ _ (Accept _) = _’]
+  >- (PairCases_on ‘z’ >> gvs[] >> drule pdo_accept_ostep >> strip_tac >>
+      gvs[fd0_ok_def, tfds_def] >> Cases_on ‘es.p.acq’ >> gvs[])
+  >~ [‘pdo _ _ (Read _ _) = _’]
+  >- (PairCases_on ‘z’ >> gvs[] >> qpat_x_assum ‘pdo _ _ _ = _’ mp_tac >>
+      simp[pdo_def, AllCaseEqs()] >> rw[] >> gvs[fd0_ok_def, tfds_def, set_inb_def] >>
+      TRY (PairCases_on ‘z’ >> gvs[] >> drule_all l1_close_l0 >> strip_tac) >>
+      rename1 ‘ALOOKUP es.p.b.tbl h = SOME f’ >>
+      ‘MEM f (MAP SND es.p.b.tbl)’
+        by (imp_res_tac ALOOKUP_MEM >> simp[MEM_MAP] >> metis_tac[SND]) >>
+      ‘f ≠ 0w’ by (strip_tac >> gvs[]) >>
+      gvs[MEM_FILTER] >>
+      TRY (irule fds_lt_sub >> qexists_tac ‘wl’ >> simp[] >> NO_TAC) >>
+      metis_tac[MEM_SND_ADELKEY_sub, fds_lt_sub])
+  >~ [‘pdo _ _ (Write _ _) = _’]
+  >- (PairCases_on ‘z’ >> gvs[] >> drule pdo_write_held >> strip_tac >>
+      qpat_x_assum ‘pdo _ _ _ = _’ mp_tac >> simp[pdo_def] >> strip_tac >>
+      pairarg_tac >> gvs[] >> drule_all l1do_write_l0 >> strip_tac >>
+      gvs[fd0_ok_def, tfds_def, honestL0WorldPropsTheory.fds_lt_def])
+  >~ [‘l1_close _ _ = _’]
+  >- (PairCases_on ‘z’ >> gvs[] >> drule_all l1_close_l0 >> strip_tac >>
+      rename1 ‘ALOOKUP es.ctbl h = SOME f’ >>
+      ‘MEM f (MAP SND es.ctbl)’
+        by (imp_res_tac ALOOKUP_MEM >> simp[MEM_MAP] >> metis_tac[SND]) >>
+      ‘f ≠ 0w’ by (strip_tac >> gvs[fd0_ok_def, tfds_def]) >>
+      gvs[fd0_ok_def, tfds_def, ec_del_def, MEM_FILTER] >>
+      conj_tac >- (irule fds_lt_sub >> qexists_tac ‘wl’ >> simp[]) >>
+      metis_tac[MEM_SND_ADELKEY_sub])
+  >> drule_all sys_connect_l0 >> strip_tac >> fs[fd0_ok_def, tfds_def] >>
+  rpt strip_tac >> TRY (metis_tac[] >> NO_TAC) >> gvs[] >>
+  ‘honestL1EPModel$res_val out < 18446744073709551616’
+    by (drule_all sys_connect_out >> strip_tac >> gvs[] >>
+        TRY (drule dec_err_val >> simp[res_val_same] >> NO_TAC) >>
+        simp[res_val_enc]) >>
+  gvs[LESS_MOD]
+QED
+
+Theorem eacts_fd0:
+  ∀acts wl es rs evs wl' es'.
+    eacts lfd pol (wl, es) acts = SOME (rs, evs, (wl', es')) ∧ l0_rely wl ∧ fds_lt wl ∧
+    fd0_ok wl es ⇒
+    l0_rely wl' ∧ fds_lt wl' ∧ fd0_ok wl' es'
+Proof
+  Induct >> simp[eacts_def] >> rpt gen_tac >> simp[AllCaseEqs(), PULL_EXISTS] >>
+  rpt gen_tac >> strip_tac >> PairCases_on ‘ws1’ >> drule_all edo_fd0 >> strip_tac >>
+  first_x_assum drule_all >> simp[]
 QED

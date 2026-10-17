@@ -904,5 +904,7 @@ Coordination (each is one message, at the step):
 
 l0sys inherits the L0 model's `eof_first` (D21, user-approved; honest-ffi, d20-poll) unchanged, because each process is answered by `l0_call`. The §3.1 table's concrete EADDRINUSE is superseded by (a).
 
+**(d) fds below the limit (user, via the coordinator, 2026-10-17):** `sys_init` adds, per process, `∀x. MEM x (l0_used w) ⇒ w2n x < w.fd_limit`. This is `fds_lt`, the same startup-contract assumption as `l0_server_world`'s. Without it, an initial `reserved` list covering all 2^64 words leaves `lowest_fd` unspecified, so the model could hand out an fd twice (B2's port clause fails). The per-process theorems also all assume `fds_lt w0`. B1's conclusion adds `fds_lt w0`; B2 is unchanged.
+
 The safety path (§6, steps 1–4 and 9–12) starts when its dependencies land.
 The coordinator assigns the implementation.

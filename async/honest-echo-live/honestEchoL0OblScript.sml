@@ -12,7 +12,8 @@
 Theory honestEchoL0Obl
 Ancestors
   honestL1PFObl honestL1PFConnRun honestL1PFLive honestL1PFRound honestL1PFRefine honestL1PFModel
-  asyncHLSimRun asyncHLSimWorld asyncHLModel asyncM4AcceptSoon asyncM4Queue
+  asyncHLSimRun asyncHLSimWorld asyncHLModel asyncM4AcceptSoon asyncM4ReadSoon
+  asyncM4LiveWorld asyncM4Queue
   asyncM4EchoRunOk asyncM4SockInv asyncM4GTrans asyncM4GRounds asyncM4Relabel asyncM4SockModel
   asyncM4Loop asyncM3World asyncCore asyncLevel1 alist
 Libs
@@ -159,4 +160,103 @@ Proof
           (Q.GENL [‘j1’, ‘j2’, ‘k’, ‘lfd’] hdl_neq) >>
         simp[Abbr ‘L’]) >>
   drule_all wacc_grow_accept >> strip_tac >> metis_tac[]
+QED
+
+(* ------------------------------------------------------------------------
+   S3w
+   ------------------------------------------------------------------------ *)
+
+(* S3w (honest-ffi's form, moonshot step 8: S3 under "no more fetches on
+   f"; S3 is false for the echo, as a round's fetch refills an inbox the
+   server emptied).  TEMPORARY copy until that commit is merged *)
+Definition S3w_def:
+  S3w lfd pol ifds m w0 ⇔
+    ∀n f. (∀k. n ≤ k ⇒ ¬fetched_at lfd pol ifds m w0 k f) ⇒
+          ∃n'. n ≤ n' ∧ inb_of (rstate lfd pol ifds m w0 n') f = []
+End
+
+Theorem echo_run_hyp:
+  echo_run lfdn pol w0 ⇒ run_hyp (n2w lfdn) pol EI ES w0
+Proof
+  PURE_REWRITE_TAC[echo_run_def, run_hyp_def] >> strip_tac >> fs[winv_def]
+QED
+
+(* An fd L1 holds with input pending: the echo reads its handle within
+   three rounds (M4's read_soon_s) *)
+Theorem echo_read_soon:
+  echo_run lfdn pol w0 ∧
+  ALOOKUP (rstate (n2w lfdn) pol EI ES w0 m).b.tbl h = SOME f ∧
+  inb_of (rstate (n2w lfdn) pol EI ES w0 m) f ≠ [] ⇒
+  ∃i kk. i ≤ 3 ∧
+         MEM (Read h kk) (new_actions (log_of ES) (rhist (n2w lfdn) pol EI ES w0 (m + i)))
+Proof
+  strip_tac >>
+  drule_then (qspec_then ‘m’ strip_assume_tac) echo_sim >>
+  ‘lfdn < dimword (:64)’ by fs[echo_run_def] >>
+  qabbrev_tac ‘ps = rstate (n2w lfdn) pol EI ES w0 m’ >>
+  qabbrev_tac ‘cm = FST (pcm (n2w lfdn) pol EI ES w0 m)’ >>
+  Cases_on ‘hst (n2w lfdn) EI ES PSK m’ >> rename1 ‘_ = (s2, hs)’ >>
+  ‘hs = hs_of ps’ by fs[] >>
+  ‘pv_rel (n2w lfdn) cm ps s2’ by fs[] >>
+  ‘hsim0 (n2w lfdn) (gstate EI ES V1 m) (s2, hs)’ by fs[hsim_def] >>
+  (* f's handle is the j-th, and client j has f's input *)
+  ‘∃j. j < ps.b.nxt ∧ h = hdl (n2w lfdn) j ∧ ALOOKUP s2.open_fds f = SOME j’
+    by (qpat_x_assum ‘hsim0 _ _ _’ mp_tac >> simp[hsim0_def, hs_of_def] >> metis_tac[]) >>
+  ‘(EL j s2.clients).incoming = inb_of ps f’
+    by (qpat_x_assum ‘pv_rel _ _ _ _’ mp_tac >> simp[pv_rel_def] >> strip_tac >>
+        first_x_assum drule >> strip_tac >> gvs[]) >>
+  ‘j < LENGTH s2.clients’
+    by (qpat_x_assum ‘hsim0 _ _ _’ mp_tac >> simp[hsim0_def, hs_of_def]) >>
+  (* the M4 connection hdl j, with the same input, was handed out *)
+  ‘MEM (hdl (n2w lfdn) j) (MAP FST (gstate EI ES V1 m).conns)’
+    by (qpat_x_assum ‘hsim0 _ _ _’ mp_tac >> simp[hsim0_def, MEM_GENLIST] >>
+        metis_tac[]) >>
+  ‘∃cn. ALOOKUP (gstate EI ES V1 m).conns (hdl (n2w lfdn) j) = SOME cn’
+    by (Cases_on ‘ALOOKUP (gstate EI ES V1 m).conns (hdl (n2w lfdn) j)’ >>
+        fs[ALOOKUP_NONE]) >>
+  ‘cn.incoming = inb_of ps f’
+    by (qpat_x_assum ‘hsim0 _ _ _’ mp_tac >> simp[hsim0_def] >> strip_tac >>
+        TRY (fs[] >> NO_TAC) >>
+        qpat_x_assum ‘∀j cn. _ ∧ ALOOKUP _ _ = SOME cn ⇒ _’
+          (qspecl_then [‘j’, ‘cn’] mp_tac) >> simp[]) >>
+  ‘MEM (hdl (n2w lfdn) j) (wacc (gperf EI ES V1 m))’
+    by (qpat_x_assum ‘GENLIST _ _ = wacc _’ (SUBST1_TAC o SYM) >> simp[MEM_GENLIST] >>
+        metis_tac[]) >>
+  qspecl_then [‘V1’, ‘lfdn’, ‘hdl (n2w lfdn) j’, ‘m’, ‘cn’] mp_tac
+    (Q.GENL [‘s0’, ‘lfdn’, ‘c’, ‘n’, ‘cn’] read_soon_s) >>
+  impl_tac >- simp[v1of_def] >>
+  strip_tac >> fs[reads_c_def] >>
+  drule_then (qspec_then ‘m + i’ strip_assume_tac) echo_sim >>
+  qexistsl_tac [‘i’, ‘k’] >> gvs[gacts_def]
+QED
+
+(* MAIN: the PF echo meets S3w *)
+Theorem echo_S3w:
+  echo_run lfdn pol w0 ⇒ S3w (n2w lfdn) pol EI ES w0
+Proof
+  strip_tac >> drule echo_run_hyp >> strip_tac >>
+  ‘run_ok (n2w lfdn) pol EI ES w0’ by fs[run_hyp_def] >>
+  simp[S3w_def] >> rpt strip_tac >>
+  ‘∀L r. n ≤ r ∧ LENGTH (inb_of (rstate (n2w lfdn) pol EI ES w0 r) f) = L ⇒
+         ∃n'. n ≤ n' ∧ inb_of (rstate (n2w lfdn) pol EI ES w0 n') f = []’
+    suffices_by metis_tac[LESS_EQ_REFL] >>
+  completeInduct_on ‘L’ >> rpt strip_tac >>
+  Cases_on ‘inb_of (rstate (n2w lfdn) pol EI ES w0 r) f = []’ >- metis_tac[] >>
+  drule_all run_held >> strip_tac >>
+  drule_all echo_read_soon >> strip_tac >>
+  Cases_on ‘inb_of (rstate (n2w lfdn) pol EI ES w0 (r + i)) f = []’
+  >- (qexists_tac ‘r + i’ >> simp[]) >>
+  ‘ALOOKUP (rstate (n2w lfdn) pol EI ES w0 (r + i)).b.tbl h = SOME f’
+    by (drule run_tbl_keep >> disch_then drule >> disch_then (qspec_then ‘i’ irule) >>
+        simp[]) >>
+  ‘¬fetched_at (n2w lfdn) pol EI ES w0 (r + i) f’ by simp[] >>
+  ‘LENGTH (inb_of (rstate (n2w lfdn) pol EI ES w0 (SUC (r + i))) f) <
+   LENGTH (inb_of (rstate (n2w lfdn) pol EI ES w0 (r + i)) f)’
+    by (irule run_read_shrinks >> metis_tac[]) >>
+  ‘LENGTH (inb_of (rstate (n2w lfdn) pol EI ES w0 (r + i)) f) ≤ L’
+    by (drule run_inb_drop >> disch_then (qspecl_then [‘r’, ‘f’, ‘i’] mp_tac) >>
+        simp[] >> strip_tac >> simp[LENGTH_DROP]) >>
+  first_x_assum (qspec_then
+    ‘LENGTH (inb_of (rstate (n2w lfdn) pol EI ES w0 (SUC (r + i))) f)’ mp_tac) >>
+  impl_tac >- fs[] >> disch_then (qspec_then ‘SUC (r + i)’ mp_tac) >> fs[]
 QED

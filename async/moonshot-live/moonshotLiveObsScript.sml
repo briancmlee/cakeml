@@ -194,7 +194,7 @@ Definition moonshot_served_of_obs_claim_def:
   moonshot_served_of_obs_claim ⇔
     ∀S ss rs X a b N rqs.
       l0sys_irun S ss rs ∧ LENGTH S = 3 ∧ kernel_fair_obs ss rs ∧ isolated [a; b] ss rs ∧
-      a ≠ b ∧ moonshot_obs X a b N rqs ss rs ⇒
+      (∀i. EVERY valid_brequest (rqs i)) ∧ moonshot_obs X a b N rqs ss rs ⇒
       X ∨ client_served 0 a N rqs rs
 End
 

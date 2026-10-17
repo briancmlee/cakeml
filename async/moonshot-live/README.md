@@ -207,7 +207,19 @@ Uses: targets persist (`irun_target`); a pair is only ever made with a process t
 target before (`irun_pair_listens`); and settlement, by (C) and `isolated`'s last clause
 (`connect_settles`).
 
-**Mine (system level), still to do:** N1/N2 lifts; the setup chain (the client's connect is paired
-with an accepted front, and the front with a backend accepted by KV, from `conn_live_l0` /
-`proxy_pairs_l0` / F-obs (C)); the excuse transfer (per-process excuses ⇒ `sys_excuse`); termination
+**Lift obligations (inputs to the per-program lifts, not statement changes):** honest-ffi's
+`conn_live_l0` needs `accepts_lt (2**62)`. It is discharged as follows: by `isolated` only our
+connects reach a; unless X the client completes at most N connects to a (a fact owed by close-v2); and
+N < 2^62. KV's claim needs F1_io, F2 and accepts_below; the proxy's asks clauses need
+`proxy_asks_l0` (honest-ffi rev 9, drafting).
+
+**Composition PROVED (moonshotLiveCompose):** `moonshot_served_of_obs` proves
+`moonshot_served_of_obs_claim`: from `moonshot_obs`, unless X, `client_served`. Per connection
+(`conn_done_of_obs`): the client's end is paired with a front (`connect_pairs`, topology_ob), the front
+gets a backend (proxy_ob), and the backend is paired with KV (`connect_pairs`). No chain end ends before
+the connection is done (closes_ob). `chain_served` then runs with X := F under ¬X ∧ ¬done, and served
+plus all requests sent gives done, a contradiction. Episode channels come from the run's ghost
+(`irun_sinv_css`, `ep_connected_chan`, `ep_sent_le`).
+
+**Mine (system level), still to do:** N1/N2 lifts; the excuse transfer (per-process excuses ⇒ `sys_excuse`); termination
 from F-obs (F) once [R3] lands; and `moonshot_live` from `chain_served` for each i < N.

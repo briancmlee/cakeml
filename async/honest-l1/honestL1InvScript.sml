@@ -129,42 +129,65 @@ Proof
   drule_all l0_do_SOME >> strip_tac >> simp[]
 QED
 
-(* The poll's configuration is decoded back to its entries *)
-Theorem poll_entries_conf:
-  ∀fes. EVERY (λ(f, e). e < 256) fes ⇒
-        poll_entries (FLAT (MAP (λ(f, e). fd_bytes f ++ [n2w e]) fes)) = fes
+Theorem l0_do_buf_SOME:
+  l0_rely w ∧ l0_call n conf bytes (l0_tick n w) = SOME (FFIreturn out w1) ⇒
+  l0_do_buf n conf bytes w =
+    SOME (out, w1 with hist := w.hist ++ [(n, conf, bytes)],
+          IO_event (ExtCall n) conf (ZIP (bytes, out))) ∧
+  l0_rely (w1 with hist := w.hist ++ [(n, conf, bytes)])
 Proof
-  Induct >> simp[FORALL_PROD] >- simp[Once poll_entries_def] >>
-  rw[] >> simp[Once poll_entries_def] >>
-  ‘LENGTH (fd_bytes p_1) = 8’ by simp[] >>
-  REWRITE_TAC[GSYM APPEND_ASSOC] >>
-  simp[EL_APPEND_EQN, DROP_APPEND, TAKE_DROP_fd_bytes] >>
-  ‘DROP 9 (fd_bytes p_1 ++ [n2w p_2] ++ FLAT (MAP (λ(f,e). fd_bytes f ++ [n2w e]) fes)) =
-     FLAT (MAP (λ(f,e). fd_bytes f ++ [n2w e]) fes)’
-    by (REWRITE_TAC[GSYM APPEND_ASSOC] >> simp[DROP_APPEND]) >>
-  gvs[DROP_APPEND, DROP_LENGTH_TOO_LONG]
+  strip_tac >> simp[l0_do_buf_def, l0_ffi_fn_def] >>
+  imp_res_tac l0_call_ch >> irule l0_rely_ch >> qexists_tac ‘w’ >> simp[]
 QED
 
-Theorem LENGTH_poll_conf:
-  ∀fes. LENGTH (FLAT (MAP (λ(f, e). fd_bytes f ++ [n2w e : word8]) fes)) = 9 * LENGTH fes
+Theorem LENGTH_pfd_bytes[simp]:
+  LENGTH (pfd_bytes fe) = 8
 Proof
-  Induct >> simp[FORALL_PROD, MULT_CLAUSES]
+  PairCases_on ‘fe’ >> simp[pfd_bytes_def]
+QED
+
+Theorem LENGTH_FLAT_pfd_bytes[simp]:
+  ∀fes. LENGTH (FLAT (MAP pfd_bytes fes)) = 8 * LENGTH fes
+Proof
+  Induct >> simp[MULT_CLAUSES]
+QED
+
+(* The poll's buffer is decoded back to its entries *)
+Theorem pollfd_entries_buf:
+  ∀fes. pollfd_entries (FLAT (MAP pfd_bytes fes)) = MAP pfd_bytes fes
+Proof
+  Induct >- simp[Once pollfd_entries_def] >>
+  rw[] >> simp[Once pollfd_entries_def] >>
+  ‘LENGTH (pfd_bytes h) = 8’ by simp[] >>
+  simp[TAKE_APPEND1, DROP_APPEND1, TAKE_LENGTH_ID_rwt, DROP_LENGTH_NIL_rwt]
+QED
+
+Theorem pe_pfd_bytes:
+  small f ∧ e < 4 ⇒ pe_fe (pfd_bytes (f, e)) = (f, e) ∧ pe_ok (pfd_bytes (f, e))
+Proof
+  strip_tac >> fs[small_def] >>
+  ‘f <+ 0x80000000w’ by simp[WORD_LO] >>
+  ‘pe_fd (pfd_bytes (f, e)) = f’
+    by (simp[pfd_bytes_def, pe_fd_def] >> pop_assum mp_tac >> blastLib.BBLAST_TAC) >>
+  ‘e = 0 ∨ e = 1 ∨ e = 2 ∨ e = 3’ by decide_tac >> gvs[] >>
+  simp[pe_fe_def, pe_ok_def] >> simp[pfd_bytes_def, pe_events_def]
 QED
 
 Theorem sys_poll_ok:
-  l0_rely w ∧ EVERY (λ(f, e). small f ∧ e < 256) fes ∧ LENGTH fes ≤ 4096 ⇒
-  ∃out w' ev. sys_poll fes w = SOME (out, w', ev) ∧ l0_rely w'
+  l0_rely w ∧ EVERY (λ(f, e). small f ∧ e < 4) fes ⇒
+  ∃out w' ev. sys_poll fes w = SOME (out, w', ev) ∧ l0_rely w' ∧
+              LENGTH out = 16 + 8 * LENGTH fes
 Proof
   rw[sys_poll_def] >>
   ‘l0_rely (l0_tick «sys_poll» w)’ by (irule l0_rely_ch >> qexists_tac ‘w’ >> simp[]) >>
-  ‘EVERY (λ(f, e). e < 256) fes ∧ EVERY (fd_ok o FST) fes’
-    by (gvs[EVERY_MEM, FORALL_PROD, fd_ok_def, small_def] >> metis_tac[]) >>
-  ‘∃out w1. l0_call «sys_poll» (poll_conf fes) (REPLICATE (LENGTH fes + 13) 0w)
-              (l0_tick «sys_poll» w) = SOME (FFIreturn out w1)’
-    by (simp[l0_call_def, l0_hdr_def, poll_conf_def, poll_entries_conf,
-             LENGTH_poll_conf] >>
-        every_case_tac >> simp[]) >>
-  drule_all l0_do_SOME >> strip_tac >> simp[]
+  ‘EVERY pe_ok (MAP pfd_bytes fes)’
+    by (gvs[EVERY_MEM, MEM_MAP, FORALL_PROD, PULL_EXISTS] >> metis_tac[pe_pfd_bytes]) >>
+  ‘∃out w1. l0_call «sys_poll» [0w] (poll_buf fes) (l0_tick «sys_poll» w) =
+            SOME (FFIreturn out w1)’
+    by (simp[l0_call_def, poll_buf_def, pollfd_entries_buf, DROP_APPEND,
+             DROP_LENGTH_TOO_LONG] >> every_case_tac >> simp[]) >>
+  drule_all l0_do_buf_SOME >> strip_tac >> simp[] >>
+  drule_all l0_call_length >> simp[poll_buf_def]
 QED
 
 (* ------------------------------------------------------------------------
@@ -317,43 +340,33 @@ QED
    The poll, flush and closes
    ------------------------------------------------------------------------ *)
 
-Theorem poll_chunks_ok:
-  ∀l. EVERY P l ⇒ EVERY (λc. LENGTH c ≤ 4096 ∧ EVERY P c) (poll_chunks l)
+Theorem LENGTH_pollfd_entries:
+  ∀k bs. LENGTH bs = 8 * k ⇒ LENGTH (pollfd_entries bs) = k
 Proof
-  gen_tac >> completeInduct_on ‘LENGTH l’ >> rw[] >>
-  simp[Once poll_chunks_def] >> IF_CASES_TAC >> gvs[EVERY_TAKE, LENGTH_TAKE_EQ] >>
-  first_x_assum (qspec_then ‘LENGTH (DROP 4096 l)’ mp_tac) >> simp[] >>
-  disch_then (qspec_then ‘DROP 4096 l’ mp_tac) >> simp[EVERY_DROP]
-QED
-
-Theorem sys_poll_length:
-  l0_rely w ∧ EVERY (λ(f, e). small f ∧ e < 256) fes ∧ LENGTH fes ≤ 4096 ⇒
-  ∃out w' ev. sys_poll fes w = SOME (out, w', ev) ∧ l0_rely w' ∧
-              LENGTH out = LENGTH fes + 13
-Proof
-  strip_tac >> drule_all sys_poll_ok >> strip_tac >> simp[] >>
-  gvs[sys_poll_def, l0_do_def, AllCaseEqs()] >>
-  drule_all l0_ffi_fn_length >> simp[]
+  Induct >> rw[] >> ONCE_REWRITE_TAC [pollfd_entries_def] >> simp[] >>
+  first_x_assum irule >> simp[]
 QED
 
 Theorem poll_revents_small:
-  EVERY (λ(f, e). small f) fes ∧ LENGTH out = LENGTH fes + 13 ⇒
+  EVERY (λ(f, e). small f) fes ∧ LENGTH out = 16 + 8 * LENGTH fes ⇒
   EVERY (small o FST) (poll_revents fes out)
 Proof
   rw[poll_revents_def] >> CASE_TAC >> simp[] >>
-  ‘LENGTH (MAP FST fes) = LENGTH (MAP byte_revents (TAKE (LENGTH fes) (DROP 13 out)))’
-    by simp[LENGTH_TAKE_EQ] >>
+  ‘LENGTH (pollfd_entries (DROP 16 out)) = LENGTH fes’
+    by (irule LENGTH_pollfd_entries >> simp[]) >>
+  ‘LENGTH (MAP FST fes) =
+   LENGTH (MAP (λe. abi_revents (DROP 6 e)) (pollfd_entries (DROP 16 out)))’ by simp[] >>
   simp[EVERY_MEM, FORALL_PROD, MEM_ZIP] >> rw[] >>
   gvs[EVERY_EL, EL_MAP] >> first_x_assum drule >> pairarg_tac >> simp[]
 QED
 
 Theorem l1_polls_ok:
-  ∀cs w. l0_rely w ∧ EVERY (λc. LENGTH c ≤ 4096 ∧ EVERY (λ(f, e). small f ∧ e < 256) c) cs ⇒
+  ∀cs w. l0_rely w ∧ EVERY (EVERY (λ(f, e). small f ∧ e < 4)) cs ⇒
          ∃rv w' evs. l1_polls cs w = SOME (rv, w', evs) ∧ l0_rely w' ∧
                      EVERY (small o FST) rv
 Proof
   Induct >> simp[l1_polls_def] >> rpt strip_tac >>
-  drule_all sys_poll_length >> strip_tac >> simp[] >>
+  drule_all sys_poll_ok >> strip_tac >> simp[] >>
   first_x_assum drule_all >> strip_tac >> simp[] >>
   irule poll_revents_small >> gvs[EVERY_MEM, FORALL_PROD] >> metis_tac[]
 QED
@@ -386,7 +399,7 @@ Proof
 QED
 
 Theorem poll_set_small:
-  small_fds lfd st ⇒ EVERY (λ(f, e). small f ∧ e < 256) (l1_poll_set lfd hw st hs)
+  small_fds lfd st ⇒ EVERY (λ(f, e). small f ∧ e < 4) (l1_poll_set lfd hw st hs)
 Proof
   rw[l1_poll_set_def, EVERY_MEM, MEM_FLAT, MEM_MAP, MEM_FILTER, EXISTS_PROD, FORALL_PROD] >>
   gvs[AllCaseEqs()] >> every_case_tac >> gvs[small_fds_def] >>
@@ -407,9 +420,8 @@ Theorem l1_tail_ok:
                    l0_rely w' ∧ small_fds lfd st' ∧ st'.nxt = st.nxt
 Proof
   strip_tac >> simp[l1_tail_def] >>
-  ‘EVERY (λc. LENGTH c ≤ 4096 ∧ EVERY (λ(f, e). small f ∧ e < 256) c)
-     (poll_chunks (l1_poll_set lfd hw st hs))’
-    by (irule poll_chunks_ok >> irule poll_set_small >> simp[]) >>
+  ‘EVERY (EVERY (λ(f, e). small f ∧ e < 4)) [l1_poll_set lfd hw st hs]’
+    by (simp[] >> irule poll_set_small >> simp[]) >>
   drule_all l1_polls_ok >> strip_tac >> simp[] >>
   drule readable_small >> strip_tac >>
   ‘small_fds lfd (st with rdy := readable_fds rv)’ by (irule small_fds_rdy >> simp[]) >>

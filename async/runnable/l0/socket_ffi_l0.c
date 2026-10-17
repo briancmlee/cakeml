@@ -3,8 +3,8 @@
 
   Each entry point is one syscall (sys_listen: a fixed straight-line
   sequence) with some arguments FIXED, and an honest encoding of its
-  result.  There is no retry, no loop other than array marshalling, and
-  no decision that depends on errno except the error table.  Everything
+  result.  There is no retry, no loop other than the fixed 8-byte number
+  codecs, and no decision that depends on errno except the error table.  Everything
   else (write loops, retries, what to do on reset or when out of fds)
   is verified CakeML (L1).
 
@@ -12,7 +12,8 @@
   every behaviour of this file plus the kernel must be a behaviour of
   the model.
 
-  RESULT HEADER: every call's output buffer a starts with 13 bytes
+  RESULT HEADER: every call's output buffer a, except sys_fdok's, starts
+  with 13 bytes
       a[0]      code  : 0 = success, else err_code(errno); 255 = an errno
                         the table does not list (never disguised)
       a[1..8]   value : big-endian (fd, count); on error 0, or for
@@ -24,9 +25,9 @@
   | sys_listen      | socket(AF_INET, SOCK_STREAM, 0); setsockopt          | port (2 bytes)   | -                   |
   |                 | SO_REUSEADDR=1; bind 127.0.0.1:port; listen 128;     |                  |                     |
   |                 | fcntl F_SETFL O_NONBLOCK (accept never blocks)       |                  |                     |
-  | sys_poll        | poll(fds, k, block ? -1 : 0)                         | block (0/1),     | k revents bytes:    |
-  |                 |                                                      | k x (fd 8, ev 1: | 1 IN 2 OUT 4 ERR    |
-  |                 |                                                      | 1 IN, 2 OUT)     | 8 HUP 16 NVAL       |
+  | sys_poll        | poll((struct pollfd *)(a + 16), k, block ? -1 : 0)   | block (0/1)      | 3 pad bytes, then   |
+  |                 | on the caller's buffer, in place (no copy, no cap)   |                  | k struct pollfd     |
+  |                 |                                                      |                  | (see below)         |
   | sys_accept      | accept(l, NULL, NULL)                                | listener fd      | -                   |
   | sys_recv        | recv(fd, buf, n, MSG_DONTWAIT)                       | fd               | n-byte data area    |
   | sys_send        | send(fd, data, len, MSG_DONTWAIT [| MSG_NOSIGNAL])    | fd ++ data       | -                   |
@@ -35,12 +36,24 @@
   | sys_connect     | socket(AF_INET, SOCK_STREAM, 0); fcntl F_SETFL       | port (2 bytes)   | -                   |
   |                 | O_NONBLOCK; connect 127.0.0.1:port                   |                  |                     |
   | sys_connerr     | getsockopt(fd, SOL_SOCKET, SO_ERROR)                 | fd               | -                   |
+  | sys_fdok        | fcntl(fd, F_GETFD)                                   | fd (1 byte)      | NO header: 1 byte,  |
+  |                 |                                                      |                  | 1 open / 0 closed   |
+
+  sys_poll (design/36 §9 D20): the caller's buffer a holds, after the
+  13-byte header and 3 pad bytes (untouched), k = (alen - 16) / 8 entries
+  in the platform's struct pollfd layout: fd (int32), events (int16),
+  revents (int16), native (little-endian) byte order, the kernel writing
+  revents in place.  The layout and the flag values POLLIN 1, POLLOUT 4,
+  POLLERR 8, POLLHUP 16, POLLNVAL 32 are a BUILD-TIME-CHECKED ABI
+  assumption (_Static_assert below; Linux and macOS agree).  If a + 16 is
+  not aligned for struct pollfd (CakeML byte arrays are word-aligned, so
+  it never is), the call fails with EINVAL without polling.
 
   sys_connect's value is the new fd as soon as socket() succeeded, also
   when connect then fails (EINPROGRESS: pending; ECONNREFUSED etc.:
   failed); the fd stays open until the program closes it.  Value 0: no fd
-  (socket or fcntl failed; fd 0 is always open, by the startup contract,
-  so 0 is never a new fd).
+  (socket or fcntl failed; a program that has seen sys_fdok report fd 0
+  open, and never closes it, never gets 0 as a new fd).
   sys_connerr: code 0 and value 0: no pending error; code e and value 1:
   the socket's pending error e (reading it clears it); code e and value
   0: getsockopt itself failed with e.
@@ -51,14 +64,19 @@
   peer addresses, MSG_PEEK/OOB/WAITALL, SHUT_RD, poll timeouts other
   than 0 and infinity.
 
-  STARTUP CONTRACT (the constructor, before cml_main): fds 0, 1, 2 must be
-  open (checked: exit 3 otherwise; the model's reserved fds), and SIGPIPE
-  is ignored (a write to a gone peer is the EPIPE result, not a kill;
-  macOS has no MSG_NOSIGNAL).
+  sys_fdok (D33, design/50 (c2)): a[0] = 1 if fd c[0] is open, 0 if not.
+  [P fcntl]: F_GETFD fails (EBADF) exactly when the fd is not an open file
+  descriptor.  The programs call it on 0, 1 and 2 first and stop if any is
+  closed, so the check is in the verified program, not here.
+
+  STARTUP CONTRACT (the constructor, before cml_main): SIGPIPE is ignored
+  (a write to a gone peer is the EPIPE result, not a kill; macOS has no
+  MSG_NOSIGNAL).
 
   MISUSE (exit 3; the model's call fails, FFI_failed): buffer lengths
   other than the above, a poll block flag other than 0/1, an fd above
-  INT_MAX, more than MAX_FDS fds in one poll.
+  INT_MAX.  UNCHECKED (the model's call fails; the verified caller never
+  does it): poll entries requesting events other than POLLIN, POLLOUT.
 */
 #include <arpa/inet.h>
 #include <errno.h>
@@ -67,6 +85,7 @@
 #include <netinet/in.h>
 #include <poll.h>
 #include <signal.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -74,8 +93,22 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-#define MAX_FDS 4096
 #define HDR 13
+#define POLL_OFF 16  /* the pollfd entries' offset in sys_poll's buffer */
+
+/* The struct pollfd ABI the model assumes (design/36 §9 D20) */
+_Static_assert(sizeof(struct pollfd) == 8, "struct pollfd is 8 bytes");
+_Static_assert(offsetof(struct pollfd, fd) == 0, "pollfd.fd at 0");
+_Static_assert(offsetof(struct pollfd, events) == 4, "pollfd.events at 4");
+_Static_assert(offsetof(struct pollfd, revents) == 6, "pollfd.revents at 6");
+_Static_assert(sizeof(int) == 4 && sizeof(short) == 2, "int32 fd, int16 events");
+_Static_assert(POLLIN == 1 && POLLOUT == 4 && POLLERR == 8 && POLLHUP == 16 && POLLNVAL == 32,
+               "poll flag values");
+/* send and recv return ssize_t, so a count is below 2^64 (design/36 §9 D24) */
+_Static_assert(sizeof(ssize_t) <= 8, "ssize_t counts fit in 64 bits");
+#if !defined(__BYTE_ORDER__) || __BYTE_ORDER__ != __ORDER_LITTLE_ENDIAN__
+#error "the L0 model assumes little-endian struct pollfd fields"
+#endif
 #ifdef MSG_NOSIGNAL
 #define SEND_FLAGS (MSG_DONTWAIT | MSG_NOSIGNAL)
 #else
@@ -134,8 +167,6 @@ static void put_res(unsigned char *a, long r) {
 }
 
 __attribute__((constructor)) static void l0_startup(void) {
-  if (fcntl(0, F_GETFD) < 0 || fcntl(1, F_GETFD) < 0 || fcntl(2, F_GETFD) < 0)
-    die("startup: fds 0, 1 and 2 must be open");
   signal(SIGPIPE, SIG_IGN);
 }
 
@@ -166,23 +197,15 @@ void ffisys_listen(unsigned char *c, long clen, unsigned char *a, long alen) {
 }
 
 void ffisys_poll(unsigned char *c, long clen, unsigned char *a, long alen) {
-  if (clen < 1 || (clen - 1) % 9 != 0 || c[0] > 1) die("sys_poll: config");
-  long k = (clen - 1) / 9;
-  if (k > MAX_FDS || alen != HDR + k) die("sys_poll: lengths");
-  struct pollfd p[MAX_FDS];
-  for (long i = 0; i < k; i++) {
-    const unsigned char *e = c + 1 + 9 * i;
-    p[i].fd = get_fd(e);
-    p[i].events = ((e[8] & 1) ? POLLIN : 0) | ((e[8] & 2) ? POLLOUT : 0);
-    p[i].revents = 0;
+  if (clen != 1 || c[0] > 1 || alen < POLL_OFF || (alen - POLL_OFF) % 8 != 0)
+    die("sys_poll: lengths");
+  unsigned char *p = a + POLL_OFF;
+  if ((uintptr_t)p % _Alignof(struct pollfd) != 0) {
+    errno = EINVAL;
+    put_res(a, -1);
+    return;
   }
-  int r = poll(p, (nfds_t)k, c[0] ? -1 : 0);
-  put_res(a, r);
-  for (long i = 0; i < k; i++) {
-    short v = r < 0 ? 0 : p[i].revents;
-    a[HDR + i] = ((v & POLLIN) ? 1 : 0) | ((v & POLLOUT) ? 2 : 0) | ((v & POLLERR) ? 4 : 0) |
-                 ((v & POLLHUP) ? 8 : 0) | ((v & POLLNVAL) ? 16 : 0);
-  }
+  put_res(a, poll((struct pollfd *)(void *)p, (nfds_t)((alen - POLL_OFF) / 8), c[0] ? -1 : 0));
 }
 
 void ffisys_accept(unsigned char *c, long clen, unsigned char *a, long alen) {
@@ -240,4 +263,9 @@ void ffisys_connerr(unsigned char *c, long clen, unsigned char *a, long alen) {
 void ffisys_close(unsigned char *c, long clen, unsigned char *a, long alen) {
   if (clen != 8 || alen != HDR) die("sys_close: lengths");
   put_res(a, close(get_fd(c)));
+}
+
+void ffisys_fdok(unsigned char *c, long clen, unsigned char *a, long alen) {
+  if (clen != 1 || alen != 1) die("sys_fdok: lengths");
+  a[0] = fcntl(c[0], F_GETFD) >= 0;
 }

@@ -2,7 +2,8 @@
 # parser, model, CakeML, trace bridge, whole program (design/24-http-headers.md).
 INCLUDES = ../model ../cf-spike ../cf-actions ../cf-reactive ../ffi-spike \
            ../m3-assembly ../m4-server ../m4-common ../spec ../m4-safety \
-           ../runnable ../machine-code ../http-model ../http-impl ../http-safety ../headline
+           ../runnable ../machine-code ../http-model ../http-impl ../http-safety ../headline \
+           ../socket-v2 ../socket-v2-cf ../close-v2-loop
 ifdef POLY
 HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
 endif

@@ -38,7 +38,7 @@ Overload trace2 = “λlfdn s2. LFLATTEN (LGENLIST (λi. fromList (R2 lfdn s2 i)
    ------------------------------------------------------------------------ *)
 
 (* Handles below 2^64 - 1 are distinct *)
-Theorem hdl_inj[local]:
+Theorem hdl_inj:
   ∀j1 j2. j1 < dimword (:64) − 1 ∧ j2 < dimword (:64) − 1 ⇒
           (hdl lfd j1 = hdl lfd j2 ⇔ j1 = j2)
 Proof
@@ -196,7 +196,7 @@ Proof
 QED
 
 (* Data arrives only from clients, of which there are fewer than 2^64 - 2 *)
-Theorem data_bound[local]:
+Theorem data_bound:
   ∀n s1 s hs. hsim lfd s1 (s, hs) ∧ sched_wf2 s ⇒
               ∀j bs. MEM (Data2 j bs) (arrivals2_upto n s.future) ⇒ j < dimword (:64) − 1
 Proof
@@ -220,7 +220,7 @@ Proof
   impl_tac >- first_assum ACCEPT_TAC >> simp[]
 QED
 
-Theorem sent2_rn[local]:
+Theorem sent2_rn:
   s2.listening = [(n2w lfdn, [])] ∧ s2.clients = [] ∧ s2.open_fds = [] ∧
   alloc_ok s2.alloc ∧ sched_wf2 s2 ∧ j < dimword (:64) − 1 ⇒
   sent2_upto j n s2 = sent_upto (hdl (n2w lfdn) j) n (v1of (n2w lfdn) s2)

@@ -90,12 +90,12 @@ Definition elevel_def:
 End
 
 Definition edo_def:
-  edo lfd hw (w, es) (EAccept l) =
+  edo lfd pol (w, es) (EAccept l) =
     (OPTION_MAP (λ(r, (w', ps'), evs).
                    ((case r of Accepted x => EAccepted x | _ => EAccepted NONE),
                     (w', es with p := ps'), evs))
        (pdo lfd (w, es.p) (Accept l))) ∧
-  edo lfd hw (w, es) (EConnect a) =
+  edo lfd pol (w, es) (EConnect a) =
     (if 65536 ≤ a then NONE
      else
        case sys_connect a w of
@@ -117,7 +117,7 @@ Definition edo_def:
                                        early := if c = CPending then es.early
                                                 else (f, c) :: es.early |>), [ev])
              else NONE) ∧
-  edo lfd hw (w, es) (ERead h n) =
+  edo lfd pol (w, es) (ERead h n) =
     (case ALOOKUP es.ctbl h of
      | SOME f =>
          if ¬(0 < n ∧ n < 256 ** 8) then NONE
@@ -129,7 +129,7 @@ Definition edo_def:
          OPTION_MAP (λ(r, (w', ps'), evs).
                        ((case r of Got x => EGot x | _ => EGot NONE), (w', es with p := ps'), evs))
            (pdo lfd (w, es.p) (Read h n))) ∧
-  edo lfd hw (w, es) (EWrite h bs) =
+  edo lfd pol (w, es) (EWrite h bs) =
     (case ALOOKUP es.ctbl h of
      | SOME f => if cstat_of es f = CRefused then SOME (EWrote 0, (w, es), []) else NONE
      | NONE =>
@@ -137,16 +137,16 @@ Definition edo_def:
                        (EWrote (if ALOOKUP es.p.b.tbl h = NONE then 0 else LENGTH bs),
                         (w', es with p := ps'), evs))
            (pdo lfd (w, es.p) (Write h bs))) ∧
-  edo lfd hw (w, es) (ELevel h) = SOME (ELvl (elevel es h), (w, es), [])
+  edo lfd pol (w, es) (ELevel h) = SOME (ELvl (elevel es h), (w, es), [])
 End
 
 Definition eacts_def:
-  eacts lfd hw ws [] = SOME ([], [], ws) ∧
-  eacts lfd hw ws (a :: acts) =
-    case edo lfd hw ws a of
+  eacts lfd pol ws [] = SOME ([], [], ws) ∧
+  eacts lfd pol ws (a :: acts) =
+    case edo lfd pol ws a of
     | NONE => NONE
     | SOME (r, ws1, evs1) =>
-        case eacts lfd hw ws1 acts of
+        case eacts lfd pol ws1 acts of
         | NONE => NONE
         | SOME (rs, evs, ws2) => SOME (r :: rs, evs1 ++ evs, ws2)
 End
@@ -199,18 +199,19 @@ End
    OUT), settling, promotion; the snapshot: the PF ready handles, refused
    connect handles (readable), and each settled connect handle once *)
 Definition etail_def:
-  etail lfd hw hs (w, es) =
-    let fes = pf_poll_set lfd hw es.p hs ++ MAP (λf. (f, 2n)) (pend_fds es) in
-    case l1_polls (poll_chunks fes) w of
+  etail lfd pol hs (w, es) =
+    let fes = pf_poll_set lfd pol es.p hs ++ MAP (λf. (f, 2n)) (pend_fds es) in
+    case l1_polls [fes] w of
     | NONE => NONE
     | SOME (rv, w1, pevs) =>
         case l1_flush (writable_fds rv) (w1, es.p.b) of
         | NONE => NONE
         | SOME ((w2, b2), fevs) =>
-            case pf_fetch lfd hw (FILTER (λf. MEM f (in_fds fes)) (readable_fds rv))
+            case pf_fetch lfd pol (FILTER (λf. MEM f (in_fds fes)) (readable_fds rv))
                    (w2, es.p with b := b2) of
             | NONE => NONE
-            | SOME ((w3, ps3), log, gevs) =>
+            | SOME ((w3, ps3'), log, gevs) =>
+                let ps3 = stall_step (pf_held ps3') (outbox_of es.p.b) log ps3' in
                 case l1_reap ps3.b.closing (w3, ps3.b) of
                 | NONE => NONE
                 | SOME ((w4, b4), cevs) =>
@@ -234,22 +235,22 @@ Definition etail_def:
 End
 
 Definition eround_def:
-  eround lfd hw hs ws acts =
-    case eacts lfd hw ws acts of
+  eround lfd pol hs ws acts =
+    case eacts lfd pol ws acts of
     | NONE => NONE
     | SOME (rs, evs, ws1) =>
-        case etail lfd hw hs ws1 of
+        case etail lfd pol hs ws1 of
         | NONE => NONE
         | SOME (rdy, ws2, log, tevs) => SOME (ssnap rdy rs, ws2, log, evs ++ tevs)
 End
 
 Definition erounds_def:
-  erounds lfd hw ifds m ws0 0 = SOME ([], ws0, [], []) ∧
-  erounds lfd hw ifds m ws0 (SUC n) =
-    case erounds lfd hw ifds m ws0 n of
+  erounds lfd pol ifds m ws0 0 = SOME ([], ws0, [], []) ∧
+  erounds lfd pol ifds m ws0 (SUC n) =
+    case erounds lfd pol ifds m ws0 n of
     | NONE => NONE
     | SOME (h, ws, evs, logs) =>
-        case eround lfd hw (ifds h) ws (new_actions (log_of m) h) of
+        case eround lfd pol (ifds h) ws (new_actions (log_of m) h) of
         | NONE => NONE
         | SOME (snap, ws', log, revs) => SOME (h ++ [snap], ws', evs ++ revs, logs ++ [log])
 End

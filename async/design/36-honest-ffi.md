@@ -275,7 +275,7 @@ That removes `fcntl` from accept.
 | call | syscall (fixed args) | conf | out after the header | what the fixed args rule out |
 |---|---|---|---|---|
 | `sys_listen` | `socket(AF_INET, SOCK_STREAM, 0)`; `setsockopt(SO_REUSEADDR, 1)`; `bind(127.0.0.1:port)`; `listen(fd, 128)`; `fcntl(F_SETFL, O_NONBLOCK)`: a straight line that stops at the first failure and reports it (value: the failing step, 1..5) | port, 2 bytes | — (value: the listener fd) | other families, other addresses (loopback only), UDP, other backlogs. The non-blocking listener makes `accept` never block, even when a pending connection vanishes between poll and accept |
-| `sys_poll` | `poll(fds, k, block ? -1 : 0)` | 1 byte block flag; k × (fd 8 bytes ++ events 1 byte: bit0 IN, bit1 OUT) | k bytes of `revents`: bit0 IN, bit1 OUT, bit2 ERR, bit3 HUP, bit4 NVAL | priority bands, timeouts other than 0 and ∞ (no timers yet) |
+| `sys_poll` | `poll((struct pollfd *)(a + 16), k, block ? -1 : 0)`, in place on the caller's buffer (D20, §3.6) | 1 byte block flag | 3 pad bytes (untouched), then k `struct pollfd` (fd int32, events int16, revents int16, native byte order), the kernel writing `revents` | priority bands, timeouts other than 0 and ∞ (no timers yet) |
 | `sys_accept` | `accept(l, NULL, NULL)` | listener fd | — (value: the new fd) | peer addresses |
 | `sys_recv` | `recv(fd, buf, n, MSG_DONTWAIT)` | fd | value: count (0 = EOF); then the n-byte data area | blocking, MSG_PEEK, OOB, MSG_WAITALL |
 | `sys_send` | `send(fd, buf, len, MSG_DONTWAIT \| MSG_NOSIGNAL`(Linux)`)` | fd ++ data | value: the count accepted | blocking; SIGPIPE (with the startup contract on macOS); OOB |
@@ -336,7 +336,7 @@ Estimated, excluding comments:
 | the result header writer | 5 |
 | the constructor (SIGPIPE, fds 0–2 check) | 8 |
 | listen | 14 |
-| poll (marshalling loops) | 14 |
+| poll (a pass-through since D20: length and alignment checks) | 8 |
 | accept | 4 |
 | recv | 5 |
 | send | 5 |
@@ -345,7 +345,8 @@ Estimated, excluding comments:
 
 Today it is about 140 lines of code. More important than the count:
 
-- **no loops except array marshalling;**
+- **no loops** except the fixed 8-byte number codecs (since D20, poll
+  has no marshalling loop and no cap);
 - **no retries;**
 - **no decision depends on errno**, except the table.
 
@@ -392,6 +393,26 @@ dispatches on a call number) was considered and is **not recommended**:
 **Recommendation: (c).** It has the "nothing but encode/decode" property
 for about 1.5 days more than (b). (d) only moves trust from C into HOL
 constants.
+
+### 3.6 `sys_poll` on CakeML's `struct pollfd` buffer (D20)
+
+The C used to copy k × 9 bytes into a stack array of at most 4096
+`struct pollfd` (`MAX_FDS`, a `die` beyond) and copy the revents back,
+and L1 polled in chunks of 4096 (`poll_chunks`). Now CakeML lays out the
+entries itself (`poll_buf`, `pfd_bytes` in `honestL1Model`) and the C
+passes the buffer to `poll` as it is: no loop, no copy, no cap. L1 polls
+once per round.
+
+**The trusted surface for `sys_poll` after D20:**
+
+| item | what | how it is justified |
+|---|---|---|
+| ABI layout | `struct pollfd` is 8 bytes: `int fd` at 0, `short events` at 4, `short revents` at 6; little-endian; POLLIN 1, POLLOUT 4, POLLERR 8, POLLHUP 16, POLLNVAL 32 | **build-time checked**: `_Static_assert`s and an endianness `#error` in the C. Linux and macOS agree. The L0 model (`pollfd_entries`, `pe_fd`, `abi_rev`, `abi_revents`) reads the same layout |
+| alignment | `a + 16` aligned for `struct pollfd`; otherwise EINVAL without polling | **runtime checked** in the C; the model allows the failure (any error, [P 2.3]). CakeML byte arrays are word-aligned, so it never fires: `make align` runs 64 real polls from a CakeML program at varying heap positions |
+| events | each entry requests POLLIN, POLLOUT, both or nothing | **unchecked precondition** on the caller: the model's call fails (`pe_ok`) otherwise, and L1 never does it (proved: `poll_set_small`, `e < 4`, so `pfd_bytes` writes 0, 1, 4 or 5) |
+| fds | the 4-byte field is a C `int`; a negative one is ignored by poll [P poll] | model: an fd field ≥ 2^31 gets revents 0 (`pfd_revents`). L1 only polls fds < 2^31 (`psmall`, proved along runs) |
+| bytes left alone | the header's 3 pad bytes and each entry's fd and events | the model returns them unchanged; the tester checks it |
+| failed poll | revents unspecified | `poll_junk`, a world choice per byte |
 
 ## 4. L0's world model
 
@@ -537,6 +558,7 @@ The citations were checked against the primary texts. The rules:
 |---|---|---|---|
 | fd of a new socket | [P 2.6]: the **lowest** available fd (accept, socket) | follows it: `lowest_fd`; EMFILE if it is not below the limit | macOS conforms (tested) |
 | partial send | [P 2.10.7]: "transfer only as much as is available"; EAGAIN only if nothing fits | `takes` (the room is the kernel's) | macOS: a partial 15708 of 65536, then EAGAIN |
+| counts below 2^64 (D24) | [P send], [P recv]: the result is an `ssize_t`, so a count is at most SSIZE_MAX | rely: `takes` and `short` are below 256^8 (`l0_rely`) | **build-time checked**: `_Static_assert(sizeof(ssize_t) <= 8)` in the C |
 | non-blocking per call | `MSG_DONTWAIT` is **not** in Issue 8 | treated as O_NONBLOCK for one call ([P 2.10.7]) | **[X4]** a non-standard flag, in macOS and Linux |
 | SIGPIPE | [P send, 2.10.14]: EPIPE is returned "regardless of whether the generation of the signal is suppressed"; `MSG_NOSIGNAL` is standard | EPIPE is a result | macOS lacks `MSG_NOSIGNAL`: the startup contract ignores SIGPIPE (standard behaviour, not an extension) |
 | short recv | [P recv]: data "as soon as it becomes available" | `short` (≥ 1 byte, ≤ available) | macOS: short reads seen (261 times in the random test) |
@@ -544,16 +566,20 @@ The citations were checked against the primary texts. The rules:
 | errors at other times | [P 2.3]: implementations "may generate errors ... under circumstances other than those described" | `transient`: any error at any call, **except** EAGAIN (**[A2]**) | none seen (0 warnings in the random test) |
 | reset, unread input | [T §3.10.7.4]: "All segment queues should be flushed" (lowercase: not BCP 14) | `LBreak j e keep`: kept or flushed | macOS keeps it (P3) |
 | reset, how reported | [T §3.10.7.4]: "reset" responses; [P recv/send]: ECONNRESET, EPIPE "no longer connected" | a pending error, reported once (`err`); then `broken_recv`/`broken_send` | macOS: recv ECONNRESET once, then 0; send EPIPE, leaving the error pending (P2, P4) |
+| reset after the peer's EOF (D21) | [P recv] 0 when "no messages are available to be received and the peer has performed an orderly shutdown"; [P 2.10.10] the pending error "is returned in response to a subsequent send(), recv(), or getsockopt()"; [P 2.10.11] "The receive queue is logically terminated if an end-of-file indication has been received" | `eof_first`: recv may return 0 and leave the error pending | Linux: 0 for ever; the error is reported by send (P4) |
 | close, unread input | [T §3.6.1]: SHOULD send RST (SHLD-3) | `aborted` (the peer *may* lose data) | macOS: the client lost the response (P6) |
 | close, interrupted | [P close]: EINTR with the fd open, EINPROGRESS with it closed, or 0 (unspecified which) | `close_intr` | none seen (no signal handlers) |
 | sending after the peer's FIN | [T §3.6.1]: permitted | permitted | macOS (P4) |
 | accept, EMFILE | [P accept]: shall fail; the pending connection's fate is **unspecified** | `emfile_drops`: queued, or dropped with the peer reset | macOS drops and resets (P5); Linux keeps it queued (documented) |
 | accept, broken pending | [P accept]: ECONNABORTED (shall), EPROTO (may) | `accept_aborts`: dropped with an error, or returned | macOS returns it (P8); BSDs: ECONNABORTED; **[X3]** Linux also returns network errors not in the list |
 | shutdown when not connected | [P shutdown]: ENOTCONN | `shut_err` on a broken or already-shut channel | macOS: ENOTCONN once both sides have sent FIN (**found by the random test**) |
+| shutdown of a pending connect (D22) | [P shutdown]: shall fail with ENOTCONN "The socket is not connected"; [P connect]: a pending connection is "established asynchronously" | `pending_err`; the observed success is explained by environment choices (`LConnUp`, then `LBreak`; the two ends are not linked, D1), so no rule of its own. Verified L1 never calls `sys_shutdown` | **[X5]** Linux succeeds, aborts the connect and leaves ECONNRESET pending (P13) |
 | POLLERR | [P poll]: **required** for every condition a read or write would report with −1 | `show_err`, **only if** an error is pending or the channel is broken or shut | **[X1]** macOS never shows it (P2) |
 | POLLHUP | [P poll]: defined for devices, pipes and FIFOs; **not for sockets** | `show_hup`; **[A1]** only after the peer's EOF, a break, or our own shutdown | macOS shows it after our SHUT_WR alone (**found by the random test**; [A1] widened) |
 | POLLHUP with POLLOUT | [P poll]: "mutually-exclusive" | not excluded | **[X2]** Linux sets both after a reset (documented) |
 | POLLERR/HUP/NVAL not requested | [P poll]: reported "even if the application did not set the corresponding bit" | yes | conforms |
+| negative fd in an entry (D20) | [P poll]: "If the value of fd is less than 0, events shall be ignored, and revents shall be set to 0" | `pfd_revents`: an fd field ≥ 2^31 (negative as an `int`) gets revents 0 | not probed (L1 never polls one) |
+| revents of a failed poll (D20) | [P poll]: unspecified | `poll_junk`: any bytes | — |
 | accepted socket and O_NONBLOCK | [P accept]: implementation-defined | irrelevant: every call uses MSG_DONTWAIT | — |
 
 **Fairness assumptions (used only by R1-live, §6; approved, D11 and D12).**
@@ -622,6 +648,32 @@ candidate states. The checker now warns when the cap is reached.
 to run before a release. [X2], [X3] and Linux's EMFILE behaviour are
 expected; anything else would be a finding.
 
+**Conformance run on Linux (Sisyphus), 2026-10-17** (Linux 6.18, x86_64,
+after D20; `probes-linux.txt` / `.json`). This records a run; it is not
+a Linux platform claim.
+
+| run | result |
+|---|---|
+| the 13 probes | 11/13 conform. **P4:** after the peer's FIN and then its RST, recv returns 0 (EOF), never ECONNRESET. **P13:** the pending connect state *was* observed (no revents; recv and send EAGAIN), but shutdown on the pending socket returned OK and connerr then reported ECONNRESET |
+| mutants | 11/11 caught |
+| random test: 100 scenarios × 200 steps, 12461 calls | **80 findings**, all of P4's kind (recv → EOF after a reset); 6 warnings (accept EMFILE explained only as transient) |
+
+The pre-D20 C and tester (`41dffdd16`) give the same results on the same
+machine (the same 80 findings and the same probe findings), so neither
+comes from D20. *Resolved by D21 and D22 (§9):* P4 and the 80 random
+findings are [P] looseness the model now has (`eof_first`); P13 is a
+platform extension [X5] the model already admitted (the checker could
+not see it).
+
+**Conformance run on Linux (Sisyphus), 2026-10-17, after D21/D22** (a
+run, not a Linux platform claim):
+
+| run | result |
+|---|---|
+| the 13 probes | **13/13 conform** |
+| mutants | **11/11 caught** |
+| random test: 100 scenarios × 200 steps, 12461 calls. Exercised: 106 partial sends, 54 resets seen, 223 EMFILEs, 263 short reads, 1356 EOFs, 277 closes without reading first | **0 findings**; 10 warnings, all accept EMFILE explained only as transient ([P 2.3]) |
+
 ## 5. L1: the verified wrapper layer
 
 L1 is **one CakeML module plus its loop**: the honest-world version of
@@ -674,7 +726,8 @@ the server unchanged). It sits between the event loop's `perform` and L0.
   - **Found and fixed:** the C allows at most 4096 fds per poll, and L1
     polled its whole interest in one call. A server with more than 4096
     connections would have aborted. L1 now polls in chunks of at most
-    4096 (`poll_chunks`); the C is unchanged.
+    4096 (`poll_chunks`); the C is unchanged. *Superseded by D20 (§3.6):*
+    the C has no cap and L1 polls once per round.
   - Each L0 call succeeds and keeps the rely (`sys_*_ok`).
   - `l1do_ok`, then `l1round_ok`: a round completes and keeps the rely
     and the invariant.
@@ -836,7 +889,9 @@ while building L1:
    its `future` from the environment's arrivals at successive polls.
 2. **One poll per round:** at most 4096 polled fds. L1 chunks larger
    polls, and each chunk is a step of time that the handle layer's single
-   poll does not have.
+   poll does not have. (*Old R2 only.* Since D20 L1 polls once per round;
+   the old `honestL1Round` keeps the bound because its decoding lemma
+   uses it.)
 3. **Reads within the interest.** A server Read of a handle outside the
    round's polled interest gets "would block" from L1 with no syscall, but
    possibly data from version 2. Our servers read only after waiting for
@@ -900,7 +955,8 @@ one-to-one renaming that the draft above expected.
   be reused after a close.
 - **Polling with an empty interest.** L1 must poll even when the
   interest is empty. `poll_chunks` now gives `[l]` for any l of at
-  most 4096 entries, including `[]`. Otherwise the handle layer's poll
+  most 4096 entries, including `[]` (since D20 there is no chunking:
+  `l1_polls [fes]`). Otherwise the handle layer's poll
   of no fds would tick the world's clock and L1's would not.
 - **Side conditions, `hl_ok`.** These are assumptions about the server
   running on the handle layer, round by round, in the style of
@@ -1222,8 +1278,23 @@ and is client j of `psk`. The fetch log is `plog`.
   j = `cl (pcm n0) f`: eventually `Eof2 j` is among `psk`'s arrivals from
   step n0 on, or c's kernel inbox at n0 is a prefix of client j's `Data2`
   bytes there. Hypotheses: the run's side conditions, `winv w0`, [F1]
-  (D11′), S1, S3, S4 for f. The D16 corollary (hard errors only on a real
-  break) and live-conn ([F3]) remain.
+  (D11′), S1, S3, S4 for f. The D16 corollary and live-conn are proved
+  too (below and honestL1PFConnRun).
+  **D16 corollary (proved, honestL1PFD16, fd75f3319):** hypothesis HD16 f
+  (`HD16_def`, on the fetch log and f's channel at round boundaries): if
+  round k's fetch log has `FReset f`, f's channel at the end of round k
+  is broken with an empty inbox (`flushed`). Then `live_data_d16`: f's
+  kernel input R at round n0 is eventually a prefix of what L1 fetched
+  on f, or ∃k ≥ n0 with f flushed. `live_data_psk_d16` gives the same in
+  psk, as client data. An orderly EOF needs no hypothesis (`recv_zero`:
+  L0 returns 0 only with an empty inbox). *Wording refined (agreed with
+  the coordinator, 2026-10-17):* the approved wording "every byte c's peer
+  delivered is eventually in psk" is refined to "... unless the
+  connection genuinely broke and the kernel discarded unread data". Real
+  TCP may discard received-but-unread data on an RST (the model's LBreak
+  with keep = F), so the unrefined statement is false for real
+  connections. The corollary still excludes exactly what D16 is about:
+  a spurious hard error ending the episode early.
   *Formal shapes for live-conn (agreed).* **[F3]:** infinitely often some
   fd below the limit is free (`∀n. ∃n' ≥ n. ∃x < fd_limit. n2w x ∉
   l0_used (rworld n')`). It is a condition on the run, on what the process
@@ -1267,11 +1338,33 @@ and is client j of `psk`. The fetch log is `plog`.
   fails and j0 waits forever. It is still a weak form, which allows
   recurring ENFILE and EINTR (the user's rule: fairness only in weak
   "infinitely often" forms that do not exclude realistic runs).
-  **EMFILE needs no new assumption:** while no accept succeeds, nothing
-  allocates an fd (L1 makes no connects or listens), so the set of used
-  fds only shrinks. A fd that [F3] finds free therefore stays free until
-  the next retry, whose accept then cannot fail with EMFILE (in L0,
-  EMFILE comes only when `l0_alloc` finds no fd below the limit).
+  *Correction (2026-10-17, before proving the corollary):* the
+  paragraph that stood here said "EMFILE needs no new assumption ... in
+  L0, EMFILE comes only when `l0_alloc` finds no fd below the limit".
+  That was wrong. L0's world choice `transient` may return any error
+  but EAGAIN, EMFILE included, and it cannot be limited to accepts
+  because it does not see the call kind. So the model allows spurious
+  EMFILE, and H1 + [F3] + H3 would not imply the corollary (a run where
+  every accept gets a spurious EMFILE). **The corollary's hypotheses
+  are now (agreed with the coordinator, no new trust):** (H1) as above,
+  stated on the observed event plus the listener's queue at round
+  boundaries: if round k has an accept on lfd that fails with an error
+  outside {`l1_transient`, EMFILE, ENFILE} and the queue is not empty,
+  some channel queued at round k is no longer queued at round k+1.
+  (H3′) the joint weak form with EMFILE added: if L1 attempts accept on
+  lfd infinitely often, infinitely many attempts fail with none of
+  `l1_transient`, ENFILE, EMFILE. [F3] is dropped from the corollary:
+  H3′ excludes only runs where j0 cannot be accepted anyway (the process
+  at its limit forever, or spurious EMFILE forever). [F3] together with
+  "no spurious EMFILE forever" implies H3′.
+  **Proved (honestL1PFConnRun, 5d0d1c269):** `live_conn`, the main form,
+  from [F1], S1, S2 (L1's accepted fds are eventually asked for) and
+  the run's hypotheses, with `linv lfd w0` (lfd is a listener and no
+  connection's fd); and `live_conn_psk`, where an accepted j0 is a
+  `Connect2 lfd` in its round's arrivals under a new client number;
+  and `live_conn_cor` (255d198d7), the corollary from H1 (`H1_def`) and
+  H3′ (`H3_def`, errors in `kept_err`): accepted or dropped. All in
+  honestL1PFConnRun, Holmake green, no cheats.
 - **(live-conn)** Assume [F3]. Every connection that reaches the
   listener's backlog (`LIncoming` on its port) is eventually a
   `Connect2` in `psk`, unless it is dropped. It is dropped only if it
@@ -1300,6 +1393,30 @@ while nothing new is read on f, nothing new is written to f.
 io` with R1-safe and R1-live, every byte delivered by a peer that
 drains is eventually written to that peer on the wire. The writes reach
 the wire because flushes progress under [F2] and D(c).
+
+**Correction (2026-10-17, moonshot step 8): S4 was not discharged.** D15
+says S4 is "discharged per server from v2 liveness and reply-only
+writes". That discharge needs L1's *output* liveness: if the peer drains,
+f's outbox shrinks. Nothing proved it; no PF theory used [F2] at all.
+So every R1-live result that assumes S4 (fetch_progress, live_data,
+the D16 corollary) rested on an unproved per-server obligation. The
+missing piece is the L1 lemma `flush_progress` (inflight falls to 0
+under D(c); then [F2] makes POLLOUT shown; then [F1] makes a send go
+through, so the outbox shrinks). With it, S4 is *derived* from the L2
+obligation `writes_follow_feeds` (design/45 §2.3) plus S3, not assumed.
+D(c) is made precise as `drains` (the peer's in-flight bytes eventually
+fall; an `LDrain` of 0 bytes does not count). Under construction on
+`spike/moonshot-s4g`.
+
+**Correction (2026-10-17, found by async-spike): S3 as stated is false**
+for any server whose peer always has data ready: a round's actions empty
+f's inbox and the same round's fetch refills it, so the inbox is never
+empty at a round boundary although the server reads everything. The proofs
+use S3 only once f is no longer fetched, so S3 is replaced by **S3w**
+("if f is no longer fetched, its inbox eventually empties"), and S4 by
+**S4w** (the same premise; then f's outbox stays within hw and nothing is
+written to it). S3 ⇒ S3w and S4 ⇒ S4w are proved, so fetch_progress,
+live_data_kernel, live_data and the D16 corollary only got stronger.
 
 *Why it should hold:*
 - A byte in c's kernel inbox makes c's next unpaused poll report IN.
@@ -1395,10 +1512,13 @@ Connect action). The options:
 | calls | `l0_connect`: the lowest free fd [P 2.6], EMFILE at the limit, value 0 when there is no socket. `l0_connerr`: getsockopt(SO_ERROR), reading clears it | [P 2.6], [P getsockopt] |
 | not linked | a connect to the program's own listener also arrives there as `LIncoming`, by the environment's choice. The two ends are not linked: an over-approximation, so every real pairing is a behaviour | D1 |
 
-**Not tested:** macOS conformance never observed the pending state. Every
-connect completed (P13, even with backlog 0), so `pending_err` and "no
-revents while pending" rest on the standard alone until a platform shows
-them, for example Linux or a peer that withholds the handshake.
+**Not tested on macOS:** macOS conformance never observed the pending
+state. Every connect completed (P13, even with backlog 0). *Observed on
+Linux (Sisyphus, 2026-10-17, P13; a run, not a platform claim):* a
+pending connect shows no revents, and recv and send give EAGAIN
+(`pending_err`), as the model says. shutdown on it succeeds, which
+[P shutdown] forbids: **[X5]** (D22), explained by environment choices
+and unreachable from L1.
 
 **R2/R3/R4 for the prefetching L1 (restated; statements first, nothing
 proved yet).** The R2/R3/R4 above were written for the lazy L1, with one
@@ -1471,7 +1591,8 @@ statement about the real binary):
    A corollary about all L0 worlds needs it as a world hypothesis (as
    `v1_instance_disc`'s `sched_connects_le`).
 5. **The per-server obligations:** S1–S4, `pl2_ok`/`hl_ok` (interest,
-   ≤ 4096 fds per poll chunk, handle numbers < 2^64), and D16's
+   ≤ 4096 fds per poll chunk, handle numbers < 2^64: since D25, each
+   round `nxt + naccepts acts < 2^64`, counting only Accept actions), and D16's
    qualification of live-data.
 6. **Listen failure.** Headline statements of the form `Diverge io` need
    the disjunct "listen failed and the program terminated" (`l1_rel`
@@ -1631,8 +1752,16 @@ even if it is more work.**
 | D15 | R1-live gains S3 (the server reads what it is shown) and S4 (if the peer drains, the outbox eventually falls to ≤ hw) as per-server obligations, not trusted. They are discharged per server: echo, HTTP and KV from their v2 liveness and reply-only writes; chat via D7 | **approved** |
 | D16 | Spurious hard errors (the L0 model allows any error but EAGAIN as a transient failure, [P 2.3]): (live-data) holds **unless L1 observed a hard error on c**, in which case the episode ended (`Eof2 j`). No new trust. Plus a corollary with the condition as an explicit **hypothesis**: if hard errors on c occur only when the connection really broke, every byte c's peer delivered is eventually in `psk` | **approved** |
 | D11′ | **[F1] restated on observed outcomes** (replaces D11's world-choice form; does not add to it). Per call kind and per fd: a call on f made infinitely often does not return a *retried* outcome infinitely often. Retried = an `l1_transient` error (EAGAIN, EINTR, ENOBUFS, ENOMEM) for recv, accept and send; any failure for poll (L1 retries every failed poll next round). Reason: the weakest single assumption, and no extra narrowing of POSIX. It covers both the world's transient choice and a broken channel's transient-looking errors (`broken_recv`, an `LBreak` error), with no trusted "broken errors are never transient" fact. Stated on the run's IO-event trace (the observed results) | **approved (user, via coordinator)** |
-| D17 | Running out of fds at accept. **ENFILE is retried** (only EMFILE pauses). **While the process is out of fds, L1 retries accept after a backoff** of `pf_backoff` rounds (a model constant; no proof uses its value), as real servers pause accepting and retry, instead of waiting for a close. No "no spurious EMFILE" hypothesis. In the model: `pause` in the PF state; L1 polls the listener only when `pause = 0`. Stated honestly in §5/§6: at a real fd limit on macOS, each retry's EMFILE may reset one queued connection (`emfile_drops`), which live-conn's "dropped" case covers. EMFILE needs no new assumption (§6): while no accept succeeds, no fd is allocated, so a fd that [F3] finds free stays free until the next retry. The CakeML L1 loop and its CF spec follow the model | **decided (user, via coordinator)** |
+| D17 | Running out of fds at accept. **ENFILE is retried** (only EMFILE pauses). **While the process is out of fds, L1 retries accept after a backoff** of `pf_backoff` rounds (a model constant; no proof uses its value), as real servers pause accepting and retry, instead of waiting for a close. No "no spurious EMFILE" hypothesis. In the model: `pause` in the PF state; L1 polls the listener only when `pause = 0`. Stated honestly in §5/§6: at a real fd limit on macOS, each retry's EMFILE may reset one queued connection (`emfile_drops`), which live-conn's "dropped" case covers. *Corrected 2026-10-17:* this row said EMFILE needs no new assumption; that was wrong, because L0's `transient` may be a spurious EMFILE (§6). The corollary uses H3′ (EMFILE in the joint weak set) instead of [F3]. The CakeML L1 loop and its CF spec follow the model | **decided (user, via coordinator)** |
 | D18 | Spurious accept errors (the analogue of D16 for the listener). **live-conn, main form (no new trust):** j0 is (a) accepted, (b) dropped (broken or aborted, or an EMFILE reset), or (c) L1's accepts on lfd fail (retried) infinitely often. **Corollary** under the explicit hypothesis "every ECONNABORTED on lfd's accept really dropped a queued connection" (on observed events plus the queue where possible; otherwise on world choices, with the reason): accepted or dropped. [F1]'s retried set for accept stays as in D11′. Rationale, for consistency with D11′/D16/D17: never add trusted kernel facts that narrow POSIX's looseness; weaken the main theorem honestly, and give the strong form as a corollary under an explicit hypothesis | **decided (user, via coordinator)** |
+
+| D19 | Hung-up fds (user decision, option 2; via async-spike's L3-00 Q-L3-1). On POLLHUP for a connection fd L1 holds, L1 fetches what is left. (a) If the input ends with a hard error (`FReset`: the connection really broke), its outbox is dropped and the fd is marked gone, so it is closed. (b) If it ends with EOF (a half-close; the fd may still be writable), L1 keeps flushing and closes when drained, but after `pf_hupwait` consecutive rounds with a non-empty outbox and no send progress (a named constant, like `pf_backoff`) the outbox is dropped. An empty outbox or any progress resets the count. Model: `hups` in the PF state, `hup_step` between the fetch and the reap. No HUP disjunct anywhere: no hung-up fd is polled forever. The cost on the output side: liveness assumes the peer reads within `pf_hupwait` rounds of the hang-up. *Correction:* the first framing said a hung-up fd is always unwritable. That is wrong for a half-close: the L0 model, like platforms, may report POLLHUP after the peer's FIN alone, and the fd stays writable, so dropping at once would lose replies to half-closing clients *Superseded in part by D23:* (b)'s timeout now applies to every fd, not only hung-up ones (`stall_step`, `stalls`, `pf_sendwait`); (a) is kept | **decided (user, via coordinator)** |
+| D20 | **sys_poll on CakeML's `struct pollfd` buffer** (§3.6). The C is a pass-through: `poll` runs in place on the caller's buffer from offset 16, with no copy loop and no cap (`MAX_FDS` 4096 is gone, and with it `poll_chunks`: L1 polls once per round). The layout is a **build-time-checked ABI assumption** (static asserts); a misaligned buffer gets EINVAL (runtime check); events other than POLLIN/POLLOUT are an **unchecked precondition** on callers, which L1 meets (proved). The L0 model reads the entries (`pollfd_entries`), allows fds ≥ 2^31 (revents 0), and has `poll_junk` for a failed poll's revents. Conformance rerun on Linux (§4.3). R1/R1-live are unchanged in wording; internally, `psmall` (polled fds < 2^31) is a new invariant along runs | **decided (user, via coordinator)** |
+| D21 | **Reset after the peer's EOF** (a Linux conformance finding, P4 and the random test). After the peer's EOF, with an empty inbox and a reset's error pending, recv may return 0 and leave the error pending (`eof_first`), as well as report it. Labelled **[P] POSIX looseness**, consistent with the model's reading of recv's ECONNRESET as the once-reported pending error ([P 2.10.10], [P 2.10.11], [P recv] RETURN VALUE; §4.2). No statement changes: a flushed break read as EOF was already reachable, and the D16 corollary already allows it (`flushed`) | **decided (user, via coordinator)** |
+| D22 | **shutdown of a pending connect** (Linux, P13). [P shutdown] forbids the success: platform extension **[X5]**. **No model change** (option A): the observed trace is a behaviour of the model through environment choices (`LConnUp`, then `LBreak`), and verified L1 never calls `sys_shutdown`. The checker may draw a break no client action logged when connerr reports one | **decided (user, via coordinator)** |
+| D23 | **Write timeout** (Finding 2, option (ii-b); generalises D19). A peer that stops reading for good is indistinguishable, through poll and send, from a slow one: a receiver that keeps its window closed while it acknowledges the probes keeps the connection open indefinitely ([T] RFC 1122 §4.2.2.17), so no error is ever reported. So L1 times out every fd, not only hung-up ones: after `pf_sendwait` consecutive rounds with a non-empty outbox and no send progress, L1 drops f's outbox and marks it gone (closed at the reap or the auto-close, as for D19). A round with progress or an empty outbox resets the count. A hard input error (`FReset`) still drops at once (D19 (a)). Model: D19's counters absorbed into one per-fd stall count, `stalls` in the PF state, `stall_step` between the fetch and the reap, now tracking every fd L1 holds (`pf_held`); `pf_hupwait` becomes `pf_sendwait` (8). POLLHUP no longer plays a part. Statements: R1-safe, R1-live and the D16 corollary are unchanged (dropping is the existing `gone` path, which acct already allows as a prefix; nothing on the input side reads `gone`). Output liveness (flush_progress, S4w, flush_live) reads "unless L1 timed f out", an observed disjunct, with a strong form under "the peer reads within `pf_sendwait` rounds of a stall" | **decided (user, via coordinator)** |
+| D24 | **counts below 2^64** (from m4-server's B2 work). `l0_rely` gains `(∀j h b n. w.ch.takes j h b n < 256 ** 8) ∧ (∀j h a. w.ch.short j h a < 256 ** 8)`: [P send/recv] return `ssize_t`, so a count is at most SSIZE_MAX; the C checks `sizeof(ssize_t) <= 8` at build time (with D20's asserts, §3.6). A stronger rely: no existing proof changes | **decided (user, via coordinator)** |
+| D25 | **Handle-room guard counts only Accept actions** (echo liveness cut-off). Handles are the 2^64 − 1 word64 values other than lfd's (`l1hdln` skips it), and `l1hdln lfdn j < 2^64 ⇔ j + 1 < 2^64` (`l1hdln_lt`). Only an Accept action takes one (and only when a prefetched connection is waiting: an unhanded prefetched accept takes none). The round's guard was `l1hdln (nxt + LENGTH acts) < 2^64`, counting every action and stricter by one; it is now `nxt + naccepts acts < 2^64` (`pl2_ok`, `pround_ok`): exactly what the round's accepts can need, so a server issuing one Accept a round is served while fewer than 2^64 − 1 connections have been handed out. Statements: only the room hypothesis of R1-live (`pl2_ok`) changes, and it gets weaker; R1-safe's own hypotheses are unchanged | **decided (user, via coordinator)** |
 
 **Principle (user):** OS assumptions are justified by POSIX and the RFCs
 only, never by any platform's behaviour. The probes are tests, not

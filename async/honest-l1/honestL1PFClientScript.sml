@@ -7,6 +7,7 @@
 *)
 Theory honestL1PFClient
 Ancestors
+  honestL0WorldProps
   honestL1PFStream honestL1PFLive honestL1PFRound honestL1PFRefine honestL1PFModel
   honestL1Model honestL0World honestL0 socketV2FFI asyncCore alist
 Libs
@@ -99,7 +100,7 @@ QED
 (* The fetch reports input only on the fds it was given, never the listener *)
 Theorem pf_fetch_fds:
   ∀fs ws ws' log evs.
-    pf_fetch lfd hw fs ws = SOME (ws', log, evs) ⇒
+    pf_fetch lfd pol fs ws = SOME (ws', log, evs) ⇒
     ∀g. MEM g (log_fds log) ⇒ MEM g fs ∧ g ≠ lfd
 Proof
   Induct >- simp[pf_fetch_def] >> rpt gen_tac >> PairCases_on ‘ws’ >>
@@ -112,7 +113,7 @@ QED
 (* The fetch never reports a new connection on an fd in use *)
 Theorem pf_fetch_conns:
   ∀fs w ps w' ps' log evs.
-    pf_fetch lfd hw fs (w, ps) = SOME ((w', ps'), log, evs) ∧ winv w ∧ MEM f (l0_used w) ⇒
+    pf_fetch lfd pol fs (w, ps) = SOME ((w', ps'), log, evs) ∧ winv w ∧ MEM f (l0_used w) ⇒
     ¬MEM f (log_conns log)
 Proof
   Induct >- simp[pf_fetch_def] >> rpt gen_tac >>
@@ -132,7 +133,7 @@ QED
 (* A round's log reports input only on mapped fds, and never reconnects an
    open f *)
 Theorem pround_client:
-  pround lfd hw hs (w, ps) acts = SOME (snap, (w', ps'), log, evs) ∧ winv w ∧
+  pround lfd pol hs (w, ps) acts = SOME (snap, (w', ps'), log, evs) ∧ winv w ∧
   pv_rel lfd cm ps s ∧ pown lfd ps ∧ fl w f R ∧ fkeep lfd h f ps ⇒
   (∀g. MEM g (log_fds log) ⇒ MEM g (MAP FST cm)) ∧ ¬MEM f (log_conns log)
 Proof
@@ -161,45 +162,45 @@ QED
    ------------------------------------------------------------------------ *)
 
 Theorem plog_rlog:
-  run_ok lfd hw ifds m w0 ⇒ plog lfd hw ifds m w0 k = rlog lfd hw ifds m w0 k
+  run_ok lfd pol ifds m w0 ⇒ plog lfd pol ifds m w0 k = rlog lfd pol ifds m w0 k
 Proof
   strip_tac >> drule prun_some >> disch_then (qspec_then ‘SUC k’ assume_tac) >>
-  Cases_on ‘prun lfd hw ifds m w0 (SUC k)’ >> PairCases_on ‘r’ >>
+  Cases_on ‘prun lfd pol ifds m w0 (SUC k)’ >> PairCases_on ‘r’ >>
   drule plog_EL >> disch_then (qspec_then ‘k’ mp_tac) >> gvs[rlog_def]
 QED
 
 Theorem refine_at:
-  run_ok lfd hw ifds m w0 ∧ fds_lt w0 ∧ MEM lfd (l0_used w0) ∧
-  (∀n. SND (pcm lfd hw ifds m w0 n) + 1 < dimword (:64)) ⇒
-  ∀k. ∃s. pv_rel lfd (FST (pcm lfd hw ifds m w0 k)) (rstate lfd hw ifds m w0 k) s ∧
-          pown lfd (rstate lfd hw ifds m w0 k)
+  run_ok lfd pol ifds m w0 ∧ fds_lt w0 ∧ MEM lfd (l0_used w0) ∧
+  (∀n. SND (pcm lfd pol ifds m w0 n) + 1 < dimword (:64)) ⇒
+  ∀k. ∃s. pv_rel lfd (FST (pcm lfd pol ifds m w0 k)) (rstate lfd pol ifds m w0 k) s ∧
+          pown lfd (rstate lfd pol ifds m w0 k)
 Proof
   rpt strip_tac >> drule prun_some >> disch_then (qspec_then ‘k’ assume_tac) >>
   ‘l0_rely w0’ by gvs[run_ok_def] >>
-  Cases_on ‘prun lfd hw ifds m w0 k’ >> rename1 ‘_ = (hh, r)’ >> PairCases_on ‘r’ >>
+  Cases_on ‘prun lfd pol ifds m w0 k’ >> rename1 ‘_ = (hh, r)’ >> PairCases_on ‘r’ >>
   mp_tac l1pf_refines_hl >> impl_tac >- simp[] >> disch_then drule >> strip_tac >>
   gvs[rstate_def] >> metis_tac[]
 QED
 
 (* Round k of the run, seen from client j of f *)
 Theorem client_step:
-  run_ok lfd hw ifds m w0 ∧ winv w0 ∧ MEM lfd (l0_used w0) ∧
-  (∀n. SND (pcm lfd hw ifds m w0 n) + 1 < dimword (:64)) ∧
-  fl (rworld lfd hw ifds m w0 k) f R ∧ fkeep lfd h f (rstate lfd hw ifds m w0 k) ∧
-  ALOOKUP (FST (pcm lfd hw ifds m w0 k)) f = SOME j ⇒
-  cdata j (parr lfd hw ifds m w0 k) = fdata f (rlog lfd hw ifds m w0 k) ∧
-  (cend j (parr lfd hw ifds m w0 k) ⇔ fend f (rlog lfd hw ifds m w0 k)) ∧
-  ALOOKUP (FST (pcm lfd hw ifds m w0 (SUC k))) f = SOME j
+  run_ok lfd pol ifds m w0 ∧ winv w0 ∧ MEM lfd (l0_used w0) ∧
+  (∀n. SND (pcm lfd pol ifds m w0 n) + 1 < dimword (:64)) ∧
+  fl (rworld lfd pol ifds m w0 k) f R ∧ fkeep lfd h f (rstate lfd pol ifds m w0 k) ∧
+  ALOOKUP (FST (pcm lfd pol ifds m w0 k)) f = SOME j ⇒
+  cdata j (parr lfd pol ifds m w0 k) = fdata f (rlog lfd pol ifds m w0 k) ∧
+  (cend j (parr lfd pol ifds m w0 k) ⇔ fend f (rlog lfd pol ifds m w0 k)) ∧
+  ALOOKUP (FST (pcm lfd pol ifds m w0 (SUC k))) f = SOME j
 Proof
   strip_tac >> ‘fds_lt w0’ by gvs[winv_def] >>
   drule_all refine_at >> disch_then (qspec_then ‘k’ strip_assume_tac) >>
   drule prun_round' >> disch_then (qspecl_then [‘f’, ‘k’] strip_assume_tac) >>
-  ‘winv (rworld lfd hw ifds m w0 k)’ by (drule_all winv_run >> simp[]) >>
+  ‘winv (rworld lfd pol ifds m w0 k)’ by (drule_all winv_run >> simp[]) >>
   drule_all pround_client >> strip_tac >>
-  Cases_on ‘pcm lfd hw ifds m w0 k’ >> rename1 ‘_ = (cm, ck)’ >>
+  Cases_on ‘pcm lfd pol ifds m w0 k’ >> rename1 ‘_ = (cm, ck)’ >>
   ‘ALL_DISTINCT (MAP SND cm) ∧ EVERY (λi. i < ck) (MAP SND cm)’
     by (qspec_then ‘k’ mp_tac pcm_inv >> simp[]) >>
-  Cases_on ‘arrs lfd (cm, ck) (rlog lfd hw ifds m w0 k)’ >> rename1 ‘_ = (as, cmk)’ >>
+  Cases_on ‘arrs lfd (cm, ck) (rlog lfd pol ifds m w0 k)’ >> rename1 ‘_ = (as, cmk)’ >>
   PairCases_on ‘cmk’ >>
   drule arrs_client >> simp[] >> disch_then (qspecl_then [‘j’, ‘f’] mp_tac) >> gvs[] >>
   strip_tac >>
@@ -208,7 +209,7 @@ QED
 
 (* The arrivals of psk's steps n0 … n0 + d − 1 *)
 Definition pars_def:
-  pars lfd hw ifds m w0 n0 d = FLAT (GENLIST (λi. parr lfd hw ifds m w0 (n0 + i)) d)
+  pars lfd pol ifds m w0 n0 d = FLAT (GENLIST (λi. parr lfd pol ifds m w0 (n0 + i)) d)
 End
 
 Theorem cdata_append[simp]:
@@ -218,29 +219,29 @@ Proof
 QED
 
 Theorem pars_rlogs_SUC:
-  pars lfd hw ifds m w0 n0 (SUC d) =
-    pars lfd hw ifds m w0 n0 d ++ parr lfd hw ifds m w0 (n0 + d) ∧
-  rlogs lfd hw ifds m w0 n0 (SUC d) =
-    rlogs lfd hw ifds m w0 n0 d ++ rlog lfd hw ifds m w0 (n0 + d)
+  pars lfd pol ifds m w0 n0 (SUC d) =
+    pars lfd pol ifds m w0 n0 d ++ parr lfd pol ifds m w0 (n0 + d) ∧
+  rlogs lfd pol ifds m w0 n0 (SUC d) =
+    rlogs lfd pol ifds m w0 n0 d ++ rlog lfd pol ifds m w0 (n0 + d)
 Proof
   simp[pars_def, rlogs_def, GENLIST, SNOC_APPEND, FLAT_APPEND]
 QED
 
 (* While f stays open, client j's arrivals are exactly L1's fetches on f *)
 Theorem client_rounds:
-  run_ok lfd hw ifds m w0 ∧ winv w0 ∧ MEM lfd (l0_used w0) ∧
-  (∀n. SND (pcm lfd hw ifds m w0 n) + 1 < dimword (:64)) ⇒
-  ∀d. fopen lfd hw ifds m w0 h f n0 d ∧ ALOOKUP (FST (pcm lfd hw ifds m w0 n0)) f = SOME j ⇒
-      cdata j (pars lfd hw ifds m w0 n0 d) = fdata f (rlogs lfd hw ifds m w0 n0 d) ∧
-      (cend j (pars lfd hw ifds m w0 n0 d) ⇔ fend f (rlogs lfd hw ifds m w0 n0 d)) ∧
-      ALOOKUP (FST (pcm lfd hw ifds m w0 (n0 + d))) f = SOME j
+  run_ok lfd pol ifds m w0 ∧ winv w0 ∧ MEM lfd (l0_used w0) ∧
+  (∀n. SND (pcm lfd pol ifds m w0 n) + 1 < dimword (:64)) ⇒
+  ∀d. fopen lfd pol ifds m w0 h f n0 d ∧ ALOOKUP (FST (pcm lfd pol ifds m w0 n0)) f = SOME j ⇒
+      cdata j (pars lfd pol ifds m w0 n0 d) = fdata f (rlogs lfd pol ifds m w0 n0 d) ∧
+      (cend j (pars lfd pol ifds m w0 n0 d) ⇔ fend f (rlogs lfd pol ifds m w0 n0 d)) ∧
+      ALOOKUP (FST (pcm lfd pol ifds m w0 (n0 + d))) f = SOME j
 Proof
   strip_tac >> Induct >- simp[pars_def, rlogs_def] >> strip_tac >>
-  ‘fopen lfd hw ifds m w0 h f n0 d’ by fs[fopen_def] >>
+  ‘fopen lfd pol ifds m w0 h f n0 d’ by fs[fopen_def] >>
   qpat_x_assum ‘fopen _ _ _ _ _ _ _ _ d ∧ _ ⇒ _’ mp_tac >> impl_tac >- simp[] >>
   strip_tac >>
-  ‘∃R. fl (rworld lfd hw ifds m w0 (n0 + d)) f R ∧
-       fkeep lfd h f (rstate lfd hw ifds m w0 (n0 + d))’ by fs[fopen_def] >>
+  ‘∃R. fl (rworld lfd pol ifds m w0 (n0 + d)) f R ∧
+       fkeep lfd h f (rstate lfd pol ifds m w0 (n0 + d))’ by fs[fopen_def] >>
   drule_all client_step >> strip_tac >> fs[pars_rlogs_SUC, ADD_CLAUSES]
 QED
 
@@ -252,30 +253,30 @@ QED
    ------------------------------------------------------------------------ *)
 
 Theorem live_data:
-  run_ok lfd hw ifds m w0 ∧ winv w0 ∧ MEM lfd (l0_used w0) ∧
-  (∀n. SND (pcm lfd hw ifds m w0 n) + 1 < dimword (:64)) ∧
-  F1 lfd hw ifds m w0 ∧ S1 lfd hw ifds m w0 ∧ S3 lfd hw ifds m w0 ∧
-  S4 lfd hw ifds m w0 f ⇒
+  run_ok lfd pol ifds m w0 ∧ winv w0 ∧ MEM lfd (l0_used w0) ∧
+  (∀n. SND (pcm lfd pol ifds m w0 n) + 1 < dimword (:64)) ∧
+  F1 lfd pol ifds m w0 ∧ S1 lfd pol ifds m w0 ∧ S3w lfd pol ifds m w0 ∧
+  pol_ok hw pol ∧ S4w lfd pol hw ifds m w0 f ⇒
   ∀n0 h c.
-    ALOOKUP (rstate lfd hw ifds m w0 n0).b.tbl h = SOME f ∧
-    ¬MEM f (rstate lfd hw ifds m w0 n0).eof ∧
-    l0_chan_of (rworld lfd hw ifds m w0 n0) f = SOME c ⇒
-    ∃d. cend (cl (FST (pcm lfd hw ifds m w0 n0)) f) (pars lfd hw ifds m w0 n0 d) ∨
-        (EL c (rworld lfd hw ifds m w0 n0).chans).inbox ≼
-        cdata (cl (FST (pcm lfd hw ifds m w0 n0)) f) (pars lfd hw ifds m w0 n0 d)
+    ALOOKUP (rstate lfd pol ifds m w0 n0).b.tbl h = SOME f ∧
+    ¬MEM f (rstate lfd pol ifds m w0 n0).eof ∧
+    l0_chan_of (rworld lfd pol ifds m w0 n0) f = SOME c ⇒
+    ∃d. cend (cl (FST (pcm lfd pol ifds m w0 n0)) f) (pars lfd pol ifds m w0 n0 d) ∨
+        (EL c (rworld lfd pol ifds m w0 n0).chans).inbox ≼
+        cdata (cl (FST (pcm lfd pol ifds m w0 n0)) f) (pars lfd pol ifds m w0 n0 d)
 Proof
   strip_tac >> rpt strip_tac >>
   mp_tac stream_progress >> impl_tac >- simp[] >>
-  disch_then (qspecl_then [‘(EL c (rworld lfd hw ifds m w0 n0).chans).inbox’, ‘n0’, ‘h’]
+  disch_then (qspecl_then [‘(EL c (rworld lfd pol ifds m w0 n0).chans).inbox’, ‘n0’, ‘h’]
                           mp_tac) >>
   impl_tac >- (simp[fl_def, front_def]) >> strip_tac >>
   ‘fds_lt w0’ by fs[winv_def] >>
-  ‘∃s. pv_rel lfd (FST (pcm lfd hw ifds m w0 n0)) (rstate lfd hw ifds m w0 n0) s’
+  ‘∃s. pv_rel lfd (FST (pcm lfd pol ifds m w0 n0)) (rstate lfd pol ifds m w0 n0) s’
     by (drule_all refine_at >> metis_tac[]) >>
-  ‘∃j. ALOOKUP (FST (pcm lfd hw ifds m w0 n0)) f = SOME j’
-    by (fs[pv_rel_def] >> res_tac >> Cases_on ‘ALOOKUP (FST (pcm lfd hw ifds m w0 n0)) f’ >>
+  ‘∃j. ALOOKUP (FST (pcm lfd pol ifds m w0 n0)) f = SOME j’
+    by (fs[pv_rel_def] >> res_tac >> Cases_on ‘ALOOKUP (FST (pcm lfd pol ifds m w0 n0)) f’ >>
         gvs[ALOOKUP_NONE]) >>
-  ‘cl (FST (pcm lfd hw ifds m w0 n0)) f = j’ by simp[cl_def] >>
+  ‘cl (FST (pcm lfd pol ifds m w0 n0)) f = j’ by simp[cl_def] >>
   drule_all client_rounds >> strip_tac >>
   qexists_tac ‘d’ >> gvs[]
 QED

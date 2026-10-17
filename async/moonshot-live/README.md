@@ -5,6 +5,12 @@ Branch `spike/moonshot-live` (off `spike/moonshot-glue` @160d12845). Nothing her
 - `moonshotLiveStmtsScript.sml`: `moonshot_live` (main form, observed excuses) and `moonshot_live_strong`
   (the corollary under "no excuse"), typecheck only. Header: the hypotheses and the excuses.
 - This file: the paper argument (stage 2): where a waiting cycle could form, why it cannot, and the lemmas.
+- `proto/moonshotLiveProtoScript.sml` (stage 3, PROVED, plain HOL): the model-level prototype of one chain.
+  - P1 `moonshot_drains`: every receiver asks infinitely often and every hop's kernel empties infinitely often.
+  - P2 `moonshot_served` / `moonshot_served_unless`: all replies are read, unless a Drop (the write timeout) happened.
+  - P3 `perfd_deadlock`: with per-fd pausing in the proxy there is a fair run in which the client reads nothing.
+  - P4 `moonshot_bounded`: the proxy's outboxes stay ≤ hw + CH.
+  The write-timeout rule is a parameter (`dok`).
 
 ## 1. The chain of one logical connection i
 
@@ -131,7 +137,8 @@ could deadlock.
 - **R4: bootstrapping the backend** (§1 item 6): the settle report must make the backend ready once at L1.
 - **R5: global excuses.** The excuse is any of our ends breaking, not one of chain i's. Localising needs the
   proxy's pairing in the statement.
-- **R6: the private port c** is added to `isolated`: a stranger connecting to the client's listener could cost it
-  fds (and EMFILE on its connects). Alternatively the client closes its listener after startup.
+- **R6: the private port c** is not in `isolated` (aligned with the safety headline: a and b only; the
+  conclusion is over the client's connect episodes). A stranger connecting to c could still cost the client fds, so
+  EMFILE on its connects is possible: that shows up as an excuse (hard connect failure).
 - **R7: [R3] close/shutdown** is owed at HL and L1; termination and the KV-closes-after-EOF step depend on it.
 - **R8: N9 non-vacuity with real programs** is expensive; the model-level prototype (stage 3) is the cheap check.

@@ -9,8 +9,9 @@
      the OBSERVED form (kernel_fair_obs, user ruling; honest-ffi is writing
      it; the definition below is a PLACEHOLDER proposal);
    - connect fairness [F4] (approved), [F1] and [F2] per process (approved);
-   - `isolated`: no outside process uses ports a, b or the client's private
-     port c (Q6, accepted for a and b; c is NEW here);
+   - `isolated`: no outside process uses ports a or b (Q6, as the safety
+     headline; the client's private port c is not covered, and the
+     conclusion is about the client's CONNECT episodes only);
    - 2 ≤ N < 2^62 (the proxy's exact pair cap, rev 6), valid requests.
   Then, UNLESS AN OBSERVED EXCUSE (sys_excuse), every logical connection
   i < N of the client gets complete replies to all of rqs i, and the client
@@ -203,7 +204,7 @@ End
 (* No outside process uses the ports: none connects to them, none listens
    on them (a connect to one completes only inside the system).  B2's
    "an unpaired episode reads nothing" (step12-gaps B2) should follow.
-   TRUSTED-STYLE HYPOTHESIS (Q6); the client's port c is NEW *)
+   TRUSTED-STYLE HYPOTHESIS (Q6), on a and b only, as for safety *)
 Definition isolated_def:
   isolated ports (ss : num -> sysstate) (rs : num -> syslabel) ⇔
     ∀n. (∀k p. rs n = Env (EIncoming k p) ⇒ ¬MEM p ports) ∧
@@ -293,14 +294,16 @@ End
    The conclusions
    ------------------------------------------------------------------------ *)
 
-(* Each logical connection i < N has its own episode ep i of the client,
-   on which, at some instant, the client has sent all of rqs i and read
-   complete replies to all of them.  (Which replies: moonshot_view_safe) *)
+(* Each logical connection i < N has its own CONNECT episode ep i of the
+   client (a connection to the proxy's port a), on which, at some instant,
+   the client has sent all of rqs i and read complete replies to all of
+   them.  (Which replies: moonshot_view_safe) *)
 Definition client_served_def:
-  client_served cl (N : num) (rqs : num -> brequest list) rs ⇔
+  client_served cl a (N : num) (rqs : num -> brequest list) rs ⇔
     ∃ep. (∀(i : num) i'. i < N ∧ i' < N ∧ ep i = ep i' ⇒ i = i') ∧
          ∀i. i < N ⇒
-             ∃n ans. l0_ep_sent (ep i) (ptr rs cl n) = brequests (rqs i) ∧
+             ∃n ans. l0_ep_role (ep i) (ptr rs cl n) = SOME (Connected a) ∧
+                     l0_ep_sent (ep i) (ptr rs cl n) = brequests (rqs i) ∧
                      LENGTH ans = LENGTH (rqs i) ∧
                      reply_bytes ans ≼ l0_ep_recvd (ep i) (ptr rs cl n)
 End
@@ -332,7 +335,7 @@ Definition moonshot_live_hyps_def:
     l0sys_irun S ss rs ∧ sched_fair S ss rs ∧ kernel_fair_obs ss rs ∧ F4 ss rs ∧
     F1_sys S rs ∧ F2_sys S ss ∧
     (* no strangers on our ports *)
-    isolated [a; b; c] ss rs ∧
+    isolated [a; b] ss rs ∧
     (* the configuration *)
     a < 65536 ∧ b < 65536 ∧ c < 65536 ∧ ALL_DISTINCT [a; b; c] ∧
     2 ≤ N ∧ N < 2 ** 62 ∧ (∀i. EVERY valid_brequest (rqs i))
@@ -343,7 +346,7 @@ Definition moonshot_live_def:
     ∀a b c N rqs ss rs.
       moonshot_live_hyps a b c N rqs (moonshot_sys cprog pprog kprog a b c N rqs) ss rs ⇒
       sys_excuse K (moonshot_sys cprog pprog kprog a b c N rqs) ss rs ∨
-      (client_served 0 N rqs rs ∧
+      (client_served 0 a N rqs rs ∧
        client_exits (moonshot_sys cprog pprog kprog a b c N rqs) rs 0)
 End
 
@@ -358,6 +361,6 @@ Definition moonshot_live_strong_def:
     ∀a b c N rqs ss rs.
       moonshot_live_hyps a b c N rqs (moonshot_sys cprog pprog kprog a b c N rqs) ss rs ∧
       ¬sys_excuse K (moonshot_sys cprog pprog kprog a b c N rqs) ss rs ⇒
-      client_served 0 N rqs rs ∧
+      client_served 0 a N rqs rs ∧
       client_exits (moonshot_sys cprog pprog kprog a b c N rqs) rs 0
 End

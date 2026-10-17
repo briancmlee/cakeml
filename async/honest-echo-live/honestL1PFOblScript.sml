@@ -11,7 +11,7 @@
 *)
 Theory honestL1PFObl
 Ancestors
-  honestL1PFLive honestL1PFRefine honestL1PFModel asyncHLModel asyncM4Loop
+  honestL1PFLive honestL1PFRound honestL1PFRefine honestL1PFModel asyncHLModel asyncM4Loop
   asyncM3World asyncCore asyncLevel1 alist
 Libs
   preamble
@@ -102,4 +102,127 @@ Proof
   >> gen_tac >> qspec_tac (‘rhist lfd pol (interest fds0) m w0 n’, ‘hh’) >>
   ho_match_mp_tac SNOC_INDUCT >> simp[SNOC_APPEND, interest_SNOC] >>
   rpt strip_tac >> irule add_accepted_mono >> simp[]
+QED
+
+(* ------------------------------------------------------------------------
+   An fd's inbox within a round: L1 only drops a prefix of it, unless it
+   fetches on the fd
+   ------------------------------------------------------------------------ *)
+
+(* One action drops a prefix of f's inbox; a Read on f's handle while the
+   inbox is not empty drops at least one byte; f's handle stays bound to f
+   while the inbox is not empty (an Accept binds a fresh handle) *)
+Theorem pdo_inb:
+  pdo lfd (w, ps) a = SOME (r, (w', ps'), evs) ⇒
+  ps.b.nxt ≤ ps'.b.nxt ∧
+  ∀f. ∃d. inb_of ps' f = DROP d (inb_of ps f) ∧
+      ∀h. (ALOOKUP ps.b.tbl h = SOME f ∧ inb_of ps f ≠ [] ⇒
+       (∀k. a = Read h k ⇒ 0 < d) ∧
+       ((a = Accept lfd ∧ l1hdln (w2n lfd) ps.b.nxt < dimword (:64) ⇒
+         h ≠ l1hdl lfd ps.b.nxt) ⇒ ALOOKUP ps'.b.tbl h = SOME f))
+Proof
+  Cases_on ‘a’ >> simp[pdo_def] >> rw[AllCaseEqs()] >> gvs[] >> rpt gen_tac >>
+  TRY (PairCases_on ‘z’ >> gvs[]) >>
+  TRY (drule l1_close_b >> strip_tac >> gvs[]) >>
+  TRY (drule l1do_write_tbl >> strip_tac >> gvs[] >> qexists_tac ‘0’ >> simp[] >> NO_TAC) >>
+  TRY (gvs[] >> NO_TAC) >>
+  TRY (qexists_tac ‘0’ >> simp[] >> NO_TAC) >>
+  TRY (IF_CASES_TAC >- (qexists_tac ‘n’ >> fs[]) >> qexists_tac ‘0’ >> fs[] >> NO_TAC) >>
+  qexists_tac ‘0’ >> simp[] >>
+  TRY (strip_tac >> fs[] >> NO_TAC) >>
+  gen_tac >> strip_tac >> Cases_on ‘c = h’ >> fs[ALOOKUP_ADELKEY] >> rfs[]
+QED
+
+(* The actions of a round drop a prefix of f's inbox *)
+Theorem pacts_inb_drop:
+  ∀acts w ps rs evs w' ps'.
+    pacts lfd (w, ps) acts = SOME (rs, evs, (w', ps')) ⇒
+    ∃d. inb_of ps' f = DROP d (inb_of ps f)
+Proof
+  Induct >> simp[pacts_def] >- (rpt strip_tac >> qexists_tac ‘0’ >> simp[]) >>
+  rpt gen_tac >> simp[AllCaseEqs()] >> strip_tac >> gvs[] >>
+  rename1 ‘pdo _ _ _ = SOME (r1, ws1, evs1)’ >> PairCases_on ‘ws1’ >>
+  drule pdo_inb >> strip_tac >> pop_assum (qspec_then ‘f’ strip_assume_tac) >>
+  first_x_assum drule >> strip_tac >> metis_tac[DROP_DROP_T]
+QED
+
+(* ... and a Read on f's handle while the inbox is not empty shortens it;
+   the handle stays bound to f, as an Accept binds a fresh handle *)
+Theorem pacts_inb_read:
+  ∀acts w ps rs evs w' ps'.
+    pacts lfd (w, ps) acts = SOME (rs, evs, (w', ps')) ∧
+    ALOOKUP ps.b.tbl h = SOME f ∧ inb_of ps f ≠ [] ∧
+    (∀i. ps.b.nxt ≤ i ∧ l1hdln (w2n lfd) i < dimword (:64) ⇒ h ≠ l1hdl lfd i) ⇒
+    MEM (Read h k) acts ⇒ LENGTH (inb_of ps' f) < LENGTH (inb_of ps f)
+Proof
+  Induct >- simp[] >> rpt gen_tac >> strip_tac >>
+  qpat_x_assum ‘pacts _ _ _ = _’ (strip_assume_tac o SIMP_RULE (srw_ss()) [pacts_def, AllCaseEqs()]) >>
+  rpt BasicProvers.VAR_EQ_TAC >> PairCases_on ‘ws1’ >>
+  rename1 ‘pacts lfd (w1, ps1) acts = SOME _’ >>
+  qpat_assum ‘pdo _ _ _ = _’ (strip_assume_tac o MATCH_MP pdo_inb) >>
+  pop_assum (qspec_then ‘f’ strip_assume_tac) >>
+  pop_assum (qspec_then ‘h’ assume_tac) >>
+  ‘∃d2. inb_of ps' f = DROP d2 (inb_of ps1 f)’ by metis_tac[pacts_inb_drop] >>
+  ‘LENGTH (inb_of ps1 f) ≤ LENGTH (inb_of ps f) ∧
+   LENGTH (inb_of ps' f) ≤ LENGTH (inb_of ps1 f)’ by simp[LENGTH_DROP] >>
+  Cases_on ‘inb_of ps1 f = []’
+  >- (strip_tac >> ‘inb_of ps' f = []’ by fs[] >> simp[] >> Cases_on ‘inb_of ps f’ >> fs[]) >>
+  ‘ALOOKUP ps1.b.tbl h = SOME f’
+    by (qpat_x_assum ‘ALOOKUP ps.b.tbl h = SOME f ∧ _ ⇒ _’ mp_tac >> simp[] >>
+        strip_tac >> first_x_assum irule >> strip_tac >> first_x_assum irule >> simp[]) >>
+  simp[] >> strip_tac
+  >- ((* the Read is this action *)
+      rpt BasicProvers.VAR_EQ_TAC >>
+      ‘0 < d’ by (qpat_x_assum ‘ALOOKUP ps.b.tbl h = SOME f ∧ _ ⇒ _’ mp_tac >> simp[]) >>
+      ‘LENGTH (inb_of ps1 f) < LENGTH (inb_of ps f)’
+        by (simp[LENGTH_DROP] >> Cases_on ‘inb_of ps f’ >> fs[]) >>
+      simp[]) >>
+  (* the Read is later *)
+  ‘LENGTH (inb_of ps' f) < LENGTH (inb_of ps1 f)’ suffices_by
+    (strip_tac >> conj_tac
+     >- (Cases_on ‘d2’ >> simp[] >>
+         qpat_x_assum ‘LENGTH _ < LENGTH _’ mp_tac >>
+         qpat_x_assum ‘inb_of ps' f = _’ SUBST1_TAC >> simp[])
+     >> Cases_on ‘inb_of ps f’ >> fs[]) >>
+  first_x_assum (qspecl_then [‘w1’, ‘ps1’, ‘rs'’, ‘evs'’, ‘w'’, ‘ps'’] mp_tac) >>
+  impl_tac >- (simp[] >> rpt strip_tac >> first_x_assum irule >> simp[]) >>
+  disch_then irule >> first_assum ACCEPT_TAC
+QED
+
+(* The fetch changes f's inbox only by fetching on f *)
+Theorem pf_fetch_inb:
+  ∀fs w ps w' ps' log evs.
+    pf_fetch lfd pol fs (w, ps) = SOME ((w', ps'), log, evs) ∧ ¬fetched f log ⇒
+    inb_of ps' f = inb_of ps f
+Proof
+  Induct >> simp[pf_fetch_def] >> rpt gen_tac >> rw[] >> gvs[AllCaseEqs()] >>
+  rpt (pairarg_tac >> gvs[]) >> gvs[AllCaseEqs(), fetched_def] >>
+  first_x_assum drule >> simp[fetched_def] >> rw[] >> gvs[]
+QED
+
+(* The round's tail (poll, flush, fetch, hang-ups, reap) leaves f's inbox
+   alone unless it fetches on f *)
+Theorem pf_tail_inb:
+  pf_tail lfd pol hs (w, ps) = SOME (rdy, (w', ps'), log, evs) ∧ ¬fetched f log ⇒
+  inb_of ps' f = inb_of ps f
+Proof
+  rw[pf_tail_def, AllCaseEqs()] >> gvs[] >>
+  drule_all pf_fetch_inb >> simp[hup_step_def, inb_of_def]
+QED
+
+(* A round: f's inbox loses a prefix, a strictly shorter one if the server
+   read f's handle, unless L1 fetched on f *)
+Theorem pround_inb:
+  pround lfd pol hs (w, ps) acts = SOME (snap, (w', ps'), log, evs) ∧ ¬fetched f log ⇒
+  (∃d. inb_of ps' f = DROP d (inb_of ps f)) ∧
+  (ALOOKUP ps.b.tbl h = SOME f ∧ inb_of ps f ≠ [] ∧ MEM (Read h k) acts ∧
+   (∀i. ps.b.nxt ≤ i ∧ l1hdln (w2n lfd) i < dimword (:64) ⇒ h ≠ l1hdl lfd i) ⇒
+   LENGTH (inb_of ps' f) < LENGTH (inb_of ps f))
+Proof
+  simp[pround_def, AllCaseEqs()] >> strip_tac >> gvs[] >> PairCases_on ‘ws1’ >>
+  rename1 ‘pf_tail _ _ _ (w1, ps1) = _’ >>
+  ‘inb_of ps' f = inb_of ps1 f’ by metis_tac[pf_tail_inb] >> simp[] >> conj_tac
+  >- (drule pacts_inb_drop >> simp[])
+  >> strip_tac >> drule pacts_inb_read >> simp[] >>
+  disch_then irule >> metis_tac[]
 QED

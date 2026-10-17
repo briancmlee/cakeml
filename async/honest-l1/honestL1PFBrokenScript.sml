@@ -896,3 +896,36 @@ Proof
   Cases_on ‘i = k’ >- gvs[ev_off_def] >>
   first_x_assum (qspecl_then [‘i’, ‘nm’, ‘ev’] mp_tac) >> simp[]
 QED
+
+(* ------------------------------------------------------------------------
+   A held fd keeps its channel while it stays held
+   ------------------------------------------------------------------------ *)
+
+Theorem held_chan_keep:
+  oassm lfd pol ifds m w0 ∧
+  (MEM f (MAP SND (rstate lfd pol ifds m w0 k).b.tbl) ∨
+   MEM f (rstate lfd pol ifds m w0 k).b.closing) ∧
+  (MEM f (MAP SND (rstate lfd pol ifds m w0 (SUC k)).b.tbl) ∨
+   MEM f (rstate lfd pol ifds m w0 (SUC k)).b.closing) ∧
+  l0_chan_of (rworld lfd pol ifds m w0 k) f = SOME c ⇒
+  l0_chan_of (rworld lfd pol ifds m w0 (SUC k)) f = SOME c
+Proof
+  disch_then (fn th => MAP_EVERY assume_tac (CONJUNCTS th)) >>
+  mp_tac run_round_x >> (impl_tac >- fs[]) >> strip_tac >>
+  Cases_on ‘live’ >> fs[tkx_def, tk_def, acct_def]
+QED
+
+Theorem held_chan_stretch:
+  oassm lfd pol ifds m w0 ∧ l0_chan_of (rworld lfd pol ifds m w0 k) f = SOME c ⇒
+  ∀d. (∀i. k ≤ i ∧ i ≤ k + d ⇒
+           MEM f (MAP SND (rstate lfd pol ifds m w0 i).b.tbl) ∨
+           MEM f (rstate lfd pol ifds m w0 i).b.closing) ⇒
+      l0_chan_of (rworld lfd pol ifds m w0 (k + d)) f = SOME c
+Proof
+  strip_tac >> Induct >> simp[] >> strip_tac >>
+  ‘l0_chan_of (rworld lfd pol ifds m w0 (k + d)) f = SOME c’
+    by (first_x_assum irule >> simp[]) >>
+  ‘k + SUC d = SUC (k + d)’ by simp[] >> pop_assum SUBST1_TAC >>
+  irule held_chan_keep >> rpt conj_tac >> TRY (first_assum ACCEPT_TAC) >>
+  first_x_assum irule >> simp[]
+QED

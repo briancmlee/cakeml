@@ -858,3 +858,102 @@ Proof
   ‘∀j. obp lfd ps1 opn j = obp lfd ps opn j’ by simp[obp_def] >>
   gvs[ep_fold_def]
 QED
+
+Theorem polls_sn:
+  ∀cs w rv w' evs. l1_polls cs w = SOME (rv, w', evs) ∧ l0_rely w ⇒ ∀j s. ep_sn j s evs = []
+Proof
+  Induct >> simp[l1_polls_def, ep_fold_def] >> rpt gen_tac >> strip_tac >>
+  gvs[AllCaseEqs()] >> drule_all sys_poll_event >> strip_tac >>
+  first_x_assum drule_all >> simp[ep_fold_def]
+QED
+
+Theorem oi_obp:
+  ps'.b = ps.b ∧ (∀j. obp lfd ps' opn' j = obp lfd ps opn j) ∧ oi lfd ps opn s h j ⇒
+  oi lfd ps' opn' s h j
+Proof
+  rw[oi_def, live_def]
+QED
+
+Theorem l1p_b_id[local]:
+  (ps : l1p) with b := ps.b = ps
+Proof
+  simp[l1p_component_equality]
+QED
+
+(* MAIN, the tail of a round *)
+Theorem pf_tail_out:
+  pf_tail lfd hw hs (w, ps) = SOME (rdy, (w', ps'), log, evs) ∧
+  wown lfd w ps ∧ own_ok lfd (k, opn) ps ∧ LENGTH ps.acq ≤ 1 ∧
+  l1hdln (w2n lfd) (ps.b.nxt + 1) < dimword (:64) ∧ okb ps.b ∧
+  hdln (w2n lfd) j < dimword (:64) ∧ oi lfd ps opn snt hwt j ⇒
+  okb ps'.b ∧
+  oi lfd ps' (SND (l0_ep_st (k, opn) evs)) (snt ++ ep_sn j (k, opn) evs) hwt j
+Proof
+  strip_tac >> qpat_x_assum ‘pf_tail _ _ _ _ = _’ mp_tac >>
+  simp[pf_tail_def, AllCaseEqs(), PULL_EXISTS] >> rpt gen_tac >> strip_tac >>
+  rename1 ‘l1_polls _ w = SOME (rv, w1, pevs)’ >>
+  rename1 ‘l1_flush _ _ = SOME ((w2, b2), fevs)’ >>
+  rename1 ‘pf_fetch _ _ _ _ = SOME ((w3, ps3'), log, gevs)’ >>
+  rename1 ‘l1_reap _ _ = SOME ((w4, b4), cevs)’ >>
+  ‘l0_rely w ∧ fds_lt w’ by gvs[wown_def] >>
+  ‘ep_ok (k, opn) ∧ k ≤ ps.b.nxt + 1’ by gvs[own_ok_def] >>
+  ‘hdln (w2n lfd) k < dimword (:64)’
+    by (irule hdln_mono >> qexists_tac ‘ps.b.nxt + 1’ >> fs[]) >>
+  (* poll *)
+  drule_all l1_polls_in >> disch_then (qspec_then ‘(k, opn)’ strip_assume_tac) >>
+  ‘∀j s. ep_sn j s pevs = []’ by (drule_all polls_sn >> simp[]) >>
+  drule_all l1_polls_wown >> strip_tac >>
+  (* flush *)
+  drule_all l1_flush_in >> disch_then (qspec_then ‘(k, opn)’ strip_assume_tac) >>
+  ‘wown lfd w2 (ps with b := b2)’ by (irule l1_flush_wown >> metis_tac[]) >>
+  ‘own_ok lfd (k, opn) (ps with b := b2)’
+    by (mp_tac (Q.INST [‘ps'’ |-> ‘ps with b := b2’, ‘es’ |-> ‘(k, opn)’] own_ok_cong) >>
+        simp[]) >>
+  ‘own_ok lfd (k, opn) (ps with b := ps.b) ∧ oi lfd (ps with b := ps.b) opn snt hwt j’
+    by simp[l1p_b_id] >>
+  drule_all l1_flush_out >> strip_tac >>
+  (* fetch *)
+  ‘fds_lt w2 ∧ (∀f. MEM f (MAP SND b2.tbl) ∨ MEM f b2.closing ⇒ MEM f (l0_used w2))’
+    by (gvs[wown_def, owned_def] >> metis_tac[]) >>
+  qspecl_then [‘FILTER (λf. MEM f (in_fds (pf_poll_set lfd hw ps hs))) (readable_fds rv)’,
+               ‘w2’, ‘ps with b := b2’, ‘k’, ‘opn’, ‘w3’, ‘ps3'’, ‘log’, ‘gevs’]
+    mp_tac pf_fetch_obp >> simp[] >>
+  (impl_tac >- (qpat_x_assum ‘∀f. MEM f (MAP SND b2.tbl) ∨ _ ⇒ _’ mp_tac >> gvs[])) >>
+  strip_tac >>
+  drule pf_fetch_in >>
+  disch_then (qspecl_then [‘k’, ‘opn’] mp_tac) >> simp[] >>
+  impl_tac
+  >- (rw[MEM_FILTER] >> TRY (drule in_fds_poll_set >> simp[] >> NO_TAC) >> fs[]) >>
+  strip_tac >>
+  Cases_on ‘l0_ep_st (k, opn) gevs’ >> rename1 ‘l0_ep_st _ gevs = (k3, opn3)’ >>
+  ‘oi lfd ps3' opn3 (snt ++ ep_sn j (k, opn) fevs) hwt j’
+    by (irule oi_obp >> qexistsl [‘opn’, ‘ps with b := b2’] >> gvs[]) >>
+  (* hung up *)
+  ‘k3 ≤ ps.b.nxt + 1’ by (‘ps3'.b.nxt = ps.b.nxt’ by gvs[] >> gvs[own_ok_def]) >>
+  ‘hdln (w2n lfd) k3 < dimword (:64)’
+    by (irule hdln_mono >> qexists_tac ‘ps.b.nxt + 1’ >> fs[]) >>
+  ‘okb ps3'.b’ by gvs[] >>
+  qabbrev_tac ‘ps3 = hup_step (hup_fds rv) (outbox_of ps.b) log ps3'’ >>
+  ‘okb ps3.b ∧ oi lfd ps3 opn3 (snt ++ ep_sn j (k, opn) fevs) hwt j’
+    by (simp[Abbr ‘ps3’] >> irule hup_out >> simp[] >> qexists_tac ‘k3’ >> fs[]) >>
+  ‘own_ok lfd (k3, opn3) ps3 ∧ wown lfd w3 ps3’
+    by (simp[Abbr ‘ps3’, hup_step_in] >> qpat_x_assum ‘wown _ w3 _’ mp_tac >>
+        simp[wown_def, owned_def] >> metis_tac[]) >>
+  (* reap *)
+  ‘∀f. MEM f ps3.b.closing ⇒ ¬MEM f (MAP SND ps3.b.tbl) ∧ ¬MEM f ps3.acq’
+    by (rpt gen_tac >> strip_tac >> drule_all own_closing_free >> simp[]) >>
+  ‘l1_reap ps3.b.closing (w3, ps3.b) = SOME ((w4, b4), cevs)’
+    by gvs[Abbr ‘ps3’] >>
+  ‘l0_rely w3’ by gvs[wown_def] >>
+  qspecl_then [‘ps3.b.closing’, ‘w3’, ‘ps3.b’, ‘w4’, ‘b4’, ‘cevs’, ‘opn3’,
+               ‘snt ++ ep_sn j (k, opn) fevs’]
+    mp_tac (Q.INST [‘ps’ |-> ‘ps3’, ‘k’ |-> ‘k3’] l1_reap_out) >>
+  simp[l1p_b_id] >> strip_tac >>
+  (* the round's tail *)
+  qpat_x_assum ‘_ = ps'’ (SUBST_ALL_TAC o SYM) >>
+  qpat_x_assum ‘_ = evs’ (SUBST_ALL_TAC o SYM) >>
+  simp[ep_fold_APPEND] >>
+  ‘oi lfd (ps3 with <|b := b4; pause := ps3'.pause − 1|>) =
+   oi lfd (ps3 with b := b4)’ by (irule oi_b >> simp[]) >>
+  gvs[]
+QED

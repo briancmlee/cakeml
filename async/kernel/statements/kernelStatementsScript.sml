@@ -166,24 +166,30 @@ Definition accepts_below_def:
     ∀evs. LPREFIX (fromList evs) io ⇒ LENGTH (l0_accepted evs) < 2 ** 64 − 1
 End
 
-(* A poll (blocking or not) that reported POLLHUP for fd f *)
+(* A poll (blocking or not) that succeeded and reported POLLHUP for fd f.
+   D20's encoding: the call's buffer is 16 header bytes, then one struct
+   pollfd record of 8 bytes per entry, revents at byte 6 of each (out); a
+   failed poll's revents bytes are unspecified (poll_failed), hence the
+   success conjunct *)
 Definition poll_hup_def:
   poll_hup f (IO_event nm conf bs) ⇔
-    nm = ExtCall «sys_poll» ∧
-    ∃i. i < LENGTH (poll_entries (DROP 1 conf)) ∧ FST (EL i (poll_entries (DROP 1 conf))) = f ∧
-        13 + i < LENGTH bs ∧ word_bit 3 (SND (EL (13 + i) bs))
+    nm = ExtCall «sys_poll» ∧ (∃k. l0_ev_res bs = SOME (Ok k)) ∧
+    ∃i. i < LENGTH (pollfd_entries (DROP 16 (MAP FST bs))) ∧
+        pe_fd (EL i (pollfd_entries (DROP 16 (MAP FST bs)))) = f ∧
+        i < LENGTH (pollfd_entries (DROP 16 (MAP SND bs))) ∧
+        (abi_revents (DROP 6 (EL i (pollfd_entries (DROP 16 (MAP SND bs)))))).rhup
 End
 
-
 (* The polls in a list of events that list fd f for output (an entry
-   (f, e) with bit 2 of e set).  L1 polls f for output exactly in the
+   (f, e), read back to the model's bits by pe_fe, with bit 2 of e set).  L1 polls f for output exactly in the
    rounds in which f's outbox is not empty (pf_poll_set), which are the
    rounds D19's count runs in; idle polls (which a blocking L1 collapses)
    never count *)
 Definition n_out_polls_def:
   n_out_polls f (evs : io_event list) =
     LENGTH (FILTER (λev. ∃conf bs. ev = IO_event (ExtCall «sys_poll») conf bs ∧
-                                   ∃e. MEM (f, e) (poll_entries (DROP 1 conf)) ∧ 2 ≤ e MOD 4)
+                                   ∃e. MEM (f, e) (MAP pe_fe (pollfd_entries (DROP 16 (MAP FST bs)))) ∧
+                                       2 ≤ e MOD 4)
                    evs)
 End
 

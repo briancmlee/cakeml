@@ -424,3 +424,19 @@ Proof
   first_x_assum (qspecl_then [‘rqs’, ‘pol’, ‘n’] strip_assume_tac) >>
   first_x_assum (qspec_then ‘n’ mp_tac) >> simp[]
 QED
+
+(* C1 through E1, without the run hypotheses: along every run of the honest
+   L1 in an L0 world, the client's guarantee holds of L1's own history *)
+Theorem client_l1_guar:
+  2 ≤ N ∧ N < cbound ∧ (∀i. EVERY valid_brequest (rqs i)) ∧ a < 65536 ∧
+  l0_rely w0 ∧ fds_lt w0 ∧ MEM lfd (l0_used w0) ⇒
+  client_guar' a N rqs lfd (elv lfd pol (cifds a N rqs) (cprog a N rqs) w0)
+    (cifds a N rqs) (cprog a N rqs)
+    (pew lfd c pol (cifds a N rqs) (cprog a N rqs) w0 calls)
+Proof
+  strip_tac >>
+  ‘N < cbound ∧ a < 65536’ by simp[] >>
+  drule_all client_l1_total >> strip_tac >>
+  mp_tac client_l1_claim_holds >> rewrite_tac[client_l1_claim_def] >>
+  disch_then irule >> simp[]
+QED

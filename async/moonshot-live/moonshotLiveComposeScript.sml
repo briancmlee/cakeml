@@ -392,3 +392,20 @@ Proof
   qexistsl_tac [‘n’, ‘ans’] >> simp[] >>
   irule ep_role_mono >> qexists_tac ‘n0’ >> simp[]
 QED
+
+(* The headline from the obligations, with X = sys_excuse *)
+Theorem moonshot_live_of_obs:
+  moonshot_live_of_obs_claim
+Proof
+  rewrite_tac[moonshot_live_of_obs_claim_def, moonshot_live_def] >> rpt strip_tac >>
+  rename1 ‘sys_excuse kk _ _ _’ >> first_x_assum drule >> strip_tac >> simp[] >>
+  Cases_on ‘sys_excuse kk (moonshot_sys cprog pprog kprog a b c N rqs) ss rs’ >> simp[] >>
+  fs[] >>
+  qpat_x_assum ‘moonshot_live_hyps _ _ _ _ _ _ _ _’ mp_tac >>
+  rewrite_tac[moonshot_live_hyps_def] >> strip_tac >>
+  mp_tac (REWRITE_RULE [moonshot_served_of_obs_claim_def] moonshot_served_of_obs) >>
+  disch_then (qspecl_then [‘moonshot_sys cprog pprog kprog a b c N rqs’, ‘ss’, ‘rs’,
+                           ‘sys_excuse kk (moonshot_sys cprog pprog kprog a b c N rqs) ss rs’,
+                           ‘a’, ‘b’, ‘N’, ‘rqs’] mp_tac) >>
+  simp[moonshot_sys_def]
+QED

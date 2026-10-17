@@ -221,5 +221,8 @@ the connection is done (closes_ob). `chain_served` then runs with X := F under Â
 plus all requests sent gives done, a contradiction. Episode channels come from the run's ghost
 (`irun_sinv_css`, `ep_connected_chan`, `ep_sent_le`).
 
+`moonshot_live_of_obs` (PROVED) then gives `moonshot_live` from `moonshot_obs` with X = `sys_excuse`, plus the
+termination obligation ([R3]) as an explicit hypothesis.
+
 **Mine (system level), still to do:** N1/N2 lifts; the excuse transfer (per-process excuses â‡’ `sys_excuse`); termination
 from F-obs (F) once [R3] lands; and `moonshot_live` from `chain_served` for each i < N.

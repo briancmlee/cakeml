@@ -934,6 +934,13 @@ l0sys inherits the L0 model's `eof_first` (D21, user-approved; honest-ffi, d20-p
 
 **(f) l0sys ported to D20 (2026-10-17; pending the user's OK, via the coordinator):** D20 moved sys_poll's entries from `conf` into the call's buffer (from offset 16), and removed `poll_entries`. `poll_may_return` now takes the buffer and reads the entries as `l0_call` does, `MAP pe_fe (pollfd_entries (DROP 16 bytes))`, using honestL0World's decoders. `sys_step` passes `bytes`. Nothing else changes; (e)'s `unblock` still fits D20's 1-byte conf.
 
+**(g) Step 17, fairness (user, via the coordinator, 2026-10-17): APPROVED** as on spike/step17-fair @2afd6bdaa (`async/l0sys-fair/l0sysFairScript.sml`):
+- `l0sys_irun`, `sched_fair` (with `can_step`'s "finished" as a normal end, `Terminate Success`), the internal `kernel_fair`;
+- kernel fairness in the OBSERVED form, `kernel_fair_obs`: delivery (D) and EOF after FIN (F) owed only to a receiver that keeps asking (a recv, or a poll listing the fd for input); acknowledgement (A) and connect settlement (C) unconditional; `kernel_fair_obs_of_internal` (proved);
+- `[F4]` stays defined but is NOT assumed in `moonshot_live` ([F1] covers a connect's transient retries; a hard connect failure is an excuse);
+- `broken_seen` dropped (D34 excuses a break at world level);
+- `outcomes_claim` (the observed outcomes) and `blocking_poll_claim` are proofs for later, on the liveness path.
+
 The safety path (§6, steps 1–4 and 9–12) starts when its dependencies land.
 The coordinator assigns the implementation.
 

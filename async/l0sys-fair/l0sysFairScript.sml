@@ -188,20 +188,6 @@ Definition blocked_poll_def:
       sys_step (ss n) (Call k «sys_poll» conf bytes out) s'
 End
 
-(* (6) PENDING D34 (async-spike / coordinator): a BROKEN channel that its
-   process keeps polling is eventually seen hung up or in error.  [P poll]
-   lets POLLOUT stay unset after a hangup (POLLHUP and POLLOUT are mutually
-   exclusive), so without this a dead peer can be invisible to a sender
-   with nothing in flight.  Not implied by kernel_fair (show_hup/show_err
-   are the world's choices): a new trusted clause if D34 takes option (b) *)
-Definition broken_seen_def:
-  broken_seen ss rs ⇔
-    ∀k j n0.
-      (∀n. n0 ≤ n ⇒ is_end (ss n) (k, j) ∧ (sys_chan (ss n) (k, j)).broken ∧
-                    ¬(sys_chan (ss n) (k, j)).closed) ∧
-      (io (asks_in ss rs k j) ∨ io (asks_out ss rs k j)) ⇒
-      io (λn. ∃f r. fd_at ss k j f n ∧ poll_saw k f (rs n) r ∧ (r.rhup ∨ r.rerr))
-End
 
 (* ------------------------------------------------------------------------
    The internal form, and the sanity lemma (to prove)

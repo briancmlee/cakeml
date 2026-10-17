@@ -14,7 +14,7 @@
 *)
 Theory honestEchoL0DataIn
 Ancestors
-  honestEchoL0DataOut honestEchoL0OutAny honestEchoL0Chain honestEchoL0Excuse
+  honestEchoL0FlAt honestEchoL0DataOut honestEchoL0OutAny honestEchoL0Chain honestEchoL0Excuse
   honestEchoL0Stop honestEchoL0Obl honestL1PFObl
   honestL1PFBroken honestL1PFInput honestL1PFStream honestL1PFClient honestL1PFLive
   honestL1PFRound honestL1PFFlush honestL1PFOutLive honestL1PFOut honestL1PFRefine
@@ -61,9 +61,8 @@ Theorem conn_data_out:
   ¬MEM f (rstate (n2w lfdn) pol EI ES w0 n).eof ∧
   l0_chan_of (rworld (n2w lfdn) pol EI ES w0 n) f = SOME c ∧
   ALOOKUP (SND (l0_ep_st (0, []) (revs (n2w lfdn) pol EI ES w0 n))) f = SOME j0 ⇒
-  (∃n'. (EL c (rworld (n2w lfdn) pol EI ES w0 n).chans).peer_sent ≼
-        csent (rworld (n2w lfdn) pol EI ES w0 n') c) ∨
-  (∃k. n ≤ k ∧ flushed (rworld (n2w lfdn) pol EI ES w0 k) f) ∨
+  (∃n'. cs_ok (n2w lfdn) pol EI ES w0 c (EL c (rworld (n2w lfdn) pol EI ES w0 n).chans).peer_sent n') ∨
+  (∃k. n ≤ k ∧ fl_at (n2w lfdn) pol EI ES w0 f j0 k) ∨
   ep_hard_err j0 io ∨ ep_timed_out pf_sendwait j0 io
 Proof
   disch_then (fn th => MAP_EVERY assume_tac (CONJUNCTS th)) >>
@@ -74,13 +73,13 @@ Proof
   ‘fkeep (n2w lfdn) h f (rstate (n2w lfdn) pol EI ES w0 n)’
     by (drule_all fkeep_run >> simp[]) >>
   ‘f ≠ n2w lfdn’ by fs[fkeep_def] >>
-  ‘S1 (n2w lfdn) pol EI ES w0’ by (irule S1_interest >> simp[]) >>
+  ‘S1 (n2w lfdn) pol EI ES w0’ by (irule echo_S1 >> first_assum ACCEPT_TAC) >>
   ‘S3w (n2w lfdn) pol EI ES w0’ by metis_tac[echo_S3w] >>
   ‘S4w (n2w lfdn) pol hw EI ES w0 f’ by metis_tac[echo_S4w] >>
   ‘(∃d. fopen (n2w lfdn) pol EI ES w0 h f n d ∧
         (EL c (rworld (n2w lfdn) pol EI ES w0 n).chans).peer_sent ≼
         fdata f (rlogs (n2w lfdn) pol EI ES w0 a (n − a + d))) ∨
-   (∃k. n ≤ k ∧ flushed (rworld (n2w lfdn) pol EI ES w0 k) f) ∨
+   (∃k. n ≤ k ∧ fl_at (n2w lfdn) pol EI ES w0 f j0 k) ∨
    ∃k. n ≤ k ∧ fopen (n2w lfdn) pol EI ES w0 h f n (SUC (k − n)) ∧
        hard_recv f (rrev (n2w lfdn) pol EI ES w0 k)’
     by (irule in_chain >> rpt conj_tac >> TRY (first_assum ACCEPT_TAC) >>
@@ -98,8 +97,7 @@ Proof
             TRY (qexists_tac ‘R’ >> first_assum ACCEPT_TAC >> NO_TAC) >>
             TRY (qexists_tac ‘h’ >> first_assum ACCEPT_TAC >> NO_TAC) >>
             fs[echo_run_def]) >>
-      ‘∃n'. (EL c (rworld (n2w lfdn) pol EI ES w0 n).chans).peer_sent ≼
-              csent (rworld (n2w lfdn) pol EI ES w0 n') c ∨
+      ‘∃n'. cs_ok (n2w lfdn) pol EI ES w0 c (EL c (rworld (n2w lfdn) pol EI ES w0 n).chans).peer_sent n' ∨
             ep_hard_err j0 io ∨ ep_timed_out pf_sendwait j0 io’
         by (irule fetched_out >> rpt conj_tac >> TRY (first_assum ACCEPT_TAC) >>
             qexistsl_tac [‘n − a + d’, ‘a’, ‘f’, ‘n’] >> simp[] >>

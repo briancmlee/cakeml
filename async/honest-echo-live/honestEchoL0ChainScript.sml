@@ -13,7 +13,7 @@
 *)
 Theory honestEchoL0Chain
 Ancestors
-  honestEchoL0Excuse honestL1PFBroken honestL1PFInput honestL1PFStream honestL1PFFlushLive
+  honestEchoL0FlAt honestEchoL0Inv honestEchoL0Excuse honestL1PFBroken honestL1PFInput honestL1PFStream honestL1PFFlushLive
   honestL1PFFlush honestL1PFOutLive honestL1PFDead honestL1PFLive
   honestL1PFOut honestEchoL0LiveOwn honestEchoL0Trace honestL1BStmts
 Libs
@@ -102,11 +102,12 @@ Theorem in_chain:
   (∀k. a < k ∧ k < n ⇒ ¬MEM (FConn f) (rlog lfd pol ifds m w0 k)) ∧ a < n ∧
   ALOOKUP (rstate lfd pol ifds m w0 n).b.tbl h = SOME f ∧
   ¬MEM f (rstate lfd pol ifds m w0 n).eof ∧
-  l0_chan_of (rworld lfd pol ifds m w0 n) f = SOME c ⇒
+  l0_chan_of (rworld lfd pol ifds m w0 n) f = SOME c ∧
+  ALOOKUP (SND (l0_ep_st (0, []) (revs lfd pol ifds m w0 n))) f = SOME j0 ⇒
   (∃d. fopen lfd pol ifds m w0 h f n d ∧
        (EL c (rworld lfd pol ifds m w0 n).chans).peer_sent ≼
        fdata f (rlogs lfd pol ifds m w0 a (n − a + d))) ∨
-  (∃k. n ≤ k ∧ flushed (rworld lfd pol ifds m w0 k) f) ∨
+  (∃k. n ≤ k ∧ fl_at lfd pol ifds m w0 f j0 k) ∨
   ∃k. n ≤ k ∧ fopen lfd pol ifds m w0 h f n (SUC (k − n)) ∧
       hard_recv f (rrev lfd pol ifds m w0 k)
 Proof
@@ -116,7 +117,7 @@ Proof
   drule_all run_peer_sent >> strip_tac
   >- (‘fl (rworld lfd pol ifds m w0 n) f (EL c (rworld lfd pol ifds m w0 n).chans).inbox’
         by simp[fl_def, front_def] >>
-      drule_all live_data_hr >> strip_tac
+      drule_all live_data_hr2 >> strip_tac
       >- (disj1_tac >> qexists_tac ‘d’ >> simp[] >>
           ‘rlogs lfd pol ifds m w0 a (d + n − a) =
            rlogs lfd pol ifds m w0 a (n − a) ++ rlogs lfd pol ifds m w0 n d’
@@ -127,9 +128,11 @@ Proof
           qpat_x_assum ‘rlogs _ _ _ _ _ a _ = _’ SUBST1_TAC >>
           pop_assum (fn th => REWRITE_TAC [th]) >>
           fs[IS_PREFIX_APPEND])
-      >- (disj2_tac >> disj1_tac >> metis_tac[])
+      >- (disj2_tac >> disj1_tac >> qexists_tac ‘SUC k’ >> simp[] >>
+          irule fopen_fl_at >> simp[] >> metis_tac[])
       >> disj2_tac >> disj2_tac >> metis_tac[]) >>
-  disj2_tac >> disj1_tac >> qexists_tac ‘n’ >> simp[]
+  disj2_tac >> disj1_tac >> qexists_tac ‘n’ >> simp[fl_at_def, owned_def] >>
+  imp_res_tac ALOOKUP_MEM >> fs[MEM_MAP, EXISTS_PROD] >> metis_tac[]
 QED
 
 Theorem prefix_append_cases:

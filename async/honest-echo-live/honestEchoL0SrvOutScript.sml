@@ -7,7 +7,7 @@
     handle loop is what the version-1 echo wrote to handle hdl j (the
     handle layer drops writes on closed handles, which the echo never
     makes: close-v2-sim's no_after_eof).
-  - M4's echo_comp_live gives the version-1 side; the renaming (sent2_rn)
+  - honestEchoL0M4Live's echo_comp_live_l (the live list) gives the version-1 side; the renaming (sent2_rn)
     gives the version-2 arrivals, which for psk are pars.
 
   MAIN: echo_out_live.
@@ -24,13 +24,14 @@ Ancestors
   asyncM4SockInv asyncM4GTrans asyncM4GRounds asyncM4EchoRunOk asyncM3World
   honestEchoL0Obl honestL1PFFlushLive honestL1PFFlush honestL1PFOutLive honestL1PFOut honestL1PFRound
   honestL1PFRefine
-  honestL1PFClient
+  honestL1PFClient honestEchoL0SimLive honestEchoL0M4Live
 Libs
   preamble
 
 Overload ES = “srelabel (server lfdn)”
-Overload EI = “interest [n2w lfdn : word64]”
-Overload R2 = “λlfdn s2. hround_events (n2w lfdn) (interest [n2w lfdn : word64])
+Overload EI = “asyncM4LiveInterest$live [n2w lfdn : word64] (log_of (srelabel (server lfdn)))”
+Overload R2 = “λlfdn s2. hround_events (n2w lfdn)
+                          (asyncM4LiveInterest$live [n2w lfdn : word64] (log_of (srelabel (server lfdn))))
                           (srelabel (server lfdn)) s2”
 
 (* ---- temporary copies (asyncHLEchoSpec2, local there) ---- *)
@@ -275,8 +276,8 @@ Proof
   ‘s1.listeners = [(n2w lfdn, [])] ∧ s1.conns = []’ by simp[Abbr ‘s1’, v1of_def] >>
   ‘grun_ok EI ES s1’ by (irule echo_grun_ok >> simp[]) >>
   ‘sched_wf s1’ by (simp[Abbr ‘s1’] >> irule v1of_sched_wf >> simp[]) >>
-  drule_all hrun_sim >> strip_tac >>
-  drule_all hrun_events >> strip_tac >>
+  drule_all hrun_sim_l >> strip_tac >>
+  drule_all hrun_events_l >> strip_tac >>
   Induct
   >- (rpt strip_tac >> qpat_x_assum ‘j < _’ mp_tac >>
       qpat_x_assum ‘s2.clients = []’ mp_tac >> simp[hst_def, hrounds_def]) >>
@@ -366,7 +367,7 @@ Proof
   ‘sched_wf s1’ by (simp[Abbr ‘s1’] >> irule v1of_sched_wf >> simp[]) >>
   ‘grun_ok EI ES s1’ by (irule echo_grun_ok >> simp[]) >>
   qspecl_then [‘s1’, ‘lfdn’, ‘d’, ‘hdl (n2w lfdn) j’] mp_tac
-    (Q.GENL [‘s0’, ‘lfdn’, ‘n’, ‘c’] echo_comp_live) >>
+    (Q.GENL [‘s0’, ‘lfdn’, ‘n’, ‘c’] echo_comp_live_l) >>
   impl_tac >- simp[] >> strip_tac >>
   ‘bytes_written_to (hdl (n2w lfdn) j) (FLAT (GENLIST (grounds_events EI ES s1) N)) =
    pwritten_all (hdl (n2w lfdn) j) (gperf EI ES s1 N)’
@@ -376,7 +377,7 @@ Proof
         drule_all sent2_rn >> disch_then (qspec_then ‘d’ (SUBST1_TAC o SYM)) >> simp[]) >>
   ‘pwritten_all (hdl (n2w lfdn) j) (gperf EI ES s1 N) ≠ []’
     by (strip_tac >> gvs[]) >>
-  drule_all hrun_sim >> disch_then (qspec_then ‘N’ strip_assume_tac) >>
+  drule_all hrun_sim_l >> disch_then (qspec_then ‘N’ strip_assume_tac) >>
   ‘hsim0 (n2w lfdn) (gstate EI ES s1 N) (FST (hst (n2w lfdn) EI ES s2 N), SND (hst (n2w lfdn) EI ES s2 N))’
     by (Cases_on ‘hst (n2w lfdn) EI ES s2 N’ >> gvs[hsim_def, Abbr ‘s1’]) >>
   ‘acct (hdl (n2w lfdn) j) (sent_upto (hdl (n2w lfdn) j) N s1)
@@ -467,7 +468,7 @@ Proof
   Cases_on ‘ALOOKUP (rstate (n2w lfdn) pol EI ES w0 k).b.tbl (hdl (n2w lfdn) m')’ >> simp[] >>
   (* a closed handle: its EOF was read, and the echo never acts on it after *)
   ‘closed_eof (n2w lfdn) (gperf EI ES V1 k) (SND (hst (n2w lfdn) EI ES PSK k))’
-    by metis_tac[hrun_events] >>
+    by metis_tac[hrun_events_l] >>
   ‘∃kk. MEM (Read (hdl (n2w lfdn) m') kk, Got (SOME [])) (gperf EI ES V1 k)’
     by (qpat_x_assum ‘closed_eof _ _ _’ mp_tac >>
         qpat_assum ‘SND (hst _ _ _ _ _) = _’ (fn th => REWRITE_TAC [th]) >>

@@ -1,6 +1,6 @@
 (*
   The echo's obligations for R1-live (design/47 B): the PF echo,
-  m = srelabel (server lfdn) polled through interest [n2w lfdn], meets S1
+  m = srelabel (server lfdn) polled through the live list (D26), meets S1
   (honestL1PFObl, for every such server) and S2.
 
   No new reasoning about the server: the PF run's history is the handle
@@ -13,14 +13,15 @@ Theory honestEchoL0Obl
 Ancestors
   honestL1PFObl honestL1PFConnRun honestL1PFLive honestL1PFRound honestL1PFRefine honestL1PFModel
   asyncHLSimRun asyncHLSimWorld asyncHLModel asyncM4AcceptSoon asyncM4ReadSoon
-  asyncM4LiveWorld asyncM4Queue
+  asyncM4LiveWorld asyncM4Queue honestEchoL0SimLive honestEchoL0M4Live asyncM4LiveSoon
+  honestEchoReadsAcc honestL1PFOblLive
   asyncM4EchoRunOk asyncM4SockInv asyncM4GTrans asyncM4GRounds asyncM4Relabel asyncM4SockModel
   asyncM4Loop asyncM3World asyncCore asyncLevel1 alist
 Libs
   preamble
 
 Overload ES = “srelabel (server lfdn)”
-Overload EI = “interest [n2w lfdn : word64]”
+Overload EI = “asyncM4LiveInterest$live [n2w lfdn : word64] (log_of (srelabel (server lfdn)))”
 
 (* The PF echo's run hypotheses *)
 Definition echo_run_def:
@@ -32,6 +33,14 @@ End
 
 Overload PSK = “psk (n2w lfdn) pol EI ES w0”
 Overload V1 = “v1of (n2w lfdn) (psk (n2w lfdn) pol EI ES w0)”
+
+(* MAIN (D26): the PF echo meets S1 (S1_live; it reads only handles it
+   was handed, echo_reads_handed) *)
+Theorem echo_S1:
+  echo_run lfdn pol w0 ⇒ S1 (n2w lfdn) pol EI ES w0
+Proof
+  rw[echo_run_def] >> irule S1_live >> fs[winv_def, echo_reads_handed]
+QED
 
 (* ------------------------------------------------------------------------
    The three runs agree
@@ -52,7 +61,7 @@ Proof
   PURE_REWRITE_TAC[echo_run_def] >> strip_tac >> gen_tac >>
   ‘l0_rely w0 ∧ fds_lt w0’ by fs[run_ok_def, winv_def] >>
   drule_all psk_server_world >> strip_tac >>
-  drule_all hrun_sim >> disch_then (qspec_then ‘n’ strip_assume_tac) >>
+  drule_all hrun_sim_l >> disch_then (qspec_then ‘n’ strip_assume_tac) >>
   drule_then (qspec_then ‘n’ assume_tac) prun_some >>
   Cases_on ‘prun (n2w lfdn) pol EI ES w0 n’ >> rename1 ‘_ = (hh, x)’ >> PairCases_on ‘x’ >>
   drule_all l1pf_refines_hl >> strip_tac >>
@@ -149,7 +158,7 @@ Proof
     by (simp[queued_def, lq_def] >> Cases_on ‘ps.acq’ >> fs[GENLIST_CONS]) >>
   ‘∃N. MEM (hdl (n2w lfdn) ps.b.nxt) (wacc (gperf EI ES V1 N))’
     by (qspecl_then [‘V1’, ‘lfdn’, ‘hdl (n2w lfdn) ps.b.nxt’] mp_tac
-          (Q.GENL [‘s0’, ‘lfdn’, ‘c’] queue_progress) >>
+          (Q.GENL [‘s0’, ‘lfdn’, ‘c’] queue_progress_l) >>
         impl_tac >- simp[v1of_def] >> metis_tac[]) >>
   (* it was not handed out by round n *)
   ‘¬MEM (hdl (n2w lfdn) ps.b.nxt) (wacc (gperf EI ES V1 n))’
@@ -215,8 +224,10 @@ Proof
     by (qpat_x_assum ‘GENLIST _ _ = wacc _’ (SUBST1_TAC o SYM) >> simp[MEM_GENLIST] >>
         metis_tac[]) >>
   qspecl_then [‘V1’, ‘lfdn’, ‘hdl (n2w lfdn) j’, ‘m’, ‘cn’] mp_tac
-    (Q.GENL [‘s0’, ‘lfdn’, ‘c’, ‘n’, ‘cn’] read_soon_s) >>
-  impl_tac >- simp[v1of_def] >>
+    (Q.GENL [‘s0’, ‘lfdn’, ‘c’, ‘n’, ‘cn’] read_soon_live) >>
+  impl_tac
+  >- (‘grun_ok EI ES V1’ by (irule echo_grun_ok >> simp[v1of_def]) >>
+      drule incoming_noeof >> disch_then drule >> simp[v1of_def]) >>
   strip_tac >> fs[reads_c_def] >>
   drule_then (qspec_then ‘m + i’ strip_assume_tac) echo_sim >>
   qexistsl_tac [‘i’, ‘k’] >> gvs[gacts_def]

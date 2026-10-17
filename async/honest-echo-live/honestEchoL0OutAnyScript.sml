@@ -15,7 +15,7 @@
 *)
 Theory honestEchoL0OutAny
 Ancestors
-  honestEchoL0OutAll honestEchoL0Frozen honestEchoL0Chain honestEchoL0Excuse
+  honestEchoL0FlAt honestEchoL0OutAll honestEchoL0Frozen honestEchoL0Chain honestEchoL0Excuse
   honestEchoL0SrvOut honestEchoL0Stop
   asyncHLSimWorld asyncHLModel
   honestEchoL0Obl honestL1PFObl honestL1PFBroken honestL1PFClient honestL1PFDead
@@ -194,8 +194,8 @@ Theorem out_chain_any:
   l0_chan_of (rworld (n2w lfdn) pol EI ES w0 n) f = SOME c ∧
   ALOOKUP (SND (l0_ep_st (0, []) (revs (n2w lfdn) pol EI ES w0 n))) f = SOME j0 ∧
   ALOOKUP (FST (pcm (n2w lfdn) pol EI ES w0 n)) f = SOME j ∧ n ≤ N ⇒
-  ∃n'. (EL j (FST (hst (n2w lfdn) EI ES PSK N)).clients).outgoing ≼
-         csent (rworld (n2w lfdn) pol EI ES w0 n') c ∨
+  ∃n'. cs_ok (n2w lfdn) pol EI ES w0 c
+         (EL j (FST (hst (n2w lfdn) EI ES PSK N)).clients).outgoing n' ∨
        ep_hard_err j0 io ∨ ep_timed_out pf_sendwait j0 io
 Proof
   disch_then (fn th => MAP_EVERY assume_tac (CONJUNCTS (BETA_RULE th))) >>
@@ -243,7 +243,12 @@ Proof
     by (irule released_frozen >> rpt conj_tac >> TRY (first_assum ACCEPT_TAC) >>
         TRY (qexists_tac ‘f’) >> fs[] >>
         qpat_x_assum ‘∀i. n ≤ i ∧ i ≤ k ⇒ MEM _ _ ∨ _’ (qspec_then ‘k’ mp_tac) >> simp[]) >>
+  ‘run_ok (n2w lfdn) pol EI ES w0’ by fs[oassm_def] >>
+  ‘c < LENGTH (rworld (n2w lfdn) pol EI ES w0 (SUC k)).chans’
+    by (irule run_chans_mono >> rpt conj_tac >> TRY (first_assum ACCEPT_TAC) >>
+        qexists_tac ‘n’ >> rpt conj_tac >> TRY (first_assum ACCEPT_TAC) >> TRY decide_tac >>
+        irule chan_lt >> qexists_tac ‘f’ >> first_assum ACCEPT_TAC) >>
   qexists_tac ‘SUC k’ >>
-  TRY (disj1_tac >> fs[oout_def] >> NO_TAC) >>
+  TRY (disj1_tac >> fs[oout_def, cs_ok_def] >> NO_TAC) >>
   fs[]
 QED

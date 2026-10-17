@@ -2,7 +2,7 @@
   The echo reads an fd at end-of-file (design/47 D, close step; L3-09 SQ
   part 1): on the PF echo run, if L1 holds f under handle h with f's EOF
   seen, the server reads h within three rounds (cf-actions' M4
-  read_soon_eof_s, lifted through echo_sim).
+  read_soon_eof_live, lifted through echo_sim).
 
   Its extra hypothesis -- the server has not yet read h's end-of-file --
   holds because a handle whose end-of-file was read is out of the handle
@@ -13,7 +13,7 @@
 *)
 Theory honestEchoL0EofRead
 Ancestors
-  honestEchoL0SrvOut honestEchoL0Stop asyncM4ReadSoonEof asyncM4ReadSoon asyncM4LiveWorld
+  honestEchoL0SrvOut honestEchoL0Stop honestEchoL0SimLive asyncM4LiveSoon asyncM4ReadSoonEof asyncM4ReadSoon asyncM4LiveWorld
   asyncHLEchoSpec2 asyncHLSimTrace asyncHLSimEvents asyncHLSimOps asyncHLSimRun
   asyncHLSimTick asyncHLSimWorld asyncHLEof asyncHLModel
   asyncM4Account asyncM4SockInv asyncM4GTrans asyncM4GRounds asyncM4EchoRunOk asyncM3World
@@ -39,8 +39,8 @@ Proof
   ‘s1.listeners = [(n2w lfdn, [])] ∧ s1.conns = []’ by simp[Abbr ‘s1’, v1of_def] >>
   ‘grun_ok EI ES s1’ by (irule echo_grun_ok >> simp[]) >>
   ‘sched_wf s1’ by (simp[Abbr ‘s1’] >> irule v1of_sched_wf >> simp[]) >>
-  drule_all hrun_sim >> strip_tac >>
-  drule_all hrun_events >> strip_tac >>
+  drule_all hrun_sim_l >> strip_tac >>
+  drule_all hrun_events_l >> strip_tac >>
   gen_tac >>
   qpat_assum ‘∀n. hhist _ _ _ _ n = _ ∧ _’ (qspec_then ‘n’ strip_assume_tac) >>
   qpat_assum ‘∀n. ep_st _ _ _ = _ ∧ _’ (qspec_then ‘n’ strip_assume_tac) >>
@@ -141,7 +141,7 @@ Theorem run_eof_gone:
 Proof
   strip_tac >> drule_all round_hacts >> strip_tac >>
   ‘sched_wf (v1of (n2w lfdn) s2)’ by (irule v1of_sched_wf >> simp[]) >>
-  drule_all hrun_sim >> strip_tac >>
+  drule_all hrun_sim_l >> strip_tac >>
   Induct
   >- simp[eof_gone_def, gperf_def] >>
   qpat_assum ‘∀n. (∃evs2 s2'. hacts _ _ _ = _) ∧ _’ (qspec_then ‘n’ strip_assume_tac) >>
@@ -211,7 +211,7 @@ Proof
     by (qpat_x_assum ‘GENLIST _ _ = wacc _’ (SUBST1_TAC o SYM) >> simp[MEM_GENLIST] >>
         metis_tac[]) >>
   qspecl_then [‘V1’, ‘lfdn’, ‘hdl (n2w lfdn) j’, ‘m’, ‘cn’] mp_tac
-    (Q.GENL [‘s0’, ‘lfdn’, ‘c’, ‘n’, ‘cn’] read_soon_eof_s) >>
+    (Q.GENL [‘s0’, ‘lfdn’, ‘c’, ‘n’, ‘cn’] read_soon_eof_live) >>
   impl_tac >- (fs[v1of_def] >> rveq >> fs[]) >>
   strip_tac >> fs[reads_c_def] >>
   drule_then (qspec_then ‘m + i’ strip_assume_tac) echo_sim >>

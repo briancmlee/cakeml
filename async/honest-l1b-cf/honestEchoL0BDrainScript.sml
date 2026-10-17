@@ -2,7 +2,7 @@
   The PF echo drains once L1 fetches nothing: honestL1BEofClose's
   pf_drain_read, with async-spike's echo facts (honest-echo-live: S2, S3w
   and echo_read_soon_eof) for m = srelabel (server k), polled through
-  interest [n2w k].
+  the live list (D26), as eifds.
 
   MAIN: echo_drain.
 *)

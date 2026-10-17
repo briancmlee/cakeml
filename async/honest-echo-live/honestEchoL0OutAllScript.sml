@@ -14,7 +14,7 @@
 *)
 Theory honestEchoL0OutAll
 Ancestors
-  honestEchoL0Chain honestEchoL0SrvOut honestEchoL0Excuse honestL1PFBroken
+  honestEchoL0FlAt honestEchoL0Chain honestEchoL0SrvOut honestEchoL0Excuse honestL1PFBroken
   honestEchoL0Obl honestL1PFRefine honestL1PFFlushLive honestL1PFFlush honestL1PFOutLive
   honestL1PFLive honestL1PFOut
 Libs
@@ -31,8 +31,8 @@ Theorem out_chain_all:
   (∀k. n ≤ k ∧ k ≤ N ⇒ ALOOKUP (FST (pcm (n2w lfdn) pol EI ES w0 k)) f = SOME j) ∧
   (∀k. n ≤ k ∧ k < N ⇒ ¬MEM (FConn f) (rlog (n2w lfdn) pol EI ES w0 k)) ∧
   j < LENGTH (FST (hst (n2w lfdn) EI ES PSK n)).clients ⇒
-  ∃n'. (EL j (FST (hst (n2w lfdn) EI ES PSK N)).clients).outgoing ≼
-         csent (rworld (n2w lfdn) pol EI ES w0 n') c ∨
+  ∃n'. cs_ok (n2w lfdn) pol EI ES w0 c
+         (EL j (FST (hst (n2w lfdn) EI ES PSK N)).clients).outgoing n' ∨
        ep_hard_err j0 io ∨ ep_timed_out pf_sendwait j0 io
 Proof
   disch_then (fn th => MAP_EVERY assume_tac (CONJUNCTS (BETA_RULE th))) >>
@@ -59,7 +59,11 @@ Proof
                csent (rworld (n2w lfdn) pol EI ES w0 n') c ∨
              ep_hard_err j0 io ∨ ep_timed_out pf_sendwait j0 io)’
         by (irule out_chain >> rpt conj_tac >> TRY (first_assum ACCEPT_TAC) >> fs[]) >>
-      qexists_tac ‘n'’ >> gvs[]) >>
+      ‘c < LENGTH (rworld (n2w lfdn) pol EI ES w0 n').chans’
+        by (irule run_chans_mono >> rpt conj_tac >> TRY (first_assum ACCEPT_TAC) >>
+            qexists_tac ‘N’ >> rpt conj_tac >> TRY (first_assum ACCEPT_TAC) >>
+            irule chan_lt >> qexists_tac ‘f’ >> first_assum ACCEPT_TAC) >>
+      qexists_tac ‘n'’ >> gvs[cs_ok_def]) >>
   (* the first release *)
   fs[] >> rename1 ‘¬MEM f (MAP SND (rstate _ _ _ _ _ kc).b.tbl)’ >>
   ‘∃t. (n ≤ t ∧ t ≤ N ∧ ¬held f (rstate (n2w lfdn) pol EI ES w0 t)) ∧
@@ -85,7 +89,11 @@ Proof
   pop_assum strip_assume_tac >>
   TRY ((* the kernel took it all; client j's outgoing frozen from SUC k *)
       qpat_x_assum ‘csent _ c = _’ assume_tac >>
-      qexists_tac ‘SUC k’ >> disj1_tac >>
+      qexists_tac ‘SUC k’ >> disj1_tac >> simp[cs_ok_def] >>
+      conj_tac
+      >- (irule run_chans_mono >> rpt conj_tac >> TRY (first_assum ACCEPT_TAC) >>
+          qexists_tac ‘k’ >> rpt conj_tac >> TRY (first_assum ACCEPT_TAC) >> TRY decide_tac >>
+          irule chan_lt >> qexists_tac ‘f’ >> first_assum ACCEPT_TAC) >>
       ‘cl (FST (pcm (n2w lfdn) pol EI ES w0 k)) f = j’
         by (qpat_x_assum ‘∀k'. n ≤ k' ∧ k' ≤ N ⇒ _’ (qspec_then ‘k’ mp_tac) >>
             simp[cl_def]) >>

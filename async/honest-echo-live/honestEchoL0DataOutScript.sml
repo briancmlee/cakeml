@@ -10,7 +10,7 @@
 *)
 Theory honestEchoL0DataOut
 Ancestors
-  honestEchoL0OutAny honestEchoL0OutAll honestEchoL0Frozen honestEchoL0SrvOut
+  honestEchoL0FlAt honestEchoL0OutAny honestEchoL0OutAll honestEchoL0Frozen honestEchoL0SrvOut
   honestEchoL0Excuse honestEchoL0Obl
   honestL1PFBroken honestL1PFInput honestL1PFStream honestL1PFClient
   honestL1PFFlushLive honestL1PFFlush honestL1PFOutLive honestL1PFOut honestL1PFLive
@@ -36,7 +36,7 @@ Theorem fetched_out:
   held f (rstate (n2w lfdn) pol EI ES w0 n) ∧
   l0_chan_of (rworld (n2w lfdn) pol EI ES w0 n) f = SOME c ∧
   ALOOKUP (SND (l0_ep_st (0, []) (revs (n2w lfdn) pol EI ES w0 n))) f = SOME j0 ⇒
-  ∃n'. D ≼ csent (rworld (n2w lfdn) pol EI ES w0 n') c ∨
+  ∃n'. cs_ok (n2w lfdn) pol EI ES w0 c D n' ∨
        ep_hard_err j0 io ∨ ep_timed_out pf_sendwait j0 io
 Proof
   disch_then (fn th => MAP_EVERY assume_tac (CONJUNCTS (BETA_RULE th))) >>
@@ -53,20 +53,21 @@ Proof
   qabbrev_tac ‘j = cl (FST (pcm (n2w lfdn) pol EI ES w0 (SUC a))) f’ >>
   ‘D ≼ cdata j (pars (n2w lfdn) pol EI ES w0 0 (a + M))’ by fs[] >>
   drule echo_out_live >> disch_then (qspecl_then [‘j’, ‘a + M’] strip_assume_tac)
-  >- (‘D = []’ by (Cases_on ‘D’ >> fs[]) >> qexists_tac ‘n’ >> simp[]) >>
+  >- (‘D = []’ by (Cases_on ‘D’ >> fs[]) >> qexists_tac ‘n’ >> simp[cs_ok_def] >> disj1_tac >>
+      irule chan_lt >> qexists_tac ‘f’ >> first_assum ACCEPT_TAC) >>
   ‘(EL j (FST (hst (n2w lfdn) EI ES PSK N)).clients).outgoing ≼
    (EL j (FST (hst (n2w lfdn) EI ES PSK (N + n))).clients).outgoing’
     by (qpat_x_assum ‘j < LENGTH (FST (hst _ _ _ _ N)).clients’ assume_tac >>
         drule hst_out_mono >> disch_then (qspec_then ‘n’ mp_tac) >> simp[]) >>
-  ‘∃n'. (EL j (FST (hst (n2w lfdn) EI ES PSK (N + n))).clients).outgoing ≼
-          csent (rworld (n2w lfdn) pol EI ES w0 n') c ∨
+  ‘∃n'. cs_ok (n2w lfdn) pol EI ES w0 c
+          (EL j (FST (hst (n2w lfdn) EI ES PSK (N + n))).clients).outgoing n' ∨
         ep_hard_err j0 io ∨ ep_timed_out pf_sendwait j0 io’
     by (irule out_chain_any >> rpt conj_tac >> TRY (first_assum ACCEPT_TAC) >>
         TRY (qexistsl_tac [‘f’, ‘n’]) >> fs[]) >>
   qexists_tac ‘n'’ >>
   TRY (disj2_tac >> asm_rewrite_tac [] >> NO_TAC) >>
   disj1_tac >>
-  irule pfx_trans >>
+  irule cs_ok_pfx >>
   qexists_tac ‘(EL j (FST (hst (n2w lfdn) EI ES PSK (N + n))).clients).outgoing’ >>
   reverse conj_tac >- first_assum ACCEPT_TAC >>
   irule pfx_trans >>

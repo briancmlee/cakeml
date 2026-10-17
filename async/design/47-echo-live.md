@@ -196,3 +196,28 @@ drains c.  Excuses: ep_hard_err j, ep_timed_out K j (D23).
 8. Strong form: HD16_io and stall_drains replace the excuses (honest-ffi's
    D16 corollary and their model-level "peer drains within pf_sendwait"
    corollary, bridged from the trace).
+
+### D after D32 (2026-10-17, late)
+
+Done: `trace_data` (TraceData): for any prefix revs r ++ pre inside round r
+with f in episode j on channel c, peer_sent c ≼ csent c at some round n',
+or flushed (rworld k) f, or ep_hard_err j, or ep_timed_out j.  Episode
+ends inside round r are covered by `run_acc_after` (AccOnce): an accept is
+the last episode end of its fd in its round.
+
+D32 (`flushed_open`) and the csent → l0_sent step need the same missing
+fact, at the round n' (resp. k) the chain names:
+  (a) episode j is still f's episode there, and
+  (b) no close call on f since j's accept.
+(b) is not a world fact: an interrupted close may keep the fd
+(`close_intr` with gone = F; POSIX leaves the fd's state unspecified), so
+the channel can outlive a close call.  It is an L1 fact: `l1_close` always
+forgets f, and only an accept gives L1 f again.  Plan:
+1. Invariant H (NoClose): f in tbl / closing / acq at round k with
+   ep(revs k) f = j ⇒ no close call on f after j's accept in revs k.
+2. Strengthen the chain's conclusions to name rounds with f held (or
+   pending) in episode j: n' for csent (out_chain_any / fetched_out
+   already use held rounds) and k for flushed (run_peer_sent at a held
+   round; flush_live while held).
+3. csent → l0_sent: `episode_csent` at revs n' (needs (b)); flushed →
+   `flushed_open` at revs k (needs (a), (b)).

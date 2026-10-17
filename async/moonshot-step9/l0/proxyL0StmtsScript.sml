@@ -9,6 +9,10 @@
   event that opened its fd (accept or connect), so both kinds share one
   vocabulary (the pos_ names).  pr p = SOME q: front p's backend is q.
 
+  REVISION 10 (statements; e1-driver request, orchestrator option (a)):
+  both claims assume the two ports are below 65536 (a < 65536 ∧ b < 65536),
+  the TCP port range (RFC 793: ports are 16-bit).
+
   REVISION 9 (statements): a new promise proxy_asks_l0, stated as a
   SEPARATE claim proxy_asks_claim of the same program (same world class
   l0_proxy_world, same outcome shape, same pairing pr via proxy_safe_l0).
@@ -353,6 +357,7 @@ End
    proxy's Level threshold (prog is the proxy built with it) *)
 Definition l0_proxy_claim_def:
   l0_proxy_claim K hw a b prog ⇔
+    a < 65536 ∧ b < 65536 ⇒
     ∀w0. l0_proxy_world w0 ⇒
       ∃beh. semantics_prog (init_state (l0_ffi w0)) init_env prog beh ∧
           (stdio_closed beh ∨ proxy_listen_failed beh ∨
@@ -367,6 +372,7 @@ End
    same pairing.  l0_proxy_claim itself is unchanged. *)
 Definition proxy_asks_claim_def:
   proxy_asks_claim K hw a b prog ⇔
+    a < 65536 ∧ b < 65536 ⇒
     ∀w0. l0_proxy_world w0 ⇒
       ∃beh. semantics_prog (init_state (l0_ffi w0)) init_env prog beh ∧
           (stdio_closed beh ∨ proxy_listen_failed beh ∨

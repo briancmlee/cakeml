@@ -120,7 +120,7 @@ Proof
   simp[wown_def, owned_def]
 QED
 
-Theorem pdo_nxt[local]:
+Theorem pdo_nxt:
   pdo lfd (w, ps) a = SOME (r, (w', ps'), evs) ⇒ ps.b.nxt ≤ ps'.b.nxt
 Proof
   Cases_on ‘a’ >>
@@ -131,7 +131,7 @@ Proof
   TRY (Cases_on ‘l0_res_of out’) >> gvs[after_send_def, set_outbox_def] >> rw[]
 QED
 
-Theorem pacts_nxt[local]:
+Theorem pacts_nxt:
   ∀acts w ps rs evs w' ps'.
     pacts lfd (w, ps) acts = SOME (rs, evs, (w', ps')) ⇒
     ps.b.nxt ≤ ps'.b.nxt ∧ (acts = [] ⇒ ps' = ps)

@@ -957,3 +957,81 @@ Proof
    oi lfd (ps3 with b := b4)’ by (irule oi_b >> simp[]) >>
   gvs[]
 QED
+
+(* Nothing is held for an episode whose handle is not yet handed out, so
+   the invariant holds trivially of nothing sent and the bytes held *)
+Theorem obp_unhanded:
+  own_ok lfd (k, opn) ps ∧ hdln (w2n lfd) k < dimword (:64) ∧
+  hdln (w2n lfd) j < dimword (:64) ∧ ps.b.nxt ≤ j ⇒
+  obp lfd ps opn j = []
+Proof
+  strip_tac >> simp[obp_def] >> Cases_on ‘epfd opn j’ >> simp[] >>
+  rename1 ‘epfd opn j = SOME f’ >>
+  ‘ep_ok (k, opn)’ by gvs[own_ok_def] >>
+  ‘ALOOKUP opn f = SOME j’ by (drule_then (qspecl_then [‘j’, ‘f’] mp_tac) epfd_iff >> simp[]) >>
+  IF_CASES_TAC >> simp[] >> pop_assum strip_assume_tac
+  >- (‘ALOOKUP ps.b.tbl (l1hdl lfd j) = SOME f’ by simp[] >>
+      drule_all own_tbl_lookup >> strip_tac >>
+      qmatch_asmsub_rename_tac ‘l1hdl lfd j = l1hdl lfd jj’ >>
+      ‘jj < k’ by (qpat_x_assum ‘own_ok _ _ _’ mp_tac >> simp[own_ok_def]) >>
+      ‘hdln (w2n lfd) jj < dimword (:64)’ by (irule hdln_mono >> qexists_tac ‘k’ >> fs[]) >>
+      ‘hdl lfd j = hdl lfd jj ⇔ j = jj’ by (irule hdl_eq_iff >> fs[]) >> fs[]) >>
+  qpat_x_assum ‘own_ok _ _ _’ mp_tac >> simp[own_ok_def] >> strip_tac >>
+  first_x_assum drule >> strip_tac >> fs[]
+QED
+
+(* Nothing is held for an episode whose handle is not yet handed out, so
+   the invariant holds trivially of nothing sent and the bytes held *)
+Theorem oi_triv:
+  own_ok lfd (k, opn) ps ∧ hdln (w2n lfd) k < dimword (:64) ∧
+  hdln (w2n lfd) j < dimword (:64) ⇒
+  oi lfd ps opn [] (obp lfd ps opn j) j
+Proof
+  strip_tac >> simp[oi_def] >> strip_tac >>
+  irule obp_unhanded >> simp[] >> qexists_tac ‘k’ >> fs[]
+QED
+
+(* MAIN: a round, per episode in range: what the spec says it sent in
+   the round, after the bytes L1 held for it, is what the server wrote in
+   the round, up to what L1 now holds (exactly, while it is live) *)
+Theorem pround_out:
+  pround lfd hw hs (w, ps) acts = SOME (sn, (w', ps'), log, evs) ∧
+  wown lfd w ps ∧ own_ok lfd (k, opn) ps ∧ LENGTH ps.acq ≤ 1 ∧ okb ps.b ∧
+  l1hdln (w2n lfd) (ps.b.nxt + LENGTH acts + 1) < dimword (:64) ∧
+  (∀j. hdln (w2n lfd) j < dimword (:64) ∧ ps.b.nxt ≤ j ⇒
+       FLAT (MAP (wr (l1hdl lfd j)) acts) = []) ⇒
+  okb ps'.b ∧
+  ∀j snt hwt. hdln (w2n lfd) j < dimword (:64) ∧ oi lfd ps opn snt hwt j ⇒
+    oi lfd ps' (SND (l0_ep_st (k, opn) evs)) (snt ++ ep_sn j (k, opn) evs)
+       (hwt ++ FLAT (MAP (wr (l1hdl lfd j)) acts)) j
+Proof
+  strip_tac >> qpat_x_assum ‘pround _ _ _ _ _ = _’ mp_tac >>
+  simp[pround_def, AllCaseEqs(), PULL_EXISTS] >> rpt gen_tac >> strip_tac >>
+  rename1 ‘pacts _ _ _ = SOME (rs, evs1, ws1)’ >> PairCases_on ‘ws1’ >>
+  rename1 ‘pf_tail _ _ _ _ = SOME (rdy, _, log2, tevs)’ >>
+  ‘l0_rely w’ by gvs[wown_def] >>
+  ‘k ≤ ps.b.nxt + 1’ by gvs[own_ok_def] >>
+  ‘hdln (w2n lfd) k < dimword (:64)’
+    by (irule hdln_mono >> qexists_tac ‘ps.b.nxt + (LENGTH acts + 1)’ >> fs[]) >>
+  ‘l1hdln (w2n lfd) k < dimword (:64)’ by fs[] >>
+  drule_all pacts_in >> strip_tac >>
+  drule_all pacts_wown >> strip_tac >>
+  drule_all pacts_out >> strip_tac >>
+  drule pacts_nxt >> strip_tac >>
+  Cases_on ‘l0_ep_st (k, opn) evs1’ >> rename1 ‘l0_ep_st _ _ = (k1, opn1)’ >> gvs[] >>
+  ‘LENGTH ws11.acq ≤ 1 ∧ ws11.b.nxt ≤ ps.b.nxt + LENGTH acts’
+    by (Cases_on ‘acts’ >> gvs[own_ok_def]) >>
+  ‘l1hdln (w2n lfd) (ws11.b.nxt + 1) < dimword (:64)’
+    by (fs[] >> irule hdln_mono >> qexists_tac ‘ps.b.nxt + (LENGTH acts + 1)’ >> simp[]) >>
+  drule pf_tail_out >> simp[] >> strip_tac >>
+  ‘hdln (w2n lfd) 0 < dimword (:64)’ by (irule hdln_mono >> qexists_tac ‘k’ >> fs[]) >>
+  conj_tac
+  >- (first_x_assum (qspecl_then [‘[]’, ‘opn1’, ‘k’, ‘0’, ‘obp lfd ws11 opn1 0’] mp_tac) >>
+      simp[] >> impl_tac
+      >- (fs[] >> irule oi_triv >> fs[] >> qexists_tac ‘k’ >> fs[]) >> simp[]) >>
+  rpt strip_tac >>
+  qpat_x_assum ‘∀j snt hwt. _ ∧ oi lfd ps opn _ _ _ ⇒ _’ drule_all >> strip_tac >>
+  first_x_assum (qspecl_then [‘snt ++ ep_sn j (k, opn) evs1’, ‘opn1’, ‘k’, ‘j’,
+                              ‘hwt ++ FLAT (MAP (wr (l1hdl lfd j)) acts)’] mp_tac) >>
+  simp[ep_fold_APPEND]
+QED

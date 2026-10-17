@@ -22,7 +22,8 @@ Ancestors
   asyncHLSimTick asyncHLSimWorld asyncHLEof asyncHLEpisodes asyncHLModel asyncHLFair
   socketV2FFI socketV2Fair EchoSpec2 EchoSpec asyncM4EchoLive asyncM4Account
   asyncM4SockInv asyncM4GTrans asyncM4GRounds asyncM4EchoRunOk asyncM3World
-  honestEchoL0Obl honestL1PFFlush honestL1PFOutLive honestL1PFOut honestL1PFRound honestL1PFRefine
+  honestEchoL0Obl honestL1PFFlushLive honestL1PFFlush honestL1PFOutLive honestL1PFOut honestL1PFRound
+  honestL1PFRefine
   honestL1PFClient
 Libs
   preamble
@@ -482,4 +483,94 @@ Proof
   disch_then (qspecl_then [‘l1’, ‘Write (hdl (n2w lfdn) m') bs’, ‘r’, ‘l2’,
                            ‘hdl (n2w lfdn) m'’, ‘kk’] mp_tac) >>
   simp[sock_on_def]
+QED
+
+(* Through the simulation: the fd behind client j's handle is the fd the
+   client map gives client j *)
+Theorem handle_client_fd:
+  hsim0 lfd s1 (s2, hs_of ps) ∧ pv_rel lfd cm ps s2 ∧
+  ALOOKUP ps.b.tbl (hdl lfd j) = SOME g ∧ ALOOKUP cm f = SOME j ⇒ g = f
+Proof
+  strip_tac >> drule_all pv_rel_tbl >> strip_tac >>
+  ‘ALOOKUP (hs_of ps).tbl (hdl lfd j) = SOME g’ by simp[hs_of_def] >>
+  qpat_assum ‘hsim0 _ _ _’ (strip_assume_tac o REWRITE_RULE [hsim0_def]) >>
+  qpat_x_assum ‘∀h f. ALOOKUP (hs_of ps).tbl h = SOME f ⇔ _’ (drule o iffLR) >>
+  strip_tac >>
+  ‘cl cm g = j'’ by fs[] >>
+  ‘j < LENGTH s2.clients’
+    by (imp_res_tac ALOOKUP_MEM >> fs[pv_rel_def, EVERY_MEM, MEM_MAP, EXISTS_PROD] >>
+        metis_tac[]) >>
+  ‘s2.clients ≠ []’ by (strip_tac >> fs[]) >>
+  ‘LENGTH s2.clients + 1 < dimword (:64)’ by (drule_all hsim0_bound >> simp[]) >>
+  ‘j' < LENGTH s2.clients’ by fs[hs_of_def] >>
+  ‘j = j'’ by (qspecl_then [‘j’, ‘j'’] mp_tac hdl_inj >> impl_tac >- fs[] >> fs[]) >>
+  ‘ALOOKUP cm g = SOME j’ by (Cases_on ‘ALOOKUP cm g’ >> fs[ALOOKUP_NONE, cl_def]) >>
+  ‘MEM (g, j) cm ∧ MEM (f, j) cm ∧ ALL_DISTINCT (MAP SND cm)’
+    by (imp_res_tac ALOOKUP_MEM >> fs[pv_rel_def]) >>
+  metis_tac[snd_distinct_eq]
+QED
+
+(* A Write to client j's handle in round k: client j's fd is held then *)
+Theorem echo_write_client:
+  echo_run lfdn pol w0 ∧
+  MEM (Write (hdl (n2w lfdn) j) bs) (racts (n2w lfdn) pol EI ES w0 k) ∧
+  ALOOKUP (FST (pcm (n2w lfdn) pol EI ES w0 k)) f = SOME j ⇒
+  MEM f (MAP SND (rstate (n2w lfdn) pol EI ES w0 k).b.tbl)
+Proof
+  strip_tac >> drule_all echo_write_held >> strip_tac >>
+  drule_then (qspec_then ‘k’ strip_assume_tac) echo_sim >>
+  Cases_on ‘hst (n2w lfdn) EI ES PSK k’ >> rename1 ‘_ = (s2, hs)’ >>
+  ‘hsim0 (n2w lfdn) (gstate EI ES V1 k)
+     (s2, hs_of (rstate (n2w lfdn) pol EI ES w0 k))’ by fs[hsim_def] >>
+  ‘pv_rel (n2w lfdn) (FST (pcm (n2w lfdn) pol EI ES w0 k))
+     (rstate (n2w lfdn) pol EI ES w0 k) s2’ by fs[] >>
+  ‘g = f’ by metis_tac[handle_client_fd] >>
+  qpat_x_assum ‘g = f’ SUBST_ALL_TAC >>
+  imp_res_tac ALOOKUP_MEM >> simp[MEM_MAP, EXISTS_PROD] >> metis_tac[]
+QED
+
+(* MAIN: while client j's fd f is not in L1's table, client j's outgoing
+   stream does not grow *)
+Theorem outgoing_frozen:
+  echo_run lfdn pol w0 ⇒
+  ∀d. (∀k. t ≤ k ∧ k < t + d ⇒
+           ALOOKUP (FST (pcm (n2w lfdn) pol EI ES w0 k)) f = SOME j ∧
+           ¬MEM f (MAP SND (rstate (n2w lfdn) pol EI ES w0 k).b.tbl)) ∧
+      j < LENGTH (FST (hst (n2w lfdn) EI ES PSK t)).clients ⇒
+      (EL j (FST (hst (n2w lfdn) EI ES PSK (t + d))).clients).outgoing =
+      (EL j (FST (hst (n2w lfdn) EI ES PSK t)).clients).outgoing
+Proof
+  strip_tac >> drule echo_psk_facts >> strip_tac >>
+  ‘V1.listeners = [(n2w lfdn, [])] ∧ V1.conns = []’ by simp[v1of_def] >>
+  ‘grun_ok EI ES V1’ by (irule echo_grun_ok >> simp[]) >>
+  Induct >> simp[] >> strip_tac >>
+  qpat_x_assum ‘_ ⇒ _’ mp_tac >>
+  impl_tac
+  >- (conj_tac >> TRY (first_assum ACCEPT_TAC) >> rpt strip_tac >>
+      qpat_x_assum ‘∀k. t ≤ k ∧ _ ⇒ _’ (qspec_then ‘k’ mp_tac) >> simp[]) >>
+  disch_then (SUBST1_TAC o SYM) >>
+  ‘t + SUC d = SUC (t + d)’ by simp[] >> pop_assum SUBST1_TAC >>
+  ‘j < LENGTH (FST (hst (n2w lfdn) EI ES PSK (t + d))).clients ∧
+   j < LENGTH (FST (hst (n2w lfdn) EI ES PSK (SUC (t + d)))).clients’
+    by (‘∀d'. LENGTH (FST (hst (n2w lfdn) EI ES PSK t)).clients ≤
+              LENGTH (FST (hst (n2w lfdn) EI ES PSK (t + d'))).clients’
+          by metis_tac[hst_out_mono] >>
+        conj_tac
+        >- (first_x_assum (qspec_then ‘d’ mp_tac) >> simp[])
+        >> first_x_assum (qspec_then ‘SUC d’ mp_tac) >> simp[ADD_CLAUSES]) >>
+  ‘(EL j (FST (hst (n2w lfdn) EI ES PSK (t + d))).clients).outgoing =
+   pwritten_all (hdl (n2w lfdn) j) (gperf EI ES V1 (t + d)) ∧
+   (EL j (FST (hst (n2w lfdn) EI ES PSK (SUC (t + d)))).clients).outgoing =
+   pwritten_all (hdl (n2w lfdn) j) (gperf EI ES V1 (SUC (t + d)))’
+    by metis_tac[hst_written] >>
+  simp[gperf_SUC] >>
+  irule pwritten_all_none >> simp[LENGTH_gres, EVERY_MEM] >>
+  rpt strip_tac >> rveq >>
+  ‘MEM (Write (hdl (n2w lfdn) j) bs) (racts (n2w lfdn) pol EI ES w0 (t + d))’
+    by (drule_then (qspec_then ‘t + d’ strip_assume_tac) echo_sim >>
+        gvs[racts_def, gacts_def]) >>
+  first_x_assum (qspec_then ‘t + d’ mp_tac) >> simp[] >> strip_tac >>
+  ‘t + d = d + t’ by simp[] >>
+  pop_assum (fn th => RULE_ASSUM_TAC (REWRITE_RULE [th]) >> REWRITE_TAC [th]) >>
+  metis_tac[echo_write_client]
 QED

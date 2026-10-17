@@ -219,12 +219,12 @@ Theorem echo_l0_run_safe:
 Proof
   strip_tac >> drule_all ri_echo_base >> strip_tac >>
   ‘k < 2147483648’ by metis_tac[listen_fd_small] >>
-  ‘∀n. prounds_t (n2w k) echo_hw (interest [n2w k]) (srelabel (server k)) (w1, pinit) n ≠ NONE’
+  ‘∀n. prounds_t (n2w k) echo_hw (asyncM4LiveInterest$live [n2w k] (log_of (srelabel (server k)))) (srelabel (server k)) (w1, pinit) n ≠ NONE’
     by (‘l0_rely w1’ by (gvs[sys_listen_echo_def] >> metis_tac[l0_do_rely]) >>
         ‘psmall (n2w k) pinit’
           by simp[psmall_def, pinit_def, l1init_def, small_fds_def, small_def] >>
         gen_tac >>
-        qspecl_then [‘w1’, ‘pinit’, ‘n2w k’, ‘echo_hw’, ‘interest [n2w k]’, ‘srelabel (server k)’]
+        qspecl_then [‘w1’, ‘pinit’, ‘n2w k’, ‘echo_hw’, ‘asyncM4LiveInterest$live [n2w k] (log_of (srelabel (server k)))’, ‘srelabel (server k)’]
           mp_tac (Q.GENL [‘w0’, ‘ps0’, ‘lfd’, ‘hw’, ‘ifds’, ‘m’] prounds_t_total) >>
         simp[server_pt_ok] >> disch_then (qspec_then ‘n’ strip_assume_tac) >> simp[]) >>
   rw[echo_safe_l0_def, l0_sent_fold, l0_read_fold] >>

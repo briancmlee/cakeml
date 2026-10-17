@@ -98,7 +98,7 @@ QED
 
 (* The listen succeeds with listener k: main runs the L1 loop forever *)
 Overload echo_l0_run = “λk w1. LFLATTEN (LGENLIST (λi. fromList
-  (pround_evs (n2w k) echo_hw (interest [n2w k]) (srelabel (server k)) (w1, pinit) i)) NONE)”
+  (pround_evs (n2w k) echo_hw (asyncM4LiveInterest$live [n2w k] (log_of (srelabel (server k)))) (srelabel (server k)) (w1, pinit) i)) NONE)”
 
 Theorem main_div_spec:
   limited_parts l0_names p ∧ l0_reach w0 w ∧ UNIT_TYPE () uv ∧

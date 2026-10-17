@@ -211,18 +211,18 @@ target before (`irun_pair_listens`); and settlement, by (C) and `isolated`'s las
 `conn_live_l0` needs `accepts_lt (2**62 + 1)` (honest-ffi's corrected exact bound). **System part PROVED
 (moonshotLiveAccepts):** `irun_accepts_le`: in an isolated run, at every n, if process k's accepted episodes
 are all on port p ∈ ports, then `LENGTH (l0_accepted (ptr rs k n)) ≤ conns_ok p ss rs cl n`, given that no
-other process connects to p and cl never closes fd 0. `conns_ok` counts cl's Connected-p episodes whose
+other process connects to p and ¬free0 for cl (each connect after its check of fd 0, with no close of fd 0 before it; D33). `conns_ok` counts cl's Connected-p episodes whose
 channel was not broken right after the connect (`born_broken`), since such an end is never paired
 (`irun_bb`). This matches close-v2's narrow D43 fact 1 (X' ∨ count ≤ N, with X' ⇒ kern_broke).
 `accepts_lt_lift` then gives `accepts_lt M tr` from `∀n. conns_ok p ss rs cl n ≤ N`, `N < M` and "every
 prefix of tr is a prefix of some ptr rs k n". Remaining obligations: the proxy accepts only on a
 (honest-ffi); only the client connects to a (system topology: KV and the proxy connect only to b); the
-client never calls close on fd 0 (close-v2, PROVED as no_close_stdio) and X' ∨ at most N counted episodes
+client's trace starts with the check of fd 0 and never closes it (`free0_stdio` reduces ¬free0 to that; stdio_open and no_close_stdio, close-v2) and X' ∨ at most N counted episodes
 to a (close-v2, scheduled after (A)). Relating close-v2's per-process count (world_at) to `conns_ok` is part
 of the client lift (moonshot-live). io-prefix ⊆ ptr-prefix is PROVED for a proxy calling infinitely often
 (`accepts_lt_irun`, via `ptr_of_prefix`, the same premise as `l0sys_proj_drains`). The fd 0 clause is needed
-because closing a reserved fd 0 lets a later connect return fd 0 with no episode (`zinv`, `tinv`'s `close0`
-disjunct). D43: N < 2^62 kept for now; N ≤ 2^62 (M = 2^62 + 1) is with the user. KV's claim needs F1_io, F2 and accepts_below; the proxy's asks clauses need
+because a connect that gets fd 0 reports "no socket" and makes no episode (D33: fd 0 may start closed). `zinv`
+is moonshotW2's `fd0_used`; `tinv`'s second disjunct is `free0`. D43: N < 2^62 kept for now; N ≤ 2^62 (M = 2^62 + 1) is with the user. KV's claim needs F1_io, F2 and accepts_below; the proxy's asks clauses need
 `proxy_asks_l0` (honest-ffi rev 9, drafting).
 
 **Composition PROVED (moonshotLiveCompose):** `moonshot_served_of_obs` proves
@@ -279,8 +279,8 @@ Shared lift pieces (`moonshotLiveLiftScript.sml`, moonshot-live):
   Hypotheses still to discharge:
   - `relay_ok`: clauses 3 and 5 of close-v2's `proxy_safe_ep`, through `proxy_safe_bridge` at ft = ptr rs 1 n;
   - `csend_ok`: the client's C-sends;
-  - `no_fd0` for client and proxy: moonshot_sys_safe's W2;
-  - ¬close0 for client and proxy;
+  - `no_fd0` for client and proxy: moonshotW2's `l0sys_no_fd0` (fd0_checked, no_close0);
+  - ¬free0 for client and proxy (`free0_stdio`);
   - only the client connects to a, and only the proxy to b.
 
   World level, `world_peer_valid` (moonshotLiveRelayWorld, proved, generic in k): the system fact at every instant

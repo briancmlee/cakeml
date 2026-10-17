@@ -3,13 +3,15 @@
 
   A process k whose accepts are all on a listener of port p ∈ ports, in an
   isolated run, accepts at most as many connections as the client cl has
-  connect episodes to p, if no other process connects to p and cl never
-  closes fd 0 (irun_accepts_le):
+  connect episodes to p, if no other process connects to p and each of
+  cl's connects comes after its check of fd 0 with no close of fd 0
+  before it (¬free0; D33) (irun_accepts_le):
    - each accepted channel, and each queued one on a port of ports, has a
      peer (acc_inv; no stranger queues one: isolated);
    - the peer's target is p (pk), and an end with target p is a Connected p
-     episode of its process (tinv), unless that process closed fd 0 (then a
-     connect can get fd 0 and report "no socket": zinv);
+     episode of its process (tinv), unless one of its connects came before
+     its check of fd 0 or after a close of fd 0 (free0: then a connect can
+     get fd 0 and report "no socket"; zinv is moonshotW2's fd0_used);
    - peers are injective (kinv), so accepted episodes inject into cl's
      Connected p episodes;
    - an end broken right after its connect is never paired (irun_bb), so
@@ -22,7 +24,7 @@ Ancestors
   moonshotLiveWorldDrains moonshotLiveCompose moonshotLiveDrains moonshotLiveDeliver moonshotLiveProjInf moonshotLiveObs
   moonshotLiveStmts l0sysFair l0sys l0sysRun l0sysStep l0sysInv l0sysInvCall l0sysMono
   l0sysCausal l0sysEpisodes honestEchoL0SpecCopy honestL0World honestL0Rely
-  honestL0
+  honestL0 moonshotW2
 Libs
   preamble
 
@@ -31,13 +33,20 @@ Libs
    ------------------------------------------------------------------------ *)
 
 (* The process called close on fd 0 *)
-Definition close0_def:
-  close0 evs ⇔ ∃conf bl. MEM (IO_event (ExtCall «sys_close») conf bl) evs ∧ bytes_fd conf = 0w
+(* After the stdio check of fd 0 (D33), with no close of fd 0 since *)
+Definition fd0_ok_def:
+  fd0_ok evs ⇔ no_close0 evs ∧ ∃i. MEM (IO_event (ExtCall «sys_fdok») [0w] [(i, 1w)]) evs
 End
 
 (* The process called connect to port p *)
 Definition conn_to_def:
   conn_to p evs ⇔ ∃conf bl. MEM (IO_event (ExtCall «sys_connect») conf bl) evs ∧ w22n conf = p
+End
+
+(* A connect of the process may have got fd 0 (and reported "no socket"):
+   it came before the check of fd 0, or after a close of fd 0 *)
+Definition free0_def:
+  free0 evs ⇔ ∃pre post p. evs = pre ++ post ∧ conn_to p pre ∧ ¬fd0_ok pre
 End
 
 (* Its connect episodes to p: the connects that returned a socket *)
@@ -49,10 +58,25 @@ Definition is_acc_def:
   is_acc (Accepted q) = T ∧ is_acc (Connected q) = F
 End
 
-Theorem close0_append:
-  close0 evs ⇒ close0 (evs ++ l)
+(* ¬free0 from the program's start (D33's stdio check of fd 0 first; D37's
+   no_close_stdio gives no_close0) *)
+Theorem free0_stdio:
+  (evs = [] ∨ ∃i rest. evs = IO_event (ExtCall «sys_fdok») [0w] [(i, 1w)] :: rest) ∧
+  no_close0 evs ⇒ ¬free0 evs
 Proof
-  rw[close0_def] >> metis_tac[]
+  rewrite_tac[free0_def] >> rpt strip_tac >> Cases_on ‘pre’ >>
+  TRY (fs[conn_to_def] >> NO_TAC) >>
+  qpat_x_assum ‘¬fd0_ok _’ mp_tac >> rewrite_tac[fd0_ok_def] >> fs[] >> conj_tac
+  >- (qspecl_then [‘h::t’, ‘post’] mp_tac (Q.GENL [‘evs’, ‘more’] no_close0_prefix) >>
+      qpat_x_assum ‘h = _’ SUBST_ALL_TAC >> qpat_x_assum ‘_ = rest’ (SUBST_ALL_TAC o SYM) >>
+      simp[] >> disch_then irule >> first_assum ACCEPT_TAC) >>
+  qexists_tac ‘i’ >> simp[]
+QED
+
+Theorem free0_append:
+  free0 evs ⇒ free0 (evs ++ l)
+Proof
+  rw[free0_def] >> qexistsl_tac [‘pre’, ‘post ++ l’, ‘p’] >> simp[]
 QED
 
 Theorem conn_to_append:
@@ -113,43 +137,15 @@ Proof
 QED
 
 (* ------------------------------------------------------------------------
-   fd 0 stays reserved until the process closes it
+   fd 0 stays in use once checked, until the process closes it (D33:
+   moonshotW2's fd0_used)
    ------------------------------------------------------------------------ *)
 
-Theorem res_breaks:
-  ∀q w. (FOLDL (λw j. upd_lchan j (break_lchan e b) w) w q).reserved = w.reserved
+Theorem used_deliver[simp]:
+  l0_used (l0_deliver w a) = l0_used w
 Proof
-  Induct >> asm_simp_tac std_ss [FOLDL] >> simp[upd_lchan_def]
-QED
-
-Theorem res_close_fd:
-  MEM x w.reserved ∧ x ≠ f ⇒ MEM x (close_fd f w).reserved
-Proof
-  rw[close_fd_def] >> every_case_tac >> simp[upd_lchan_def, res_breaks, MEM_FILTER]
-QED
-
-Theorem res_call:
-  l0_call nm (unblock nm conf) bts w = SOME (FFIreturn out w1) ∧ MEM x w.reserved ∧
-  ¬(nm = «sys_close» ∧ bytes_fd conf = x) ⇒ MEM x w1.reserved
-Proof
-  strip_tac >>
-  Cases_on ‘nm = «sys_poll»’ >- (gvs[] >> drule l0_call_poll_unblock >> simp[]) >>
-  gvs[unblock_other, l0_call_def, AllCaseEqs()] >> rpt (pairarg_tac >> gvs[]) >>
-  FIRST [
-    gvs[l0_listen_def, AllCaseEqs()] >> NO_TAC,
-    drule l0_accept_cases >> strip_tac >> gvs[upd_lchan_def] >> NO_TAC,
-    drule l0_recv_cases >> strip_tac >> gvs[upd_lchan_def] >> NO_TAC,
-    drule l0_send_cases >> strip_tac >> gvs[upd_lchan_def] >> NO_TAC,
-    gvs[l0_shutdown_def, AllCaseEqs(), upd_lchan_def] >> NO_TAC,
-    drule l0_connect_cases >> simp[LET_THM] >> strip_tac >> gvs[upd_lchan_def] >> NO_TAC,
-    gvs[l0_connerr_def, AllCaseEqs(), upd_lchan_def] >> NO_TAC,
-    gvs[l0_close_def, AllCaseEqs()] >> rw[res_close_fd]]
-QED
-
-Theorem res_deliver[simp]:
-  (l0_deliver w a).reserved = w.reserved
-Proof
-  Cases_on ‘a’ >> rw[l0_deliver_def] >> every_case_tac >> simp[upd_lchan_def]
+  Cases_on ‘a’ >> rw[l0_deliver_def] >> every_case_tac >> simp[upd_lchan_def, l0_used_def] >>
+  simp[MAP_MAP_o, o_DEF, LAMBDA_PROD]
 QED
 
 Theorem pair_procs[simp]:
@@ -158,35 +154,34 @@ Proof
   simp[sys_pair_def]
 QED
 
-Theorem EL_deliver_res[simp]:
-  k0 < LENGTH s.procs ⇒ (EL k0 (sys_deliver k a s).procs).reserved = (EL k0 s.procs).reserved
+Theorem EL_deliver_used[simp]:
+  k0 < LENGTH s.procs ⇒ l0_used (EL k0 (sys_deliver k a s).procs) = l0_used (EL k0 s.procs)
 Proof
   rw[sys_deliver_def, EL_LUPDATE] >> rw[]
 QED
 
-Theorem call_res:
+Theorem call_used:
   sys_step s (Call k nm conf bts out) s' ∧ k0 < LENGTH s.procs ⇒
   ∃w1. l0_call nm (unblock nm conf) bts (EL k s.procs) = SOME (FFIreturn out w1) ∧
-       (EL k0 s'.procs).reserved = if k0 = k then w1.reserved else (EL k0 s.procs).reserved
+       l0_used (EL k0 s'.procs) = if k0 = k then l0_used w1 else l0_used (EL k0 s.procs)
 Proof
   simp[sys_step_def, LET_THM] >> strip_tac >> qexists_tac ‘w1’ >> simp[] >>
-  qpat_x_assum ‘if _ then _ else _’ mp_tac >> rw[] >> gvs[EL_LUPDATE] >> rw[]
+  qpat_x_assum ‘if _ then _ else _’ mp_tac >> rw[] >> gvs[EL_LUPDATE] >> rw[] >>
+  simp[l0_used_def]
 QED
 
-Theorem res_step:
-  sys_step s r s' ∧ k0 < LENGTH s.procs ∧ s'.alive k0 ∧ MEM x (EL k0 s.procs).reserved ⇒
-  MEM x (EL k0 s'.procs).reserved ∨
-  ∃conf bts out. r = Call k0 «sys_close» conf bts out ∧ bytes_fd conf = x
+Theorem used_step:
+  sys_step s r s' ∧ k0 < LENGTH s.procs ∧ s'.alive k0 ∧
+  (∀nm conf bts out. r ≠ Call k0 nm conf bts out) ⇒
+  l0_used (EL k0 s'.procs) = l0_used (EL k0 s.procs)
 Proof
   Cases_on ‘r’
-  >- (rename1 ‘Call k nm conf bts out’ >> strip_tac >> drule_all call_res >> strip_tac >>
-      Cases_on ‘k0 = k’ >> fs[] >>
-      Cases_on ‘nm = «sys_close» ∧ bytes_fd conf = x’ >- fs[] >>
-      disj1_tac >> irule res_call >> metis_tac[])
+  >- (rename1 ‘Call k nm conf bts out’ >> strip_tac >> drule_all call_used >> strip_tac >>
+      Cases_on ‘k0 = k’ >> fs[])
   >- (rename1 ‘Kern ks’ >> Cases_on ‘ks’ >> simp[sys_step_def] >> strip_tac >>
-      rveq >> asm_simp_tac (srw_ss()) [EL_deliver_res])
+      rveq >> asm_simp_tac (srw_ss()) [EL_deliver_used])
   >- (rename1 ‘Env es’ >> Cases_on ‘es’ >> simp[sys_step_def] >> strip_tac >>
-      rveq >> asm_simp_tac (srw_ss()) [EL_deliver_res]) >>
+      rveq >> asm_simp_tac (srw_ss()) [EL_deliver_used]) >>
   simp[sys_step_def] >> strip_tac >> gvs[EL_LUPDATE, APPLY_UPDATE_THM] >> rw[] >> gvs[]
 QED
 
@@ -203,7 +198,7 @@ QED
 Definition zinv_def:
   zinv rs (s : sysstate) ⇔
     ∀k. k < LENGTH s.procs ∧ s.alive k ⇒
-        MEM 0w (EL k s.procs).reserved ∨ close0 (proc_events k rs)
+        fd0_used (proc_events k rs) (EL k s.procs)
 End
 
 Theorem alive_step:
@@ -218,21 +213,32 @@ Proof
 QED
 
 Theorem zinv_step:
-  zinv rs s ∧ sys_ext s s' ∧ sys_step s r s' ⇒ zinv (rs ++ [r]) s'
+  sinv rs s css ∧ zinv rs s ∧ sys_ext s s' ∧ sys_step s r s' ⇒ zinv (rs ++ [r]) s'
 Proof
   rewrite_tac[zinv_def] >> rpt strip_tac >>
   ‘LENGTH s'.procs = LENGTH s.procs’ by fs[sys_ext_def] >>
   ‘k < LENGTH s.procs’ by fs[] >>
   ‘s.alive k’ by metis_tac[alive_step] >>
-  ‘∃l. proc_events k (rs ++ [r]) = proc_events k rs ++ l’ by simp[proc_events_SNOC] >>
-  pop_assum strip_assume_tac >>
-  Cases_on ‘close0 (proc_events k rs)’
-  >- (disj2_tac >> pop_assum mp_tac >> pop_assum (fn th => rewrite_tac[th]) >>
-      rewrite_tac[close0_append]) >>
-  ‘MEM 0w (EL k s.procs).reserved’ by metis_tac[] >>
-  drule_all res_step >> strip_tac >- simp[] >>
-  disj2_tac >> qpat_x_assum ‘proc_events _ _ = _’ kall_tac >> rveq >>
-  simp[proc_events_SNOC, close0_def] >> qexistsl_tac [‘conf’, ‘ZIP (bts, out)’] >> simp[]
+  ‘fd0_used (proc_events k rs) (EL k s.procs)’ by metis_tac[] >>
+  Cases_on ‘∃nm conf bts out. r = Call k nm conf bts out’
+  >- (pop_assum strip_assume_tac >> qpat_x_assum ‘r = _’ SUBST_ALL_TAC >>
+      drule_all call_used >> strip_tac >>
+      ‘l0_rely (EL k s.procs)’ by fs[sinv_def, pk_def, LET_THM] >>
+      drule_all fd0_used_call >> disch_then (qspecl_then [‘0’, ‘[]’] assume_tac) >>
+      ‘l0_used (w1 with <| clock := 0; hist := [] |>) = l0_used w1’ by simp[l0_used_def] >>
+      ‘l0_used (EL k s'.procs) = l0_used w1’ by fs[] >>
+      ‘proc_events k (rs ++ [Call k nm conf bts out]) =
+       proc_events k rs ++ [IO_event (ExtCall nm) conf (ZIP (bts, out))]’
+        by simp[proc_events_SNOC] >>
+      qpat_x_assum ‘fd0_used (_ ++ _) _’ mp_tac >>
+      qpat_x_assum ‘proc_events _ _ = _’ (fn th => rewrite_tac[th, fd0_used_def]) >>
+      qpat_x_assum ‘l0_used (EL k s'.procs) = _’ (fn th => rewrite_tac[th]) >>
+      qpat_x_assum ‘l0_used (_ with <| clock := _; hist := _ |>) = _’
+        (fn th => rewrite_tac[th])) >>
+  ‘l0_used (EL k s'.procs) = l0_used (EL k s.procs)’ by (irule used_step >> metis_tac[]) >>
+  ‘proc_events k (rs ++ [r]) = proc_events k rs’
+    by (Cases_on ‘r’ >> fs[proc_events_SNOC] >> rw[] >> fs[]) >>
+  fs[fd0_used_def]
 QED
 
 (* ------------------------------------------------------------------------
@@ -250,15 +256,15 @@ Proof
 QED
 
 Theorem alloc_ne0:
-  l0_alloc w = SOME f ∧ MEM 0w w.reserved ∧ fds_lt w ∧ w.fd_limit ≤ 2 ** 31 ⇒ f ≠ 0w
+  l0_alloc w = SOME f ∧ MEM 0w (l0_used w) ∧ fds_lt w ∧ w.fd_limit ≤ 2 ** 31 ⇒ f ≠ 0w
 Proof
   rw[l0_alloc_def] >> strip_tac >>
   ‘¬MEM (lowest_fd w) (l0_used w)’ by (irule lowest_fd_free >> fs[fds_lt_def]) >>
-  gvs[l0_used_def]
+  gvs[]
 QED
 
 Theorem connect_role:
-  l0_rely w ∧ small_ch w.ch ∧ pinv evs w cs ∧ MEM 0w w.reserved ∧
+  l0_rely w ∧ small_ch w.ch ∧ pinv evs w cs ∧ MEM 0w (l0_used w) ∧
   l0_call «sys_connect» conf bts w = SOME (FFIreturn out w1) ∧
   LENGTH w1.chans = LENGTH w.chans + 1 ⇒
   new_chans w (IO_event (ExtCall «sys_connect») conf (ZIP (bts, out))) = [LENGTH w.chans] ∧
@@ -291,7 +297,7 @@ Definition tinv_def:
     ∀k c p. s.target (k, c) = SOME p ⇒
       (∃i. i < LENGTH (css k) ∧ EL i (css k) = c ∧
            EL i (ep_roles [] (proc_events k rs)) = Connected p) ∨
-      close0 (proc_events k rs) ∧ conn_to p (proc_events k rs)
+      free0 (proc_events k rs) ∧ conn_to p (proc_events k rs)
 End
 
 Theorem call_target_eq:
@@ -358,16 +364,19 @@ Proof
     qpat_x_assum ‘nm = _’ SUBST_ALL_TAC >>
     simp[call_target_def, APPLY_UPDATE_THM] >> strip_tac >>
     qpat_x_assum ‘_ = p’ (SUBST_ALL_TAC o SYM) >>
-    ‘MEM 0w w.reserved ∨ close0 (proc_events k rs)’
-      by (qpat_x_assum ‘zinv rs s’ mp_tac >> rewrite_tac[zinv_def] >>
-          disch_then (qspec_then ‘k’ mp_tac) >> simp[Abbr ‘w’])
+    ‘MEM 0w (l0_used w) ∨ ¬fd0_ok (proc_events k rs)’
+      by (qpat_x_assum ‘zinv rs s’ mp_tac >> rewrite_tac[zinv_def, fd0_used_def, fd0_ok_def] >>
+          disch_then (qspec_then ‘k’ mp_tac) >> simp[Abbr ‘w’] >> metis_tac[])
     >- (qpat_x_assum ‘l0_call _ _ _ _ = _’ mp_tac >> simp[unblock_other] >> strip_tac >>
         drule_all connect_role >> strip_tac >> disj1_tac >>
         qexists_tac ‘LENGTH (css k)’ >>
         ‘LENGTH (ep_roles [] (proc_events k rs)) = LENGTH (css k)’
           by fs[pinv_def, LENGTH_ep_roles] >>
         simp[EL_APPEND2, ep_roles_SNOC, Abbr ‘ev’]) >>
-    disj2_tac >> simp[close0_append] >>
+    disj2_tac >> conj_tac
+    >- (rewrite_tac[free0_def] >> qexistsl_tac [‘proc_events k rs ++ [ev]’, ‘[]’, ‘w22n conf’] >>
+        simp[conn_to_def, Abbr ‘ev’] >> conj_tac >- metis_tac[] >>
+        qpat_x_assum ‘¬fd0_ok _’ mp_tac >> simp[fd0_ok_def, no_close0_def] >> metis_tac[]) >>
     simp[conn_to_def, Abbr ‘ev’] >> metis_tac[]) >>
   (* an old target *)
   ‘call_target s k nm conf w1 (k0, c) = s.target (k0, c)’
@@ -377,7 +386,7 @@ Proof
   disch_then drule >> strip_tac
   >- (disj1_tac >> qexists_tac ‘i’ >> Cases_on ‘k0 = k’ >> simp[] >> rveq >>
       drule_all roles_old >> simp[]) >>
-  disj2_tac >> simp[close0_append, conn_to_append]
+  disj2_tac >> simp[free0_append, conn_to_append]
 QED
 
 Theorem tinv_step:
@@ -836,7 +845,7 @@ QED
 
 Theorem acc_peer:
   sinv rs s css ∧ tinv rs s css ∧ acc_inv ports rs s css ∧ MEM p ports ∧ k < LENGTH s.procs ∧
-  ¬close0 (proc_events cl rs) ∧
+  ¬free0 (proc_events cl rs) ∧
   (∀k0. k0 < LENGTH s.procs ∧ k0 ≠ cl ⇒ ¬conn_to p (proc_events k0 rs)) ∧
   j < LENGTH (css k) ∧ EL j (ep_roles [] (proc_events k rs)) = Accepted p ⇒
   ∃i. i < LENGTH (css cl) ∧ EL i (ep_roles [] (proc_events cl rs)) = Connected p ∧
@@ -898,7 +907,7 @@ QED
 
 Theorem accepts_le_state:
   ∀G. sinv rs s css ∧ tinv rs s css ∧ acc_inv ports rs s css ∧ MEM p ports ∧
-  k < LENGTH s.procs ∧ cl < LENGTH s.procs ∧ ¬close0 (proc_events cl rs) ∧
+  k < LENGTH s.procs ∧ cl < LENGTH s.procs ∧ ¬free0 (proc_events cl rs) ∧
   (∀k0. k0 < LENGTH s.procs ∧ k0 ≠ cl ⇒ ¬conn_to p (proc_events k0 rs)) ∧
   (∀c. s.peer (cl, c) ≠ NONE ⇒ G c) ⇒
   LENGTH (FILTER ($= (Accepted p)) (ep_roles [] (proc_events k rs))) ≤
@@ -935,10 +944,10 @@ QED
 Theorem irun_zinv:
   l0sys_irun ps ss rs ⇒ ∀n. zinv (GENLIST rs n) (ss n)
 Proof
-  strip_tac >> drule irun_ext >> strip_tac >> Induct
-  >- (rw[zinv_def] >> fs[l0sys_irun_def, sys_init_def, LET_THM]) >>
+  strip_tac >> drule irun_sinv_css >> strip_tac >> drule irun_ext >> strip_tac >> Induct
+  >- simp[zinv_def, fd0_used_def, proc_events_def] >>
   simp[GENLIST, SNOC_APPEND] >> irule zinv_step >>
-  qexists_tac ‘ss n’ >> fs[l0sys_irun_def]
+  qexistsl_tac [‘run_css ss rs n’, ‘ss n’] >> fs[l0sys_irun_def]
 QED
 
 Theorem irun_tinv:
@@ -971,7 +980,7 @@ QED
 
 Theorem irun_accepts_le:
   l0sys_irun ps ss rs ∧ isolated ports ss rs ∧ MEM p ports ∧ k < LENGTH ps ∧ cl < LENGTH ps ∧
-  (∀q. MEM (Accepted q) (ep_roles [] (ptr rs k n)) ⇒ q = p) ∧ ¬close0 (ptr rs cl n) ∧
+  (∀q. MEM (Accepted q) (ep_roles [] (ptr rs k n)) ⇒ q = p) ∧ ¬free0 (ptr rs cl n) ∧
   (∀k0. k0 < LENGTH ps ∧ k0 ≠ cl ⇒ ¬conn_to p (ptr rs k0 n)) ⇒
   LENGTH (l0_accepted (ptr rs k n)) ≤ conns_ok p ss rs cl n
 Proof
@@ -990,7 +999,7 @@ QED
 
 Theorem accepts_lt_lift:
   l0sys_irun ps ss rs ∧ isolated ports ss rs ∧ MEM p ports ∧ k < LENGTH ps ∧ cl < LENGTH ps ∧
-  (∀n q. MEM (Accepted q) (ep_roles [] (ptr rs k n)) ⇒ q = p) ∧ (∀n. ¬close0 (ptr rs cl n)) ∧
+  (∀n q. MEM (Accepted q) (ep_roles [] (ptr rs k n)) ⇒ q = p) ∧ (∀n. ¬free0 (ptr rs cl n)) ∧
   (∀n k0. k0 < LENGTH ps ∧ k0 ≠ cl ⇒ ¬conn_to p (ptr rs k0 n)) ∧
   (∀n. conns_ok p ss rs cl n ≤ N) ∧ N < M ∧
   (∀evs. LPREFIX (fromList evs) tr ⇒ ∃n. evs ≼ ptr rs k n) ⇒
@@ -1012,7 +1021,7 @@ QED
    for l0sys_proj_drains) *)
 Theorem accepts_lt_irun:
   l0sys_irun ps ss rs ∧ isolated ports ss rs ∧ MEM p ports ∧ k < LENGTH ps ∧ cl < LENGTH ps ∧
-  (∀n q. MEM (Accepted q) (ep_roles [] (ptr rs k n)) ⇒ q = p) ∧ (∀n. ¬close0 (ptr rs cl n)) ∧
+  (∀n q. MEM (Accepted q) (ep_roles [] (ptr rs k n)) ⇒ q = p) ∧ (∀n. ¬free0 (ptr rs cl n)) ∧
   (∀n k0. k0 < LENGTH ps ∧ k0 ≠ cl ⇒ ¬conn_to p (ptr rs k0 n)) ∧
   (∀n. conns_ok p ss rs cl n ≤ N) ∧ N < M ∧
   (∀t. ∃t'. t ≤ t' ∧ is_kcall k (rs t')) ∧ (∀t. LPREFIX (fromList (ptr rs k t)) tr) ⇒

@@ -379,7 +379,7 @@ QED
    Connected b episode *)
 Theorem peer_backend:
   l0sys_irun ps ss rs ∧ LENGTH ps = 3 ∧ (ss n).peer x = SOME e ∧ (ss n).target e = SOME b ∧
-  ¬close0 (ptr rs 1 n) ∧ (∀k. k < 3 ∧ k ≠ 1 ⇒ ¬conn_to b (ptr rs k n)) ⇒
+  ¬free0 (ptr rs 1 n) ∧ (∀k. k < 3 ∧ k ≠ 1 ⇒ ¬conn_to b (ptr rs k n)) ⇒
   ∃i. i < LENGTH (run_css ss rs n 1) ∧ e = (1, EL i (run_css ss rs n 1)) ∧
       EL i (ep_roles [] (ptr rs 1 n)) = Connected b
 Proof
@@ -410,7 +410,7 @@ QED
 Theorem backend_valid:
   l0sys_irun ps ss rs ∧ LENGTH ps = 3 ∧ isolated [a; b] ss rs ∧
   i < LENGTH (run_css ss rs n 1) ∧ EL i (ep_roles [] (ptr rs 1 n)) = Connected b ∧
-  ¬close0 (ptr rs 0 n) ∧ (∀k. k < 3 ∧ k ≠ 0 ⇒ ¬conn_to a (ptr rs k n)) ∧
+  ¬free0 (ptr rs 0 n) ∧ (∀k. k < 3 ∧ k ≠ 0 ⇒ ¬conn_to a (ptr rs k n)) ∧
   no_fd0 (ptr rs 0 n) ∧ no_fd0 (ptr rs 1 n) ∧ relay_ok a b rs n ∧ csend_ok a rs n ⇒
   ∃rqs. EVERY valid_brequest rqs ∧
         (sys_chan (ss n) (1, EL i (run_css ss rs n 1))).sent ≼ brequests rqs
@@ -456,7 +456,7 @@ QED
 Theorem kv_peer_valid_sys:
   l0sys_irun ps ss rs ∧ LENGTH ps = 3 ∧ isolated [a; b] ss rs ∧
   (ss m).peer (2, jk) = SOME e ∧ (ss m).target e = SOME b ∧ is_end (ss n) (2, jk) ∧
-  ¬close0 (ptr rs 0 n) ∧ ¬close0 (ptr rs 1 n) ∧
+  ¬free0 (ptr rs 0 n) ∧ ¬free0 (ptr rs 1 n) ∧
   (∀k. k < 3 ∧ k ≠ 0 ⇒ ¬conn_to a (ptr rs k n)) ∧ (∀k. k < 3 ∧ k ≠ 1 ⇒ ¬conn_to b (ptr rs k n)) ∧
   no_fd0 (ptr rs 0 n) ∧ no_fd0 (ptr rs 1 n) ∧ relay_ok a b rs n ∧ csend_ok a rs n ⇒
   ∃rqs. EVERY valid_brequest rqs ∧ (sys_chan (ss n) (2, jk)).peer_sent ≼ brequests rqs

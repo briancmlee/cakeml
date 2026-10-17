@@ -322,3 +322,183 @@ Proof
   drule_all run_nshut >> disch_then (qspec_then ‘n’ mp_tac) >>
   simp[nshut_def] >> disch_then irule >> metis_tac[chan_of_used]
 QED
+
+(* ------------------------------------------------------------------------
+   The version-2 world's clients only grow, and their outgoing streams
+   only extend, round by round
+   ------------------------------------------------------------------------ *)
+
+Theorem hacts_out:
+  ∀acts s hs rs evs s' hs'.
+    hacts lfd (s, hs) acts = SOME (rs, evs, (s', hs')) ⇒
+    LENGTH s'.clients = LENGTH s.clients ∧
+    ∀j. (EL j s.clients).outgoing ≼ (EL j s'.clients).outgoing
+Proof
+  Induct >> simp[hacts_def] >> rpt gen_tac >> strip_tac >> gvs[AllCaseEqs()] >>
+  rename1 ‘hdo _ _ _ = SOME (r1, st1, evs1)’ >> PairCases_on ‘st1’ >>
+  drule hdo_out >> strip_tac >> first_x_assum drule >> strip_tac >> simp[] >>
+  gen_tac >> metis_tac[IS_PREFIX_TRANS, IS_PREFIX_APPEND3]
+QED
+
+Theorem hst_out_step:
+  j < LENGTH (FST (hst lfd ifds m s0 n)).clients ⇒
+  LENGTH (FST (hst lfd ifds m s0 n)).clients ≤ LENGTH (FST (hst lfd ifds m s0 (SUC n))).clients ∧
+  (EL j (FST (hst lfd ifds m s0 n)).clients).outgoing ≼
+  (EL j (FST (hst lfd ifds m s0 (SUC n))).clients).outgoing
+Proof
+  strip_tac >>
+  Cases_on ‘hacts_tot lfd (hst lfd ifds m s0 n) (hacts_of lfd ifds m s0 n)’ >>
+  rename1 ‘_ = (rs, rest)’ >> PairCases_on ‘rest’ >>
+  rename1 ‘_ = (rs, evs, s1, hs1)’ >>
+  drule hround_step >> strip_tac >> simp[] >>
+  Cases_on ‘hst lfd ifds m s0 n’ >> rename1 ‘_ = (s, hs)’ >> gvs[] >>
+  ‘LENGTH s1.clients = LENGTH s.clients ∧
+   (EL j s.clients).outgoing ≼ (EL j s1.clients).outgoing’
+    by (qpat_x_assum ‘hacts_tot _ _ _ = _’ mp_tac >> simp[hacts_tot_def] >>
+        CASE_TAC >> rw[] >> gvs[] >>
+        drule hacts_out >> strip_tac >> fs[]) >>
+  qspecl_then [‘s1’, ‘lfd’, ‘hs1’, ‘ifds (hhist lfd ifds m s0 n)’] mp_tac
+    (Q.GENL [‘s’, ‘lfd’, ‘hs’, ‘hfds’] cext_hpoll) >>
+  simp[cext_def]
+QED
+
+Theorem hst_out_mono:
+  ∀d n j. j < LENGTH (FST (hst lfd ifds m s0 n)).clients ⇒
+    LENGTH (FST (hst lfd ifds m s0 n)).clients ≤ LENGTH (FST (hst lfd ifds m s0 (n + d))).clients ∧
+    (EL j (FST (hst lfd ifds m s0 n)).clients).outgoing ≼
+    (EL j (FST (hst lfd ifds m s0 (n + d))).clients).outgoing
+Proof
+  Induct >> simp[] >> rpt gen_tac >> strip_tac >>
+  first_x_assum drule >> strip_tac >>
+  ‘j < LENGTH (FST (hst lfd ifds m s0 (n + d))).clients’ by decide_tac >>
+  drule hst_out_step >> strip_tac >>
+  ‘n + SUC d = SUC (n + d)’ by simp[] >> pop_assum SUBST1_TAC >>
+  conj_tac >- decide_tac >>
+  irule IS_PREFIX_TRANS >> goal_assum (first_assum o mp_then Any mp_tac) >> simp[]
+QED
+
+(* ------------------------------------------------------------------------
+   A channel no fd uses (one L1 closed) keeps what the kernel took on it
+   ------------------------------------------------------------------------ *)
+
+Definition uchan_def:
+  uchan c sb w ⇔ c < LENGTH w.chans ∧ ¬MEM c (used_chans w) ∧ csent w c = sb
+End
+
+Theorem uchan_upd:
+  uchan c sb w ∧ (j = c ⇒ ∀x. (g x).sent = x.sent) ⇒ uchan c sb (upd_lchan j g w)
+Proof
+  rw[uchan_def, upd_lchan_def, used_chans_def, csent_def, EL_LUPDATE] >>
+  rw[] >> gvs[csent_def]
+QED
+
+Theorem uchan_sub:
+  uchan c sb w ∧ w'.chans = w.chans ∧ (∀j. MEM j (used_chans w') ⇒ MEM j (used_chans w)) ⇒
+  uchan c sb w'
+Proof
+  rw[uchan_def, csent_def] >> metis_tac[]
+QED
+
+Theorem uchan_deliver:
+  uchan c sb w ∧ l0wf w ⇒ uchan c sb (l0_deliver w a)
+Proof
+  strip_tac >> Cases_on ‘a’ >> rw[l0_deliver_def] >> every_case_tac >> gvs[] >>
+  TRY (irule uchan_upd >> fs[] >> rw[break_lchan_def] >> NO_TAC) >>
+  gvs[uchan_def, used_chans_def, MEM_FLAT, MEM_MAP, PULL_EXISTS, csent_def, EL_APPEND1] >>
+  TRY (simp[upd_lchan_def, EL_LUPDATE] >> rw[break_lchan_def] >> NO_TAC) >>
+  gen_tac >> PairCases_on ‘y’ >> CCONTR_TAC >> fs[] >>
+  drule MEM_AFUPDKEY_imp >> strip_tac >> gvs[]
+  >- metis_tac[SND]
+  >> pairarg_tac >> gvs[] >> metis_tac[SND]
+QED
+
+Theorem uchan_tick:
+  uchan c sb w ∧ l0wf w ⇒ uchan c sb (l0_tick nm w)
+Proof
+  simp[l0_tick_def] >>
+  ‘∀as w. uchan c sb w ∧ l0wf w ⇒ uchan c sb (FOLDL l0_deliver w as) ∧ l0wf (FOLDL l0_deliver w as)’
+    by (Induct >> simp[] >> rpt gen_tac >> strip_tac >> first_x_assum irule >>
+        metis_tac[uchan_deliver, l0wf_deliver]) >>
+  rpt strip_tac >>
+  first_x_assum (qspecl_then [‘w.env w.clock w.hist nm’, ‘w with clock := w.clock + 1’] mp_tac) >>
+  impl_tac >- (fs[uchan_def, l0wf_def, used_chans_def, csent_def] >> metis_tac[]) >> simp[]
+QED
+
+Theorem pop_used:
+  FILTER (λ(l', p, q). l' = l) w.listeners = (x, p, j :: q') :: t ⇒
+  (∀k. MEM k (used_chans (w with listeners := AFUPDKEY l (K (p, q')) w.listeners)) ⇒
+       MEM k (used_chans w)) ∧
+  (∀k. MEM k (used_chans (w with <| listeners := AFUPDKEY l (K (p, q')) w.listeners;
+                                     open_fds := (f, j) :: w.open_fds |>)) ⇒
+       MEM k (used_chans w))
+Proof
+  strip_tac >>
+  ‘MEM (x, p, j :: q') w.listeners ∧ x = l’
+    by (qpat_x_assum ‘FILTER _ _ = _’ (mp_tac o Q.AP_TERM ‘MEM (x, p, j :: q')’) >>
+        simp[MEM_FILTER]) >>
+  ‘∀y. MEM y (AFUPDKEY l (K (p, q')) w.listeners) ⇒
+       ∀k. MEM k (SND (SND y)) ⇒ MEM k (used_chans w)’
+    by (rpt strip_tac >> PairCases_on ‘y’ >> drule MEM_AFUPDKEY_imp >> strip_tac >>
+        gvs[used_chans_def, MEM_FLAT, MEM_MAP, PULL_EXISTS] >> metis_tac[SND, MEM]) >>
+  ‘MEM j (used_chans w)’
+    by (simp[used_chans_def, MEM_FLAT, MEM_MAP, PULL_EXISTS] >> metis_tac[SND, MEM]) >>
+  rw[used_chans_def, MEM_FLAT, MEM_MAP] >> gvs[used_chans_def, MEM_FLAT, MEM_MAP] >>
+  metis_tac[]
+QED
+
+Theorem uchan_FOLDL_break:
+  ∀q w. uchan c sb w ⇒ uchan c sb (FOLDL (λw j. upd_lchan j (break_lchan e F) w) w q)
+Proof
+  Induct >> simp[] >> rpt strip_tac >> first_x_assum irule >>
+  irule uchan_upd >> fs[] >> rpt strip_tac >> rw[break_lchan_def]
+QED
+
+Theorem uchan_accept:
+  l0_accept l w = (r, w') ∧ uchan c sb w ⇒ uchan c sb w'
+Proof
+  simp[l0_accept_def, AllCaseEqs(), fail_def] >> rw[] >> gvs[] >>
+  imp_res_tac pop_used >>
+  TRY (irule uchan_sub >> TRY (qexists_tac ‘w’) >> simp[] >> metis_tac[] >> NO_TAC) >>
+  irule uchan_upd >> rpt conj_tac >>
+  TRY (rpt strip_tac >> rw[break_lchan_def] >> NO_TAC) >>
+  irule uchan_sub >> simp[] >> metis_tac[]
+QED
+
+Theorem uchan_call:
+  l0_call n conf bytes w = SOME (FFIreturn bytes' w') ∧ n ≠ «sys_shutdown» ∧
+  n ≠ «sys_connect» ∧ uchan c sb w ∧ l0wf w ⇒ uchan c sb w'
+Proof
+  rw[l0_call_def] >> gvs[AllCaseEqs()] >> rpt (pairarg_tac >> gvs[]) >>
+  (* listen *)
+  TRY (gvs[l0_listen_def, AllCaseEqs()] >> irule uchan_sub >> TRY (qexists_tac ‘w’) >>
+       simp[used_chans_def] >> NO_TAC) >>
+  (* poll *)
+  TRY (qmatch_goalsub_abbrev_tac ‘l0_ticks _ kk w’ >>
+       ‘∀k w. uchan c sb w ∧ l0wf w ⇒ uchan c sb (l0_ticks «sys_poll» k w)’
+         by (Induct >> simp[l0_ticks_def] >> metis_tac[uchan_tick, l0wf_tick]) >>
+       simp[] >> NO_TAC) >>
+  (* recv, send, connerr: the sent of the fd's own (used) channel *)
+  TRY (gvs[l0_recv_def, l0_send_def, l0_connerr_def, AllCaseEqs(), fail_def] >>
+       irule uchan_upd >> simp[] >> strip_tac >> gvs[uchan_def] >>
+       metis_tac[chan_of_used] >> NO_TAC) >>
+  TRY (gvs[l0_recv_def, l0_send_def, l0_connerr_def, AllCaseEqs(), fail_def] >> NO_TAC) >>
+  (* accept *)
+  TRY (drule_all uchan_accept >> simp[] >> NO_TAC) >>
+  (* close *)
+  gvs[l0_close_def, AllCaseEqs()] >> simp[close_fd_def] >> every_case_tac >> gvs[] >>
+  TRY (irule uchan_FOLDL_break >> irule uchan_sub >> TRY (qexists_tac ‘w’) >>
+       simp[used_chans_def, MEM_FLAT, MEM_MAP, MEM_FILTER] >> metis_tac[] >> NO_TAC) >>
+  TRY (irule uchan_sub >> TRY (qexists_tac ‘w’) >> simp[used_chans_def] >> NO_TAC) >>
+  irule uchan_upd >> simp[] >> irule uchan_sub >> TRY (qexists_tac ‘w’) >>
+  simp[used_chans_def, MEM_MAP, PULL_EXISTS, FORALL_PROD] >>
+  rpt strip_tac >> gvs[] >> disj1_tac >> qexists_tac ‘y’ >> PairCases_on ‘y’ >> gvs[]
+QED
+
+Theorem wpres_uchan:
+  wpres (uchan c sb)
+Proof
+  rw[wpres_def]
+  >- (irule uchan_tick >> gvs[winv_def])
+  >- (qpat_x_assum ‘uchan _ _ _’ mp_tac >> simp[uchan_def, used_chans_def, csent_def])
+  >- (drule_all uchan_call >> simp[])
+QED

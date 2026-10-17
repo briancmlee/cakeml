@@ -37,7 +37,7 @@
   buffers as the world's state; the refinement (R1) is then a forward
   simulation (honestL1PFRefine).
 
-  A round: the actions; then the poll (chunked, as honestL1Model), the
+  A round: the actions; then the poll (one call, as honestL1Model), the
   flush of the writable outboxes, the fetch, the hung-up policy (D19,
   hup_step), the reap of the closing fds;
   the snapshot; one round of the listener's pause passes.  The run
@@ -332,7 +332,7 @@ QED
 Definition pf_tail_def:
   pf_tail lfd hw hs (w, ps) =
     let fes = pf_poll_set lfd hw ps hs in
-    case l1_polls (poll_chunks fes) w of
+    case l1_polls [fes] w of
     | NONE => NONE
     | SOME (rv, w1, pevs) =>
         case l1_flush (writable_fds rv) (w1, ps.b) of

@@ -20,7 +20,9 @@ the model says it cannot.
 
 Usage:  l0check.py LOG.json      (a log written by conformance.py)
 """
-import copy, json, sys
+import copy, json, os, sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from l0harness import POLL_OFF, poll_entries, from_native
 
 E = {"EAGAIN": 1, "EINTR": 2, "EINPROGRESS": 3, "ECONNREFUSED": 4, "ECONNRESET": 5,
      "EPIPE": 6, "ECONNABORTED": 7, "ETIMEDOUT": 8, "ENOTCONN": 9, "EMFILE": 10,
@@ -236,17 +238,51 @@ def revents_ok(st, f, ev, r):
     return r == NVAL
 
 
-def check_poll(states, conf, out):
-    block, ents = conf[0], [(int.from_bytes(conf[1 + 9 * i:9 + 9 * i], "big"), conf[9 + 9 * i])
-                            for i in range((len(conf) - 1) // 9)]
-    code, val, revs = out[0], int.from_bytes(out[1:9], "big"), out[13:]
+def old_poll(conf, out):
+    """A log from before D20: conf = block ++ k × (fd 8 bytes BE ++ events
+    byte), out = header ++ k revents bytes, both with the model's bits"""
+    ents = [(int.from_bytes(conf[1 + 9 * i:9 + 9 * i], "big"), conf[9 + 9 * i])
+            for i in range((len(conf) - 1) // 9)]
+    return ents, list(out[13:])
+
+
+def check_poll(states, conf, ain, out):
+    if len(conf) > 1:
+        ents, revs = old_poll(conf, out)
+        return poll_states(states, ents, out, revs)
+    if len(out) != len(ain) or out[13:POLL_OFF] != ain[13:POLL_OFF]:
+        raise Inconsistent("poll changed the array outside the header and revents")
+    ins, outs = poll_entries(ain), poll_entries(out)
+    if any(i[:2] != o[:2] for (i, o) in zip(ins, outs)):
+        raise Inconsistent("poll changed an entry's fd or events")
+    ents = [(f, from_native(e)) for (f, e, _) in ins]
+    code, val = out[0], int.from_bytes(out[1:9], "big")
     if code:
-        if transient_ok(code) and not any(revs):
+        # poll_failed: the revents are unspecified
+        if transient_ok(code):
+            WARN.append("poll error %d" % code); return states
+        raise Inconsistent("poll error %d" % code)
+    revs = [from_native(r) for (_, _, r) in outs]
+    if None in revs:
+        raise Inconsistent("poll revents with a bit the model never sets: %s" % [r for (_, _, r) in outs])
+    return poll_states(states, ents, out, revs)
+
+
+def poll_states(states, ents, out, revs):
+    code, val = out[0], int.from_bytes(out[1:9], "big")
+    if code:
+        if transient_ok(code):
             WARN.append("poll error %d" % code); return states
         raise Inconsistent("poll error %d" % code)
     if val != sum(1 for r in revs if r):
         raise Inconsistent("poll count %d" % val)
+    # pfd_revents: an fd field the model reads as 2^31 or more (a negative
+    # int) gets revents 0
+    ents = [(f % 2 ** 32, ev) for (f, ev) in ents]
     for (f, ev), r in zip(ents, revs):
+        if f >= 2 ** 31:
+            if r: raise Inconsistent("poll fd %d revents %d" % (f, r))
+            continue
         def ok(s, f=f, ev=ev, r=r):
             return revents_ok(s, f, ev, r)
         new = []
@@ -310,7 +346,9 @@ def check_recv(states, conf, out, alen):
                 s2 = copy.deepcopy(s); s2.chans[j].inbox = s2.chans[j].inbox[val:]; res.append(s2)
         elif code == 0:                                   # EOF: orderly shutdown, or broken
             def ok(s):
-                c = s.chans[j]; return not c.inbox and c.err is None and (c.peer_eof or c.broken)
+                c = s.chans[j]                    # after the peer's EOF a pending error may
+                return (not c.inbox and (c.err is None or c.peer_eof)   # wait (eof_first, D21)
+                        and (c.peer_eof or c.broken))
             res += with_deliveries([st], j, ok)
         elif code == E["EAGAIN"]:
             c = st.chans[j]
@@ -454,6 +492,14 @@ def check_connerr(states, conf, out):
             res.append(st)
         elif code and val == 1 and c.err == code:
             s = copy.deepcopy(st); s.chans[j].err = None; res.append(s)
+        elif code and val == 1 and c.err is None and not c.broken and not c.connecting:
+            # a break no client action logged (LBreak j code keep, then
+            # reported): the peer of a connect is not always the harness's
+            # client, e.g. Linux's shutdown of a pending connect ([X5], D22)
+            for keep in (True, False):
+                s = copy.deepcopy(st); c2 = s.chans[j]; c2.broken = True
+                if not keep: c2.inbox = c2.inbox[:0]
+                res.append(s)
     return res
 
 
@@ -507,11 +553,12 @@ def check(log):
                 if not any(sorted(set(s.used())) == sorted(ev[1]) for s in states):
                     raise Inconsistent("the process's fds %s are not the model's" % ev[1])
             elif ev[0] == "call":
-                _, name, conf, alen, out = ev
+                _, name, conf, alen, out = ev[:5]
+                ain = bytes.fromhex(ev[5]) if len(ev) > 5 else bytes(alen)
                 conf, out = bytes.fromhex(conf), bytes.fromhex(out)
                 prev = states
                 states = {"listen": lambda: check_listen(states, conf, out),
-                          "poll": lambda: check_poll(states, conf, out),
+                          "poll": lambda: check_poll(states, conf, ain, out),
                           "accept": lambda: check_accept(states, conf, out),
                           "recv": lambda: check_recv(states, conf, out, alen),
                           "send": lambda: check_send(states, conf, out),

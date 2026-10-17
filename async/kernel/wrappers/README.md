@@ -8,10 +8,10 @@ names, provisionally.
 | theory | what |
 |---|---|
 | `honestL1Model` | the lazy L1: its state, `l1do` (accept, read, write), the poll, flush and reap, one round |
-| `honestL1Props` | L1's bookkeeping facts (outboxes, the forget, after a send) |
-| `honestL1Simple` | R3: in simple worlds (`simple0`), `write`, `read` and `accept` behave as the plain model's |
-| `honestL1Inv` | L1 never fails: every call it makes is well-formed and returns (`lrun_ok`) |
+| `honestL1Props` | what L1 guarantees round by round (§5.1): the round discipline (`read_no_syscall`), `recv_found_empty`, `gone_is_eof`, `stall_local`, `write_buffered`, … |
+| `honestL1Simple` | the simple L0 world (`simple0`) and R3: in it L1's wrappers are today's calls (`write_simple`, …) |
+| `honestL1Inv` | the lazy L1 never makes a failing L0 call (`l1round_ok`); its fds stay below 2^31 (`small_fds`) |
 | `honestL1PFModel` | the prefetching L1 (D10), with D19's bounded flush (`hup_step`) and D20's one poll per round |
-| `honestL1PFInv` | the PF L1 never fails (`psmall`: its fds stay small) |
+| `honestL1PFInv` | the PF L1 never makes a failing L0 call, so its run is total given the handle layer's `hrun_ok` (`psmall`: its fds stay below 2^31) |
 
 The link to the handle layer (R1-safe) is layer 04; R1-live is 05; R2′ is 06.

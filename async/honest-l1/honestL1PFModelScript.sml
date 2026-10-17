@@ -141,6 +141,19 @@ Definition pdo_def:
       (l1do lfd (w, ps.b) (Write h bs))
 End
 
+(* A round's Accept actions: the only actions that take a handle (D25) *)
+Definition naccepts_def:
+  naccepts (acts : sact list) = LENGTH (FILTER (λa. ∃l. a = Accept l) acts)
+End
+
+Theorem naccepts_simps[simp]:
+  naccepts [] = 0 ∧ naccepts (Accept l :: acts) = naccepts acts + 1 ∧
+  naccepts (Read h n :: acts) = naccepts acts ∧ naccepts (Write h bs :: acts) = naccepts acts ∧
+  naccepts (acts1 ++ acts2) = naccepts acts1 + naccepts acts2
+Proof
+  simp[naccepts_def, FILTER_APPEND]
+QED
+
 Definition pacts_def:
   pacts lfd ws [] = SOME ([], [], ws) ∧
   pacts lfd ws (a :: acts) =

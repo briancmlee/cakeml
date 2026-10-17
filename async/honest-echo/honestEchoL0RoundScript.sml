@@ -68,7 +68,7 @@ QED
 Theorem pacts_fresh:
   ∀acts w ps rs evs w' ps' opn.
     pacts lfd (w, ps) acts = SOME (rs, evs, (w', ps')) ∧ l0_rely w ∧
-    own_ok lfd (k, opn) ps ∧ l1hdln (w2n lfd) k < dimword (:64) ∧
+    own_ok lfd (k, opn) ps ∧ ps.b.nxt + naccepts acts < dimword (:64) ∧
     k ≤ j ∧ hdln (w2n lfd) j < 18446744073709551616 ⇒
     hread (l1hdl lfd j) (ZIP (acts, MAP SOME rs)) = []
 Proof
@@ -80,7 +80,11 @@ Proof
         Cases_on ‘a’ >> simp[] >>
         simp[hrd_def, hread_def] >> every_case_tac >> gvs[pdo_def, AllCaseEqs()]) >>
   fs[hread_cons] >>
-  ‘l1hdln (w2n lfd) k < dimword (:64)’ by fs[] >>
+  ‘ps.b.nxt < dimword (:64)’ by fs[] >>
+  ‘ws11.b.nxt + naccepts acts < dimword (:64)’
+    by (drule pdo_nxt_acc >>
+        ‘naccepts (a :: acts) = naccepts [a] + naccepts acts’ by (Cases_on ‘a’ >> simp[]) >>
+        fs[]) >>
   drule_all pdo_in >> strip_tac >>
   ‘l0_rely ws10’ by metis_tac[pdo_rely] >>
   Cases_on ‘l0_ep_st (k, opn) evs1’ >> gvs[] >>
@@ -141,12 +145,25 @@ Proof
   PairCases_on ‘ws1’ >> drule pdo_nxt >> first_x_assum drule >> simp[]
 QED
 
+(* The round's actions take at most their accepts' handles (D25) *)
+Theorem pacts_nxt_acc:
+  ∀acts w ps rs evs w' ps'.
+    pacts lfd (w, ps) acts = SOME (rs, evs, (w', ps')) ⇒
+    ps'.b.nxt ≤ ps.b.nxt + naccepts acts
+Proof
+  Induct >> simp[pacts_def] >> rpt gen_tac >> strip_tac >>
+  gvs[AllCaseEqs()] >> rename1 ‘pdo lfd (w, ps) a = SOME (r, ws1, evs1)’ >>
+  PairCases_on ‘ws1’ >> drule pdo_nxt_acc >> first_x_assum drule >>
+  ‘naccepts (a :: acts) = naccepts [a] + naccepts acts’ by (Cases_on ‘a’ >> simp[]) >>
+  simp[]
+QED
+
 (* The tail of a round (poll, flush, fetch, hung-up policy, reap): input
    arrives through the fetch only *)
 Theorem pf_tail_in:
   pf_tail lfd hw hs (w, ps) = SOME (rdy, (w', ps'), log, evs) ∧
   wown lfd w ps ∧ own_ok lfd (k, opn) ps ∧ LENGTH ps.acq ≤ 1 ∧
-  l1hdln (w2n lfd) (ps.b.nxt + 1) < dimword (:64) ⇒
+  ps.b.nxt < dimword (:64) ⇒
   wown lfd w' ps' ∧ own_ok lfd (l0_ep_st (k, opn) evs) ps' ∧ LENGTH ps'.acq ≤ 1 ∧
   ps'.b.nxt = ps.b.nxt ∧
   ∀j. hdln (w2n lfd) j < 18446744073709551616 ⇒
@@ -224,7 +241,7 @@ QED
 Theorem pround_in:
   pround lfd hw hs (w, ps) acts = SOME (sn, (w', ps'), log, evs) ∧
   wown lfd w ps ∧ own_ok lfd (k, opn) ps ∧ LENGTH ps.acq ≤ 1 ∧
-  l1hdln (w2n lfd) (ps.b.nxt + LENGTH acts + 1) < dimword (:64) ⇒
+  ps.b.nxt + naccepts acts < dimword (:64) ⇒
   ∃rdy rs. sn = ssnap rdy rs ∧ LENGTH rs = LENGTH acts ∧
     wown lfd w' ps' ∧ own_ok lfd (l0_ep_st (k, opn) evs) ps' ∧ LENGTH ps'.acq ≤ 1 ∧
     ∀j. hdln (w2n lfd) j < 18446744073709551616 ⇒
@@ -238,16 +255,12 @@ Proof
   qexistsl [‘rdy’, ‘rs’] >>
   ‘l0_rely w’ by gvs[wown_def] >>
   ‘k ≤ ps.b.nxt + 1’ by gvs[own_ok_def] >>
-  ‘l1hdln (w2n lfd) k < dimword (:64)’
-    by (fs[] >> irule hdln_mono >> qexists_tac ‘ps.b.nxt + (LENGTH acts + 1)’ >> simp[]) >>
   drule_all pacts_in >> strip_tac >>
   drule_all pacts_wown >> strip_tac >>
   drule pacts_nxt >> strip_tac >>
   Cases_on ‘l0_ep_st (k, opn) evs1’ >> rename1 ‘l0_ep_st _ _ = (k1, opn1)’ >> gvs[] >>
-  ‘LENGTH ws11.acq ≤ 1 ∧ ws11.b.nxt ≤ ps.b.nxt + LENGTH acts’
-    by (Cases_on ‘acts’ >> gvs[own_ok_def]) >>
-  ‘l1hdln (w2n lfd) (ws11.b.nxt + 1) < dimword (:64)’
-    by (fs[] >> irule hdln_mono >> qexists_tac ‘ps.b.nxt + (LENGTH acts + 1)’ >> simp[]) >>
+  ‘LENGTH ws11.acq ≤ 1’ by (Cases_on ‘acts’ >> gvs[own_ok_def]) >>
+  ‘ws11.b.nxt < dimword (:64)’ by (drule pacts_nxt_acc >> fs[]) >>
   drule_all pf_tail_in >> strip_tac >> simp[] >> rpt strip_tac >>
   ‘inbp lfd ps j ++ ep_rd j (k, opn) evs1 =
    hread (l1hdl lfd j) (ZIP (acts, MAP SOME rs)) ++ inbp lfd ws11 j’

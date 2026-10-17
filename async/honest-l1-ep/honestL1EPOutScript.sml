@@ -367,6 +367,13 @@ Proof
   >~ [‘pf_close _ _ = _’]
   >- (PairCases_on ‘z’ >> gvs[] >> drule_all eclose_pf >> strip_tac >>
       simp[ewbytes_def, ostepc_def] >> metis_tac[])
+  (* EConnect, an immediate transient failure: the socket is closed *)
+  >~ [‘sys_close _ _ = _’]
+  >- (rename1 ‘sys_close _ wc = SOME _’ >> PairCases_on ‘z’ >> gvs[] >>
+      drule sys_connect_quiet >> drule sys_close_quiet >> rpt strip_tac >>
+      ‘l0_rely wc’ by (gvs[sys_connect_def] >> drule_all l0_do_rely >> simp[]) >>
+      ‘l0_rely w'’ by (gvs[sys_close_def] >> drule_all l0_do_rely >> simp[]) >>
+      simp[ostep_def, ostepc_def, ewbytes_def, outbox_of_def] >> rw[] >> simp[])
   (* EConnect *)
   >~ [‘sys_connect _ _ = _’]
   >- (drule sys_connect_quiet >> strip_tac >>
@@ -456,7 +463,7 @@ Proof
   >~ [‘pf_close _ _ = _’]
   >- (PairCases_on ‘z’ >> gvs[] >> ‘pown lfd es.p’ by fs[oown_def] >>
       drule_all eclose_pf >> strip_tac >> simp[] >> metis_tac[])
-  >> gvs[held_def]
+  >> TRY (PairCases_on ‘z’) >> gvs[held_def]
 QED
 
 Theorem edo_unlive:
@@ -504,7 +511,8 @@ Proof
   >~ [‘pf_close _ _ = _’]
   >- (PairCases_on ‘z’ >> gvs[] >> ‘pown lfd es.p’ by fs[oown_def] >>
       drule_all eclose_pf >> strip_tac >> simp[] >> metis_tac[])
-  >> TRY (drule sys_connect_quiet >> strip_tac) >> gvs[held_def]
+  >> TRY (drule sys_connect_quiet >> strip_tac) >>
+  TRY (PairCases_on ‘z’ >> gvs[] >> drule sys_close_quiet >> strip_tac) >> gvs[held_def]
 QED
 
 Theorem edo_live:

@@ -18,7 +18,7 @@ Theory honestEchoL0BStutter
 Ancestors
   pair list rich_list arithmetic option pred_set
   asyncCore asyncLevel1 asyncServer asyncM4Relabel asyncM4RelabelDist asyncM4SockModel
-  asyncM4Loop asyncM3World honestL1BSim
+  asyncM4Loop asyncM3World honestL1BSim asyncM4LiveInterest
 Libs
   preamble
 
@@ -391,4 +391,38 @@ Proof
       qspecl_then [‘server kl’, ‘MAP sfs h’] mp_tac (Q.GENL [‘m’, ‘h’] new_actions_stut) >>
       simp[server_stut, sfs_esnap])
   >> simp[interest_def, FOLDL_APPEND, ssnap_def, add_accepted_def]
+QED
+
+(* ------------------------------------------------------------------------
+   D26: the live interest list is unchanged by the stutter too
+   ------------------------------------------------------------------------ *)
+
+Theorem live_round_nil[local,simp]:
+  live_round fds [] [] = fds
+Proof
+  simp[live_round_def, eof_reads_def, add_accepted_def]
+QED
+
+Theorem live_stut:
+  (∀k. new_actions acts (h ++ [e] ++ k) = new_actions acts (h ++ k)) ∧
+  new_actions acts h = [] ∧ e.results = [] ⇒
+  ∀k. live fds0 acts (h ++ [e] ++ k) = live fds0 acts (h ++ k)
+Proof
+  strip_tac >> Induct_on ‘k’ using SNOC_INDUCT
+  >- (‘h ++ [e] ++ [] = h ++ [e]’ by simp[] >> pop_assum SUBST1_TAC >> simp[live_SNOC]) >>
+  rpt strip_tac >> REWRITE_TAC [SNOC_APPEND] >>
+  ‘h ++ [e] ++ (k ++ [x]) = (h ++ [e] ++ k) ++ [x] ∧ h ++ (k ++ [x]) = (h ++ k) ++ [x]’
+    by simp[] >>
+  ASM_REWRITE_TAC [live_SNOC]
+QED
+
+(* MAIN: bquiet with the live interest list *)
+Theorem echo_bquiet_live:
+  bquiet (srelabel (server kl)) (live fds0 (log_of (srelabel (server kl)))) (K F)
+Proof
+  simp[bquiet_def] >> rpt gen_tac >> strip_tac >>
+  ‘∀k. new_actions (log_of (srelabel (server kl))) (h ++ [esnap] ++ k) =
+       new_actions (log_of (srelabel (server kl))) (h ++ k)’
+    by (gen_tac >> mp_tac (Q.INST [‘fds0’ |-> ‘[]’] echo_bquiet) >> rw[bquiet_def]) >>
+  simp[] >> irule live_stut >> simp[ssnap_def]
 QED

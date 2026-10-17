@@ -9,7 +9,7 @@ Theory asyncHLSimTrace
 Ancestors
   llist alist words ffi ffiSpikeSocketFFI ffiSpikeSocketFair asyncCore
   asyncM3World asyncM4GRounds asyncM4GTrans asyncM4Loop asyncM4SockInv
-  asyncM4EchoRunOk EchoSpec EchoSpec2 socketV2FFI socketV2Fair socketV2Proof
+  asyncM4EchoRunOk EchoSpec EchoSpec2 socketV2FFI socketV2Events socketV2Fair socketV2Proof
   asyncHLFair asyncHLModel asyncHLSimWorld asyncHLSimOps asyncHLSimRun
   asyncHLEof asyncHLEpisodes asyncHLSimEvents
 Libs

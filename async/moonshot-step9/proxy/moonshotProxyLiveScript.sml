@@ -301,3 +301,107 @@ Proof
   drule_all ehacts_first_read >> strip_tac >>
   simp[hl_refused_def] >> metis_tac[]
 QED
+
+(* ------------------------------------------------------------------------
+   The connect phase: while pair i has no backend, each round's connect
+   returns no socket
+   ------------------------------------------------------------------------ *)
+
+Theorem ehacts_connect_res:
+  ∀acts k st rs st'. ehacts lfd lv n k st acts = SOME (rs, st') ∧
+    MEM (EConnect a, r) (ZIP (acts, rs)) ⇒ ∃oc. r = EConnected oc
+Proof
+  Induct >- simp[ehacts_def] >> rpt gen_tac >> simp[Once ehacts_def, AllCaseEqs()] >>
+  strip_tac >> gvs[] >- (PairCases_on ‘st’ >> gvs[ehdo_def, AllCaseEqs()]) >>
+  first_x_assum drule_all >> simp[]
+QED
+
+Theorem sel_mem:
+  ∀ts rs. LENGTH rs = LENGTH ts ∧ MEM (x, r) (ZIP (MAP SND (seltag i ts), selres i ts rs)) ⇒
+    MEM (x, r) (ZIP (MAP SND ts, rs))
+Proof
+  Induct >- simp[] >> rpt gen_tac >> PairCases_on ‘h’ >> Cases_on ‘rs’ >> simp[] >>
+  rw[] >> gvs[] >> metis_tac[]
+QED
+
+Theorem MEM_FILTER_LENGTH:
+  MEM x l ∧ P x ⇒ 0 < LENGTH (FILTER P l)
+Proof
+  rpt strip_tac >> ‘MEM x (FILTER P l)’ by simp[MEM_FILTER] >>
+  Cases_on ‘FILTER P l’ >> gvs[]
+QED
+
+(* A round in which pair i has no backend, before and after, has a
+   connect that returned no socket *)
+Theorem proxy_connect_round:
+  proxy_world lfd a W0 ∧ i < LENGTH (PS lfd b hw lv W0 m).pc ∧
+  (EL i (PS lfd b hw lv W0 m).pc).bh = NONE ∧
+  (EL i (PS lfd b hw lv W0 (SUC m)).pc).bh = NONE ⇒
+  hl_nosock (hl_pairs (pprog lfd b hw) (PH lfd b hw lv W0 m)) <
+  hl_nosock (hl_pairs (pprog lfd b hw) (PH lfd b hw lv W0 (SUC m)))
+Proof
+  strip_tac >>
+  drule PS_prel_n >> disch_then (qspecl_then [‘m’, ‘lv’, ‘hw’, ‘b’] assume_tac) >>
+  drule_all prel_pok >> rewrite_tac [pok_def] >> strip_tac >>
+  qpat_x_assum ‘option_CASE _ _ _’ mp_tac >> asm_rewrite_tac [] >> simp[] >> strip_tac >>
+  drule PS_round >> disch_then (qspecl_then [‘m’, ‘lv’, ‘hw’, ‘b’] strip_assume_tac) >>
+  drule PH_pairs_SUC >> disch_then (fn th => REWRITE_TAC [th]) >>
+  qspecl_then [‘lfd’, ‘b’, ‘hw’, ‘lv’, ‘W0’, ‘m’] strip_assume_tac
+    (Q.GENL [‘lfd’, ‘b’, ‘hw’, ‘lv’, ‘W0’, ‘n’] PS_SUC_fields) >>
+  ‘s = ssnap rdy' rs’ by (qpat_x_assum ‘PH _ _ _ _ _ (SUC m) = _ ++ [s]’ mp_tac >>
+                          asm_rewrite_tac [] >> simp[]) >>
+  pop_assum SUBST_ALL_TAC >>
+  qpat_x_assum ‘pst_pc (PS _ _ _ _ _ (SUC m)) = _’ (fn th => RULE_ASSUM_TAC (REWRITE_RULE [th])) >>
+  RULE_ASSUM_TAC (SIMP_RULE (srw_ss()) [asyncM3WorldTheory.ssnap_def]) >>
+  drule pinv_all >> disch_then (qspecl_then [‘lv’, ‘hw’, ‘b’, ‘m’] mp_tac) >>
+  simp[pinv_def] >> strip_tac >>
+  qabbrev_tac ‘ts = (PS lfd b hw lv W0 m).last’ >>
+  qabbrev_tac ‘p0 = EL i (PS lfd b hw lv W0 m).pc’ >>
+  ‘LENGTH rs = LENGTH ts’ by (imp_res_tac ehacts_LENGTH >> fs[]) >>
+  qspecl_then [‘ts’, ‘PS lfd b hw lv W0 m with lv := []’, ‘rs’] mp_tac
+    (Q.GEN ‘i’ pupd_slot |> Q.SPEC ‘i’) >>
+  impl_tac >- simp[] >> simp[] >> strip_tac >>
+  ‘seltag i ts = [(i, EConnect b)]’
+    by (qunabbrev_tac ‘ts’ >> asm_rewrite_tac [] >>
+        ‘i < LENGTH st'.pc’ by simp[] >> drule seltag_pacts >> disch_then (fn th => REWRITE_TAC [th]) >>
+        ‘EL i st'.pc = p0’ by simp[Abbr ‘p0’] >> asm_rewrite_tac [] >>
+        simp[pone_def, pconnects_def, pwrites_def, preads_def]) >>
+  ‘LENGTH (selres i ts rs) = 1’
+    by (‘LENGTH (selres i ts rs) = LENGTH (seltag i ts)’ by (irule LENGTH_selres >> simp[]) >>
+        pop_assum SUBST1_TAC >> qpat_x_assum ‘seltag i ts = _’ SUBST1_TAC >> simp[]) >>
+  Cases_on ‘selres i ts rs’ >> gvs[] >>
+  rename1 ‘selres i ts rs = [r]’ >>
+  ‘MEM (EConnect b, r) (ZIP (MAP SND ts, rs))’
+    by (irule sel_mem >> conj_tac >- first_assum ACCEPT_TAC >> qexists_tac ‘i’ >> asm_rewrite_tac [MEM, ZIP_def, MAP]) >>
+  ‘∃oc. r = EConnected oc’
+    by (irule ehacts_connect_res >> qpat_x_assum ‘ehacts _ _ _ _ _ _ = _’ (irule_at Any) >>
+        qexists_tac ‘b’ >> simp[]) >>
+  Cases_on ‘oc’ >> gvs[presf_def, pres_def] >>
+  simp[hl_nosock_def, FILTER_APPEND] >>
+  irule MEM_FILTER_LENGTH >> qexists_tac ‘(EConnect b, EConnected NONE)’ >> simp[]
+QED
+
+(* So, if pair i never gets a backend, connects return no socket without
+   bound *)
+Theorem proxy_connect_forever:
+  proxy_world lfd a W0 ∧ i < LENGTH (PS lfd b hw lv W0 n).pc ∧
+  (∀m. n ≤ m ⇒ (EL i (PS lfd b hw lv W0 m).pc).bh = NONE) ⇒
+  ∀k. ∃n'. k ≤ hl_nosock (hl_pairs (pprog lfd b hw) (PH lfd b hw lv W0 n'))
+Proof
+  strip_tac >>
+  ‘∀d. i < LENGTH (PS lfd b hw lv W0 (n + d)).pc’
+    by (gen_tac >> irule (cj 1 pkeep_EL) >>
+        qexists_tac ‘(PS lfd b hw lv W0 n).pc’ >> simp[] >>
+        irule pc_mono >> simp[] >> metis_tac[]) >>
+  ‘∀d. d ≤ hl_nosock (hl_pairs (pprog lfd b hw) (PH lfd b hw lv W0 (n + d)))’
+    by (Induct >> simp[] >>
+        ‘hl_nosock (hl_pairs (pprog lfd b hw) (PH lfd b hw lv W0 (n + d))) <
+         hl_nosock (hl_pairs (pprog lfd b hw) (PH lfd b hw lv W0 (SUC (n + d))))’
+          by (mp_tac (Q.INST [‘m’ |-> ‘n + d’] proxy_connect_round) >>
+              impl_tac >- (rpt conj_tac >>
+                           FIRST [first_assum ACCEPT_TAC, first_assum (qspec_then ‘d’ ACCEPT_TAC),
+                                  qpat_assum ‘∀m. n ≤ m ⇒ _’ irule >> simp[]]) >>
+              simp[]) >>
+        fs[ADD_CLAUSES]) >>
+  gen_tac >> qexists_tac ‘n + k’ >> simp[]
+QED

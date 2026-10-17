@@ -552,7 +552,14 @@ Proof
 QED
 
 (*---------------------------------------------------------------------------*)
-(* B2, over a run (small_ch: until D24 puts it in the rely) *)
+(* B2, over a run *)
+
+(* D24: the rely bounds the counts *)
+Theorem l0_rely_small_ch:
+  l0_rely w ⇒ small_ch w.ch
+Proof
+  rw[l0_rely_def, small_ch_def]
+QED
 
 Theorem fin_pair_at:
   sys_steps s0 rs ss ∧ sinv [] s0 css0 ∧
@@ -595,7 +602,7 @@ Proof
 QED
 
 Theorem sys_causal:
-  sys_init ps s0 ∧ sys_steps s0 rs ss ∧ (∀k. k < LENGTH ps ⇒ small_ch (EL k s0.procs).ch) ⇒
+  sys_init ps s0 ∧ sys_steps s0 rs ss ⇒
   ∃conn. (∀e e'. conn e = SOME e' ⇔ conn e' = SOME e) ∧
     ∀k j k' j'. conn (k, j) = SOME (k', j') ⇒
       k < LENGTH ps ∧ k' < LENGTH ps ∧
@@ -606,7 +613,9 @@ Theorem sys_causal:
       ∀t. l0_ep_recvd j' (proc_events k' (TAKE t rs)) ≼ l0_ep_sent j (proc_events k (TAKE t rs))
 Proof
   strip_tac >>
-  ‘sinv [] s0 (K [])’ by metis_tac[sinv_init] >>
+  ‘sinv [] s0 (K [])’
+    by (irule sinv_init >> qexists_tac ‘ps’ >> rw[] >> irule l0_rely_small_ch >>
+        fs[sys_init_def, LET_THM]) >>
   qabbrev_tac ‘sf = EL (LENGTH rs) ss’ >> qabbrev_tac ‘csf = ghost ss rs (K []) (LENGTH rs)’ >>
   ‘∀t. t ≤ LENGTH rs ⇒ sinv (TAKE t rs) (EL t ss) (ghost ss rs (K []) t)’
     by (match_mp_tac sinv_run >> simp[]) >>

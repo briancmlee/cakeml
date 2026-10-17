@@ -8,7 +8,7 @@
 Theory honestL1PFOutLive
 Ancestors
   honestL1PFDead honestL1PFFlushLive honestL1PFFlush honestL1PFOut honestL0WorldProps
-  honestL1PFConnRun honestL1PFLive honestL1PFRound honestL1PFRefine honestL1PFInv
+  honestL1PFConnRun honestL1PFConn honestL1PFLive honestL1PFRound honestL1PFRefine honestL1PFInv
   honestL1PFModel honestL1Steps honestL1Inv honestL1Props honestL1Model honestL0WorldInv
   honestL0Rely honestL0World honestL0 socketV2FFI asyncHLModel asyncCore Marshalling
 Libs
@@ -415,4 +415,363 @@ Proof
     [‘LENGTH (oout lfd pol ifds m w0 (cl (FST (pcm lfd pol ifds m w0 n)) f) n) −
       LENGTH (csent (rworld lfd pol ifds m w0 n) c)’, ‘n’] mp_tac) >>
   simp[] >> strip_tac >> qexists_tac ‘n'’ >> fs[ofin_def, oout_def] >> metis_tac[]
+QED
+
+(* ------------------------------------------------------------------------
+   The write timeout's drops (D23), by cause
+   ------------------------------------------------------------------------ *)
+
+Theorem pf_sendwait_pos[simp]:
+  1 < pf_sendwait
+Proof
+  simp[pf_sendwait_def]
+QED
+
+(* A stall count after the stall step: 0, or one more than before (a new
+   fd's "before" is 0) for an fd whose outbox is not empty and did not
+   shrink, and with no FReset *)
+Theorem stall_step_entry:
+  MEM (f, m) (stall_step hfs ob log ps).stalls ⇒
+  m < pf_sendwait ∧
+  (m = 0 ∨
+   ¬MEM (FReset f) log ∧ outbox_of ps.b f ≠ [] ∧
+   ¬(LENGTH (outbox_of ps.b f) < LENGTH (ob f)) ∧
+   (m = 1 ∨ MEM (f, m − 1) ps.stalls))
+Proof
+  simp[stall_step_def, MEM_FILTER, MEM_MAP, EXISTS_PROD, PULL_EXISTS] >>
+  rw[] >> gvs[MEM_FILTER, MEM_MAP] >> every_case_tac >> gvs[]
+QED
+
+(* A dropped fd: an FReset, or a count that reached pf_sendwait *)
+Theorem stall_drops_entry:
+  MEM f (stall_drops hfs ob log ps) ⇒
+  MEM (FReset f) log ∨
+  (outbox_of ps.b f ≠ [] ∧ ¬(LENGTH (outbox_of ps.b f) < LENGTH (ob f)) ∧
+   ∃n. pf_sendwait ≤ n + 1 ∧ MEM (f, n) ps.stalls)
+Proof
+  simp[stall_drops_def, MEM_FILTER, MEM_MAP, EXISTS_PROD, PULL_EXISTS] >>
+  rw[] >> gvs[MEM_FILTER, MEM_MAP] >> every_case_tac >> gvs[pf_sendwait_def] >>
+  metis_tac[]
+QED
+
+(* A stalled round (the stall count's condition): after the round's
+   actions f's outbox is not empty, and the round's flush did not shrink
+   it *)
+Definition tail_stalled_def:
+  tail_stalled lfd pol hs (w, ps) f ⇔
+    ∃rv w1 pevs w2 b2 fevs.
+      l1_polls [pf_poll_set lfd pol ps hs] w = SOME (rv, w1, pevs) ∧
+      l1_flush (writable_fds rv) (w1, ps.b) = SOME ((w2, b2), fevs) ∧
+      outbox_of b2 f ≠ [] ∧ ¬(LENGTH (outbox_of b2 f) < LENGTH (outbox_of ps.b f))
+End
+
+Definition round_stalled_def:
+  round_stalled lfd pol hs ws acts f ⇔
+    ∃rs evs ws1. pacts lfd ws acts = SOME (rs, evs, ws1) ∧ tail_stalled lfd pol hs ws1 f
+End
+
+Definition rstalled_def:
+  rstalled lfd pol ifds m w0 k f ⇔
+    round_stalled lfd pol (ifds (rhist lfd pol ifds m w0 k))
+      (rworld lfd pol ifds m w0 k, rstate lfd pol ifds m w0 k)
+      (new_actions (log_of m) (rhist lfd pol ifds m w0 k)) f
+End
+
+Theorem pdo_stalls:
+  pdo lfd (w, ps) a = SOME (r, (w', ps'), evs) ⇒ ps'.stalls = ps.stalls
+Proof
+  Cases_on ‘a’ >> simp[pdo_def] >> rw[AllCaseEqs()] >> gvs[set_inb_def] >>
+  TRY (PairCases_on ‘z’) >> gvs[]
+QED
+
+Theorem pacts_stalls:
+  ∀acts w ps rs evs w' ps'.
+    pacts lfd (w, ps) acts = SOME (rs, evs, (w', ps')) ⇒ ps'.stalls = ps.stalls
+Proof
+  Induct >> simp[pacts_def] >> rw[AllCaseEqs()] >> PairCases_on ‘ws1’ >>
+  imp_res_tac pdo_stalls >> first_x_assum drule >> simp[]
+QED
+
+Theorem pf_fetch_stalls:
+  ∀fs w ps w' ps' log evs.
+    pf_fetch lfd pol fs (w, ps) = SOME ((w', ps'), log, evs) ⇒ ps'.stalls = ps.stalls
+Proof
+  Induct >> simp[pf_fetch_def] >> rw[AllCaseEqs()] >>
+  TRY (pairarg_tac >> gvs[AllCaseEqs()]) >> first_x_assum drule >> rw[] >> gvs[set_inb_def]
+QED
+
+(* One round's stall counts and drops *)
+Theorem pround_stalls:
+  pround lfd pol hs (w, ps) acts = SOME (snap, (w', ps'), log, evs) ⇒
+  (∀f m. MEM (f, m) ps'.stalls ⇒
+         m < pf_sendwait ∧
+         (m = 0 ∨ round_stalled lfd pol hs (w, ps) acts f ∧ (m = 1 ∨ MEM (f, m − 1) ps.stalls))) ∧
+  (∀f. MEM f (round_drops lfd pol hs (w, ps) acts) ⇒
+       MEM (FReset f) log ∨
+       round_stalled lfd pol hs (w, ps) acts f ∧
+       ∃n. pf_sendwait ≤ n + 1 ∧ MEM (f, n) ps.stalls)
+Proof
+  simp[pround_def, AllCaseEqs()] >> strip_tac >> PairCases_on ‘ws1’ >>
+  gvs[pf_tail_def, AllCaseEqs()] >>
+  rename1 ‘pacts _ _ _ = SOME (rs, aevs, wa, pa)’ >>
+  drule pacts_stalls >> strip_tac >>
+  rename1 ‘pf_fetch _ _ _ (w2, pa with b := b2) = SOME ((w3, ps3'), log, gevs)’ >>
+  drule pf_fetch_stalls >> drule pf_fetch_b >> rpt strip_tac >> gvs[]
+  >- (drule stall_step_entry >> simp[])
+  >- (drule stall_step_entry >> simp[] >> strip_tac >> simp[] >>
+      simp[round_stalled_def, tail_stalled_def] >> metis_tac[])
+  >> qpat_x_assum ‘MEM _ (round_drops _ _ _ _ _)’ mp_tac >>
+  simp[round_drops_def, tail_drops_def] >> strip_tac >>
+  drule stall_drops_entry >> strip_tac >> simp[] >>
+  simp[round_stalled_def, tail_stalled_def] >> metis_tac[]
+QED
+
+(* Along the run, a stall count n for f means f's last n rounds stalled *)
+Theorem run_stalls:
+  run_ok lfd pol ifds m w0 ⇒
+  ∀k f n. MEM (f, n) (rstate lfd pol ifds m w0 k).stalls ⇒
+          n ≤ k ∧ ∀i. k − n ≤ i ∧ i < k ⇒ rstalled lfd pol ifds m w0 i f
+Proof
+  strip_tac >> Induct
+  >- simp[rstate_def, prun_0, pinit_def] >>
+  rpt gen_tac >> strip_tac >>
+  drule prun_round' >> disch_then (qspecl_then [‘ARB’, ‘k’] strip_assume_tac) >>
+  drule pround_stalls >> strip_tac >>
+  first_x_assum drule >> strip_tac >> simp[] >>
+  ‘rstalled lfd pol ifds m w0 k f’ by simp[rstalled_def] >>
+  TRY (rw[] >> ‘i = k’ by simp[] >> simp[] >> NO_TAC) >>
+  first_x_assum drule >> strip_tac >> rw[] >>
+  Cases_on ‘i = k’ >> simp[] >> first_x_assum irule >> simp[]
+QED
+
+(* A write-timeout drop of f in round k: an FReset of f in the round's
+   fetch (a hard input error, D19 (a)), or rounds k + 1 − pf_sendwait to k
+   all stalled (D23) *)
+Theorem rdrop_cause:
+  run_ok lfd pol ifds m w0 ∧ rdrop lfd pol ifds m w0 k f ⇒
+  MEM (FReset f) (rlog lfd pol ifds m w0 k) ∨
+  (pf_sendwait ≤ SUC k ∧
+   ∀i. SUC k − pf_sendwait ≤ i ∧ i ≤ k ⇒ rstalled lfd pol ifds m w0 i f)
+Proof
+  strip_tac >>
+  drule prun_round' >> disch_then (qspecl_then [‘ARB’, ‘k’] strip_assume_tac) >>
+  drule pround_stalls >> strip_tac >>
+  qpat_x_assum ‘rdrop _ _ _ _ _ _ _’ mp_tac >> simp[rdrop_def] >> strip_tac >>
+  first_x_assum drule >> strip_tac >> simp[] >>
+  drule_all run_stalls >> strip_tac >>
+  disj2_tac >> conj_tac >- simp[] >>
+  rpt strip_tac >> Cases_on ‘i = k’ >> gvs[rstalled_def] >>
+  first_x_assum irule >> simp[]
+QED
+
+(* sys_send_res without the length hypothesis: D24 (the kernel's counts
+   are below 2^64) makes the recorded count exact for any payload *)
+Theorem sys_send_res_rely:
+  sys_send g bs w = SOME (out, w', ev) ∧ winv w ∧ bs ≠ [] ⇒
+  (∃k. l0_res_of out = Ok k ∧ 0 < k ∧ k ≤ LENGTH bs) ∨ (∃e x. l0_res_of out = Fail e x)
+Proof
+  rw[sys_send_def] >> drule l0_do_cases >> strip_tac >> gvs[] >>
+  qpat_x_assum ‘l0_call _ _ _ _ = _’ mp_tac >> simp[l0_call_def] >> rw[AllCaseEqs()] >>
+  pairarg_tac >> gvs[] >>
+  ‘LENGTH (fd_bytes g) = 8’ by simp[] >>
+  ‘TAKE 8 (fd_bytes g ++ bs) = fd_bytes g ∧ DROP 8 (fd_bytes g ++ bs) = bs’
+    by metis_tac[TAKE_LENGTH_APPEND, DROP_LENGTH_APPEND] >>
+  gvs[] >>
+  ‘l0_rely (l0_tick «sys_send» w)’
+    by (gvs[winv_def] >> irule l0_rely_ch >> qexists_tac ‘w’ >> simp[]) >>
+  ‘l0_res_ok r’
+    by (qpat_x_assum ‘l0_send _ _ _ = _’ mp_tac >>
+        simp[l0_send_def, not_chan_def] >> rw[AllCaseEqs()] >>
+        TRY (irule fail_ok >> first_assum ACCEPT_TAC >> NO_TAC) >>
+        simp[l0_res_ok_def, MIN_DEF] >> rw[] >> fs[l0_rely_def] >>
+        irule LESS_EQ_LESS_TRANS >> goal_assum (first_assum o mp_then Any mp_tac) >>
+        simp[]) >>
+  simp[l0_res_of_enc] >>
+  qpat_x_assum ‘l0_send _ _ _ = _’ mp_tac >>
+  simp[l0_send_def, not_chan_def] >> rw[AllCaseEqs()] >> gvs[fail_def] >>
+  simp[MIN_DEF] >> rw[] >> fs[] >> Cases_on ‘bs’ >> fs[]
+QED
+
+Theorem after_send_le:
+  LENGTH (outbox_of (after_send g r b) f) ≤ LENGTH (outbox_of b f)
+Proof
+  rw[after_send_def] >> every_case_tac >>
+  simp[outbox_of_set_outbox] >> rw[] >> simp[]
+QED
+
+Theorem l1_flush_le:
+  ∀fs w b w' b' evs.
+    l1_flush fs (w, b) = SOME ((w', b'), evs) ⇒
+    LENGTH (outbox_of b' f) ≤ LENGTH (outbox_of b f)
+Proof
+  Induct >> simp[l1_flush_def] >> rpt gen_tac >> strip_tac >>
+  qpat_x_assum ‘(if _ then _ else _) = _’ mp_tac >> IF_CASES_TAC >> strip_tac
+  >- (first_x_assum drule >> simp[]) >>
+  gvs[AllCaseEqs()] >> first_x_assum drule >> strip_tac >>
+  irule LESS_EQ_TRANS >> goal_assum (first_assum o mp_then Any mp_tac) >>
+  simp[after_send_le]
+QED
+
+(* A flush that leaves f's outbox not empty and no shorter: every send
+   on f in it was retried (a non-retried one takes bytes or fails hard) *)
+Theorem l1_flush_stalled:
+  ∀fs w b w' b' evs.
+    l1_flush fs (w, b) = SOME ((w', b'), evs) ∧ winv w ∧ outbox_of b' f ≠ [] ∧
+    ¬(LENGTH (outbox_of b' f) < LENGTH (outbox_of b f)) ⇒
+    ∀ev. MEM ev evs ∧ ev_on «sys_send» f ev ⇒ retried ev
+Proof
+  Induct >> simp[l1_flush_def] >> rpt gen_tac >> strip_tac >>
+  qpat_x_assum ‘(if _ then _ else _) = _’ mp_tac >> IF_CASES_TAC >> strip_tac
+  >- (first_x_assum (qspecl_then [‘w’, ‘b’, ‘w'’, ‘b'’, ‘evs’] mp_tac) >> simp[]) >>
+  gvs[AllCaseEqs()] >>
+  rename1 ‘sys_send h _ w = SOME (out, w1, ev1)’ >>
+  ‘winv w1’ by metis_tac[sys_winv] >>
+  drule l1_flush_le >> disch_then (qspec_then ‘f’ assume_tac) >>
+  ‘LENGTH (outbox_of (after_send h (l0_res_of out) b) f) ≤ LENGTH (outbox_of b f)’
+    by simp[after_send_le] >>
+  ‘LENGTH (outbox_of (after_send h (l0_res_of out) b) f) = LENGTH (outbox_of b f)’
+    by decide_tac >>
+  rpt strip_tac >> gvs[]
+  >- (‘h = f’ by (imp_res_tac ev_on_send >> fs[]) >> gvs[] >>
+      drule_all retried_send >> strip_tac >> simp[] >>
+      drule sys_send_res_rely >> simp[] >> strip_tac >> gvs[]
+      >- (gvs[after_send_def, outbox_of_set_outbox] >>
+          Cases_on ‘outbox_of b f’ >> gvs[])
+      >> CCONTR_TAC >> gvs[after_send_def, outbox_of_set_outbox] >>
+      Cases_on ‘outbox_of b f’ >> gvs[])
+  >> first_x_assum irule >> simp[] >> metis_tac[]
+QED
+
+(* ------------------------------------------------------------------------
+   A stalled round on the trace (for L3-00's ep_timed_out)
+   ------------------------------------------------------------------------ *)
+
+(* ev is a poll whose entries list f with output requested *)
+Definition ev_polls_out_def:
+  ev_polls_out f ev ⇔
+    ∃conf bs e. ev = IO_event (ExtCall «sys_poll») conf bs ∧
+                MEM (f, e) (MAP pe_fe (pollfd_entries (DROP 16 (MAP FST bs)))) ∧ 2 ≤ e
+End
+
+Theorem sys_poll_out_ev:
+  sys_poll fes w = SOME (out, w', ev) ∧ winv w ∧ EVERY (λ(g, e). small g ∧ e < 4) fes ∧
+  MEM (f, e) fes ∧ 2 ≤ e ⇒
+  ev_polls_out f ev ∧ ev_name ev = ExtCall «sys_poll»
+Proof
+  simp[sys_poll_def] >> strip_tac >>
+  ‘LENGTH out = LENGTH (poll_buf fes)’
+    by (gvs[l0_do_buf_def, AllCaseEqs(), winv_def] >> drule_all l0_ffi_fn_length >> simp[]) >>
+  drule l0_do_buf_cases >> strip_tac >> gvs[ev_name_def, ev_polls_out_def, MAP_ZIP] >>
+  simp[poll_buf_def, DROP_APPEND, pollfd_entries_buf, MAP_MAP_o, MEM_MAP, PULL_EXISTS] >>
+  qexists_tac ‘e’ >> qexists_tac ‘(f, e)’ >> simp[] >> gvs[EVERY_MEM] >>
+  first_x_assum drule >> simp[pe_pfd_bytes]
+QED
+
+(* A stalled round's events: its one poll lists f for output; every send
+   on f after it is retried; and if f had output pending at the round's
+   start, no send on f comes before it either (a Write only queues) *)
+Theorem round_stalled_events:
+  pround lfd pol hs (w, ps) acts = SOME (snap, (w', ps'), log, evs) ∧ winv w ∧
+  psmall lfd ps ∧ round_stalled lfd pol hs (w, ps) acts f ∧ f ≠ lfd ⇒
+  ∃pre pev post.
+    evs = pre ++ [pev] ++ post ∧ ev_polls_out f pev ∧
+    EVERY (λe. ev_name e ≠ ExtCall «sys_poll») (pre ++ post) ∧
+    (∀e. MEM e post ∧ ev_on «sys_send» f e ⇒ retried e) ∧
+    (∀c. olive lfd f ps ∧ l0_chan_of w f = SOME c ⇒ ¬EXISTS (ev_on «sys_send» f) pre)
+Proof
+  simp[pround_def, AllCaseEqs()] >> strip_tac >> PairCases_on ‘ws1’ >>
+  gvs[pf_tail_def, AllCaseEqs(), round_stalled_def, tail_stalled_def] >>
+  rename1 ‘pacts _ _ _ = SOME (rs, aevs, wa, pa)’ >>
+  qpat_x_assum ‘l1_polls _ _ = SOME (rv, w1, pevs)’ mp_tac >>
+  simp[l1_polls_def, AllCaseEqs()] >> strip_tac >> gvs[] >>
+  rename1 ‘sys_poll _ wa = SOME (out, w1, pev)’ >>
+  qexists_tac ‘aevs’ >> qexists_tac ‘pev’ >> qexists_tac ‘fevs ++ gevs ++ cevs’ >> simp[] >>
+  ‘winv wa ∧ psmall lfd pa’ by metis_tac[pacts_winv, pacts_psmall] >>
+  ‘winv w1’ by metis_tac[sys_winv] >>
+  ‘outbox_of pa.b f ≠ []’
+    by (strip_tac >> drule l1_flush_le >> disch_then (qspec_then ‘f’ mp_tac) >> gvs[]) >>
+  drule_all pf_poll_set_out >> disch_then (qspecl_then [‘pol’, ‘hs’] strip_assume_tac) >>
+  ‘EVERY (λ(g, e). small g ∧ e < 4) (pf_poll_set lfd pol pa hs)’
+    by (irule pf_poll_set_small >> simp[]) >>
+  drule_all sys_poll_out_ev >> strip_tac >> simp[] >>
+  imp_res_tac pacts_names >> imp_res_tac l1_flush_names >> imp_res_tac pf_fetch_names >>
+  imp_res_tac l1_reap_names >>
+  conj_tac >- (gvs[EVERY_MEM] >> rw[] >> res_tac >> gvs[]) >>
+  conj_tac
+  >- (rw[] >> imp_res_tac ev_on_name >> gvs[EVERY_MEM] >> res_tac >> gvs[] >>
+      drule_all l1_flush_stalled >> simp[]) >>
+  rpt strip_tac >> drule_all pacts_live >> simp[EVERY_MEM, EXISTS_MEM] >> metis_tac[]
+QED
+
+(* A hard input error on the trace: the recv on f that failed *)
+Definition hard_recv_def:
+  hard_recv f evs ⇔ ∃ev. MEM ev evs ∧ ev_on «sys_recv» f ev ∧ ¬retried ev ∧ ev_failed ev
+End
+
+Theorem pf_fetch_freset:
+  ∀fs w ps w' ps' log evs.
+    pf_fetch lfd pol fs (w, ps) = SOME ((w', ps'), log, evs) ∧ winv w ∧
+    MEM (FReset f) log ⇒ hard_recv f evs
+Proof
+  Induct >> simp[pf_fetch_def] >> rpt gen_tac >> rw[AllCaseEqs()] >>
+  TRY (pairarg_tac >> gvs[AllCaseEqs()]) >>
+  TRY (first_x_assum drule_all >> simp[] >> NO_TAC) >>
+  ‘winv w1’ by (TRY (drule_all (cj 3 sys_winv) >> simp[] >> NO_TAC) >>
+                drule_all (cj 4 sys_winv) >> simp[]) >>
+  TRY (first_x_assum drule_all >> simp[hard_recv_def] >> metis_tac[MEM] >> NO_TAC) >>
+  simp[hard_recv_def] >> qexists_tac ‘ev’ >> simp[] >>
+  ‘l0_rely w’ by fs[winv_def] >>
+  qpat_x_assum ‘sys_recv _ _ _ = _’ mp_tac >> simp[sys_recv_def] >> strip_tac >>
+  drule_all ev_do >> strip_tac >> simp[] >>
+  ‘LENGTH out = 13 + pf_chunk’
+    by (gvs[l0_do_def, AllCaseEqs()] >> drule_all l0_ffi_fn_length >> simp[]) >>
+  drule l0_do_cases >> strip_tac >> gvs[ev_failed_def, MAP_SND_ZIP_REPLICATE]
+QED
+
+Theorem pround_freset:
+  pround lfd pol hs (w, ps) acts = SOME (snap, (w', ps'), log, evs) ∧ winv w ∧
+  MEM (FReset f) log ⇒ hard_recv f evs
+Proof
+  simp[pround_def, AllCaseEqs()] >> strip_tac >> PairCases_on ‘ws1’ >>
+  gvs[pf_tail_def, AllCaseEqs()] >>
+  ‘winv ws10’ by metis_tac[pacts_winv] >>
+  ‘winv w1’ by metis_tac[l1_polls_winv] >>
+  ‘winv w2’ by metis_tac[l1_flush_winv] >>
+  drule_all pf_fetch_freset >> simp[hard_recv_def] >> metis_tac[]
+QED
+
+(* MAIN ((3a)/(3b) of flush_live, split by cause): a write-timeout drop
+   of f in round k is a hard input error observed in round k (a recv on f
+   that failed with an error L1 does not retry: the FReset of D19 (a)), or
+   the D23 timeout: in each of the pf_sendwait rounds ending at k, the
+   round's one poll lists f for output, every send on f after that poll
+   is retried, and (when f had output pending at the round's start) no
+   send on f comes before it *)
+Theorem rdrop_split:
+  oassm lfd pol ifds m w0 ∧ rdrop lfd pol ifds m w0 k f ∧ f ≠ lfd ⇒
+  hard_recv f (rrev lfd pol ifds m w0 k) ∨
+  (pf_sendwait ≤ SUC k ∧
+   ∀i. SUC k − pf_sendwait ≤ i ∧ i ≤ k ⇒
+       ∃pre pev post.
+         rrev lfd pol ifds m w0 i = pre ++ [pev] ++ post ∧ ev_polls_out f pev ∧
+         EVERY (λe. ev_name e ≠ ExtCall «sys_poll») (pre ++ post) ∧
+         (∀e. MEM e post ∧ ev_on «sys_send» f e ⇒ retried e) ∧
+         ∀c. olive lfd f (rstate lfd pol ifds m w0 i) ∧
+             l0_chan_of (rworld lfd pol ifds m w0 i) f = SOME c ⇒
+             ¬EXISTS (ev_on «sys_send» f) pre)
+Proof
+  strip_tac >> ‘run_ok lfd pol ifds m w0 ∧ winv w0’ by fs[oassm_def] >>
+  drule_all rdrop_cause >> strip_tac
+  >- (disj1_tac >>
+      drule prun_round' >> disch_then (qspecl_then [‘ARB’, ‘k’] strip_assume_tac) >>
+      ‘winv (rworld lfd pol ifds m w0 k)’ by metis_tac[winv_run] >>
+      drule_all pround_freset >> simp[]) >>
+  disj2_tac >> simp[] >> rpt strip_tac >>
+  ‘rstalled lfd pol ifds m w0 i f’ by (first_x_assum irule >> simp[]) >>
+  pop_assum (strip_assume_tac o REWRITE_RULE [rstalled_def]) >>
+  drule prun_round' >> disch_then (qspecl_then [‘ARB’, ‘i’] strip_assume_tac) >>
+  ‘winv (rworld lfd pol ifds m w0 i)’ by metis_tac[winv_run] >>
+  ‘psmall lfd (rstate lfd pol ifds m w0 i)’ by metis_tac[psmall_run] >>
+  drule_all round_stalled_events >> strip_tac >>
+  qexistsl_tac [‘pre’, ‘pev’, ‘post’] >> fs[]
 QED

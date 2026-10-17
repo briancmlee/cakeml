@@ -365,6 +365,42 @@ Proof
   simp[after_send_def] >> every_case_tac >> simp[set_outbox_def]
 QED
 
+(* An fd L1 does not hold: no bytes written on it; held after only as the
+   accepted one *)
+Theorem edo_unheld:
+  edo lfd pol (w, es) a = SOME (r, (w', es'), evs) ∧ oown lfd es ∧ ¬held es.p.b f ⇒
+  ewbytes f es a = [] ∧ (held es'.p.b f ⇒ MEM f es.p.acq)
+Proof
+  strip_tac >>
+  ‘∀h. ALOOKUP es.p.b.tbl h ≠ SOME f’
+    by (rpt strip_tac >> imp_res_tac ALOOKUP_MEM >> gvs[held_def, MEM_MAP] >> metis_tac[SND]) >>
+  Cases_on ‘a’ >> gvs[edo_def, AllCaseEqs(), ewbytes_def]
+  >~ [‘pdo _ _ (Accept _) = _’]
+  >- (PairCases_on ‘z’ >> gvs[] >> drule pdo_accept_ostep >> strip_tac >> gvs[held_def] >>
+      rw[] >> qpat_x_assum ‘es.p.acq = _’ (fn th => ONCE_REWRITE_TAC [th]) >> simp[])
+  >~ [‘pdo _ _ (Read _ _) = _’]
+  >- (PairCases_on ‘z’ >> gvs[] >>
+      strip_tac >> qpat_x_assum ‘held _ _’ mp_tac >> qpat_x_assum ‘¬held _ _’ mp_tac >>
+      qpat_x_assum ‘pdo _ _ _ = _’ mp_tac >>
+      simp[pdo_def, AllCaseEqs(), held_def] >> rw[] >> gvs[set_inb_def] >>
+      TRY (PairCases_on ‘z’) >> gvs[l1_close_def, AllCaseEqs(), forget_def, MEM_FILTER] >>
+      metis_tac[honestL1PFRefineTheory.MEM_SND_ADELKEY_sub])
+  >~ [‘pdo _ _ (Write _ _) = _’]
+  >- (PairCases_on ‘z’ >> gvs[] >> drule pdo_write_held >> strip_tac >> gvs[held_def])
+  >~ [‘l1_close _ _ = _’]
+  >- (PairCases_on ‘z’ >> gvs[] >> drule l1_close_ostep >> strip_tac >>
+      gvs[ec_del_def, held_def] >> metis_tac[])
+  >> gvs[held_def]
+QED
+
+Theorem edo_unlive:
+  edo lfd pol (w, es) a = SOME (r, (w', es'), evs) ∧ oown lfd es ∧ ¬live es f ⇒
+  ewbytes f es a = [] ∧ ¬live es' f
+Proof
+  strip_tac >> fs[live_def] >> drule_all edo_unheld >> strip_tac >> simp[] >>
+  metis_tac[edo_acq]
+QED
+
 (* An fd L1 does not hold: nothing sent or written; held after only as the
    accepted one, with an empty outbox *)
 Theorem edo_quiet:
@@ -763,4 +799,25 @@ Proof
           fs[])
       >> ‘ostepc f es.p.b (aevs ++ tevs) (aw ++ [])’ by metis_tac[ostepc_quiet] >> fs[]) >>
   rpt strip_tac >> fs[]
+QED
+
+(* An fd not live gets no bytes for the rest of the actions *)
+Theorem eacts_unlive:
+  ∀acts w es.
+    (∀i rs0 evs0 wi esi.
+       i < LENGTH acts ∧ eacts lfd pol (w, es) (TAKE i acts) = SOME (rs0, evs0, (wi, esi)) ⇒
+       oown lfd esi) ∧ ¬live es f ⇒
+    eawbytes lfd pol f (w, es) acts = []
+Proof
+  Induct >> simp[eawbytes_def] >> rpt gen_tac >> strip_tac >>
+  ‘oown lfd es’
+    by (first_x_assum (qspecl_then [‘0’, ‘[]’, ‘[]’, ‘w’, ‘es’] mp_tac) >> simp[eacts_def]) >>
+  Cases_on ‘edo lfd pol (w, es) h’ >> simp[]
+  >- (Cases_on ‘h’ >> simp[ewbytes_def] >> rw[] >> imp_res_tac ALOOKUP_MEM >>
+      gvs[live_def, held_def, MEM_MAP] >> metis_tac[SND]) >>
+  rename1 ‘_ = SOME x’ >> PairCases_on ‘x’ >> simp[] >>
+  drule_all edo_unlive >> strip_tac >> simp[] >>
+  first_x_assum irule >> simp[] >> rpt strip_tac >>
+  first_x_assum (qspecl_then [‘SUC i’, ‘x0 :: rs0’, ‘x3 ++ evs0’, ‘wi’, ‘esi’] mp_tac) >>
+  simp[eacts_def]
 QED

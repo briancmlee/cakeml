@@ -1663,6 +1663,37 @@ Proof
   metis_tac[ALOOKUP_SND_inj]
 QED
 
+Theorem eown_oown:
+  eown lfd es ⇒ oown lfd es
+Proof
+  rw[eown_def, oown_def, ALL_DISTINCT_APPEND] >> metis_tac[]
+QED
+
+Theorem eown_ctbl_unlive:
+  eown lfd es ∧ MEM f (MAP SND es.ctbl) ⇒ ¬live es f
+Proof
+  rw[eown_def, live_def, held_def, ALL_DISTINCT_APPEND] >> metis_tac[]
+QED
+
+(* An action's new connect fd (at most one): pending, and written nothing *)
+Theorem edo_rfds:
+  edo lfd pol (wl, es) act = SOME (r1, (wl1, es1), evs1) ⇒
+  rfds es1 [r1] = [] ∨
+  ∃g. rfds es1 [r1] = [g] ∧ MEM g (MAP SND es1.ctbl) ∧ ∀f. ewbytes f es act = []
+Proof
+  strip_tac >> Cases_on ‘∃p. act = EConnect p’
+  >- (gvs[] >> simp[ewbytes_def, rfds_def] >>
+      Cases_on ‘conn_hdls [r1]’ >> simp[] >>
+      ‘MEM h (conn_hdls [r1])’ by simp[] >>
+      drule_all edo_conn_pending >> strip_tac >>
+      ‘t = []’
+        by (Cases_on ‘r1’ >> gvs[conn_hdls_def] >> rename1 ‘EConnected oh’ >>
+            Cases_on ‘oh’ >> gvs[conn_hdls_def]) >>
+      imp_res_tac ALOOKUP_MEM >> simp[MEM_MAP] >> metis_tac[SND]) >>
+  ‘conn_hdls [r1] = []’ by (drule edo_conn_hdls >> metis_tac[]) >>
+  simp[rfds_def]
+QED
+
 Theorem ev_acts:
   ∀acts k cm es w hs wl rs evs wl' es'.
     ev_rel lfd a cm es w ∧ eown lfd es ∧ ehs_rel hs es ∧
@@ -1677,9 +1708,20 @@ Theorem ev_acts:
       ehs_rel hs' es' ∧ l0owne lfd wl' es' ∧ l0_rely wl' ∧ fds_lt wl' ∧
       w'.alloc = w.alloc ∧ w'.env = w.env ∧ w'.clock = w.clock ∧ w'.hist = w.hist ∧
       w'.nosock = w.nosock ∧ w'.nconnects = w.nconnects + LENGTH (conn_outs rs) ∧
-      LENGTH w'.chans = LENGTH w.chans + LENGTH (conn_hdls rs)
+      LENGTH w'.chans = LENGTH w.chans + LENGTH (conn_hdls rs) ∧
+      (* C1(ii): L1's invariant before each action, and the bytes sent *)
+      (∀i rs0 evs0 wi esi.
+         i ≤ LENGTH acts ∧ eacts lfd pol (wl, es) (TAKE i acts) = SOME (rs0, evs0, (wi, esi)) ⇒
+         eown lfd esi) ∧
+      (∀f j. ALOOKUP cm f = SOME j ⇒
+             (EL j w'.chans).sent = (EL j w.chans).sent ++ eawbytes lfd pol f (wl, es) acts) ∧
+      (∀j. j < LENGTH w.chans ∧ (∀f. ALOOKUP cm f ≠ SOME j) ⇒
+           (EL j w'.chans).sent = (EL j w.chans).sent) ∧
+      (∀j. LENGTH w.chans ≤ j ∧ j < LENGTH w'.chans ⇒ (EL j w'.chans).sent = [])
 Proof
-  Induct >- simp[eacts_def, ehacts_def, rfds_def, conn_hdls_def, conn_outs_def, cnew_thm] >>
+  Induct
+  >- (simp[eacts_def, ehacts_def, rfds_def, conn_hdls_def, conn_outs_def, cnew_thm,
+           eawbytes_def] >> rw[] >> gvs[eacts_def]) >>
   rpt gen_tac >> rename1 ‘eacts _ _ _ (act :: acts)’ >> strip_tac >>
   qpat_x_assum ‘eacts _ _ _ _ = _’ mp_tac >> simp[Once eacts_def] >>
   Cases_on ‘edo lfd pol (wl, es) act’ >> simp[] >> rename1 ‘_ = SOME x’ >> PairCases_on ‘x’ >>
@@ -1740,13 +1782,74 @@ Proof
       qpat_x_assum ‘∀f j. MEM (f, j) (cnew _ (rfds es' (r1 :: rs1))) ⇒ _’ irule >>
       gvs[cnew_append]) >>
   strip_tac >>
+  rename1 ‘ehacts lfd lv n (k + 1) (w1, hs1) acts = SOME (rs1, (w2, hs2))’ >>
+  (* C1(ii) *)
+  ‘∀i rs0 evs0 wi esi.
+     i ≤ SUC (LENGTH acts) ∧
+     eacts lfd pol (wl, es) (TAKE i (act :: acts)) = SOME (rs0, evs0, (wi, esi)) ⇒
+     eown lfd esi’
+    by (Cases >> simp[eacts_def] >> rpt strip_tac >> gvs[AllCaseEqs()] >>
+        first_x_assum irule >> metis_tac[]) >>
+  ‘∀g. MEM g (MAP SND es1.ctbl) ⇒ eawbytes lfd pol g (wl1, es1) acts = []’
+    by (rpt strip_tac >> irule eacts_unlive >> rpt conj_tac >>
+        TRY (metis_tac[eown_ctbl_unlive] >> NO_TAC) >>
+        rpt strip_tac >> irule eown_oown >>
+        qpat_x_assum ‘∀i rs0 evs0 wi esi. _ ∧ eacts _ _ (wl1, es1) _ = _ ⇒ _’ irule >>
+        qexistsl_tac [‘evs0’, ‘i’, ‘rs0’, ‘wi’] >> simp[]) >>
+  qspecl_then [‘lfd’, ‘a’, ‘cm’, ‘es’, ‘w’, ‘hs’, ‘lv n k’, ‘act’, ‘r1’, ‘w1’, ‘hs1’] mp_tac
+    (Q.GENL [‘lfd’, ‘a’, ‘cm’, ‘es’, ‘w’, ‘hs’, ‘v’, ‘act’, ‘r’, ‘w'’, ‘hs'’] ev_act_sent) >>
+  impl_tac >- simp[] >> strip_tac >>
+  ‘ALL_DISTINCT (MAP SND cm) ∧ ∀f j. ALOOKUP cm f = SOME j ⇒ j < LENGTH w.chans’
+    by (gvs[ev_rel_def, EVERY_MEM, MEM_MAP] >> rpt strip_tac >>
+        imp_res_tac ALOOKUP_MEM >> metis_tac[SND]) >>
+  ‘(∀f j. ALOOKUP cm f = SOME j ⇒
+          (EL j w2.chans).sent =
+          (EL j w.chans).sent ++ eawbytes lfd pol f (wl, es) (act :: acts)) ∧
+   (∀j. j < LENGTH w.chans ∧ (∀f. ALOOKUP cm f ≠ SOME j) ⇒
+        (EL j w2.chans).sent = (EL j w.chans).sent) ∧
+   (∀j. LENGTH w.chans ≤ j ∧ j < LENGTH w2.chans ⇒ (EL j w2.chans).sent = [])’
+    by (‘∀f. eawbytes lfd pol f (wl, es) (act :: acts) =
+             ewbytes f es act ++ eawbytes lfd pol f (wl1, es1) acts’ by simp[eawbytes_def] >>
+        pop_assum (fn th => REWRITE_TAC [th]) >>
+        qpat_x_assum ‘edo _ _ _ act = _’ assume_tac >>
+        drule edo_rfds >> strip_tac
+        >- ((* no new connect fd *)
+            ‘LENGTH w1.chans = LENGTH w.chans’ by (qpat_x_assum ‘LENGTH (rfds _ _) = _’ mp_tac >> simp[]) >>
+            fs[cnew_thm] >> rpt conj_tac
+            >- (rpt strip_tac >> res_tac >> fs[])
+            >> rpt strip_tac >> fs[]) >>
+        (* one: its channel is new; the fd is pending, written nothing *)
+        ‘LENGTH w1.chans = LENGTH w.chans + 1’
+          by (qpat_x_assum ‘LENGTH (rfds _ _) = _’ mp_tac >> simp[]) >>
+        fs[cnew_thm] >> rpt conj_tac
+        >- (rpt strip_tac >> Cases_on ‘f = g’
+            >- (pop_assum SUBST_ALL_TAC >>
+                ‘j < LENGTH w.chans’ by metis_tac[] >>
+                ‘(EL j w2.chans).sent = (EL j w1.chans).sent’
+                  by (qpat_x_assum ‘∀j. j < LENGTH w.chans + 1 ∧ _ ⇒ _’ irule >> simp[] >>
+                      rw[] >> strip_tac >> metis_tac[ALOOKUP_SND_inj]) >>
+                res_tac >> fs[])
+            >> qpat_x_assum ‘∀f j. (if g = f then _ else _) = SOME j ⇒ _’
+                 (qspecl_then [‘f’, ‘j’] mp_tac) >>
+            simp[] >> res_tac >> fs[])
+        >- (rpt strip_tac >>
+            qpat_x_assum ‘∀j. j < LENGTH w.chans + 1 ∧ _ ⇒ _’ (qspec_then ‘j’ mp_tac) >>
+            impl_tac >- (simp[] >> rw[] >> simp[]) >> res_tac >> fs[])
+        >> rpt strip_tac >> Cases_on ‘j = LENGTH w.chans’
+        >- (qpat_x_assum ‘∀f j. (if g = f then _ else _) = SOME j ⇒ _’
+              (qspecl_then [‘g’, ‘LENGTH w.chans’] mp_tac) >>
+            simp[] >> res_tac >> fs[])
+        >> qpat_x_assum ‘∀j. LENGTH w.chans + 1 ≤ j ∧ _ ⇒ _’ irule >> fs[]) >>
   simp[ehacts_def] >>
   gvs[cnew_append] >>
   ‘LENGTH (conn_hdls (r1 :: rs1)) = LENGTH (conn_hdls [r1]) + LENGTH (conn_hdls rs1)’
-    by metis_tac[conn_hdls_cons, LENGTH_APPEND] >>
+    by (rpt (pop_assum kall_tac) >> metis_tac[conn_hdls_cons, LENGTH_APPEND]) >>
   ‘LENGTH (conn_outs (r1 :: rs1)) = LENGTH (conn_outs [r1]) + LENGTH (conn_outs rs1)’
-    by metis_tac[conn_outs_cons, LENGTH_APPEND] >>
-  simp[]
+    by (rpt (pop_assum kall_tac) >> metis_tac[conn_outs_cons, LENGTH_APPEND]) >>
+  simp[] >>
+  qpat_x_assum ‘LENGTH (conn_outs (r1::rs1)) = _’ SUBST1_TAC >>
+  qpat_x_assum ‘LENGTH (conn_hdls (r1::rs1)) = _’ SUBST1_TAC >>
+  rpt conj_tac >> TRY (simp[] >> NO_TAC) >> first_assum ACCEPT_TAC
 QED
 
 (* ------------------------------------------------------------------------

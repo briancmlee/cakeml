@@ -629,3 +629,123 @@ Proof
   asm_rewrite_tac[ep_io_append, FOLDL_APPEND, credit_simps, APPEND_NIL] >>
   simp[arrs_fold] >> Cases_on ‘FOLDL fc_next (opn, kk) log’ >> asm_rewrite_tac[]
 QED
+
+(* ------------------------------------------------------------------------
+   The run: the trace's episodes are E1's channels, round by round, and
+   episode j's sent bytes are what ersent credits to channel j
+   ------------------------------------------------------------------------ *)
+
+Theorem einit_fd0:
+  MEM 0w (l0_used w0) ⇒ fd0_ok w0 einit
+Proof
+  simp[fd0_ok_def, tfds_def, einit_def, pinit_def, l1init_def]
+QED
+
+Theorem l0_ep_sent_run:
+  l0_rely w0 ∧ fds_lt w0 ∧ MEM lfd (l0_used w0) ∧ MEM 0w (l0_used w0) ∧
+  (∀n. SND (ecm lfd pol ifds m w0 n) + 1 < dimword (:64)) ⇒
+  ∀n h ws evs logs.
+    erounds lfd pol ifds m (w0, einit) n = SOME (h, ws, evs, logs) ⇒
+    FOLDL ep_next ([], 0) evs = ecm lfd pol ifds m w0 n ∧ fd0_ok (FST ws) (SND ws) ∧
+    ∀j. l0_ep_sent j evs = ersent lfd pol ifds m w0 j n
+Proof
+  strip_tac >> Induct
+  >- (simp[erounds_def, ecm_def, l0_ep_sent_def, ep_io_def, ersent_def] >>
+      metis_tac[einit_fd0]) >>
+  rpt gen_tac >> strip_tac >>
+  qpat_assum ‘erounds _ _ _ _ _ (SUC _) = _’
+    (strip_assume_tac o SIMP_RULE (srw_ss()) [AllCaseEqs()] o
+     ONCE_REWRITE_RULE [erounds_def]) >>
+  rpt BasicProvers.VAR_EQ_TAC >>
+  first_x_assum drule >> strip_tac >>
+  qpat_x_assum ‘eround _ _ _ _ _ = _’ mp_tac >> simp[eround_def, AllCaseEqs()] >> strip_tac >>
+  rpt BasicProvers.VAR_EQ_TAC >>
+  rename1 ‘eacts _ _ ws' _ = SOME (rs, aevs, ws1)’ >>
+  PairCases_on ‘ws'’ >> PairCases_on ‘ws1’ >> PairCases_on ‘ws’ >> fs[] >>
+  (* E1's invariants at rounds n and n + 1 *)
+  mp_tac (Q.INST [‘N’ |-> ‘SUC n’] l1ep_refines_ehl_upto_sent) >> impl_tac >- fs[] >>
+  disch_then (fn th =>
+    qspecl_then [‘n’, ‘h'’, ‘(ws'0, ws'1)’, ‘evs'’, ‘logs'’] mp_tac th >>
+    qspecl_then [‘SUC n’, ‘h' ++ [ssnap rdy rs]’, ‘(ws0, ws1)’, ‘evs' ++ aevs ++ tevs’,
+                 ‘logs' ++ [log]’] mp_tac th) >>
+  simp[] >> rpt (disch_then strip_assume_tac) >>
+  ‘∃cm k. ecm lfd pol ifds m w0 n = (cm, k)’ by metis_tac[pairTheory.PAIR] >>
+  ‘ALL_DISTINCT (MAP SND cm)’
+    by (qpat_x_assum ‘ev_rel _ _ (FST (ecm _ _ _ _ _ n)) _ _’ mp_tac >> simp[ev_rel_def]) >>
+  ‘okeys ws'1.p.b’
+    by (qpat_x_assum ‘sent_inv (FST (ecm _ _ _ _ _ n)) _ _ _’ mp_tac >> simp[sent_inv_def]) >>
+  ‘pown lfd ws1.p’ by fs[eown_def] >>
+  ‘∀i rs0 evs0 wi esi.
+     i ≤ LENGTH (new_actions (log_of m) h') ∧
+     eacts lfd pol (ws'0, ws'1) (TAKE i (new_actions (log_of m) h')) =
+     SOME (rs0, evs0, (wi, esi)) ⇒ eown lfd esi’
+    by (qpat_x_assum ‘∀n'. n' < SUC n ⇒ eround_own _ _ _ _ _ _’ (qspec_then ‘n’ mp_tac) >>
+        simp[eround_own_def] >> disch_then drule >> simp[]) >>
+  ‘eown lfd ws11’
+    by (first_x_assum (qspecl_then [‘LENGTH (new_actions (log_of m) h')’, ‘rs’, ‘aevs’,
+                                    ‘ws10’, ‘ws11’] mp_tac) >> simp[TAKE_LENGTH_ID]) >>
+  qpat_x_assum ‘eacts _ _ _ _ = _’ assume_tac >>
+  drule eacts_live >> impl_tac
+  >- (rpt conj_tac >> TRY (first_assum ACCEPT_TAC) >>
+      rpt strip_tac >> irule eown_oown >> first_x_assum irule >>
+      qexistsl_tac [‘evs0’, ‘i’, ‘rs0’, ‘wi’] >> fs[]) >>
+  strip_tac >>
+  drule_all eacts_fd0 >> strip_tac >>
+  ‘∀j. ep_io l0sysEpisodes$ev_sent j cm k aevs = credit cm j aevs ∧
+       FOLDL ep_next (cm, k) aevs =
+       (cnew k (rfds ws11 rs) ++ cm, k + LENGTH (rfds ws11 rs)) ∧
+       ∀g. ALOOKUP (cnew k (rfds ws11 rs) ++ cm) g ≠ ALOOKUP cm g ⇒ ¬live ws11 g’
+    by (gen_tac >> qpat_x_assum ‘eacts _ _ (ws'0, ws'1) _ = _’ assume_tac >>
+        drule eacts_ep >> disch_then (qspecl_then [‘j’, ‘cm’, ‘cm’, ‘k’] mp_tac) >>
+        impl_tac >- (rpt conj_tac >> TRY (first_assum ACCEPT_TAC) >> simp[]) >> simp[]) >>
+  ‘∀j. ep_io l0sysEpisodes$ev_sent j (cnew k (rfds ws11 rs) ++ cm) (k + LENGTH (rfds ws11 rs))
+         tevs = credit cm j tevs ∧
+       FOLDL ep_next (cnew k (rfds ws11 rs) ++ cm, k + LENGTH (rfds ws11 rs)) tevs =
+       SND (arrs lfd (cnew k (rfds ws11 rs) ++ cm, k + LENGTH (rfds ws11 rs)) log)’
+    by (gen_tac >> qpat_x_assum ‘etail _ _ _ _ = _’ assume_tac >>
+        drule etail_ep >>
+        disch_then (qspecl_then [‘cnew k (rfds ws11 rs) ++ cm’, ‘k + LENGTH (rfds ws11 rs)’,
+                                 ‘j’, ‘cm’] mp_tac) >>
+        impl_tac
+        >- (rpt conj_tac >> TRY (first_assum ACCEPT_TAC) >>
+            TRY (irule eown_oown >> first_assum ACCEPT_TAC >> NO_TAC) >>
+            qpat_x_assum ‘∀j. _ ∧ _ ∧ ∀g. _’ (qspec_then ‘j’ strip_assume_tac) >>
+            first_assum ACCEPT_TAC) >> simp[]) >>
+  ‘eacts_of lfd pol ifds m w0 n = SOME (rs, aevs, (ws10, ws11))’ by simp[eacts_of_def] >>
+  ‘econ lfd pol ifds m w0 n = rfds ws11 rs’ by simp[econ_def] >>
+  ‘elog lfd pol ifds m w0 n = log’
+    by (‘LENGTH logs' = n’
+          by (qpat_x_assum ‘erounds _ _ _ _ _ n = _’ assume_tac >>
+              drule erounds_logs >> simp[]) >>
+        qpat_x_assum ‘erounds _ _ _ _ _ (SUC n) = _’ assume_tac >>
+        drule elog_EL >> disch_then (qspec_then ‘n’ mp_tac) >> simp[EL_APPEND2]) >>
+  rpt conj_tac
+  >- (fs[FOLDL_APPEND, ecm_SUC, ecm1_def])
+  >- (drule_all etail_fd0 >> simp[])
+  >> gen_tac >>
+  ‘FOLDL ep_next ([], 0) evs' = (cm, k)’ by fs[] >>
+  simp[l0_ep_sent_def, ep_io_append, ersent_def, FOLDL_APPEND] >>
+  qpat_x_assum ‘FOLDL ep_next ([], 0) evs' = (cm, k)’ (fn th => simp[th]) >>
+  qpat_x_assum ‘∀j. ep_io _ j cm k aevs = _ ∧ _’ (fn th => simp[th]) >>
+  qpat_x_assum ‘∀j. ep_io _ j (cnew _ _ ++ cm) _ tevs = _ ∧ _’ (fn th => simp[th]) >>
+  qpat_x_assum ‘∀j. l0_ep_sent j evs' = _’ (fn th => simp[GSYM th, l0_ep_sent_def]) >>
+  REWRITE_TAC [GSYM APPEND_ASSOC, DROP_LENGTH_APPEND] >>
+  ‘credit cm j aevs ++ credit cm j tevs = credit cm j (aevs ++ tevs)’ by simp[] >>
+  pop_assum SUBST1_TAC >> irule credit_ecred >> first_assum ACCEPT_TAC
+QED
+
+(* G1: on the trace of any E1 run (fd 0 open at the start), what episode j
+   sent (l0sysEpisodes' l0_ep_sent) is a prefix of what the endpoint
+   layer's channel j was sent, in the world built from the run *)
+Theorem e1_l0_ep_sent:
+  l0_rely w0 ∧ fds_lt w0 ∧ MEM lfd (l0_used w0) ∧ MEM 0w (l0_used w0) ∧
+  (∀n. SND (ecm lfd pol ifds m w0 n) + 1 < dimword (:64)) ⇒
+  ∀n h ws evs logs j.
+    erounds lfd pol ifds m (w0, einit) n = SOME (h, ws, evs, logs) ⇒
+    l0_ep_sent j evs ≼
+    (EL j (FST (ehst lfd (elv lfd pol ifds m w0) ifds m (pew lfd a pol ifds m w0 calls) n)).chans).sent
+Proof
+  rpt strip_tac >>
+  drule_all l0_ep_sent_run >> strip_tac >> simp[] >>
+  drule_all l1ep_sent >> simp[]
+QED

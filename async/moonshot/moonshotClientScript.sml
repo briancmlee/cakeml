@@ -2062,3 +2062,162 @@ Proof
   (* CDone *)
   >> fs[ehacts_def]
 QED
+
+Theorem ehacts_APPEND_inv:
+  ∀xs k st rs st2. ehacts lfd lv n k st (xs ++ ys) = SOME (rs, st2) ⇒
+    ∃rs1 rs2 st1. ehacts lfd lv n k st xs = SOME (rs1, st1) ∧
+                  ehacts lfd lv n (k + LENGTH xs) st1 ys = SOME (rs2, st2) ∧ rs = rs1 ++ rs2
+Proof
+  Induct >> simp[ehacts_def] >> rw[] >> gvs[AllCaseEqs()] >>
+  first_x_assum drule >> strip_tac >> gvs[ADD1] >> metis_tac[]
+QED
+
+Theorem ctr_stat:
+  ctr b c c' s rd qs ∧ (∀hd. MEM hd (chd c) ⇒ s' hd = s hd) ⇒ ctr b c c' s' rd qs
+Proof
+  Cases_on ‘c’ >> simp[ctr_def, chd_def]
+QED
+
+Theorem ctr_qs:
+  ctr b c c' s rd qs ∧
+  (∀hd. MEM hd (chd c) ⇒ hl_sent hd qs2 = hl_sent hd qs ∧ (hl_eof hd qs ⇒ hl_eof hd qs2)) ⇒
+  ctr b c c' s rd qs2
+Proof
+  Cases_on ‘c’ >> simp[ctr_def, chd_def] >> rw[] >> gvs[] >> metis_tac[]
+QED
+
+Theorem hl_sent_nowrite:
+  (∀bs r. ¬MEM (EWrite hd bs, r) qs) ⇒ hl_sent hd qs = []
+Proof
+  Induct_on ‘qs’ >> simp[hl_sent_def, FORALL_PROD] >> rpt gen_tac >> strip_tac >>
+  ‘hl_sent hd qs = []’ by (first_x_assum irule >> metis_tac[]) >>
+  fs[hl_sent_def] >> Cases_on ‘p_1’ >> Cases_on ‘p_2’ >> simp[] >> rw[] >> metis_tac[]
+QED
+
+Theorem cact1_write:
+  MEM (EWrite hd bs) (cact1 a nh c rd) ⇒ MEM hd (chd c)
+Proof
+  Cases_on ‘c’ >> rw[cact1_def, chd_def]
+QED
+
+Theorem cacts_upto_write:
+  MEM (EWrite hd bs) (MAP SND (cacts_upto a st0 rdy m)) ⇒
+  ∃i. i < m ∧ MEM hd (chd (EL i st0.cs))
+Proof
+  simp[cacts_upto_def, MEM_MAP, MEM_FLAT, MEM_GENLIST, PULL_EXISTS] >> rw[] >>
+  qexists_tac ‘i’ >> simp[] >> irule cact1_write >> gvs[] >> metis_tac[]
+QED
+
+
+
+Theorem cupd_other:
+  ∀xs rs st. EVERY (λ(j, x). j ≠ i) xs ⇒ EL i (cupd rqs st xs rs).cs = EL i st.cs
+Proof
+  Induct >> simp[cupd_def] >> rpt gen_tac >> PairCases_on ‘h’ >> Cases_on ‘rs’ >>
+  simp[cupd_def] >> strip_tac >> simp[EL_LUPDATE]
+QED
+
+Theorem hl_sent_prefix:
+  (∀i. i < m ⇒ ¬MEM hd (chd (EL i st0.cs))) ⇒
+  hl_sent hd (ZIP (MAP SND (cacts_upto a st0 rdy m), rs)) = []
+Proof
+  strip_tac >> irule hl_sent_nowrite >> rpt strip_tac >> imp_res_tac MEM_ZIP_FST >>
+  imp_res_tac cacts_upto_write >> metis_tac[]
+QED
+
+Theorem hl_sent_block:
+  ¬MEM hd (chd c) ⇒ hl_sent hd (ZIP (cact1 a nh c rd, rs)) = []
+Proof
+  strip_tac >> irule hl_sent_nowrite >> rpt strip_tac >> imp_res_tac MEM_ZIP_FST >>
+  imp_res_tac cact1_write
+QED
+
+Theorem acts_trans:
+  crel a N rqs lfd st0 (K rdy) ps w hs ∧ N < dimword (:64) ∧
+  (st0.nh < cbound ⇒ st0.nh + N + 1 < dimword (:64)) ⇒
+  ∀m rs w1 hs1. m ≤ N ∧
+    ehacts lfd lv n 0 (w, hs) (MAP SND (cacts_upto a st0 rdy m)) = SOME (rs, (w1, hs1)) ⇒
+    (∀i. i < m ⇒
+       ctr (brequests (rqs i)) (EL i st0.cs) (EL i (cupd rqs st0 (cacts_upto a st0 rdy m) rs).cs)
+         (hstat (w, hs)) rdy (ZIP (MAP SND (cacts_upto a st0 rdy m), rs))) ∧
+    (∀hd. (∀i. i < m ⇒ ¬MEM hd (chd (EL i st0.cs))) ∧ MEM hd (MAP FST hs.tbl) ⇒
+       ALOOKUP hs1.tbl hd = ALOOKUP hs.tbl hd ∧ hstat (w1, hs1) hd = hstat (w, hs) hd)
+Proof
+  strip_tac >> Induct
+  >- simp[cacts_upto_def, ehacts_def] >>
+  rpt gen_tac >> strip_tac >> ‘m < N’ by simp[] >>
+  qabbrev_tac ‘A = cacts_upto a st0 rdy m’ >>
+  qabbrev_tac ‘xs = cact1 a st0.nh (EL m st0.cs) rdy’ >>
+  ‘cacts_upto a st0 rdy (SUC m) = A ++ MAP (λx. (m, x)) xs’
+    by simp[Abbr ‘A’, Abbr ‘xs’, cacts_upto_SUC] >>
+  ‘MAP SND (A ++ MAP (λx. (m, x)) xs) = MAP SND A ++ xs’
+    by simp[MAP_MAP_o, combinTheory.o_DEF] >>
+  fs[] >>
+  drule ehacts_APPEND_inv >> strip_tac >> rename1 ‘_ = SOME (rs1, stm)’ >>
+  PairCases_on ‘stm’ >> rename1 ‘_ = SOME (rs1, (wm, hsm))’ >>
+  first_x_assum drule >> strip_tac >>
+  drule crel_acts >> simp[] >> disch_then (qspecl_then [‘n’, ‘lv’, ‘m’] mp_tac) >>
+  simp[] >> strip_tac >> gvs[] >>
+  qabbrev_tac ‘stm = cupd rqs st0 A rs1’ >>
+  ‘EL m stm.cs = EL m st0.cs’ by simp[] >>
+  qabbrev_tac ‘rdm = λi. if i < m then ∅ else rdy’ >>
+  ‘rdm m = rdy’ by simp[Abbr ‘rdm’] >>
+  ‘ehacts lfd lv n (LENGTH (MAP SND A)) (wm, hsm) (cact1 a st0.nh (EL m stm.cs) (rdm m)) =
+   SOME (rs2, (w1, hs1))’ by fs[Abbr ‘xs’] >>
+  ‘st0.nh < cbound ⇒ stm.nh + 2 < dimword (:64)’ by simp[] >>
+  ‘crel a N rqs lfd stm rdm (ps ++ ZIP (MAP SND A, rs1)) wm hsm’ by simp[Abbr ‘rdm’] >>
+  qspecl_then [‘stm’, ‘rdm’, ‘ps ++ ZIP (MAP SND A, rs1)’, ‘wm’, ‘hsm’, ‘m’, ‘st0.nh’,
+               ‘LENGTH (MAP SND A)’, ‘rs2’, ‘w1’, ‘hs1’] mp_tac
+    (Q.GENL [‘st’, ‘rdyf’, ‘ps’, ‘w’, ‘hs’, ‘k’, ‘nh0’, ‘ix’, ‘rs’, ‘w1’, ‘hs1’] conn_ctr) >>
+  impl_tac >- simp[] >> strip_tac >>
+  qspecl_then [‘stm’, ‘rdm’, ‘ps ++ ZIP (MAP SND A, rs1)’, ‘wm’, ‘hsm’, ‘m’, ‘st0.nh’,
+               ‘LENGTH (MAP SND A)’, ‘rs2’, ‘w1’, ‘hs1’] assume_tac
+    (Q.GENL [‘st’, ‘rdyf’, ‘ps’, ‘w’, ‘hs’, ‘k’, ‘nh0’, ‘ix’, ‘rs’, ‘w1’, ‘hs1’, ‘hd’] conn_frame) >>
+  ‘cact1 a st0.nh (EL m stm.cs) (rdm m) = xs’ by simp[Abbr ‘xs’] >>
+  pop_assum (fn th => RULE_ASSUM_TAC (REWRITE_RULE [th])) >>
+  qpat_x_assum ‘EL m stm.cs = EL m st0.cs’ (fn th => RULE_ASSUM_TAC (REWRITE_RULE [th])) >>
+  qpat_x_assum ‘rdm m = rdy’ (fn th => RULE_ASSUM_TAC (REWRITE_RULE [th])) >>
+  ‘cupd rqs st0 (A ++ MAP (λx. (m, x)) xs) (rs1 ++ rs2) = cupd rqs stm (MAP (λx. (m, x)) xs) rs2’
+    by (qunabbrev_tac ‘stm’ >> irule cupd_APPEND >> simp[]) >>
+  ‘ZIP (MAP SND A ++ xs, rs1 ++ rs2) = ZIP (MAP SND A, rs1) ++ ZIP (xs, rs2)’
+    by (‘LENGTH rs2 = LENGTH xs’ by metis_tac[ehacts_LENGTH] >> simp[ZIP_APPEND]) >>
+  ntac 2 (pop_assum (fn th => REWRITE_TAC [th])) >>
+  ‘(∀i1 i2 hd. i1 < N ∧ i2 < N ∧ MEM hd (chd (EL i1 st0.cs)) ∧ MEM hd (chd (EL i2 st0.cs)) ⇒
+               i1 = i2) ∧
+   (∀hd. MEM hd (MAP FST hs.tbl) ⇔ ∃i. i < N ∧ MEM hd (chd (EL i st0.cs)))’
+    by (qpat_x_assum ‘crel _ _ _ _ st0 _ _ _ _’ (strip_assume_tac o REWRITE_RULE [crel_def]) >>
+        conj_tac >> first_assum ACCEPT_TAC) >>
+  conj_tac
+  >- (rpt strip_tac >> Cases_on ‘i = m’
+      >- (qpat_x_assum ‘i = m’ SUBST_ALL_TAC >>
+          irule ctr_qs >> qexists_tac ‘ZIP (xs, rs2)’ >> rpt conj_tac >>
+          TRY (irule ctr_stat >> qexists_tac ‘hstat (wm, hsm)’ >> simp[] >>
+               rpt strip_tac >>
+               qpat_x_assum ‘∀hd. (∀i. i < m ⇒ _) ∧ _ ⇒ _’ (qspec_then ‘hd’ mp_tac) >>
+               impl_tac
+               >- (conj_tac
+                   >- (rpt strip_tac >> ‘i < N’ by simp[] >> ‘i = m’ by metis_tac[] >> fs[]) >>
+                   metis_tac[]) >>
+               simp[] >> NO_TAC) >>
+          rpt strip_tac >> simp[] >>
+          ‘hl_sent hd (ZIP (MAP SND A, rs1)) = []’
+            by (simp[Abbr ‘A’] >> irule hl_sent_prefix >> rpt strip_tac >>
+                ‘i < N’ by simp[] >> ‘i = m’ by metis_tac[] >> fs[]) >> simp[]) >>
+      ‘i < m’ by simp[] >>
+      ‘EL i (cupd rqs stm (MAP (λx. (m, x)) xs) rs2).cs = EL i stm.cs’
+        by (irule cupd_other >> simp[EVERY_MAP]) >> simp[] >>
+      irule ctr_qs >> qexists_tac ‘ZIP (MAP SND A, rs1)’ >> simp[] >> rpt strip_tac >>
+      ‘hl_sent hd (ZIP (xs, rs2)) = []’
+        by (simp[Abbr ‘xs’] >> irule hl_sent_block >> strip_tac >>
+            ‘i < N’ by simp[] >> ‘i = m’ by metis_tac[] >> fs[]) >> simp[]) >>
+  rpt strip_tac >>
+  ‘ALOOKUP hsm.tbl hd = ALOOKUP hs.tbl hd ∧ hstat (wm, hsm) hd = hstat (w, hs) hd’
+    by (first_x_assum irule >> simp[]) >>
+  ‘MEM hd (MAP FST hsm.tbl)’
+    by (Cases_on ‘ALOOKUP hs.tbl hd’ >> gvs[ALOOKUP_NONE] >>
+        imp_res_tac ALOOKUP_MEM >> fs[MEM_MAP] >> metis_tac[FST]) >>
+  ‘¬MEM hd (chd (EL m st0.cs))’ by simp[] >>
+  ‘ALOOKUP hs1.tbl hd = ALOOKUP hsm.tbl hd ∧ hstat (w1, hs1) hd = hstat (wm, hsm) hd’
+    by (first_x_assum irule >> simp[]) >>
+  simp[]
+QED

@@ -132,3 +132,100 @@ Proof
     irule wmono_upd >> simp[cmono_def, frozen_def] >> metis_tac[l0_chan_of_lt],
     gvs[l0_close_def, AllCaseEqs()] >> rw[wmono_close_fd]]
 QED
+
+(*---------------------------------------------------------------------------*)
+(* Arrivals *)
+
+Theorem wmono_deliver:
+  (∀j bs. a ≠ LData j bs) ⇒ wmono w (l0_deliver w a)
+Proof
+  Cases_on ‘a’ >> rw[l0_deliver_def] >> every_case_tac >> gvs[] >>
+  TRY (irule (cj 3 wmono_append) >> simp[fresh_lchan_def] >> NO_TAC) >>
+  irule wmono_upd >> simp[cmono_def, frozen_def, break_lchan_def] >> rw[]
+QED
+
+(* Data arriving at channel j: it reaches the peer's stream unless the
+   channel drops it *)
+Theorem deliver_data:
+  LENGTH (l0_deliver w (LData j bs)).chans = LENGTH w.chans ∧
+  ∀c. c < LENGTH w.chans ⇒
+      (EL c (l0_deliver w (LData j bs)).chans).sent = (EL c w.chans).sent ∧
+      ((EL c (l0_deliver w (LData j bs)).chans).connecting ⇔ (EL c w.chans).connecting) ∧
+      (frozen (EL c (l0_deliver w (LData j bs)).chans) ⇔ frozen (EL c w.chans)) ∧
+      (EL c (l0_deliver w (LData j bs)).chans).peer_sent =
+      if c = j ∧ ¬frozen (EL c w.chans) ∧ ¬(EL c w.chans).connecting
+      then (EL c w.chans).peer_sent ++ bs else (EL c w.chans).peer_sent
+Proof
+  rw[l0_deliver_def, upd_lchan_def, EL_LUPDATE, frozen_def] >> rw[] >> gvs[]
+QED
+
+(*---------------------------------------------------------------------------*)
+(* Queues: no call queues a connection; an arrival queues only a new one *)
+
+Definition queued_def:
+  queued (w : l0world) c ⇔ ∃l p q. MEM (l, p, q) w.listeners ∧ MEM c q
+End
+
+Theorem queued_upd[simp]:
+  queued (upd_lchan j g w) c ⇔ queued w c
+Proof
+  simp[queued_def]
+QED
+
+Theorem MEM_AFUPDKEY_imp:
+  ∀L. MEM (a, b) (AFUPDKEY k f L) ⇒ MEM (a, b) L ∨ ∃b0. MEM (k, b0) L ∧ b = f b0
+Proof
+  Induct >> simp[AFUPDKEY_def] >> Cases >> rw[AFUPDKEY_def] >> metis_tac[]
+QED
+
+Theorem queued_breaks:
+  ∀q w. queued (FOLDL (λw j. upd_lchan j (break_lchan e k) w) w q) c ⇔ queued w c
+Proof
+  Induct >> simp[]
+QED
+
+Theorem queued_close_fd:
+  queued (close_fd f w) c ⇒ queued w c
+Proof
+  rw[close_fd_def] >> every_case_tac >> gvs[queued_breaks] >>
+  gvs[queued_def, MEM_FILTER] >> metis_tac[]
+QED
+
+Theorem queued_pop:
+  FILTER (λ(l', p, q). l' = l) w.listeners = (l1, p, j :: q') :: t ∧
+  MEM (a, p', q'') (AFUPDKEY l (K (p, q')) w.listeners) ∧ MEM c q'' ⇒ queued w c
+Proof
+  strip_tac >> drule MEM_AFUPDKEY_imp >> rw[queued_def]
+  >- metis_tac[] >>
+  ‘MEM (l1, p, j :: q') (FILTER (λ(l', p, q). l' = l) w.listeners)’ by simp[] >>
+  gvs[MEM_FILTER] >> metis_tac[MEM]
+QED
+
+Theorem queued_call:
+  l0_call nm (unblock nm conf) bytes w = SOME (FFIreturn out w1) ∧ queued w1 c ⇒
+  queued w c
+Proof
+  strip_tac >>
+  Cases_on ‘nm = «sys_poll»’ >- (gvs[] >> drule l0_call_poll_unblock >> strip_tac >> gvs[]) >>
+  gvs[unblock_other, l0_call_def, AllCaseEqs()] >> rpt (pairarg_tac >> gvs[]) >>
+  TRY (FIRST [
+    gvs[l0_listen_def, AllCaseEqs(), queued_def] >> metis_tac[MEM],
+    drule l0_accept_cases >> strip_tac >> gvs[] >>
+    gvs[queued_def] >> metis_tac[queued_pop, queued_def],
+    drule l0_recv_cases >> strip_tac >> gvs[] >> NO_TAC,
+    drule l0_send_cases >> strip_tac >> gvs[] >> NO_TAC,
+    gvs[l0_shutdown_def, AllCaseEqs()] >> NO_TAC,
+    drule l0_connect_cases >> simp[LET_THM] >> strip_tac >> gvs[queued_def] >> NO_TAC,
+    gvs[l0_connerr_def, AllCaseEqs()] >> NO_TAC,
+    gvs[l0_close_def, AllCaseEqs()] >> metis_tac[queued_close_fd]]) >>
+  drule l0_connect_cases >> simp[LET_THM] >> strip_tac >> gvs[queued_def, fail_def] >>
+  metis_tac[]
+QED
+
+Theorem queued_deliver:
+  queued (l0_deliver w a) c ⇒ queued w c ∨ c = LENGTH w.chans
+Proof
+  Cases_on ‘a’ >> rw[l0_deliver_def] >> every_case_tac >> gvs[] >>
+  gvs[queued_def] >> drule MEM_AFUPDKEY_imp >> rw[] >> gvs[] >- metis_tac[] >>
+  pairarg_tac >> gvs[] >> metis_tac[]
+QED

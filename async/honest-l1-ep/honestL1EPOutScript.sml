@@ -201,3 +201,48 @@ Proof
   drule sys_close_quiet >> strip_tac >> gvs[] >>
   simp[ostep_def, forget_other] >> simp[forget_def, MEM_FILTER] >> metis_tac[]
 QED
+
+(* The fds L1 holds *)
+Definition held_def:
+  held (b : l1st) f ⇔ MEM f (MAP SND b.tbl) ∨ MEM f b.closing
+End
+
+(* Reads and accepts send nothing; an fd still held keeps its account; the
+   auto-closed one ends *)
+Theorem ADELKEY_SND_distinct:
+  ∀l. ALL_DISTINCT (MAP SND l) ∧ ALOOKUP l h = SOME f ⇒ ¬MEM f (MAP SND (ADELKEY h l))
+Proof
+  Induct >> simp[FORALL_PROD, ADELKEY_def] >> rw[] >> gvs[MEM_MAP, MEM_FILTER, EXISTS_PROD] >>
+  imp_res_tac ALOOKUP_MEM >> metis_tac[]
+QED
+
+Theorem pdo_read_ostep:
+  pdo lfd (w, ps) (Read h n) = SOME (r, (w', ps'), evs) ∧ pown lfd ps ⇒
+  (∀f. evs_sent f evs = []) ∧
+  ∀f. held ps.b f ⇒ (held ps'.b f ⇒ ostep f ps.b ps'.b evs []) ∧ ostepc f ps.b evs []
+Proof
+  simp[pdo_def] >> rw[] >> gvs[AllCaseEqs()] >>
+  TRY (simp[ostep_def, ostepc_def, set_inb_def] >> NO_TAC) >>
+  TRY (simp[ostep_def, ostepc_def] >> rw[] >> NO_TAC) >>
+  PairCases_on ‘z’ >> gvs[] >> drule l1_close_ostep >> strip_tac >>
+  TRY (simp[ostepc_def] >> NO_TAC) >>
+  ‘ALL_DISTINCT (MAP SND ps.b.tbl) ∧ ¬MEM f' ps.b.closing’
+    by (gvs[honestL1PFRefineTheory.pown_def, ALL_DISTINCT_APPEND] >> imp_res_tac ALOOKUP_MEM >>
+        gvs[MEM_MAP] >> metis_tac[SND]) >>
+  ‘f ≠ f'’
+    by (strip_tac >> qpat_x_assum ‘held z1 _’ mp_tac >> simp[held_def] >>
+        qpat_x_assum ‘z1.tbl = _’ (fn th => simp[th]) >>
+        qpat_x_assum ‘∀f. MEM f z1.closing ⇔ _’ (fn th => simp[th]) >>
+        gvs[] >> metis_tac[ADELKEY_SND_distinct]) >>
+  qpat_x_assum ‘∀f. _ ⇒ ostep _ _ _ _ _’ (qspec_then ‘f’ mp_tac) >> simp[ostep_def]
+QED
+
+Theorem pdo_accept_ostep:
+  pdo lfd (w, ps) (Accept l) = SOME (r, (w', ps'), evs) ⇒
+  evs = [] ∧ w' = w ∧ ps'.b.closing = ps.b.closing ∧ ps'.b.gone = ps.b.gone ∧
+  ps'.b.outbox = ps.b.outbox ∧
+  (ps'.b.tbl = ps.b.tbl ∧ ps'.acq = ps.acq ∨
+   ∃h. ps'.b.tbl = (h, HD ps.acq) :: ps.b.tbl ∧ ps.acq = HD ps.acq :: ps'.acq)
+Proof
+  simp[pdo_def] >> rw[] >> gvs[AllCaseEqs()]
+QED

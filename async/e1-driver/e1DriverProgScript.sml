@@ -10,7 +10,8 @@
 
   The loop runs a fold program (e1Fold): it keeps the program's state
   and calls the program's (translated) acts, ifds, step and fin, passed
-  as values.
+  as values.  Its argument is one tuple ((lfd, pol, ifds, acts, step,
+  fin), state, E1 state), as cfDiv's divergence rule wants.
 *)
 Theory e1DriverProg
 Ancestors
@@ -236,10 +237,15 @@ Quote add_cakeml:
       in etail_fin lfd hs es5 end
     end;
 
-  fun run_e lfd pol ifds acts step fin st es =
-    if fin st then ()
-    else
-      case eacts lfd es (acts st) of (es1, rs) =>
-      case etail lfd pol (ifds st) es1 of (rdy, es2) =>
-        run_e lfd pol ifds acts step fin (step st rdy rs) es2;
+  fun step_e st =
+    case st of (c, s, es) =>
+    case c of (lfd, pol, ifds, acts, step, fin) =>
+    case eacts lfd es (acts s) of (es1, rs) =>
+    case etail lfd pol (ifds s) es1 of (rdy, es2) =>
+      (c, step s rdy rs, es2);
+
+  fun run_e st =
+    case st of (c, s, es) =>
+    case c of (lfd, pol, ifds, acts, step, fin) =>
+      if fin s then () else run_e (step_e st);
 End

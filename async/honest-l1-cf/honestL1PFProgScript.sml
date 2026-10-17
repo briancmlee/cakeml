@@ -356,17 +356,21 @@ Definition set_b_def:
   set_b ps b = ps with b := b
 End
 
-(* D25: room for the handles of a round with n accepts (only an Accept
-   takes a handle): handles nxt .. nxt + n - 1 exist iff nxt + n < 2^64
-   (honestL1PFInv l1hdln_lt).  Without room the loop stops (spins without
-   I/O): after 2^64 - 1 handed-out connections, unreachable in practice; a
-   deliberate choice over wrapping the counter (which would reuse handles) *)
+(* D25, amended by D40: room for the handles of a round with n accepts
+   (only an Accept takes a handle), and 2 more: handles nxt .. nxt + n - 1
+   exist iff nxt + n < 2^64 (honestL1PFInv l1hdln_lt); the 2 keep the
+   connections L1 has taken from the kernel (handed out, plus at most one
+   pre-accepted in acq) within the 2^64 - 2 clients of the version-2 world
+   (socketV2Fair arrival_ok2), which R1 (honestL1PFRefine) needs.  Without
+   room the loop stops (spins without I/O): after 2^64 - 3 handed-out
+   connections, unreachable in practice; a deliberate choice over wrapping
+   the counter (which would reuse handles) *)
 Definition hdl_room_def:
-  hdl_room (lfd:word64) ps n ⇔ ps.b.nxt + n < dimword (:64)
+  hdl_room (lfd:word64) ps n ⇔ ps.b.nxt + n + 2 < dimword (:64)
 End
 
 Theorem hdl_room_num:
-  hdl_room (lfd:word64) ps n ⇔ ps.b.nxt + n < 18446744073709551616
+  hdl_room (lfd:word64) ps n ⇔ ps.b.nxt + n + 2 < 18446744073709551616
 Proof
   simp[hdl_room_def]
 QED

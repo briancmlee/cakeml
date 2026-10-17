@@ -21,7 +21,9 @@ The model's `pdo` fails (`NONE`) once the handle counter overflows, which happen
 - `step_pf` first checks `hdl_room lfd ps (LENGTH acts)`: room in the handle counter for the round's actions, plus one for a pending accepted connection.
 - If there is no room, the step returns its state unchanged. From then on, the loop spins without I/O.
 
-So **after 2^64 accepted connections the L1 loop stops doing I/O (it spins). This is unreachable in practice.** We chose this deliberately over wrapping the counter, because wrapping would reuse handles.
+So **after 2^64 accepted connections the L1 loop stops doing I/O (it spins). This is unreachable in practice.**
+**Amended by D40 (user, Q-9, 2026-10-17):** the guard is `nxt + n + 2 < 2^64`, so the loop stops after 2^64−3
+handed-out connections (see "P4 gap 2 detail" below). We chose this deliberately over wrapping the counter, because wrapping would reuse handles.
 
 The divergence spec is stated against `prounds_t`:
 
@@ -142,3 +144,17 @@ Alternatives considered:
 - Keep the current guard and treat the last 1–2 rounds separately. The bound would be loose and
   the extra case split is not worth it.
 - Ask honest-ffi to weaken R1 to `pcm < dimword`. That reopens R1's proofs.
+
+Status 2026-10-17: the coordinator put this on HOLD. D25's cut-off is user-approved, so a change goes to the user.
+Analysis sent to the coordinator:
+- The source of the +1 is v2's `arrival_ok2 (Connect2)`: reserved + listening + clients + 1 < 2^64. With one
+  listener, v2 holds at most 2^64−2 clients.
+- The current guard lets pcm (pre-accepted connections) reach 2^64.
+- Rejected, proof-only routes:
+  - psk_upto truncation: it acts after round N, not in the round that holds the prefix;
+  - a bound lemma: the bound is false;
+  - withholding the over-limit Connect2: the program may write to that connection, and the episode is then
+    unpaired with sent ≠ [];
+  - raising v2's capacity: it reopens socket-v2, close-v2, kv2_safe and R1.
+- Smallest program change: `nxt + n + 2 < dimword`. With it, at most 2^64−3 connections are handed out
+  (2^64−1 today).

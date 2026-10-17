@@ -18,10 +18,9 @@
    - an episode lasts from the j-th successful accept to the first
      successful close of its fd (an accept that reuses the fd also ends it:
      honestEchoL0Bites' l0_ep_events_reuse);
-   - as for echo, the claim is made while fewer than 2^64 - 1 connections
-     have been accepted (the loop stops when the handles run out, user
-     decision D25; honestEchoL0NoGuard shows echo needs no such guard, and
-     the guard's removal is with the user);
+   - as for echo, there is no bound on the number of connections (user
+     decision D31 dropped the 2^64 - 1 accept guard; the loop stops when
+     the handles run out, D25, and nothing is sent after that);
    - the program listens on its port first; if the listen fails it stops
      after that one event;
    - topology (for the moonshot's composition, step 12 T7/T8): every
@@ -47,7 +46,7 @@ Libs
 Definition http_safe_l0_def:
   http_safe_l0 files io ⇔
     ∀evs j rs rest.
-      LPREFIX (fromList evs) io ∧ LENGTH (l0_accepted evs) < 2 ** 64 − 1 ∧
+      LPREFIX (fromList evs) io ∧
       EVERY valid_brequest rs ∧ l0_read j evs = brequests rs ++ rest ∧
       no_full_brequest rest ⇒
       l0_sent j evs ≼ bresponses files rs
@@ -82,7 +81,7 @@ End
 Definition kv_safe_l0_def:
   kv_safe_l0 io ⇔
     ∀evs rss rests.
-      LPREFIX (fromList evs) io ∧ LENGTH (l0_accepted evs) < 2 ** 64 − 1 ∧
+      LPREFIX (fromList evs) io ∧
       (∀j. EVERY valid_brequest (rss j) ∧ no_full_brequest (rests j) ∧
            l0_read j evs = brequests (rss j) ++ rests j) ⇒
       ∃order.

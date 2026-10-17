@@ -176,7 +176,7 @@ End
 Theorem ehdo_read:
   ALOOKUP hs.tbl hd = SOME f ∧ ALOOKUP w.open_fds f = SOME j ∧ j < LENGTH w.chans ∧
   0 < n ∧ n < 256 ** 8 ⇒
-  ∃r w' hs'. ehdo lfd (w, hs) (ERead hd n) = SOME (r, (w', hs')) ∧ wframe j w w' ∧
+  ∃r w' hs'. ehdo lfd v (w, hs) (ERead hd n) = SOME (r, (w', hs')) ∧ wframe j w w' ∧
    ((EL j w.chans).status = Refused ∧ r = ERefused ∧ hs' = eh_del hd hs ∧
     w'.open_fds = ADELKEY f w.open_fds ∧ (EL j w'.chans).status = Failed ∨
     (EL j w.chans).status ≠ Refused ∧ (EL j w.chans).inbox ≠ [] ∧
@@ -202,7 +202,7 @@ QED
 Theorem ehdo_write_up:
   ALOOKUP hs.tbl hd = SOME f ∧ ALOOKUP w.open_fds f = SOME j ∧ j < LENGTH w.chans ∧
   (EL j w.chans).status = Up ∧ ¬(EL j w.chans).shut ∧ w.takes = (λj b n. n) ⇒
-  ehdo lfd (w, hs) (EWrite hd bs) =
+  ehdo lfd v (w, hs) (EWrite hd bs) =
     SOME (EWrote (LENGTH bs),
           (upd_chan j (λc. c with <| sent := c.sent ++ bs; inflight := c.inflight + LENGTH bs |>) w,
            hs))
@@ -211,7 +211,7 @@ Proof
 QED
 
 Theorem ehdo_connect:
-  ehdo lfd (w, hs) (EConnect a) =
+  ehdo lfd v (w, hs) (EConnect a) =
     if w.nosock w.nconnects ∨ ¬(LENGTH (ep_used w) < dimword (:64)) then
       SOME (EConnected NONE, (w with nconnects := w.nconnects + 1, hs))
     else if hdln (w2n lfd) hs.nxt < dimword (:64) then
@@ -402,7 +402,7 @@ QED
 Theorem crel_connect:
   crel a N rqs lfd st rdyf ps w hs ∧ k < N ∧ EL k st.cs = CIdle ∧
   hs.nxt + 2 < dimword (:64) ∧ N < dimword (:64) ⇒
-  ∃r w1 hs1. ehdo lfd (w, hs) (EConnect a) = SOME (r, (w1, hs1)) ∧
+  ∃r w1 hs1. ehdo lfd v (w, hs) (EConnect a) = SOME (r, (w1, hs1)) ∧
      crel a N rqs lfd (cupd rqs st [(k, EConnect a)] [r]) ((k =+ ∅) rdyf) (ps ++ [(EConnect a, r)])
        w1 hs1 ∧
      wkeep w w1
@@ -964,7 +964,7 @@ QED
 Theorem crel_read:
   crel a N rqs lfd st rdyf ps w hs ∧ k < N ∧ MEM hd (chd (EL k st.cs)) ∧
   (∀h. EL k st.cs = CPend h ⇒ hd ∈ rdyf k) ⇒
-  ∃r w1 hs1. ehdo lfd (w, hs) (ERead hd cread) = SOME (r, (w1, hs1)) ∧
+  ∃r w1 hs1. ehdo lfd v (w, hs) (ERead hd cread) = SOME (r, (w1, hs1)) ∧
      crel a N rqs lfd (cupd rqs st [(k, ERead hd cread)] [r]) ((k =+ ∅) rdyf)
        (ps ++ [(ERead hd cread, r)]) w1 hs1 ∧ wkeep w w1
 Proof
@@ -978,7 +978,7 @@ Proof
    (EL k st.cs = CPend hd ⇒ hl_sent hd ps = [])’
     by (Cases_on ‘EL k st.cs’ >> gvs[cok_def, chd_def]) >>
   ‘0 < cread ∧ cread < 256 ** 8’ by simp[] >>
-  drule_all ehdo_read >> disch_then (qspec_then ‘lfd’ strip_assume_tac) >>
+  drule_all ehdo_read >> disch_then (qspecl_then [‘v’, ‘lfd’] strip_assume_tac) >>
   qexistsl_tac [‘r’, ‘w'’, ‘hs'’] >> simp[] >>
   drule_all crel_open_not_ended >> strip_tac >>
   ‘(EL j w.chans).status = Up ∨ (EL j w.chans).status = Refused’
@@ -1016,7 +1016,7 @@ QED
 
 Theorem crel_write:
   crel a N rqs lfd st rdyf ps w hs ∧ k < N ∧ EL k st.cs = CUp hd rest ∧ rest ≠ [] ⇒
-  ∃r w1 hs1. ehdo lfd (w, hs) (EWrite hd rest) = SOME (r, (w1, hs1)) ∧
+  ∃r w1 hs1. ehdo lfd v (w, hs) (EWrite hd rest) = SOME (r, (w1, hs1)) ∧
      crel a N rqs lfd (cupd rqs st [(k, EWrite hd rest)] [r]) rdyf
        (ps ++ [(EWrite hd rest, r)]) w1 hs1 ∧ wkeep w w1 ∧
      EL k (cupd rqs st [(k, EWrite hd rest)] [r]).cs = CUp hd [] ∧ new_hd r = NONE
@@ -1048,14 +1048,14 @@ Proof
 QED
 
 Theorem ehacts_one:
-  ehdo lfd st x = SOME (r, st1) ⇒ ehacts lfd st [x] = SOME ([r], st1)
+  ehdo lfd (lv n k) st x = SOME (r, st1) ⇒ ehacts lfd lv n k st [x] = SOME ([r], st1)
 Proof
   simp[ehacts_def]
 QED
 
 Theorem ehacts_two:
-  ehdo lfd st x = SOME (r, st1) ∧ ehdo lfd st1 y = SOME (r', st2) ⇒
-  ehacts lfd st [x; y] = SOME ([r; r'], st2)
+  ehdo lfd (lv n k) st x = SOME (r, st1) ∧ ehdo lfd (lv n (k + 1)) st1 y = SOME (r', st2) ⇒
+  ehacts lfd lv n k st [x; y] = SOME ([r; r'], st2)
 Proof
   simp[ehacts_def]
 QED
@@ -1072,7 +1072,7 @@ Theorem crel_conn:
   crel a N rqs lfd st rdyf ps w hs ∧ k < N ∧ N < dimword (:64) ∧
   (nh0 < cbound ⇒ st.nh + 2 < dimword (:64)) ⇒
   ∃rs w1 hs1.
-    ehacts lfd (w, hs) (cact1 a nh0 (EL k st.cs) (rdyf k)) = SOME (rs, (w1, hs1)) ∧
+    ehacts lfd lv n ix (w, hs) (cact1 a nh0 (EL k st.cs) (rdyf k)) = SOME (rs, (w1, hs1)) ∧
     crel a N rqs lfd (cupd rqs st (MAP (λx. (k, x)) (cact1 a nh0 (EL k st.cs) (rdyf k))) rs)
       ((k =+ ∅) rdyf) (ps ++ ZIP (cact1 a nh0 (EL k st.cs) (rdyf k), rs)) w1 hs1 ∧
     wkeep w w1 ∧ LENGTH rs = LENGTH (cact1 a nh0 (EL k st.cs) (rdyf k)) ∧
@@ -1090,7 +1090,7 @@ Proof
   >~ [‘EL k st.cs = CIdle’]
   >- (IF_CASES_TAC
       >- (‘hs.nxt + 2 < dimword (:64)’ by gvs[] >>
-          drule_all crel_connect >> strip_tac >> drule ehacts_one >> strip_tac >>
+          drule_all crel_connect >> disch_then (qspec_then ‘lv n ix’ strip_assume_tac) >> drule ehacts_one >> strip_tac >>
           qexistsl_tac [‘[r]’, ‘w1’, ‘hs1’] >> norm_tac >> rw[EL_LUPDATE]) >>
       simp[ehacts_def, cupd_def] >>
       first_x_assum irule >> simp[chd_def])
@@ -1100,7 +1100,7 @@ Proof
   >~ [‘EL k st.cs = CPend hd’]
   >- (IF_CASES_TAC
       >- (‘MEM hd (chd (EL k st.cs)) ∧ ∀h. EL k st.cs = CPend h ⇒ hd ∈ rdyf k’ by simp[chd_def] >>
-          drule_all crel_read >> strip_tac >> drule ehacts_one >> strip_tac >>
+          drule_all crel_read >> disch_then (qspec_then ‘lv n ix’ strip_assume_tac) >> drule ehacts_one >> strip_tac >>
           qexistsl_tac [‘[r]’, ‘w1’, ‘hs1’] >> norm_tac >> rw[EL_LUPDATE]) >>
       simp[ehacts_def, cupd_def] >>
       first_x_assum irule >> simp[chd_def]) >>
@@ -1108,11 +1108,11 @@ Proof
   Cases_on ‘rest = []’ >> simp[]
   >- (IF_CASES_TAC
       >- (‘MEM hd (chd (EL k st.cs)) ∧ ∀h. EL k st.cs = CPend h ⇒ hd ∈ rdyf k’ by simp[chd_def] >>
-          drule_all crel_read >> strip_tac >> drule ehacts_one >> strip_tac >>
+          drule_all crel_read >> disch_then (qspec_then ‘lv n ix’ strip_assume_tac) >> drule ehacts_one >> strip_tac >>
           qexistsl_tac [‘[r]’, ‘w1’, ‘hs1’] >> norm_tac >> rw[EL_LUPDATE]) >>
       simp[ehacts_def, cupd_def] >>
       first_x_assum irule >> simp[chd_def]) >>
-  drule_all crel_write >> strip_tac >>
+  drule_all crel_write >> disch_then (qspec_then ‘lv n ix’ strip_assume_tac) >>
   qabbrev_tac ‘st1 = cupd rqs st [(k, EWrite hd rest)] [r]’ >>
   ‘LENGTH st1.cs = N ∧ st1.nh = st.nh ∧ ∀i. i ≠ k ⇒ EL i st1.cs = EL i st.cs’
     by (simp[Abbr ‘st1’, EL_LUPDATE] >> fs[]) >>
@@ -1123,12 +1123,12 @@ Proof
   ‘cupd rqs st [(k, EWrite hd rest)] [r] = st1’ by fs[markerTheory.Abbrev_def] >>
   IF_CASES_TAC
   >- (‘MEM hd (chd (EL k st1.cs)) ∧ ∀h. EL k st1.cs = CPend h ⇒ hd ∈ rdyf k’ by simp[chd_def] >>
-      drule_all crel_read >> strip_tac >>
-      ‘ehacts lfd (w, hs) [EWrite hd rest; ERead hd cread] = SOME ([r; r'], (w1', hs1'))’
+      drule_all crel_read >> disch_then (qspec_then ‘lv n (ix + 1)’ strip_assume_tac) >>
+      ‘ehacts lfd lv n ix (w, hs) [EWrite hd rest; ERead hd cread] = SOME ([r; r'], (w1', hs1'))’
         by (irule ehacts_two >> metis_tac[]) >>
       qexistsl_tac [‘[r; r']’, ‘w1'’, ‘hs1'’] >>
       SIMP_TAC list_ss [] >>
-      qpat_x_assum ‘ehacts _ _ _ = _’ (fn th => REWRITE_TAC [th]) >>
+      qpat_x_assum ‘ehacts _ _ _ _ _ _ = _’ (fn th => REWRITE_TAC [th]) >>
       qpat_x_assum ‘∀r'. cupd _ _ [_; _] _ = _’ (fn th => REWRITE_TAC [th]) >>
       ‘ps ++ [(EWrite hd rest, r); (ERead hd cread, r')] =
        ps ++ [(EWrite hd rest, r)] ++ [(ERead hd cread, r')]’ by simp[] >>
@@ -1154,15 +1154,16 @@ Proof
 QED
 
 Theorem ehacts_APPEND:
-  ∀xs st rs st1. ehacts lfd st xs = SOME (rs, st1) ∧ ehacts lfd st1 ys = SOME (rs', st2) ⇒
-    ehacts lfd st (xs ++ ys) = SOME (rs ++ rs', st2)
+  ∀xs k st rs st1. ehacts lfd lv n k st xs = SOME (rs, st1) ∧
+    ehacts lfd lv n (k + LENGTH xs) st1 ys = SOME (rs', st2) ⇒
+    ehacts lfd lv n k st (xs ++ ys) = SOME (rs ++ rs', st2)
 Proof
   Induct >> simp[ehacts_def] >> rw[] >> gvs[AllCaseEqs()] >>
-  first_x_assum drule_all >> simp[]
+  first_x_assum (qspec_then ‘k + 1’ mp_tac) >> fs[ADD1] >> metis_tac[]
 QED
 
 Theorem ehacts_LENGTH:
-  ∀xs st rs st1. ehacts lfd st xs = SOME (rs, st1) ⇒ LENGTH rs = LENGTH xs
+  ∀xs k st rs st1. ehacts lfd lv n k st xs = SOME (rs, st1) ⇒ LENGTH rs = LENGTH xs
 Proof
   Induct >> simp[ehacts_def] >> rw[] >> gvs[AllCaseEqs()] >> res_tac
 QED
@@ -1193,7 +1194,7 @@ Theorem crel_acts:
   (st0.nh < cbound ⇒ st0.nh + N + 1 < dimword (:64)) ⇒
   ∀m. m ≤ N ⇒
     ∃rs w1 hs1.
-      ehacts lfd (w, hs) (MAP SND (cacts_upto a st0 rdy m)) = SOME (rs, (w1, hs1)) ∧
+      ehacts lfd lv n 0 (w, hs) (MAP SND (cacts_upto a st0 rdy m)) = SOME (rs, (w1, hs1)) ∧
       LENGTH rs = LENGTH (cacts_upto a st0 rdy m) ∧
       crel a N rqs lfd (cupd rqs st0 (cacts_upto a st0 rdy m) rs) (λi. if i < m then ∅ else rdy)
         (ps ++ ZIP (MAP SND (cacts_upto a st0 rdy m), rs)) w1 hs1 ∧
@@ -1208,7 +1209,9 @@ Proof
   qabbrev_tac ‘st = cupd rqs st0 (cacts_upto a st0 rdy m) rs’ >>
   ‘m < N’ by simp[] >>
   ‘st0.nh < cbound ⇒ st.nh + 2 < dimword (:64)’ by simp[] >>
-  drule_then (qspecl_then [‘st0.nh’, ‘m’] mp_tac) crel_conn >> simp[] >>
+  qspecl_then [‘st’, ‘λi. if i < m then ∅ else rdy’, ‘ps ++ ZIP (MAP SND (cacts_upto a st0 rdy m), rs)’,
+               ‘w1’, ‘hs1’, ‘m’, ‘st0.nh’, ‘lv’, ‘n’, ‘LENGTH (cacts_upto a st0 rdy m)’] mp_tac
+    (Q.GENL [‘st’, ‘rdyf’, ‘ps’, ‘w’, ‘hs’, ‘k’, ‘nh0’, ‘lv’, ‘n’, ‘ix’] crel_conn) >> simp[] >>
   ‘EL m st.cs = EL m st0.cs’ by simp[] >> simp[] >> strip_tac >>
   qexistsl_tac [‘rs ++ rs'’, ‘w1'’, ‘hs1'’] >>
   qabbrev_tac ‘xs = cact1 a st0.nh (EL m st0.cs) rdy’ >>
@@ -1225,7 +1228,7 @@ Proof
     by simp[cacts_upto_SUC] >>
   ntac 5 (pop_assum (fn th => REWRITE_TAC [th] >> mp_tac th)) >>
   ntac 5 (disch_then (fn th => REWRITE_TAC [th])) >> rpt conj_tac
-  >- (irule ehacts_APPEND >> metis_tac[])
+  >- (irule ehacts_APPEND >> simp[] >> qexists_tac ‘(w1, hs1)’ >> simp[])
   >- simp[]
   >- first_assum ACCEPT_TAC
   >- (irule wkeep_trans >> qexists_tac ‘w1’ >> conj_tac >> first_assum ACCEPT_TAC)
@@ -1354,14 +1357,14 @@ QED
    ------------------------------------------------------------------------ *)
 
 Theorem ehdo_new_hd:
-  ehdo lfd st x = SOME (r, st') ∧ (∀p. x ≠ EConnect p) ⇒ new_hd r = NONE
+  ehdo lfd v st x = SOME (r, st') ∧ (∀p. x ≠ EConnect p) ⇒ new_hd r = NONE
 Proof
   PairCases_on ‘st’ >> Cases_on ‘x’ >> simp[ehdo_def] >> rw[] >>
   every_case_tac >> gvs[new_hd_def] >> pairarg_tac >> gvs[new_hd_def]
 QED
 
 Theorem ehacts_new_hd:
-  ∀xs st rs st'. ehacts lfd st xs = SOME (rs, st') ∧ EVERY (λx. ∀p. x ≠ EConnect p) xs ⇒
+  ∀xs k st rs st'. ehacts lfd lv n k st xs = SOME (rs, st') ∧ EVERY (λx. ∀p. x ≠ EConnect p) xs ⇒
     EVERY (λr. new_hd r = NONE) rs
 Proof
   Induct >> simp[ehacts_def] >> rw[] >> gvs[AllCaseEqs()] >>
@@ -1397,9 +1400,9 @@ QED
 Theorem crel_round:
   crel a N rqs lfd st0 (K rdy) ps w hs ∧ st0.last = cacts a st0 rdy ∧
   N < cbound ∧ st0.nh < cbound + N ∧
-  ehacts_tot lfd (w, hs) (MAP SND st0.last) = (rs, (w1, hs1)) ∧
+  ehacts_tot lfd lv n (w, hs) (MAP SND st0.last) = (rs, (w1, hs1)) ∧
   ehpoll lfd hs1 hfds w1 = (rdy', w2, hs2) ⇒
-  ehacts lfd (w, hs) (MAP SND st0.last) = SOME (rs, (w1, hs1)) ∧
+  ehacts lfd lv n 0 (w, hs) (MAP SND st0.last) = SOME (rs, (w1, hs1)) ∧
   crel a N rqs lfd (cstep a rqs st0 (ssnap rdy' rs)) (K (set rdy'))
     (ps ++ ZIP (MAP SND st0.last, rs)) w2 hs2 ∧
   (cstep a rqs st0 (ssnap rdy' rs)).last = cacts a (cstep a rqs st0 (ssnap rdy' rs)) (set rdy') ∧
@@ -1408,9 +1411,9 @@ Proof
   strip_tac >> ‘LENGTH st0.cs = N’ by fs[crel_def] >>
   ‘N < dimword (:64) ∧ (st0.nh < cbound ⇒ st0.nh + N + 1 < dimword (:64))’
     by fs[cbound_def] >>
-  drule crel_acts >> simp[] >> disch_then (qspec_then ‘N’ mp_tac) >> simp[] >> strip_tac >>
+  drule crel_acts >> simp[] >> disch_then (qspecl_then [‘n’, ‘lv’, ‘N’] mp_tac) >> simp[] >> strip_tac >>
   ‘st0.last = cacts_upto a st0 rdy N’ by simp[cacts_upto_all] >>
-  ‘ehacts lfd (w, hs) (MAP SND st0.last) = SOME (rs', (w1', hs1'))’ by simp[] >>
+  ‘ehacts lfd lv n 0 (w, hs) (MAP SND st0.last) = SOME (rs', (w1', hs1'))’ by simp[] >>
   ‘rs' = rs ∧ w1' = w1 ∧ hs1' = hs1’ by gvs[ehacts_tot_def] >> gvs[] >>
   simp[cstep_def, asyncM3WorldTheory.ssnap_def] >>
   conj_tac
@@ -1437,12 +1440,12 @@ End
 
 (* The invariant at round n of the client's run in w0 *)
 Definition cinv_def:
-  cinv a N rqs lfd w0 n ⇔
-    let h = ehhist lfd (cifds a N rqs) (cprog a N rqs) w0 n;
+  cinv a N rqs lfd lv w0 n ⇔
+    let h = ehhist lfd lv (cifds a N rqs) (cprog a N rqs) w0 n;
         st = cstate a N rqs h in
       crel a N rqs lfd st (K (crdy h)) (hl_pairs (cprog a N rqs) h)
-        (FST (ehst lfd (cifds a N rqs) (cprog a N rqs) w0 n))
-        (SND (ehst lfd (cifds a N rqs) (cprog a N rqs) w0 n)) ∧
+        (FST (ehst lfd lv (cifds a N rqs) (cprog a N rqs) w0 n))
+        (SND (ehst lfd lv (cifds a N rqs) (cprog a N rqs) w0 n)) ∧
       st.last = cacts a st (crdy h) ∧ st.nh < cbound + N
 End
 
@@ -1456,7 +1459,7 @@ Proof
 QED
 
 Theorem cinv_0:
-  client_world lfd c w0 ⇒ cinv a N rqs lfd w0 0
+  client_world lfd c w0 ⇒ cinv a N rqs lfd lv w0 0
 Proof
   strip_tac >> drule crel_init >>
   simp[cinv_def, ehhist_def, ehst_def, ehrounds_def, cstate_def, crdy_def, hl_pairs_def] >>
@@ -1464,22 +1467,22 @@ Proof
 QED
 
 Theorem cinv_SUC:
-  cinv a N rqs lfd w0 n ∧ N < cbound ⇒
-  cinv a N rqs lfd w0 (SUC n) ∧
-  ehacts lfd (ehst lfd (cifds a N rqs) (cprog a N rqs) w0 n)
-    (new_actions (log_of (cprog a N rqs)) (ehhist lfd (cifds a N rqs) (cprog a N rqs) w0 n)) ≠ NONE
+  cinv a N rqs lfd lv w0 n ∧ N < cbound ⇒
+  cinv a N rqs lfd lv w0 (SUC n) ∧
+  ehacts lfd lv n 0 (ehst lfd lv (cifds a N rqs) (cprog a N rqs) w0 n)
+    (new_actions (log_of (cprog a N rqs)) (ehhist lfd lv (cifds a N rqs) (cprog a N rqs) w0 n)) ≠ NONE
 Proof
-  qmatch_goalsub_abbrev_tac ‘ehst lfd ifds m w0 n’ >>
+  qmatch_goalsub_abbrev_tac ‘ehst lfd lv ifds m w0 n’ >>
   simp[cinv_def] >> strip_tac >>
-  qabbrev_tac ‘h = ehhist lfd ifds m w0 n’ >>
+  qabbrev_tac ‘h = ehhist lfd lv ifds m w0 n’ >>
   qabbrev_tac ‘st = cstate a N rqs h’ >>
-  Cases_on ‘ehst lfd ifds m w0 n’ >> rename1 ‘_ = (w, hs)’ >> fs[] >>
+  Cases_on ‘ehst lfd lv ifds m w0 n’ >> rename1 ‘_ = (w, hs)’ >> fs[] >>
   ‘new_actions (log_of m) h = MAP SND st.last’ by simp[Abbr ‘m’, Abbr ‘st’, cprog_new_actions] >>
-  Cases_on ‘ehacts_tot lfd (w, hs) (MAP SND st.last)’ >> rename1 ‘_ = (rs, st1)’ >>
+  Cases_on ‘ehacts_tot lfd lv n (w, hs) (MAP SND st.last)’ >> rename1 ‘_ = (rs, st1)’ >>
   PairCases_on ‘st1’ >> rename1 ‘_ = (rs, (w1, hs1))’ >>
   Cases_on ‘ehpoll lfd hs1 (ifds h) w1’ >> rename1 ‘_ = (rdy', r2)’ >>
   PairCases_on ‘r2’ >> rename1 ‘_ = (rdy', w2, hs2)’ >>
-  ‘ehhist lfd ifds m w0 (SUC n) = h ++ [ssnap rdy' rs] ∧ ehst lfd ifds m w0 (SUC n) = (w2, hs2)’
+  ‘ehhist lfd lv ifds m w0 (SUC n) = h ++ [ssnap rdy' rs] ∧ ehst lfd lv ifds m w0 (SUC n) = (w2, hs2)’
     by (qunabbrev_tac ‘h’ >> irule honestL1EPRefineTheory.ehround_step >> gvs[]) >>
   ‘st.nh < cbound + N’ by simp[] >>
   drule_all crel_round >> strip_tac >>
@@ -1489,35 +1492,35 @@ Proof
 QED
 
 Theorem cinv_all:
-  client_world lfd c w0 ∧ N < cbound ⇒ ∀n. cinv a N rqs lfd w0 n
+  client_world lfd c w0 ∧ N < cbound ⇒ ∀a rqs lv n. cinv a N rqs lfd lv w0 n
 Proof
-  strip_tac >> Induct >- metis_tac[cinv_0] >> metis_tac[cinv_SUC]
+  strip_tac >> ntac 3 gen_tac >> Induct >- metis_tac[cinv_0] >> metis_tac[cinv_SUC]
 QED
 
-Overload cH[local] = “λa N rqs lfd w0. ehhist lfd (cifds a N rqs) (cprog a N rqs) w0”
-Overload cS[local] = “λa N rqs lfd w0. ehst lfd (cifds a N rqs) (cprog a N rqs) w0”
-Overload cst[local] = “λa N rqs lfd w0 n. cstate a N rqs (ehhist lfd (cifds a N rqs) (cprog a N rqs) w0 n)”
+Overload cH[local] = “λa N rqs lfd lv w0. ehhist lfd lv (cifds a N rqs) (cprog a N rqs) w0”
+Overload cS[local] = “λa N rqs lfd lv w0. ehst lfd lv (cifds a N rqs) (cprog a N rqs) w0”
+Overload cst[local] = “λa N rqs lfd lv w0 n. cstate a N rqs (ehhist lfd lv (cifds a N rqs) (cprog a N rqs) w0 n)”
 
 Theorem cinv_crel:
   client_world lfd c w0 ∧ N < cbound ⇒
-  ∀n. crel a N rqs lfd (cst a N rqs lfd w0 n) (K (crdy (cH a N rqs lfd w0 n)))
-    (hl_pairs (cprog a N rqs) (cH a N rqs lfd w0 n))
-    (FST (cS a N rqs lfd w0 n)) (SND (cS a N rqs lfd w0 n))
+  ∀a rqs lv n. crel a N rqs lfd (cst a N rqs lfd lv w0 n) (K (crdy (cH a N rqs lfd lv w0 n)))
+    (hl_pairs (cprog a N rqs) (cH a N rqs lfd lv w0 n))
+    (FST (cS a N rqs lfd lv w0 n)) (SND (cS a N rqs lfd lv w0 n))
 Proof
   rpt strip_tac >> drule_all cinv_all >> simp[cinv_def]
 QED
 
 Theorem ehhist_SUC:
-  ∀lfd ifds m w0 n. ∃s. ehhist lfd ifds m w0 (SUC n) = ehhist lfd ifds m w0 n ++ [s]
+  ∀lfd lv ifds m w0 n. ∃s. ehhist lfd lv ifds m w0 (SUC n) = ehhist lfd lv ifds m w0 n ++ [s]
 Proof
   rpt gen_tac >> simp[ehhist_def, ehrounds_def] >> rpt (pairarg_tac >> simp[])
 QED
 
 Theorem ehhist_LENGTH:
-  LENGTH (ehhist lfd ifds m w0 n) = n
+  LENGTH (ehhist lfd lv ifds m w0 n) = n
 Proof
   Induct_on ‘n’ >- simp[ehhist_def, ehrounds_def] >>
-  qspecl_then [‘lfd’, ‘ifds’, ‘m’, ‘w0’, ‘n’] strip_assume_tac ehhist_SUC >> simp[]
+  qspecl_then [‘lfd’, ‘lv’, ‘ifds’, ‘m’, ‘w0’, ‘n’] strip_assume_tac ehhist_SUC >> simp[]
 QED
 
 (* ------------------------------------------------------------------------
@@ -1536,16 +1539,16 @@ Proof
 QED
 
 Theorem cst_hlc_mono:
-  ∀n'. n ≤ n' ⇒ ∃l. (cst a N rqs lfd w0 n').hlc = l ++ (cst a N rqs lfd w0 n).hlc
+  ∀n'. n ≤ n' ⇒ ∃l. (cst a N rqs lfd lv w0 n').hlc = l ++ (cst a N rqs lfd lv w0 n).hlc
 Proof
   Induct >> rpt strip_tac
   >- (‘n = 0’ by simp[] >> qexists_tac ‘[]’ >> simp[]) >>
   Cases_on ‘n = SUC n'’ >- (qexists_tac ‘[]’ >> simp[]) >>
   ‘n ≤ n'’ by simp[] >> first_x_assum drule >> strip_tac >>
-  qspecl_then [‘lfd’, ‘cifds a N rqs’, ‘cprog a N rqs’, ‘w0’, ‘n'’] strip_assume_tac
+  qspecl_then [‘lfd’, ‘lv’, ‘cifds a N rqs’, ‘cprog a N rqs’, ‘w0’, ‘n'’] strip_assume_tac
     ehhist_SUC >>
   simp[cstate_SNOC, cstep_def] >>
-  qspecl_then [‘(cst a N rqs lfd w0 n').last’, ‘s.results’, ‘cst a N rqs lfd w0 n'’]
+  qspecl_then [‘(cst a N rqs lfd lv w0 n').last’, ‘s.results’, ‘cst a N rqs lfd lv w0 n'’]
     strip_assume_tac cupd_hlc >>
   simp[] >> qexists_tac ‘l' ++ l’ >> simp[]
 QED
@@ -1559,31 +1562,31 @@ QED
 
 Theorem cst_ALOOKUP_mono:
   client_world lfd c w0 ∧ N < cbound ∧ n1 ≤ n2 ∧
-  ALOOKUP (cst a N rqs lfd w0 n1).hlc hd = SOME i ⇒
-  ALOOKUP (cst a N rqs lfd w0 n2).hlc hd = SOME i
+  ALOOKUP (cst a N rqs lfd lv w0 n1).hlc hd = SOME i ⇒
+  ALOOKUP (cst a N rqs lfd lv w0 n2).hlc hd = SOME i
 Proof
   strip_tac >>
-  ‘ALL_DISTINCT (MAP FST (cst a N rqs lfd w0 n2).hlc)’
-    by (drule_all cinv_crel >> disch_then (qspecl_then [‘rqs’, ‘a’, ‘n2’] mp_tac) >> simp[crel_def]) >>
-  drule cst_hlc_mono >> disch_then (qspecl_then [‘w0’, ‘rqs’, ‘lfd’, ‘a’, ‘N’] strip_assume_tac) >>
+  ‘ALL_DISTINCT (MAP FST (cst a N rqs lfd lv w0 n2).hlc)’
+    by (drule_all cinv_crel >> disch_then (qspecl_then [‘a’, ‘rqs’, ‘lv’, ‘n2’] mp_tac) >> simp[crel_def]) >>
+  drule cst_hlc_mono >> disch_then (qspecl_then [‘w0’, ‘rqs’, ‘lv’, ‘lfd’, ‘a’, ‘N’] strip_assume_tac) >>
   pop_assum (fn th => REWRITE_TAC [th] >> RULE_ASSUM_TAC (REWRITE_RULE [th])) >>
   irule ALOOKUP_APPEND_distinct >> conj_tac >> first_assum ACCEPT_TAC
 QED
 
 Definition clc_def:
-  clc a N rqs lfd w0 hd = @i. ∃n. ALOOKUP (cst a N rqs lfd w0 n).hlc hd = SOME i
+  clc a N rqs lfd lv w0 hd = @i. ∃n. ALOOKUP (cst a N rqs lfd lv w0 n).hlc hd = SOME i
 End
 
 Theorem clc_eq:
-  client_world lfd c w0 ∧ N < cbound ∧ ALOOKUP (cst a N rqs lfd w0 n).hlc hd = SOME i ⇒
-  clc a N rqs lfd w0 hd = i
+  client_world lfd c w0 ∧ N < cbound ∧ ALOOKUP (cst a N rqs lfd lv w0 n).hlc hd = SOME i ⇒
+  clc a N rqs lfd lv w0 hd = i
 Proof
   strip_tac >> simp[clc_def] >> SELECT_ELIM_TAC >> conj_tac >- metis_tac[] >>
-  rpt strip_tac >> rename1 ‘ALOOKUP (cst a N rqs lfd w0 n').hlc hd = SOME j’ >>
-  ‘ALOOKUP (cst a N rqs lfd w0 (MAX n n')).hlc hd = SOME i’
+  rpt strip_tac >> rename1 ‘ALOOKUP (cst a N rqs lfd lv w0 n').hlc hd = SOME j’ >>
+  ‘ALOOKUP (cst a N rqs lfd lv w0 (MAX n n')).hlc hd = SOME i’
     by (irule cst_ALOOKUP_mono >> simp[] >> conj_tac >- (qexists_tac ‘n’ >> simp[]) >>
         metis_tac[]) >>
-  ‘ALOOKUP (cst a N rqs lfd w0 (MAX n n')).hlc hd = SOME j’
+  ‘ALOOKUP (cst a N rqs lfd lv w0 (MAX n n')).hlc hd = SOME j’
     by (irule cst_ALOOKUP_mono >> simp[] >> conj_tac >- (qexists_tac ‘n'’ >> simp[]) >>
         metis_tac[]) >>
   fs[]
@@ -1624,60 +1627,60 @@ Proof
 QED
 
 Theorem cst_tbl_ifds:
-  client_world lfd c w0 ∧ N < cbound ∧ MEM hd (MAP FST (SND (cS a N rqs lfd w0 n)).tbl) ⇒
-  MEM hd (cifds a N rqs (cH a N rqs lfd w0 n))
+  client_world lfd c w0 ∧ N < cbound ∧ MEM hd (MAP FST (SND (cS a N rqs lfd lv w0 n)).tbl) ⇒
+  MEM hd (cifds a N rqs (cH a N rqs lfd lv w0 n))
 Proof
-  strip_tac >> drule_all cinv_crel >> disch_then (qspecl_then [‘rqs’, ‘a’, ‘n’] mp_tac) >>
+  strip_tac >> drule_all cinv_crel >> disch_then (qspecl_then [‘a’, ‘rqs’, ‘lv’, ‘n’] mp_tac) >>
   simp[crel_def] >> strip_tac >> gvs[] >>
   simp[cifds_def, MEM_FLAT, MEM_MAP] >> metis_tac[EL_MEM]
 QED
 
 Theorem cst_sink:
   client_world lfd c w0 ∧ N < cbound ∧
-  hd ∈ (LAST (cH a N rqs lfd w0 (SUC n))).ready ∧
-  MEM hd (MAP FST (SND (cS a N rqs lfd w0 (SUC n))).tbl) ⇒
-  ∃k. MEM (ERead hd k) (new_actions (log_of (cprog a N rqs)) (cH a N rqs lfd w0 (SUC n)))
+  hd ∈ (LAST (cH a N rqs lfd lv w0 (SUC n))).ready ∧
+  MEM hd (MAP FST (SND (cS a N rqs lfd lv w0 (SUC n))).tbl) ⇒
+  ∃k. MEM (ERead hd k) (new_actions (log_of (cprog a N rqs)) (cH a N rqs lfd lv w0 (SUC n)))
 Proof
-  strip_tac >> drule_all cinv_all >> disch_then (qspecl_then [‘rqs’, ‘a’, ‘SUC n’] mp_tac) >>
+  strip_tac >> drule_all cinv_all >> disch_then (qspecl_then [‘a’, ‘rqs’, ‘lv’, ‘SUC n’] mp_tac) >>
   simp[cinv_def, crdy_def] >>
-  ‘cH a N rqs lfd w0 (SUC n) ≠ []’
-    by (strip_tac >> qspecl_then [‘lfd’, ‘cifds a N rqs’, ‘cprog a N rqs’, ‘w0’, ‘SUC n’] mp_tac
-          (Q.GENL [‘lfd’, ‘ifds’, ‘m’, ‘w0’, ‘n’] ehhist_LENGTH) >> simp[]) >>
+  ‘cH a N rqs lfd lv w0 (SUC n) ≠ []’
+    by (strip_tac >> qspecl_then [‘lfd’, ‘lv’, ‘cifds a N rqs’, ‘cprog a N rqs’, ‘w0’, ‘SUC n’] mp_tac
+          (Q.GENL [‘lfd’, ‘lv’, ‘ifds’, ‘m’, ‘w0’, ‘n’] ehhist_LENGTH) >> simp[]) >>
   simp[crel_def] >> strip_tac >> gvs[] >>
   simp[cprog_new_actions, MEM_cacts] >> qexists_tac ‘cread’ >> qexists_tac ‘i’ >> simp[] >>
-  Cases_on ‘EL i (cst a N rqs lfd w0 (SUC n)).cs’ >> gvs[chd_def, cact1_def]
+  Cases_on ‘EL i (cst a N rqs lfd lv w0 (SUC n)).cs’ >> gvs[chd_def, cact1_def]
 QED
 
 Theorem cst_lookup_clc:
-  client_world lfd c w0 ∧ N < cbound ∧ MEM hd (MAP FST (cst a N rqs lfd w0 n).hlc) ⇒
-  ALOOKUP (cst a N rqs lfd w0 n).hlc hd = SOME (clc a N rqs lfd w0 hd) ∧
-  clc a N rqs lfd w0 hd < N
+  client_world lfd c w0 ∧ N < cbound ∧ MEM hd (MAP FST (cst a N rqs lfd lv w0 n).hlc) ⇒
+  ALOOKUP (cst a N rqs lfd lv w0 n).hlc hd = SOME (clc a N rqs lfd lv w0 hd) ∧
+  clc a N rqs lfd lv w0 hd < N
 Proof
   strip_tac >>
-  Cases_on ‘ALOOKUP (cst a N rqs lfd w0 n).hlc hd’ >- gvs[ALOOKUP_NONE] >>
+  Cases_on ‘ALOOKUP (cst a N rqs lfd lv w0 n).hlc hd’ >- gvs[ALOOKUP_NONE] >>
   drule_all clc_eq >> strip_tac >> gvs[] >>
-  drule_all cinv_crel >> disch_then (qspecl_then [‘rqs’, ‘a’, ‘n’] mp_tac) >>
+  drule_all cinv_crel >> disch_then (qspecl_then [‘a’, ‘rqs’, ‘lv’, ‘n’] mp_tac) >>
   simp[crel_def] >> metis_tac[]
 QED
 
 (* The guarantee's clauses on handles, at round n *)
 Theorem cst_handles:
   client_world lfd c w0 ∧ N < cbound ⇒
-  let ps = hl_pairs (cprog a N rqs) (cH a N rqs lfd w0 n); lc = clc a N rqs lfd w0 in
+  let ps = hl_pairs (cprog a N rqs) (cH a N rqs lfd lv w0 n); lc = clc a N rqs lfd lv w0 in
     (∀hd. MEM hd (hl_conn_handles ps) ⇒ lc hd < N) ∧
     (∀hd. hl_sent hd ps ≼ brequests (rqs (lc hd))) ∧
     (∀hd hd'. hl_sent hd ps ≠ [] ∧ hl_sent hd' ps ≠ [] ∧ lc hd' = lc hd ⇒ hd' = hd) ∧
     (∀hd. ¬(hl_refused hd ps ∧ hl_eof hd ps))
 Proof
   strip_tac >> simp[] >>
-  drule_all cinv_crel >> disch_then (qspecl_then [‘rqs’, ‘a’, ‘n’] assume_tac) >>
-  ‘∀hd. MEM hd (MAP FST (cst a N rqs lfd w0 n).hlc) ⇒
-        ALOOKUP (cst a N rqs lfd w0 n).hlc hd = SOME (clc a N rqs lfd w0 hd) ∧
-        clc a N rqs lfd w0 hd < N’ by metis_tac[cst_lookup_clc] >>
+  drule_all cinv_crel >> disch_then (qspecl_then [‘a’, ‘rqs’, ‘lv’, ‘n’] assume_tac) >>
+  ‘∀hd. MEM hd (MAP FST (cst a N rqs lfd lv w0 n).hlc) ⇒
+        ALOOKUP (cst a N rqs lfd lv w0 n).hlc hd = SOME (clc a N rqs lfd lv w0 hd) ∧
+        clc a N rqs lfd lv w0 hd < N’ by metis_tac[cst_lookup_clc] >>
   qpat_x_assum ‘crel _ _ _ _ _ _ _ _ _’ (strip_assume_tac o REWRITE_RULE [crel_def]) >>
   rpt conj_tac
   >- metis_tac[]
-  >- (gen_tac >> Cases_on ‘hl_sent hd (hl_pairs (cprog a N rqs) (cH a N rqs lfd w0 n)) = []’
+  >- (gen_tac >> Cases_on ‘hl_sent hd (hl_pairs (cprog a N rqs) (cH a N rqs lfd lv w0 n)) = []’
       >- simp[] >> metis_tac[])
   >- metis_tac[]
   >> metis_tac[]
@@ -1685,14 +1688,14 @@ QED
 
 Theorem cst_done:
   client_world lfd c w0 ∧ N < cbound ∧
-  (∀i. i < N ⇒ ∃hd. clc a N rqs lfd w0 hd = i ∧
-                    hl_eof hd (hl_pairs (cprog a N rqs) (cH a N rqs lfd w0 n))) ⇒
-  (cprog a N rqs (cH a N rqs lfd w0 n)).result = SOME ()
+  (∀i. i < N ⇒ ∃hd. clc a N rqs lfd lv w0 hd = i ∧
+                    hl_eof hd (hl_pairs (cprog a N rqs) (cH a N rqs lfd lv w0 n))) ⇒
+  (cprog a N rqs (cH a N rqs lfd lv w0 n)).result = SOME ()
 Proof
   strip_tac >>
-  drule_all cinv_crel >> disch_then (qspecl_then [‘rqs’, ‘a’, ‘n’] assume_tac) >>
-  ‘∀hd. MEM hd (MAP FST (cst a N rqs lfd w0 n).hlc) ⇒
-        ALOOKUP (cst a N rqs lfd w0 n).hlc hd = SOME (clc a N rqs lfd w0 hd)’
+  drule_all cinv_crel >> disch_then (qspecl_then [‘a’, ‘rqs’, ‘lv’, ‘n’] assume_tac) >>
+  ‘∀hd. MEM hd (MAP FST (cst a N rqs lfd lv w0 n).hlc) ⇒
+        ALOOKUP (cst a N rqs lfd lv w0 n).hlc hd = SOME (clc a N rqs lfd lv w0 hd)’
     by metis_tac[cst_lookup_clc] >>
   qpat_x_assum ‘crel _ _ _ _ _ _ _ _ _’ (strip_assume_tac o REWRITE_RULE [crel_def]) >>
   simp[cprog_def, call_done_def, EVERY_EL] >> rpt strip_tac >>
@@ -1706,16 +1709,16 @@ QED
 (* The liveness to prove, as a proposition (proved below: TODO) *)
 Definition client_live_def:
   client_live ⇔
-    ∀a N rqs lfd c w0 i.
+    ∀a N rqs lfd lv c w0 i.
   client_world lfd c w0 ∧ N < cbound ∧
-  conn_fair lfd (cifds a N rqs) (cprog a N rqs) w0 ∧ i < N ⇒
-  ∃n. (∃hd. clc a N rqs lfd w0 hd = i ∧ ever_up lfd (cifds a N rqs) (cprog a N rqs) w0 n hd ∧
-            hl_sent hd (hl_pairs (cprog a N rqs) (cH a N rqs lfd w0 n)) = brequests (rqs i)) ∨
-      (∃hd. MEM hd (hl_conn_handles (hl_pairs (cprog a N rqs) (cH a N rqs lfd w0 n))) ∧
-            clc a N rqs lfd w0 hd = i ∧
-            hl_eof hd (hl_pairs (cprog a N rqs) (cH a N rqs lfd w0 n)) ∧
-            hl_sent hd (hl_pairs (cprog a N rqs) (cH a N rqs lfd w0 n)) ≠ brequests (rqs i)) ∨
-      cbound ≤ LENGTH (hl_conn_handles (hl_pairs (cprog a N rqs) (cH a N rqs lfd w0 n)))
+  conn_fair lfd lv (cifds a N rqs) (cprog a N rqs) w0 ∧ i < N ⇒
+  ∃n. (∃hd. clc a N rqs lfd lv w0 hd = i ∧ ever_up lfd lv (cifds a N rqs) (cprog a N rqs) w0 n hd ∧
+            hl_sent hd (hl_pairs (cprog a N rqs) (cH a N rqs lfd lv w0 n)) = brequests (rqs i)) ∨
+      (∃hd. MEM hd (hl_conn_handles (hl_pairs (cprog a N rqs) (cH a N rqs lfd lv w0 n))) ∧
+            clc a N rqs lfd lv w0 hd = i ∧
+            hl_eof hd (hl_pairs (cprog a N rqs) (cH a N rqs lfd lv w0 n)) ∧
+            hl_sent hd (hl_pairs (cprog a N rqs) (cH a N rqs lfd lv w0 n)) ≠ brequests (rqs i)) ∨
+      cbound ≤ LENGTH (hl_conn_handles (hl_pairs (cprog a N rqs) (cH a N rqs lfd lv w0 n)))
 End
 
 (* ------------------------------------------------------------------------
@@ -1726,7 +1729,7 @@ Theorem client_hl_claim_of_live:
   client_live ⇒ client_hl_claim cprog cifds
 Proof
   strip_tac >> simp[client_hl_claim_def] >> rpt gen_tac >> rename1 ‘client_world lfd c w0’ >> strip_tac >>
-  simp[client_guar'_def] >> qexists_tac ‘clc a N rqs lfd w0’ >>
+  simp[client_guar'_def] >> qexists_tac ‘clc a N rqs lfd lv w0’ >>
   ‘N < cbound’ by simp[] >>
   rpt conj_tac
   >- (gen_tac >> drule_all cinv_all >> strip_tac >> irule (cj 2 cinv_SUC) >> simp[])

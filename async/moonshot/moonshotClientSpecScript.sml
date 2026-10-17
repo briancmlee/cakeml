@@ -6,7 +6,8 @@
   (endpointHLModel): it emits actions on handles (EConnect, ERead, EWrite;
   handles are never reused) and sees, each round, the results and the
   ready handles.  Its guarantee is stated over the layer's history
-  ehhist lfd ifds m W n in a world W: so E1 (honestL1EPRefine,
+  ehhist lfd lv ifds m W n in a world W (lv: the layer's Level
+  oracle, which the client does not use): so E1 (honestL1EPRefine,
   l1ep_refines_ehl) carries it to the honest L1 unchanged, because along
   every L1 run the layer's history in the run-built world pew IS L1's
   history.  (The raw L0 trace is a further transfer, as KV's step 11.)
@@ -101,19 +102,19 @@ End
 
 (* The run-local rely: every round's arrivals are valid (E1's eh_round_ok) *)
 Definition run_rely_def:
-  run_rely lfd ifds m W ⇔ ∀n. eh_round_ok lfd ifds m W n
+  run_rely lfd lv ifds m W ⇔ ∀n. eh_round_ok lfd lv ifds m W n
 End
 
 (* Handle hd is up at round n: open, its channel Up (the world's truth,
    which the settle report announces); and has been up by round n *)
 Definition up_at_def:
-  up_at lfd ifds m W n hd ⇔
-    ∃f. ALOOKUP (SND (ehst lfd ifds m W n)).tbl hd = SOME f ∧
-        chan_status (FST (ehst lfd ifds m W n)) f = SOME Up
+  up_at lfd lv ifds m W n hd ⇔
+    ∃f. ALOOKUP (SND (ehst lfd lv ifds m W n)).tbl hd = SOME f ∧
+        chan_status (FST (ehst lfd lv ifds m W n)) f = SOME Up
 End
 
 Definition ever_up_def:
-  ever_up lfd ifds m W n hd ⇔ ∃n'. n' ≤ n ∧ up_at lfd ifds m W n' hd
+  ever_up lfd lv ifds m W n hd ⇔ ∃n'. n' ≤ n ∧ up_at lfd lv ifds m W n' hd
 End
 
 (* World fairness for connects, the handle layer's forms of [F0] and [F4]:
@@ -121,12 +122,12 @@ End
    connects in infinitely many rounds, a new handle comes up in infinitely
    many rounds *)
 Definition conn_fair_def:
-  conn_fair lfd ifds m W ⇔
-    (∀n hd f. ALOOKUP (SND (ehst lfd ifds m W n)).tbl hd = SOME f ∧
-              chan_status (FST (ehst lfd ifds m W n)) f = SOME Connecting ⇒
-              ∃n'. n < n' ∧ chan_status (FST (ehst lfd ifds m W n')) f ≠ SOME Connecting) ∧
-    (inf_often (λn. ∃p. MEM (EConnect p) (new_actions (log_of m) (ehhist lfd ifds m W n))) ⇒
-     inf_often (λn. ∃hd. up_at lfd ifds m W n hd ∧ ∀n'. n' < n ⇒ ¬up_at lfd ifds m W n' hd))
+  conn_fair lfd lv ifds m W ⇔
+    (∀n hd f. ALOOKUP (SND (ehst lfd lv ifds m W n)).tbl hd = SOME f ∧
+              chan_status (FST (ehst lfd lv ifds m W n)) f = SOME Connecting ⇒
+              ∃n'. n < n' ∧ chan_status (FST (ehst lfd lv ifds m W n')) f ≠ SOME Connecting) ∧
+    (inf_often (λn. ∃p. MEM (EConnect p) (new_actions (log_of m) (ehhist lfd lv ifds m W n))) ⇒
+     inf_often (λn. ∃hd. up_at lfd lv ifds m W n hd ∧ ∀n'. n' < n ⇒ ¬up_at lfd lv ifds m W n' hd))
 End
 
 (* The client stops connecting after this many handles (the handle counter
@@ -135,13 +136,13 @@ Definition cbound_def:
   cbound = (2:num) ** 63
 End
 
-(* The guarantee, over the run H n = ehhist lfd ifds m W n (S n its state);
+(* The guarantee, over the run H n = ehhist lfd lv ifds m W n (S n its state);
    lc: each connect handle's logical connection *)
 Definition client_guar'_def:
-  client_guar' a (N:num) rqs lfd ifds m W ⇔
-    ∃lc. let H = ehhist lfd ifds m W; S = ehst lfd ifds m W; ps = (λn. hl_pairs m (H n)) in
+  client_guar' a (N:num) rqs lfd lv ifds m W ⇔
+    ∃lc. let H = ehhist lfd lv ifds m W; S = ehst lfd lv ifds m W; ps = (λn. hl_pairs m (H n)) in
       (* no misuse: every round's actions are performed *)
-      (∀n. ehacts lfd (S n) (new_actions (log_of m) (H n)) ≠ NONE) ∧
+      (∀n. ehacts lfd lv n 0 (S n) (new_actions (log_of m) (H n)) ≠ NONE) ∧
       (* it connects only to a, and never accepts *)
       (∀n x r. MEM (x, r) (ps n) ⇒ (∀p. x = EConnect p ⇒ p = a) ∧ ∀l. x ≠ EAccept l) ∧
       (* every connect handle serves a logical connection i < N; each sends
@@ -161,15 +162,15 @@ Definition client_guar'_def:
          every logical connection gets a handle up that sends all of its
          requests, UNLESS one of its handles broke (read EOF before all was
          sent), or the client ran out of handles *)
-      (conn_fair lfd ifds m W ⇒
+      (conn_fair lfd lv ifds m W ⇒
        ∀i. i < N ⇒ ∃n.
-         (∃hd. lc hd = i ∧ ever_up lfd ifds m W n hd ∧ hl_sent hd (ps n) = brequests (rqs i)) ∨
+         (∃hd. lc hd = i ∧ ever_up lfd lv ifds m W n hd ∧ hl_sent hd (ps n) = brequests (rqs i)) ∨
          (∃hd. MEM hd (hl_conn_handles (ps n)) ∧ lc hd = i ∧ hl_eof hd (ps n) ∧
                hl_sent hd (ps n) ≠ brequests (rqs i)) ∨
          cbound ≤ LENGTH (hl_conn_handles (ps n))) ∧
       (* TERMINATION: once every logical connection has a handle that came
          up and read its EOF, the client finishes *)
-      (∀n. (∀i. i < N ⇒ ∃hd. lc hd = i ∧ ever_up lfd ifds m W n hd ∧ hl_eof hd (ps n)) ⇒
+      (∀n. (∀i. i < N ⇒ ∃hd. lc hd = i ∧ ever_up lfd lv ifds m W n hd ∧ hl_eof hd (ps n)) ⇒
            ∃n' x. n ≤ n' ∧ (m (H n')).result = SOME x)
 End
 
@@ -182,10 +183,10 @@ End
    defined: a pure step function, design/44) *)
 Definition client_hl_claim_def:
   client_hl_claim cprog cifds ⇔
-    ∀a N rqs lfd c W.
+    ∀a N rqs lfd lv c W.
       2 ≤ (N:num) ∧ N < cbound ∧ (∀i. EVERY valid_brequest (rqs i)) ∧
-      client_world lfd c W ∧ run_rely lfd (cifds a N rqs) (cprog a N rqs) W ⇒
-      client_guar' a N rqs lfd (cifds a N rqs) (cprog a N rqs) W
+      client_world lfd c W ∧ run_rely lfd lv (cifds a N rqs) (cprog a N rqs) W ⇒
+      client_guar' a N rqs lfd lv (cifds a N rqs) (cprog a N rqs) W
 End
 
 (* Through E1: along EVERY run of the honest L1 in an L0 world, running the
@@ -200,6 +201,7 @@ Definition client_l1_claim_def:
       (∀n. SND (ecm lfd hw (cifds a N rqs) (cprog a N rqs) w0 n) + 1 < dimword (:64)) ∧
       (* the client's L1 run never fails (no misuse, no handle overflow) *)
       (∀n. erounds lfd hw (cifds a N rqs) (cprog a N rqs) (w0, einit) n ≠ NONE) ⇒
-      client_guar' a N rqs lfd (cifds a N rqs) (cprog a N rqs)
+      client_guar' a N rqs lfd (elv lfd hw (cifds a N rqs) (cprog a N rqs) w0)
+        (cifds a N rqs) (cprog a N rqs)
         (pew lfd c hw (cifds a N rqs) (cprog a N rqs) w0 calls)
 End

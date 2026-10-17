@@ -47,11 +47,14 @@ Definition b2_conn_def:
 End
 
 (* The proxy px listens on pa and connects to pb, where KV kv listens; the
-   client cl connects to pa *)
+   client cl connects to pa, and may accept only on a port other than pa
+   and pb (its private L1 listener c: the client's claim, T3, approved
+   2026-10-17) *)
 Definition topology_def:
   topology rl cl px kv pa pb ⇔
     cl ≠ px ∧ cl ≠ kv ∧ px ≠ kv ∧ pa ≠ pb ∧
-    (∀k j p. rl k j = SOME (Accepted p) ⇒ k = px ∧ p = pa ∨ k = kv ∧ p = pb) ∧
+    (∀k j p. rl k j = SOME (Accepted p) ⇒
+             k = px ∧ p = pa ∨ k = kv ∧ p = pb ∨ k = cl ∧ p ≠ pa ∧ p ≠ pb) ∧
     (∀k j p. rl k j = SOME (Connected p) ⇒ k = cl ∧ p = pa ∨ k = px ∧ p = pb)
 End
 

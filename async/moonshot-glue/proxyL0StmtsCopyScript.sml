@@ -1,7 +1,8 @@
 (*
   TEMPORARY VERBATIM COPY (remove at merge): the SAFETY definitions of the
-  proxy's raw-trace statement, draft revision 5, from
-  async/moonshot-step9/l0/proxyL0StmtsScript.sml @ f97d449fb, so that
+  proxy's raw-trace statement, revision 6 (user-approved 2026-10-17), from
+  async/moonshot-step9/l0/proxyL0StmtsScript.sml @ 3d97f542d (its safety
+  definitions are revision 5's, f97d449fb, unchanged), so that
   moonshotProxyGlue can bridge them to l0sysEpisodes on this branch, which
   does not have step 9's base.
   Copied unchanged, from pbytes to proxy_safe_l0; the liveness half and

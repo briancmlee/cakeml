@@ -10,7 +10,7 @@
 Theory proxySafeRun
 Ancestors
   honestL1PFRefine moonshotSentGlue honestEchoL0Spec l0sysInv l0sysEpisodes e1DriverLoop moonshotProxySafe proxyHLStmts
-  moonshotProxyGlue e1TraceChan e1TraceKind e1TraceLag e1TracePrefix e1TraceRound proxyStart proxyL0Run proxyL1Claim
+  moonshotProxyGlue e1TraceChan e1TraceEvents e1TraceKind e1TraceLag e1TracePrefix e1TraceRound proxyStart proxyL0Run proxyL1Claim
   llist
 Libs
   preamble
@@ -868,4 +868,198 @@ Proof
         ‘TAKE p ft = TAKE p (TAKE p' ft)’ by asm_simp_tac std_ss [TAKE_TAKE_MIN] >>
         pop_assum SUBST1_TAC >> simp[TAKE_DROP]) >>
   pop_assum SUBST1_TAC >> simp[ep_fds_def]
+QED
+
+(* ------------------------------------------------------------------------
+   proxy_safe_l0, listens and connect ports
+   ------------------------------------------------------------------------ *)
+
+Theorem pbytes_port_bytes:
+  proxyL0Stmts$pbytes p = port_bytes p
+Proof
+  simp[proxyL0StmtsTheory.pbytes_def, honestL1EPModelTheory.port_bytes_def]
+QED
+
+Theorem proxy_start_listen:
+  proxy_start a w0 pre w4 k ∧ MEM (IO_event (ExtCall «sys_listen») conf bs) pre ⇒
+  conf = proxyL0Stmts$pbytes a
+Proof
+  rw[proxy_start_def, proxyL0StmtsTheory.l0_proxy_world_def] >>
+  ‘l0_rely w1 ∧ l0_rely w2 ∧ l0_rely w3’ by metis_tac[honestL1PFRefineTheory.l0_do_rely] >>
+  imp_res_tac moonshotSentGlueTheory.l0_do_ev >> gvs[pbytes_port_bytes]
+QED
+
+Theorem pstate_last_pacts:
+  ∃st rdy. (pstate lfd b hw h).last = pacts lfd b hw st rdy
+Proof
+  Cases_on ‘h’ using SNOC_CASES >>
+  simp[moonshotProxyTheory.pstate_def, FOLDL_SNOC, moonshotProxyTheory.pinit_def,
+       moonshotProxyTheory.pstep_def] >> metis_tac[]
+QED
+
+Theorem proxy_connects_b:
+  MEM (EConnect p) (new_actions (log_of (pprog lfd b hw)) h) ⇒ p = b
+Proof
+  rewrite_tac[moonshotProxyTheory.pprog_new_actions] >> strip_tac >>
+  ‘∃st rdy. (pstate lfd b hw h).last = pacts lfd b hw st rdy’ by metis_tac[pstate_last_pacts] >>
+  fs[] >> drule moonshotProxyTheory.MEM_pacts >> simp[]
+QED
+
+Theorem proxy_rounds_ok:
+  ptot k b hw w4 ⇒ EVERY (e1TraceEvents$e1ev_ok (λp. p = b)) (PE b hw k w4 n)
+Proof
+  strip_tac >>
+  ‘erounds (plfd k) pol_never (pifds_k b hw k) (pprog_k b hw k) (w4, einit) n ≠ NONE’ by simp[] >>
+  drule erounds_erun >> strip_tac >>
+  mp_tac (Q.INST [‘P’ |-> ‘λp. p = b’, ‘m’ |-> ‘pprog_k b hw k’, ‘lfd’ |-> ‘plfd k’, ‘pol’ |-> ‘pol_never’,
+                   ‘ifds’ |-> ‘pifds_k b hw k’, ‘ws0’ |-> ‘(w4, einit)’]
+            (INST_TYPE [alpha |-> “:unit option”] e1TraceEventsTheory.erounds_evs_ok)) >>
+  impl_tac >- (rpt strip_tac >> drule proxy_connects_b >> simp[]) >>
+  disch_then drule >> simp[]
+QED
+
+(* An event of a prefix of the run is in the start or in some round *)
+Theorem proxy_run_mem:
+  ptot k b hw w4 ∧ LPREFIX (fromList evs) (proxy_run_io b hw k w4 pre) ∧ MEM e evs ⇒
+  MEM e pre ∨ ∃n. MEM e (PE b hw k w4 n)
+Proof
+  strip_tac >> qpat_x_assum ‘LPREFIX _ _’ mp_tac >> simp[proxy_run_io_def] >> strip_tac >>
+  drule_at (Pos last) run_prefix_cases >> impl_tac >- first_assum ACCEPT_TAC >> strip_tac
+  >- (disj1_tac >> metis_tac[MEM_prefix]) >>
+  qpat_x_assum ‘evs = _’ SUBST_ALL_TAC >> fs[] >> disj2_tac >>
+  qexists_tac ‘SUC i’ >> metis_tac[MEM_prefix]
+QED
+
+Theorem proxy_listen_l0:
+  proxy_start a w0 pre w4 k ∧ ptot k b hw w4 ∧
+  LPREFIX (fromList evs) (proxy_run_io b hw k w4 pre) ∧
+  MEM (IO_event (ExtCall «sys_listen») conf bs) evs ⇒
+  conf = proxyL0Stmts$pbytes a
+Proof
+  strip_tac >> drule_all proxy_run_mem >> strip_tac
+  >- (drule_all proxy_start_listen >> simp[]) >>
+  drule proxy_rounds_ok >> disch_then (qspec_then ‘n’ mp_tac) >>
+  simp[EVERY_MEM] >> disch_then drule >> simp[e1TraceEventsTheory.e1ev_ok_def]
+QED
+
+Theorem connected_name:
+  proxyL0Stmts$l0_event_connected ev ≠ NONE ⇒ ∃conf bs. ev = IO_event (ExtCall «sys_connect») conf bs
+Proof
+  Cases_on ‘ev’ >> rename1 ‘IO_event nm conf bl’ >> Cases_on ‘nm’ >>
+  simp[proxyL0StmtsTheory.l0_event_connected_def] >> rw[]
+QED
+
+Theorem proxy_connect_port:
+  proxy_start a w0 pre w4 k ∧ ptot k b hw w4 ∧
+  LPREFIX (fromList evs) (proxy_run_io b hw k w4 pre) ∧ q < LENGTH evs ∧
+  proxyL0Stmts$l0_event_connected (EL q evs) ≠ NONE ⇒
+  proxyL0Stmts$connect_port (EL q evs) = SOME (proxyL0Stmts$pbytes b)
+Proof
+  strip_tac >> ‘MEM (EL q evs) evs’ by metis_tac[MEM_EL] >>
+  drule_all proxy_run_mem >> strip_tac
+  >- (drule proxy_start_pre >> simp[EVERY_MEM] >> disch_then drule >> simp[]) >>
+  drule connected_name >> strip_tac >> fs[] >>
+  drule proxy_rounds_ok >> disch_then (qspec_then ‘n’ mp_tac) >>
+  simp[EVERY_MEM] >> disch_then drule >>
+  simp[e1TraceEventsTheory.e1ev_ok_def, proxyL0StmtsTheory.connect_port_def, pbytes_port_bytes]
+QED
+
+Theorem proxy_run_cover:
+  ptot k b hw w4 ∧ LPREFIX (fromList evs) (proxy_run_io b hw k w4 pre) ⇒
+  ∃n. evs ≼ pre ++ PE b hw k w4 n
+Proof
+  strip_tac >> qpat_x_assum ‘LPREFIX _ _’ mp_tac >> simp[proxy_run_io_def] >> strip_tac >>
+  drule_at (Pos last) run_prefix_cases >> impl_tac >- first_assum ACCEPT_TAC >> strip_tac
+  >- (qexists_tac ‘0’ >> irule IS_PREFIX_TRANS >> qexists_tac ‘pre’ >> simp[]) >>
+  qexists_tac ‘SUC i’ >> simp[]
+QED
+
+Theorem proxy_connect_front_l0:
+  proxy_start a w0 pre w4 k ∧ ptot k b hw w4 ∧
+  (∀ft. LPREFIX (fromList ft) (proxy_run_io b hw k w4 pre) ⇒ ep_ok ft) ∧
+  LPREFIX (fromList evs) (proxy_run_io b hw k w4 pre) ∧ q < LENGTH evs ∧
+  proxyL0Stmts$l0_event_connected (EL q evs) ≠ NONE ⇒
+  ∃p. p < q ∧ proxyL0Stmts$is_front p evs ∧ proxy_pr a b hw k w4 (proxy_run_io b hw k w4 pre) p = SOME q
+Proof
+  strip_tac >> qabbrev_tac ‘io = proxy_run_io b hw k w4 pre’ >>
+  ‘ep_ok evs’ by (qpat_x_assum ‘∀ft. _ ⇒ ep_ok _’ irule >> first_assum ACCEPT_TAC) >>
+  ‘opens_ok (EL q evs)’ by fs[ep_ok_def, EVERY_EL] >>
+  ‘proxyL0StmtsCopy$l0_event_connected (EL q evs) ≠ NONE’ by simp[l0_event_connected_copy] >>
+  ‘∃f port. ev_new (EL q evs) = SOME (f, INL port)’ by (drule_all connected_new >> simp[]) >>
+  ‘ep_at evs q’ by simp[ep_at_def] >>
+  qabbrev_tac ‘jq = ep_idx evs q’ >>
+  ‘jq < LENGTH (ep_conn evs) ∧ EL jq (ep_conn evs)’
+    by (drule_all new_front >> simp[Abbr ‘jq’]) >>
+  ‘∃n. evs ≼ pre ++ PE b hw k w4 n’ by (irule proxy_run_cover >> simp[Abbr ‘io’]) >>
+  ‘ep_conn evs ≼ ep_conn (PE b hw k w4 n)’ by metis_tac[ep_conn_mono, proxy_start_conn] >>
+  ‘jq < LENGTH (ep_conn (PE b hw k w4 n)) ∧ EL jq (ep_conn (PE b hw k w4 n))’
+    by (imp_res_tac IS_PREFIX_LENGTH >> conj_tac >- decide_tac >> metis_tac[EL_prefix]) >>
+  ‘∃c. MEM (jq, c) (PB a b hw k w4 n)’ by (irule proxy_conn_ep_bound >> metis_tac[]) >>
+  ‘MEM c (hl_conn_handles (PP a b hw k w4 n))’ by metis_tac[proxy_kinds] >>
+  ‘proxy_world (plfd k) a (PW a b hw k w4)’ by simp[pew_proxy_world] >>
+  ‘∃hd. ppair (plfd k) b hw (PL b hw k w4) (PW a b hw k w4) hd = SOME c ∧
+        MEM hd (hl_acc_handles (PP a b hw k w4 n))’ by (drule proxy_conn_front >> metis_tac[]) >>
+  ‘∃jp. MEM (jp, hd) (PB a b hw k w4 n)’ by (irule proxy_conn_bound >> metis_tac[]) >>
+  ‘jp < LENGTH (ep_conn (PE b hw k w4 n)) ∧ ¬EL jp (ep_conn (PE b hw k w4 n))’ by metis_tac[proxy_kinds] >>
+  ‘jp < jq’ by (irule proxy_front_before >> metis_tac[]) >>
+  ‘jp < LENGTH (ep_fds evs)’ by (fs[LENGTH_ep_conn] >> decide_tac) >>
+  ‘∃p. ep_at evs p ∧ ep_idx evs p = jp’ by metis_tac[ep_pos_exists] >>
+  ‘p < q’ by (CCONTR_TAC >> ‘q ≤ p’ by decide_tac >>
+              ‘ep_idx evs q ≤ ep_idx evs p’ by metis_tac[ep_idx_mono] >> fs[Abbr ‘jq’]) >>
+  qexists_tac ‘p’ >> conj_tac >- first_assum ACCEPT_TAC >>
+  ‘p < LENGTH evs’ by fs[ep_at_def] >>
+  conj_tac
+  >- (simp[proxyL0StmtsTheory.is_front_def, accepted_new_real] >>
+      ‘∃f' x. ev_new (EL p evs) = SOME (f', x)’
+        by (fs[ep_at_def] >> Cases_on ‘ev_new (EL p evs)’ >> fs[] >> metis_tac[pair_CASES]) >>
+      ‘EL jp (ep_conn evs) = ISL x’ by metis_tac[new_front] >>
+      ‘EL jp (ep_conn evs) = EL jp (ep_conn (PE b hw k w4 n))’
+        by (irule EL_prefix >> fs[LENGTH_ep_conn]) >>
+      Cases_on ‘x’ >> fs[]) >>
+  ‘io_ep_at io p ∧ io_ep_idx io p = jp ∧ io_ep_at io q ∧ io_ep_idx io q = jq’
+    by metis_tac[io_ep_ft] >>
+  ‘proxy_chan_hdl a b hw k w4 jp = SOME hd ∧ proxy_chan_hdl a b hw k w4 jq = SOME c’
+    by (conj_tac >> irule proxy_chan_hdl_of >> qexists_tac ‘n’ >> irule proxy_bound_lookup >> metis_tac[]) >>
+  qpat_x_assum ‘io_ep_idx io p = jp’ (fn th => RULE_ASSUM_TAC (REWRITE_RULE [GSYM th])) >>
+  qpat_x_assum ‘io_ep_idx io q = jq’ (fn th => RULE_ASSUM_TAC (REWRITE_RULE [GSYM th])) >>
+  drule_all proxy_pr_of >> disch_then ACCEPT_TAC
+QED
+
+(* ------------------------------------------------------------------------
+   proxy_safe_l0 for the run, given the buffering bound (still open)
+   ------------------------------------------------------------------------ *)
+
+(* proxy_safe_l0's last two conjuncts for a paired front (rev 7 bound) *)
+Definition proxy_bound_ok_def:
+  proxy_bound_ok kt hw (pr : num -> num option) io ⇔
+    ∀evs p q. LPREFIX (fromList evs) io ∧ proxyL0Stmts$is_front p evs ∧ pr p = SOME q ⇒
+      (pos_timed_out kt q (fromList evs) ∨
+       LENGTH (proxyL0Stmts$pos_read p evs) ≤ LENGTH (proxyL0Stmts$pos_sent q evs) + proxy_bnd hw) ∧
+      (pos_timed_out kt p (fromList evs) ∨
+       LENGTH (proxyL0Stmts$pos_read q evs) ≤ LENGTH (proxyL0Stmts$pos_sent p evs) + proxy_bnd hw)
+End
+
+Theorem proxy_safe_run_bound:
+  proxy_start a w0 pre w4 k ∧ ptot k b hw w4 ∧
+  (∀ft. LPREFIX (fromList ft) (proxy_run_io b hw k w4 pre) ⇒ ep_ok ft) ∧
+  proxy_bound_ok kt hw (proxy_pr a b hw k w4 (proxy_run_io b hw k w4 pre)) (proxy_run_io b hw k w4 pre) ⇒
+  proxy_safe_l0 kt hw a b (proxy_pr a b hw k w4 (proxy_run_io b hw k w4 pre)) (proxy_run_io b hw k w4 pre)
+Proof
+  strip_tac >> rewrite_tac[proxyL0StmtsTheory.proxy_safe_l0_def] >> conj_tac
+  >- (rpt strip_tac >> irule proxy_pr_inj >>
+      qexistsl_tac [‘a’, ‘b’, ‘hw’, ‘proxy_run_io b hw k w4 pre’, ‘k’, ‘pre’, ‘q’, ‘w0’, ‘w4’] >>
+      rpt conj_tac >> first_assum ACCEPT_TAC) >>
+  gen_tac >> strip_tac >> rpt conj_tac
+  >- (rpt strip_tac >> drule_all proxy_listen_l0 >> simp[])
+  >- (gen_tac >> strip_tac >> conj_tac
+      >- (drule_all proxy_connect_port >> simp[]) >>
+      drule_all proxy_connect_front_l0 >> simp[])
+  >- (rpt strip_tac >> drule_all proxy_pr_connected >> simp[]) >>
+  gen_tac >> strip_tac >>
+  Cases_on ‘proxy_pr a b hw k w4 (proxy_run_io b hw k w4 pre) p’ >> simp[]
+  >- (drule_all proxy_unpaired_l0 >> simp[]) >>
+  rename1 ‘_ = SOME q’ >>
+  drule_all proxy_relay_l0 >> strip_tac >> simp[] >>
+  qpat_x_assum ‘proxy_bound_ok _ _ _ _’ mp_tac >> rewrite_tac[proxy_bound_ok_def] >>
+  disch_then drule_all >> simp[]
 QED

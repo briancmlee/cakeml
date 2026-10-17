@@ -433,3 +433,62 @@ Proof
   simp[rfds_def, cnew_thm] >>
   rpt conj_tac >> TRY (irule credit_cong >> metis_tac[] >> NO_TAC) >> metis_tac[]
 QED
+
+Theorem eacts_rfds_cons:
+  edo lfd pol (wl, es) a = SOME (r1, (wl1, es1), evs1) ∧
+  eacts lfd pol (wl1, es1) acts = SOME (rs1, evs2, (wl', es')) ∧ ciss lfd es1 ⇒
+  rfds es' (r1 :: rs1) = rfds es1 [r1] ++ rfds es' rs1
+Proof
+  strip_tac >>
+  ‘∀h. MEM h (conn_hdls [r1]) ⇒ ALOOKUP es'.ctbl h = ALOOKUP es1.ctbl h’
+    by (rpt strip_tac >> drule_all edo_conn_pending >> strip_tac >>
+        drule_all eacts_keeps_pending >> simp[]) >>
+  simp[rfds_def] >>
+  ‘conn_hdls (r1 :: rs1) = conn_hdls [r1] ++ conn_hdls rs1’ by metis_tac[conn_hdls_cons] >>
+  pop_assum SUBST1_TAC >> simp[MAP_APPEND] >> irule MAP_CONG >> simp[]
+QED
+
+Theorem eacts_ep:
+  ∀acts w es rs evs w' es' opn kk.
+    eacts lfd pol (w, es) acts = SOME (rs, evs, (w', es')) ∧
+    (∀i rs0 evs0 wi esi.
+       i ≤ LENGTH acts ∧ eacts lfd pol (w, es) (TAKE i acts) = SOME (rs0, evs0, (wi, esi)) ⇒
+       eown lfd esi) ∧
+    okeys es.p.b ∧ l0_rely w ∧ fds_lt w ∧ fd0_ok w es ∧
+    (∀g. ALOOKUP opn g ≠ ALOOKUP cm g ⇒ ¬live es g) ⇒
+    ep_io l0sysEpisodes$ev_sent j opn kk evs = credit cm j evs ∧
+    FOLDL ep_next (opn, kk) evs = (cnew kk (rfds es' rs) ++ opn, kk + LENGTH (rfds es' rs)) ∧
+    (∀g. ALOOKUP (cnew kk (rfds es' rs) ++ opn) g ≠ ALOOKUP cm g ⇒ ¬live es' g)
+Proof
+  Induct >- simp[eacts_def, rfds_def, conn_hdls_def, cnew_thm, ep_io_def] >>
+  rpt gen_tac >> rename1 ‘a :: acts’ >> strip_tac >>
+  qpat_x_assum ‘eacts _ _ _ _ = _’ mp_tac >> simp[Once eacts_def, AllCaseEqs(), PULL_EXISTS] >>
+  rpt gen_tac >> rename1 ‘edo _ _ _ _ = SOME (r1, ws1, evs1)’ >> PairCases_on ‘ws1’ >>
+  rename1 ‘edo _ _ _ _ = SOME (r1, (w1, es1), evs1)’ >> strip_tac >> gvs[] >>
+  rename1 ‘eacts _ _ _ acts = SOME (rs1, evs2, (w', es'))’ >>
+  ‘eown lfd es’
+    by (qpat_x_assum ‘∀i rs0 evs0 wi esi. _’ (qspecl_then [‘0’, ‘[]’, ‘[]’, ‘w’, ‘es’] mp_tac) >>
+        simp[eacts_def]) >>
+  ‘eown lfd es1’
+    by (qpat_x_assum ‘∀i rs0 evs0 wi esi. _’
+          (qspecl_then [‘1’, ‘[r1]’, ‘evs1’, ‘w1’, ‘es1’] mp_tac) >>
+        simp[eacts_def]) >>
+  ‘oown lfd es’ by metis_tac[eown_oown] >>
+  drule_all edo_ep >> strip_tac >>
+  drule_all edo_live >> strip_tac >>
+  drule_all edo_fd0 >> strip_tac >>
+  first_x_assum (qspecl_then [‘w1’, ‘es1’, ‘rs1’, ‘evs2’, ‘w'’, ‘es'’,
+                              ‘cnew kk (rfds es1 [r1]) ++ opn’,
+                              ‘kk + LENGTH (rfds es1 [r1])’] mp_tac) >>
+  impl_tac
+  >- (simp[] >> rpt conj_tac >>
+      TRY (rpt strip_tac >>
+           qpat_x_assum ‘∀i rs0 evs0 wi esi. _’
+             (qspecl_then [‘SUC i’, ‘r1 :: rs0’, ‘evs1 ++ evs0’, ‘wi’, ‘esi’] mp_tac) >>
+           fs[eacts_def] >> NO_TAC) >>
+      metis_tac[]) >>
+  strip_tac >>
+  ‘ciss lfd es1’ by metis_tac[eown_ciss] >>
+  drule_all eacts_rfds_cons >> strip_tac >>
+  simp[ep_io_append, FOLDL_APPEND, cnew_append]
+QED

@@ -1,6 +1,6 @@
 # 48 — Live interest lists (option (C)): design note
 
-Status: PROPOSAL, pending the user's ruling on (C). No code yet.
+Status: APPROVED (user, 2026-10-17): option (C) = D26 (design/decisions/D26.md on shared/base); being implemented.
 Author: cf-actions (L3-09), 2026-10-17.
 
 ## Why

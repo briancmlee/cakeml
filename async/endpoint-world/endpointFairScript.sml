@@ -30,7 +30,9 @@ Definition ep_arrival_ok_def:
      j < LENGTH w.chans ∧ (EL j w.chans).status = Up ∧ ¬(EL j w.chans).peer_eof) ∧
   (ep_arrival_ok w (PEof j) ⇔
      j < LENGTH w.chans ∧ (EL j w.chans).status = Up ∧ ¬(EL j w.chans).peer_eof) ∧
-  (ep_arrival_ok w (Drain j) ⇔ j < LENGTH w.chans)
+  (ep_arrival_ok w (Drain j) ⇔ j < LENGTH w.chans) ∧
+  (ep_arrival_ok w (Settle j b) ⇔
+     j < LENGTH w.chans ∧ (EL j w.chans).status = Connecting)
 End
 
 Definition ep_step_ok_def:
@@ -51,7 +53,7 @@ End
 Definition ep_sched_ok_def:
   ep_sched_ok w ⇔
     ∀cs w'. ep_after w cs = SOME w' ⇒
-            ep_step_ok (settle w' with clock := w'.clock + 1) (w'.env w'.clock w'.hist)
+            ep_step_ok (w' with clock := w'.clock + 1) (w'.env w'.clock w'.hist)
 End
 
 (* ASSUMPTION: the acceptance policy is sane *)

@@ -191,6 +191,22 @@ infinite runs, and the world ↔ system correspondence for `drains`, `peer_sent`
 Breaks are already in `sys_excuse`. In `chain_served` this is the hypothesis
 `∀n e. MEM e [chain ends] ∧ lost ss e n ∧ ¬served_by … n ⇒ X`.
 
+**Run forms (moonshotLiveObs, @643b72a56):** the clauses above as `client_open`, `client_conn_ob`,
+`proxy_ob` (with the proxy's pairing `bk`, front channel → backend channel), `kv_ob`, `topology_ob`
+and the joint `closes_ob`, bundled as `moonshot_obs`. Escapes: "X ∨ the episode is done" (`done_by`:
+sent exactly rq, complete replies read) or "X ∨ an own chain end has ended" (`ended`: the end is
+frozen, i.e. it has seen its peer's EOF, broken or closed); `closes_ob` turns an end before done into
+X. Design requirement on the proxy: a backend connect that fails with a transient error must be retried
+(not answered by closing the front): a transient failure is no excuse, and by D41's F1 on connect, keyed by
+(process, port), retrying i.o. gives a non-transient outcome i.o. A refusal (ConnFail, or ECONNREFUSED at
+once) is kern_broke or hard_fail, so closing the front then is covered.
+
+**Setup chain, the kernel's part (moonshotLiveSetup): `connect_pairs` PROVED.** A connect end to a port
+of `isolated` is eventually ended or paired with an end of the only process that listens on the port.
+Uses: targets persist (`irun_target`); a pair is only ever made with a process that listened on the
+target before (`irun_pair_listens`); and settlement, by (C) and `isolated`'s last clause
+(`connect_settles`).
+
 **Mine (system level), still to do:** N1/N2 lifts; the setup chain (the client's connect is paired
 with an accepted front, and the front with a backend accepted by KV, from `conn_live_l0` /
 `proxy_pairs_l0` / F-obs (C)); the excuse transfer (per-process excuses ⇒ `sys_excuse`); termination

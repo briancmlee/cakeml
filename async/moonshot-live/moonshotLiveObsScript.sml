@@ -14,7 +14,7 @@
    - THE SETUP CHAIN.  The client names its episodes ep i (connects to a).
      The channel of an episode is the run's ghost map (run_css, the one
      behind B2's sinv).  A connect end to a port of `isolated` is
-     eventually lost or paired with a process that listens on the port
+     eventually ended or paired with a process that listens on the port
      (connect_pairs_claim: kernel fairness (C), isolated); only the proxy
      listens on a and only KV on b (topology_ob).  The proxy names, for each
      front, its backend (bk: front channel -> backend channel), which is
@@ -62,10 +62,13 @@ Definition ep_chan_def:
     ∃n. jep < LENGTH (run_css ss rs n k) ∧ EL jep (run_css ss rs n k) = c
 End
 
-(* End e exists and is lost at n (lost alone reads a channel slot that
-   need not exist yet) *)
-Definition lost_end_def:
-  lost_end ss e n ⇔ is_end (ss n) e ∧ lost ss e n
+(* End e exists and has ended at n: lost (broken or closed), or it has
+   seen its peer's EOF (frozen).  A program stops asking on an end it
+   has read the EOF of; in the chain, every EOF follows the client's
+   half-close after it is done, so closes_ob covers EOFs as well.  (lost
+   alone reads a channel slot that need not exist yet: hence is_end) *)
+Definition ended_def:
+  ended ss e n ⇔ is_end (ss n) e ∧ frozen (sys_chan (ss n) e)
 End
 
 (* Process k has a listener on port p *)
@@ -82,7 +85,7 @@ Definition connect_pairs_claim_def:
       l0sys_irun S ss rs ∧ kernel_fair_obs ss rs ∧ isolated ports ss rs ∧
       (∀n k. k < LENGTH S ∧ listens_on (ss n) k p ⇒ k = k0) ∧
       is_end (ss n) e ∧ (ss n).target e = SOME p ∧ MEM p ports ⇒
-      (∃n'. lost_end ss e n') ∨ ∃n' j'. (ss n').peer e = SOME (k0, j')
+      (∃n'. ended ss e n') ∨ ∃n' j'. (ss n').peer e = SOME (k0, j')
 End
 
 (* ------------------------------------------------------------------------
@@ -126,7 +129,7 @@ End
    chain_served ask, unless X or one of the two ends is lost *)
 Definition proxy_pair_ob_def:
   proxy_pair_ob X ss rs ja jb ⇔
-    let L = (X ∨ ∃n. lost_end ss (1, ja) n ∨ lost_end ss (1, jb) n) in
+    let L = (X ∨ ∃n. ended ss (1, ja) n ∨ ended ss (1, jb) n) in
       (sys_drains ss (1, ja) ⇒ L ∨ io (asks_in ss rs 1 jb)) ∧
       (sys_drains ss (1, jb) ⇒ L ∨ io (asks_in ss rs 1 ja)) ∧
       ∀m. is_end (ss m) (1, ja) ∧ is_end (ss m) (1, jb) ⇒
@@ -139,7 +142,7 @@ End
 Definition proxy_ob_def:
   proxy_ob X a b ss rs (bk : num -> num option) ⇔
     ∀ja m e. (ss m).peer (1, ja) = SOME e ∧ (ss m).target e = SOME a ⇒
-      X ∨ (∃n. lost_end ss (1, ja) n) ∨
+      X ∨ (∃n. ended ss (1, ja) n) ∨
       ∃jb. bk ja = SOME jb ∧ (∃n. is_end (ss n) (1, jb) ∧ (ss n).target (1, jb) = SOME b) ∧
            proxy_pair_ob X ss rs ja jb
 End
@@ -150,7 +153,7 @@ End
 Definition kv_ob_def:
   kv_ob X b ss rs ⇔
     ∀jk m e. (ss m).peer (2, jk) = SOME e ∧ (ss m).target e = SOME b ⇒
-      let L = (X ∨ ∃n. lost_end ss (2, jk) n) in
+      let L = (X ∨ ∃n. ended ss (2, jk) n) in
         (sys_drains ss (2, jk) ⇒ L ∨ io (asks_in ss rs 2 jk)) ∧
         ∀m'. is_end (ss m') (2, jk) ⇒ sys_drains ss (2, jk) ⇒ kv_answers m' L ss (2, jk)
 End
@@ -172,7 +175,7 @@ Definition closes_ob_def:
               ∃m ja. (ss m).peer (0, jc) = SOME (1, ja) ∧
                      (e = (1, ja) ∨
                       ∃jb. bk ja = SOME jb ∧ (e = (1, jb) ∨ ∃m'. (ss m').peer (1, jb) = SOME e))) ∧
-             lost_end ss e n ∧ ¬done_by rs jep rq n ⇒ X
+             ended ss e n ∧ ¬done_by rs jep rq n ⇒ X
 End
 
 Definition moonshot_obs_def:

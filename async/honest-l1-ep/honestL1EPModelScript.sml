@@ -17,6 +17,7 @@
    - ERead on a ctbl handle: pending: would-block (EGot NONE, as a
      Connecting channel reads); refused: ERefused, the socket is closed and
      the handle forgotten;
+   - ELevel h: the length of h's outbox (elevel), no syscall;
    - EWrite on a ctbl handle: pending: a misuse (as in the layer); refused:
      nothing taken (EWrote 0);
    - the round's tail additionally polls each pending connect for OUT; on
@@ -80,6 +81,14 @@ Definition ec_del_def:
                              settling := FILTER ($≠ h) es.settling |>
 End
 
+(* Level h (design/45 §2.2): the length of L1's outbox for h's fd; 0 for
+   an unknown handle or a connect handle (which has no outbox yet).  No
+   syscall *)
+Definition elevel_def:
+  elevel es h =
+    case ALOOKUP es.p.b.tbl h of SOME f => LENGTH (outbox_of es.p.b f) | NONE => 0
+End
+
 Definition edo_def:
   edo lfd hw (w, es) (EAccept l) =
     (OPTION_MAP (λ(r, (w', ps'), evs).
@@ -121,13 +130,14 @@ Definition edo_def:
                        ((case r of Got x => EGot x | _ => EGot NONE), (w', es with p := ps'), evs))
            (pdo lfd (w, es.p) (Read h n))) ∧
   edo lfd hw (w, es) (EWrite h bs) =
-    case ALOOKUP es.ctbl h of
-    | SOME f => if cstat_of es f = CRefused then SOME (EWrote 0, (w, es), []) else NONE
-    | NONE =>
-        OPTION_MAP (λ(r, (w', ps'), evs).
-                      (EWrote (if ALOOKUP es.p.b.tbl h = NONE then 0 else LENGTH bs),
-                       (w', es with p := ps'), evs))
-          (pdo lfd (w, es.p) (Write h bs))
+    (case ALOOKUP es.ctbl h of
+     | SOME f => if cstat_of es f = CRefused then SOME (EWrote 0, (w, es), []) else NONE
+     | NONE =>
+         OPTION_MAP (λ(r, (w', ps'), evs).
+                       (EWrote (if ALOOKUP es.p.b.tbl h = NONE then 0 else LENGTH bs),
+                        (w', es with p := ps'), evs))
+           (pdo lfd (w, es.p) (Write h bs))) ∧
+  edo lfd hw (w, es) (ELevel h) = SOME (ELvl (elevel es h), (w, es), [])
 End
 
 Definition eacts_def:

@@ -174,7 +174,9 @@ Definition proxy_pairs_l0_def:
 End
 
 (* R4′ for the proxy: on the honest L0 FFI, K = pf_sendwait (D23),
-   Bnd = hw + 2 * pf_chunk *)
+   Bnd = hw + 3 * pf_chunk (revision 2: L1's inbox of the front, the
+   proxy's one round of read-but-not-yet-written bytes, the backend's
+   outbox ≤ hw + pf_chunk) *)
 Definition l0_proxy_claim_def:
   l0_proxy_claim K Bnd b prog ⇔
     ∀w0. l0_server_world w0 ⇒

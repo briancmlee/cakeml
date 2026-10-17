@@ -537,6 +537,7 @@ The citations were checked against the primary texts. The rules:
 |---|---|---|---|
 | fd of a new socket | [P 2.6]: the **lowest** available fd (accept, socket) | follows it: `lowest_fd`; EMFILE if it is not below the limit | macOS conforms (tested) |
 | partial send | [P 2.10.7]: "transfer only as much as is available"; EAGAIN only if nothing fits | `takes` (the room is the kernel's) | macOS: a partial 15708 of 65536, then EAGAIN |
+| counts below 2^64 (D24) | [P send], [P recv]: the result is an `ssize_t`, so a count is at most SSIZE_MAX | rely: `takes` and `short` are below 256^8 (`l0_rely`) | **build-time checked**: `_Static_assert(sizeof(ssize_t) <= 8)` in the C |
 | non-blocking per call | `MSG_DONTWAIT` is **not** in Issue 8 | treated as O_NONBLOCK for one call ([P 2.10.7]) | **[X4]** a non-standard flag, in macOS and Linux |
 | SIGPIPE | [P send, 2.10.14]: EPIPE is returned "regardless of whether the generation of the signal is suppressed"; `MSG_NOSIGNAL` is standard | EPIPE is a result | macOS lacks `MSG_NOSIGNAL`: the startup contract ignores SIGPIPE (standard behaviour, not an extension) |
 | short recv | [P recv]: data "as soon as it becomes available" | `short` (≥ 1 byte, ≤ available) | macOS: short reads seen (261 times in the random test) |
@@ -1520,6 +1521,7 @@ even if it is more work.**
 | D14 | The R1-live statement (§6), with hypotheses [F1] (weak), [F2], S1, S2, D(c) and [F3]. [F3] (fds free up infinitely often) is an explicit hypothesis of the connection half of the theorem | **approved** |
 | D15 | R1-live gains S3 (the server reads what it is shown) and S4 (if the peer drains, the outbox eventually falls to ≤ hw) as per-server obligations, not trusted. They are discharged per server: echo, HTTP and KV from their v2 liveness and reply-only writes; chat via D7 | **approved** |
 | D16 | Spurious hard errors (the L0 model allows any error but EAGAIN as a transient failure, [P 2.3]): (live-data) holds **unless L1 observed a hard error on c**, in which case the episode ended (`Eof2 j`). No new trust. Plus a corollary with the condition as an explicit **hypothesis**: if hard errors on c occur only when the connection really broke, every byte c's peer delivered is eventually in `psk` | **approved** |
+| D24 | **counts below 2^64** (from m4-server's B2 work). `l0_rely` gains `(∀j h b n. w.ch.takes j h b n < 256 ** 8) ∧ (∀j h a. w.ch.short j h a < 256 ** 8)`: [P send/recv] return `ssize_t`, so a count is at most SSIZE_MAX; the C checks `sizeof(ssize_t) <= 8` at build time (with D20's asserts, §3.6). A stronger rely: no existing proof changes | **decided (user, via coordinator)** |
 
 §4.1 (the refused/error encoding) is approved with D1/D3, and close-v2
 implements it in the endpoint world.

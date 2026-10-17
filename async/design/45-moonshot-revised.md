@@ -922,5 +922,14 @@ l0sys inherits the L0 model's `eof_first` (D21, user-approved; honest-ffi, d20-p
 
 **(d) fds below the limit (user, via the coordinator, 2026-10-17):** `sys_init` adds, per process, `∀x. MEM x (l0_used w) ⇒ w2n x < w.fd_limit`. This is `fds_lt`, the same startup-contract assumption as `l0_server_world`'s. Without it, an initial `reserved` list covering all 2^64 words leaves `lowest_fd` unspecified, so the model could hand out an fd twice (B2's port clause fails). The per-process theorems also all assume `fds_lt w0`. B1's conclusion adds `fds_lt w0`; B2 is unchanged.
 
+**(e) unblock only a blocking poll (user, via the coordinator, 2026-10-17):** `unblock` rewrites the mode byte to 0w only when it is 1w (blocking). Before, it rewrote any mode, so a poll with an invalid mode (≥ 2w) was answered by l0sys as a valid non-blocking poll, while the L0 world (`l0_call` needs `w2n (HD conf) ≤ 1`) fails it with FFI_failed. A run could then record an event no L0 world produces, and B1 (`l0sys_proj`) would be false. Found while proving B1. A mode-0 poll was already unchanged, and a mode-1 poll is handled as before.
+
 The safety path (§6, steps 1–4 and 9–12) starts when its dependencies land.
 The coordinator assigns the implementation.
+
+## 10. Known limitations
+
+- **A socket on fd 0 (coordinator, 2026-10-17).** `close_fd` frees a reserved fd, so a process that closes fd 0 can get fd 0 back from a connect or an accept. The trusted C reports a failed connect's socket in the value field, with 0 meaning "no socket", so an fd-0 socket can't be reported. l0sysEpisodes therefore counts an fd-0 episode but gives it no bytes. Consequences:
+  - B2 (`l0sys_causal`) is unchanged: `conn` leaves out every pair with an fd-0 episode on either side.
+  - Step 12 needs "no process closes fd 0" (or "no process closes a reserved fd"). It is to be discharged for L1 programs, which close only the connection fds they accepted or connected, so step 12's users never see it.
+  - A possible later fix in C is a separate no-socket flag. There is no change now.

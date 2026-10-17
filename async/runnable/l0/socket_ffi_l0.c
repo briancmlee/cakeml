@@ -76,6 +76,8 @@
 
 #define MAX_FDS 4096
 #define HDR 13
+/* send and recv return ssize_t, so a count is below 2^64 (design/36 §9 D24) */
+_Static_assert(sizeof(ssize_t) <= 8, "ssize_t counts fit in 64 bits");
 #ifdef MSG_NOSIGNAL
 #define SEND_FLAGS (MSG_DONTWAIT | MSG_NOSIGNAL)
 #else

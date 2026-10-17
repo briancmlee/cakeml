@@ -404,3 +404,267 @@ Proof
   qpat_x_assum ‘pk _ _ _ _’ mp_tac >> simp[pk_def, EL_LUPDATE] >>
   rpt strip_tac >> res_tac >> fs[]
 QED
+
+(*---------------------------------------------------------------------------*)
+(* A call *)
+
+Theorem connect_new_chan:
+  l0_rely w ∧ l0_call «sys_connect» conf bytes w = SOME (FFIreturn out w1) ∧
+  ev_new (IO_event (ExtCall «sys_connect») conf (ZIP (bytes, out))) = SOME x ⇒
+  LENGTH w1.chans = LENGTH w.chans + 1
+Proof
+  strip_tac >> gvs[l0_call_def, AllCaseEqs()] >> drule l0_connect_cases >>
+  simp[LET_THM] >> strip_tac >> gvs[fail_def] >>
+  ‘LENGTH bytes = 13’ by gvs[l0_hdr_def] >>
+  qpat_x_assum ‘ev_new _ = _’ mp_tac >> simp[ev_new_connect_fail]
+QED
+
+Theorem dec_res_fail0:
+  l0_rely w ⇒ dec_res (enc_res (fail w e)) ≠ SOME (Ok v)
+Proof
+  strip_tac >> ‘enc_res (fail w e) = enc_res (fail w e) ++ []’ by simp[] >>
+  pop_assum SUBST1_TAC >> simp[dec_res_fail]
+QED
+
+Theorem accept_new_chan:
+  l0_rely w ∧ l0_call «sys_accept» conf bytes w = SOME (FFIreturn out w1) ∧
+  ev_new (IO_event (ExtCall «sys_accept») conf (ZIP (bytes, out))) = SOME (f, INR l) ⇒
+  ∃l1 p q t. FILTER (λ(l', p, q). l' = l) w.listeners = (l1, p, pop_chan w l :: q) :: t
+Proof
+  strip_tac >> ‘LENGTH out = LENGTH bytes’ by metis_tac[l0_call_length] >>
+  ‘MAP SND (ZIP (bytes, out)) = out’ by metis_tac[MAP_ZIP] >>
+  gvs[l0_call_def, AllCaseEqs()] >> pairarg_tac >> gvs[] >>
+  drule l0_accept_cases >> strip_tac >> gvs[] >>
+  qpat_x_assum ‘ev_new _ = _’ mp_tac >>
+  qpat_x_assum ‘MAP SND _ = _’ (fn th => simp[ev_new_def, th]) >>
+  TRY (Cases_on ‘dec_res (enc_res (fail w e))’ >> simp[] >>
+       rename1 ‘dec_res _ = SOME rr’ >> Cases_on ‘rr’ >> simp[] >>
+       drule dec_res_fail0 >> rpt strip_tac >> gvs[] >> NO_TAC) >>
+  rw[] >> qpat_x_assum ‘_ = SOME (f, INR l)’ mp_tac >> every_case_tac >> rw[] >>
+  gvs[pop_chan_def]
+QED
+
+(* The target the call sets: a connect's new socket's port *)
+Definition call_target_def:
+  call_target (s : sysstate) k nm conf (w1 : l0world) =
+    if nm = «sys_connect» ∧ LENGTH w1.chans = LENGTH (EL k s.procs).chans + 1
+    then ((k, LENGTH (EL k s.procs).chans) =+ SOME (w22n conf)) s.target
+    else s.target
+End
+
+(* The state after process k's call, before any pairing *)
+Definition call_state_def:
+  call_state (s : sysstate) k nm conf bytes (w1 : l0world) =
+    s with <| procs := LUPDATE (w1 with <| clock := (EL k s.procs).clock + 1;
+                                           hist := (EL k s.procs).hist ++ [(nm, conf, bytes)] |>)
+                               k s.procs;
+              target := call_target s k nm conf w1 |>
+End
+
+(* Its ghost: the episodes the call starts get new_chans *)
+Definition call_css_def:
+  call_css (s : sysstate) k nm conf bytes out css =
+    (k =+ css k ++ new_chans (EL k s.procs) (IO_event (ExtCall nm) conf (ZIP (bytes, out)))) css
+End
+
+Theorem pk_call_other:
+  sinv rs s css ∧ k < LENGTH s.procs ∧ k'' < LENGTH s.procs ∧ k'' ≠ k ⇒
+  pk (rs ++ [Call k nm conf bytes out]) (call_state s k nm conf bytes w1)
+     (call_css s k nm conf bytes out css) k''
+Proof
+  strip_tac >>
+  ‘pk rs s css k''’ by fs[sinv_def] >>
+  ‘kinv s’ by fs[sinv_def] >>
+  ‘proc_events k'' (rs ++ [Call k nm conf bytes out]) = proc_events k'' rs’
+    by simp[proc_events_SNOC] >>
+  ‘¬is_end s (k, LENGTH (EL k s.procs).chans)’ by simp[is_end_def] >>
+  ‘s.peer (k, LENGTH (EL k s.procs).chans) = NONE’ by fs[kinv_def] >>
+  ‘∀x. s.peer x ≠ SOME (k, LENGTH (EL k s.procs).chans)’
+    by (rpt strip_tac >> fs[kinv_def] >> res_tac >> gvs[]) >>
+  ‘∀x. x ≠ (k, LENGTH (EL k s.procs).chans) ⇒
+       call_target s k nm conf w1 x = s.target x’
+    by rw[call_target_def, APPLY_UPDATE_THM] >>
+  qpat_x_assum ‘pk rs s css k''’ mp_tac >>
+  simp[pk_def, call_state_def, call_css_def, EL_LUPDATE, APPLY_UPDATE_THM] >>
+  rpt strip_tac >> res_tac >> gvs[] >> metis_tac[]
+QED
+
+Theorem ev_new_INL:
+  ev_new (IO_event (ExtCall nm) conf bl) = SOME (f, INL p) ⇒ nm = «sys_connect» ∧ p = w22n conf
+Proof
+  rw[ev_new_def] >> every_case_tac >> gvs[]
+QED
+
+Theorem ev_new_INR:
+  ev_new (IO_event (ExtCall nm) conf bl) = SOME (f, INR l) ⇒ nm = «sys_accept»
+Proof
+  rw[ev_new_def] >> every_case_tac >> gvs[]
+QED
+
+Theorem pk_call_self:
+  sinv rs s css ∧ k < LENGTH s.procs ∧
+  l0_call nm (unblock nm conf) bytes (EL k s.procs) = SOME (FFIreturn out w1) ⇒
+  pk (rs ++ [Call k nm conf bytes out]) (call_state s k nm conf bytes w1)
+     (call_css s k nm conf bytes out css) k
+Proof
+  strip_tac >>
+  qabbrev_tac ‘w = EL k s.procs’ >>
+  qabbrev_tac ‘ev = IO_event (ExtCall nm) conf (ZIP (bytes, out))’ >>
+  qabbrev_tac ‘evs = proc_events k rs’ >>
+  qabbrev_tac ‘n = LENGTH w.chans’ >>
+  ‘pk rs s css k ∧ kinv s’ by fs[sinv_def] >>
+  ‘l0_rely w ∧ small_ch w.ch ∧ pinv evs w (css k)’
+    by (qpat_x_assum ‘pk rs s css k’ mp_tac >> simp[pk_def, Abbr ‘w’, Abbr ‘evs’]) >>
+  ‘proc_events k (rs ++ [Call k nm conf bytes out]) = evs ++ [ev]’
+    by simp[proc_events_SNOC, Abbr ‘evs’, Abbr ‘ev’] >>
+  ‘pinv (evs ++ [ev]) w1 (css k ++ new_chans w ev)’
+    by (simp[Abbr ‘ev’] >> irule pinv_call >> simp[]) >>
+  ‘w1.ch = w.ch ∧ w1.fd_limit = w.fd_limit’ by metis_tac[l0_call_ch] >>
+  ‘l0_rely w1’ by (irule l0_rely_ch >> qexists_tac ‘w’ >> simp[]) >>
+  ‘LENGTH (ep_roles [] evs) = LENGTH (css k) ∧ EVERY (λc. c < n) (css k)’
+    by gvs[LENGTH_ep_roles, pinv_def, Abbr ‘n’] >>
+  ‘¬is_end s (k, n)’ by simp[is_end_def, Abbr ‘n’, Abbr ‘w’] >>
+  ‘∀x. s.peer x ≠ SOME (k, n)’
+    by (rpt strip_tac >> qpat_x_assum ‘kinv s’ mp_tac >> rewrite_tac[kinv_def] >>
+        strip_tac >>
+        qpat_x_assum ‘∀e e'. s.peer e = SOME e' ⇒ _’ drule >> strip_tac >>
+        qpat_x_assum ‘∀e. ¬is_end s e ⇒ _’ drule >> simp[]) >>
+  ‘∀x. x ≠ (k, n) ⇒ call_target s k nm conf w1 x = s.target x’
+    by rw[call_target_def, APPLY_UPDATE_THM, Abbr ‘n’, Abbr ‘w’] >>
+  ‘∀c. queued w c ⇒ c < n’
+    by (rw[queued_def] >> fs[pinv_def] >> res_tac >> fs[Abbr ‘n’]) >>
+  ‘lsub w w1’ by (simp[Abbr ‘w’] >> irule lsub_call >> metis_tac[]) >>
+  ‘ep_roles [] (evs ++ [ev]) = ep_roles [] evs ++ ev_role (lsn evs) ev’
+    by simp[ep_roles_SNOC] >>
+  ‘EL k s.procs = w’ by simp[Abbr ‘w’] >>
+  ‘∀j. j < LENGTH (css k) ⇒ EL j (css k) < n ∧ (k, EL j (css k)) ≠ (k, n)’
+    by (rpt strip_tac >> fs[EVERY_EL] >> res_tac >> fs[]) >>
+  ‘∀j p. j < LENGTH (css k) + LENGTH (new_chans w ev) ∧
+         EL j (ep_roles [] evs ++ ev_role (lsn evs) ev) = Connected p ⇒
+         call_target s k nm conf w1 (k, EL j (css k ++ new_chans w ev)) = SOME p’
+    by (rpt gen_tac >> strip_tac >> Cases_on ‘j < LENGTH (css k)’
+        >- (‘EL j (ep_roles [] evs ++ ev_role (lsn evs) ev) = EL j (ep_roles [] evs) ∧
+             EL j (css k ++ new_chans w ev) = EL j (css k)’
+              by (conj_tac >> irule EL_APPEND1 >> fs[]) >>
+            qpat_x_assum ‘pk rs s css k’ mp_tac >> simp[pk_def] >> strip_tac >>
+            res_tac >> fs[]) >>
+        Cases_on ‘ev_new ev’ >- fs[new_chans_def] >>
+        rename1 ‘ev_new ev = SOME x’ >> PairCases_on ‘x’ >>
+        ‘j = LENGTH (css k)’ by (Cases_on ‘x1’ >> fs[new_chans_def]) >> rveq >>
+        Cases_on ‘x1’ >> fs[new_chans_def, ev_role_def] >>
+        qpat_x_assum ‘LENGTH (ep_roles [] evs) = _’
+          (fn th => fs[GSYM th, EL_LENGTH_APPEND]) >> rveq >>
+        qpat_x_assum ‘ev_new _ = SOME _’ mp_tac >> simp[Abbr ‘ev’] >> strip_tac >>
+        drule ev_new_INL >> strip_tac >> rveq >>
+        fs[unblock_other] >> drule_all connect_new_chan >> strip_tac >>
+        simp[call_target_def, APPLY_UPDATE_THM] >> fs[Abbr ‘n’]) >>
+  ‘∀l p q c. MEM (l, p, q) w1.listeners ∧ MEM c q ⇒
+             call_target s k nm conf w1 (k, c) = NONE ∧
+             ∀e. s.peer (k, c) = SOME e ⇒ call_target s k nm conf w1 e = SOME p’
+    by (rpt gen_tac >> strip_tac >>
+        ‘∃q0. MEM (l, p, q0) w.listeners ∧ MEM c q0’ by (fs[lsub_def] >> metis_tac[]) >>
+        ‘c < n’ by (qpat_x_assum ‘∀c. queued w c ⇒ _’ irule >> simp[queued_def] >>
+                    metis_tac[]) >>
+        ‘(k, c) ≠ (k, n)’ by simp[] >>
+        ‘s.target (k, c) = NONE ∧ ∀e. s.peer (k, c) = SOME e ⇒ s.target e = SOME p’
+          by (qpat_x_assum ‘pk rs s css k’ mp_tac >> simp[pk_def] >> strip_tac >>
+              qpat_x_assum ‘∀l p q c. MEM (l, p, q) w.listeners ∧ _ ⇒ _’
+                (qspecl_then [‘l’, ‘p’, ‘q0’, ‘c’] mp_tac) >> simp[]) >>
+        conj_tac >- simp[] >>
+        rpt strip_tac >> ‘e ≠ (k, n)’ by (strip_tac >> gvs[]) >> simp[]) >>
+  ‘∀j p. j < LENGTH (css k) + LENGTH (new_chans w ev) ∧
+         EL j (ep_roles [] evs ++ ev_role (lsn evs) ev) = Accepted p ⇒
+         call_target s k nm conf w1 (k, EL j (css k ++ new_chans w ev)) = NONE ∧
+         ∀e. s.peer (k, EL j (css k ++ new_chans w ev)) = SOME e ⇒
+             call_target s k nm conf w1 e = SOME p’
+    by (rpt gen_tac >> strip_tac >>
+        ‘∀c p. s.target (k, c) = NONE ∧ (∀e. s.peer (k, c) = SOME e ⇒ s.target e = SOME p) ∧
+               c < n ⇒
+               call_target s k nm conf w1 (k, c) = NONE ∧
+               ∀e. s.peer (k, c) = SOME e ⇒ call_target s k nm conf w1 e = SOME p’
+          by (rpt gen_tac >> strip_tac >> ‘(k, c) ≠ (k, n)’ by simp[] >>
+              conj_tac >- simp[] >>
+              rpt strip_tac >> ‘e ≠ (k, n)’ by (strip_tac >> gvs[]) >> simp[]) >>
+        first_x_assum irule >>
+        Cases_on ‘j < LENGTH (css k)’
+        >- (‘EL j (ep_roles [] evs ++ ev_role (lsn evs) ev) = EL j (ep_roles [] evs) ∧
+             EL j (css k ++ new_chans w ev) = EL j (css k)’
+              by (conj_tac >> irule EL_APPEND1 >> fs[]) >>
+            qpat_x_assum ‘pk rs s css k’ mp_tac >> simp[pk_def] >> strip_tac >>
+            fs[] >> res_tac >> fs[]) >>
+        Cases_on ‘ev_new ev’ >- fs[new_chans_def] >>
+        rename1 ‘ev_new ev = SOME x’ >> PairCases_on ‘x’ >>
+        ‘j = LENGTH (css k)’ by (Cases_on ‘x1’ >> fs[new_chans_def]) >> rveq >>
+        ‘∀r. EL (LENGTH (css k)) (ep_roles [] evs ++ [r]) = r’
+          by (gen_tac >> qpat_x_assum ‘LENGTH (ep_roles [] evs) = _’ (SUBST1_TAC o GSYM) >>
+              simp[EL_LENGTH_APPEND]) >>
+        Cases_on ‘x1’ >> fs[new_chans_def, ev_role_def, EL_LENGTH_APPEND] >>
+        qpat_x_assum ‘ev_new _ = SOME _’ mp_tac >> simp[Abbr ‘ev’] >> strip_tac >>
+        drule ev_new_INR >> strip_tac >> rveq >> fs[unblock_other] >>
+        qpat_x_assum ‘l0_rely w1’ kall_tac >>
+        drule_all accept_new_chan >> strip_tac >>
+        rename1 ‘FILTER _ _ = (l1, p1, pop_chan _ y :: q1) :: _’ >>
+        ‘MEM (l1, p1, pop_chan (EL k s.procs) y :: q1)
+             (FILTER (λ(l', p, q). l' = y) (EL k s.procs).listeners)’ by simp[] >>
+        ‘l1 = y ∧ MEM (y, p1, pop_chan (EL k s.procs) y :: q1) (EL k s.procs).listeners’
+          by (qpat_x_assum ‘MEM _ (FILTER _ _)’ mp_tac >> rewrite_tac[MEM_FILTER] >>
+              pairarg_tac >> fs[] >> strip_tac >> rveq >> fs[]) >>
+        rveq >>
+        ‘ALOOKUP (lsn evs) l1 = SOME p1 ∧ pop_chan (EL k s.procs) l1 < n’
+          by (qpat_x_assum ‘pinv evs _ _’ mp_tac >> rewrite_tac[pinv_def] >> strip_tac >>
+              first_x_assum drule >> simp[Abbr ‘n’]) >>
+        fs[] >> rveq >>
+        qpat_x_assum ‘pk rs s css k’ mp_tac >> simp[pk_def] >> strip_tac >>
+        first_x_assum (qspecl_then [‘l1’, ‘p1’, ‘pop_chan (EL k s.procs) l1 :: q1’,
+                                    ‘pop_chan (EL k s.procs) l1’] mp_tac) >>
+        simp[]) >>
+  simp[pk_def, call_state_def, call_css_def, APPLY_UPDATE_THM, EL_LUPDATE] >>
+  qpat_x_assum ‘proc_events k (rs ++ _) = _’ (fn th => rewrite_tac[th]) >>
+  qpat_x_assum ‘ep_roles [] (evs ++ [ev]) = _’ (fn th => rewrite_tac[th]) >>
+  qpat_x_assum ‘EL k s.procs = w’ (fn th => rewrite_tac[th]) >>
+  rpt conj_tac >>
+  FIRST [
+    first_assum ACCEPT_TAC,
+    irule l0_rely_ch >> qexists_tac ‘w1’ >> simp[] >> NO_TAC,
+    qpat_x_assum ‘w1.ch = w.ch’ (fn th => simp[th]) >> NO_TAC,
+    qpat_x_assum ‘pinv (evs ++ [ev]) _ _’ mp_tac >> simp[] >> NO_TAC,
+    (* the Accepted clause, split by simp *)
+    rpt strip_tac >>
+    qpat_x_assum ‘∀j p. _ ∧ _ = Accepted p ⇒ _’ drule_all >> simp[] >> NO_TAC]
+QED
+
+Theorem LENGTH_call_state[simp]:
+  LENGTH (call_state s k nm conf bytes w1).procs = LENGTH s.procs
+Proof
+  simp[call_state_def]
+QED
+
+Theorem sinv_call:
+  sinv rs s css ∧ k < LENGTH s.procs ∧
+  l0_call nm (unblock nm conf) bytes (EL k s.procs) = SOME (FFIreturn out w1) ⇒
+  sinv (rs ++ [Call k nm conf bytes out]) (call_state s k nm conf bytes w1)
+       (call_css s k nm conf bytes out css)
+Proof
+  strip_tac >> ‘kinv s’ by fs[sinv_def] >>
+  qabbrev_tac ‘w = EL k s.procs’ >>
+  qabbrev_tac ‘w2 = w1 with <| clock := w.clock + 1; hist := w.hist ++ [(nm, conf, bytes)] |>’ >>
+  ‘wmono w w2’ by metis_tac[wmono_fields, wmono_call] >>
+  ‘kinv (s with procs := LUPDATE w2 k s.procs)’ by (irule kinv_local >> simp[Abbr ‘w’]) >>
+  rewrite_tac[sinv_def] >> conj_tac
+  >- (simp[call_state_def, call_target_def] >> IF_CASES_TAC
+      >- (‘s with <| procs := LUPDATE w2 k s.procs;
+                     target := ((k, LENGTH w.chans) =+ SOME (w22n conf)) s.target |> =
+           (s with procs := LUPDATE w2 k s.procs) with
+             target := ((k, LENGTH w.chans) =+ SOME (w22n conf))
+                         (s with procs := LUPDATE w2 k s.procs).target’ by simp[] >>
+          pop_assum SUBST1_TAC >> irule kinv_target >>
+          simp[is_end_def, EL_LUPDATE, Abbr ‘w2’] >>
+          ‘¬is_end s (k, LENGTH w.chans)’ by simp[is_end_def, Abbr ‘w’] >>
+          fs[kinv_def]) >>
+      ‘s with <| procs := LUPDATE w2 k s.procs; target := s.target |> =
+       s with procs := LUPDATE w2 k s.procs’ by simp[l0sysTheory.sysstate_component_equality] >>
+      pop_assum SUBST1_TAC >> simp[]) >>
+  rw[] >> Cases_on ‘k' = k’
+  >- (rveq >> irule pk_call_self >> simp[Abbr ‘w’]) >>
+  irule pk_call_other >> simp[]
+QED

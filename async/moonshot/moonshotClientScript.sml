@@ -178,13 +178,14 @@ Theorem ehdo_read:
   0 < n ∧ n < 256 ** 8 ⇒
   ∃r w' hs'. ehdo lfd (w, hs) (ERead hd n) = SOME (r, (w', hs')) ∧ wframe j w w' ∧
    ((EL j w.chans).status = Refused ∧ r = ERefused ∧ hs' = eh_del hd hs ∧
-    w'.open_fds = ADELKEY f w.open_fds ∨
+    w'.open_fds = ADELKEY f w.open_fds ∧ (EL j w'.chans).status = Failed ∨
     (EL j w.chans).status ≠ Refused ∧ (EL j w.chans).inbox ≠ [] ∧
     r = EGot (SOME (TAKE n (EL j w.chans).inbox)) ∧ hs' = hs ∧ w'.open_fds = w.open_fds ∧
     EL j w'.chans = EL j w.chans with inbox := DROP n (EL j w.chans).inbox ∨
     (EL j w.chans).status ≠ Refused ∧ (EL j w.chans).inbox = [] ∧
     ((EL j w.chans).peer_eof ∨ (EL j w.chans).status = Failed) ∧
-    r = EGot (SOME []) ∧ hs' = eh_del hd hs ∧ w'.open_fds = ADELKEY f w.open_fds ∨
+    r = EGot (SOME []) ∧ hs' = eh_del hd hs ∧ w'.open_fds = ADELKEY f w.open_fds ∧
+    (EL j w'.chans).status = (EL j w.chans).status ∨
     (EL j w.chans).status ≠ Refused ∧ (EL j w.chans).inbox = [] ∧
     ¬(EL j w.chans).peer_eof ∧ (EL j w.chans).status ≠ Failed ∧
     r = EGot NONE ∧ hs' = hs ∧ w' = w)
@@ -872,4 +873,138 @@ Proof
   qpat_x_assum ‘∀i. i < LENGTH st.cs ⇒ chd _ = _’ (fn th => simp[th]) >>
   qpat_x_assum ‘∀hd. hl_refused hd ps ∨ hl_eof hd ps ⇒ ∀i. i < N ⇒ ¬MEM hd _’ drule >>
   disch_then drule >> simp[]
+QED
+
+(* ------------------------------------------------------------------------
+   A read on a connection's handle, a write on an up one
+   ------------------------------------------------------------------------ *)
+
+Theorem wframe_refl[simp]:
+  wframe j w w
+Proof
+  simp[wframe_def]
+QED
+
+Theorem cupd_st_simp[simp]:
+  st with <| cs := X; nh := st.nh; hlc := st.hlc |> = st with cs := X
+Proof
+  simp[theorem "cst_component_equality"]
+QED
+
+Theorem cread_bounds[simp]:
+  0 < cread ∧ cread < 256 ** 8
+Proof
+  EVAL_TAC
+QED
+
+Theorem crel_handle:
+  crel a N rqs lfd st rdyf ps w hs ∧ i < N ∧ MEM hd (chd (EL i st.cs)) ⇒
+  ∃f j. ALOOKUP hs.tbl hd = SOME f ∧ ALOOKUP w.open_fds f = SOME j ∧ j < LENGTH w.chans ∧
+        ALOOKUP st.hlc hd = SOME i ∧
+        cok (brequests (rqs i)) (EL i st.cs) (EL j w.chans) (MEM hd hs.settling)
+            (hd ∈ rdyf i) (hl_sent hd ps)
+Proof
+  strip_tac >> qpat_x_assum ‘crel _ _ _ _ _ _ _ _ _’ (strip_assume_tac o REWRITE_RULE [crel_def]) >>
+  qpat_x_assum ‘∀i hd. i < N ∧ MEM hd (chd _) ⇒ ∃f j. _’ drule_all >> strip_tac >>
+  qexistsl_tac [‘f’, ‘j’] >> simp[] >>
+  imp_res_tac ALOOKUP_MEM >> fs[EVERY_MEM, MEM_MAP, PULL_EXISTS] >> res_tac >> fs[]
+QED
+
+Theorem crel_takes:
+  crel a N rqs lfd st rdyf ps w hs ⇒ w.takes = (λj b n. n) ∧ LENGTH st.cs = N
+Proof
+  simp[crel_def]
+QED
+
+Theorem crel_open_not_ended:
+  crel a N rqs lfd st rdyf ps w hs ∧ ALOOKUP hs.tbl hd = SOME f ⇒
+  ¬hl_refused hd ps ∧ ¬hl_eof hd ps
+Proof
+  strip_tac >>
+  ‘MEM hd (MAP FST hs.tbl)’
+    by (qpat_x_assum ‘ALOOKUP hs.tbl hd = SOME f’ mp_tac >> rpt (pop_assum kall_tac) >>
+        rw[] >> imp_res_tac ALOOKUP_MEM >> fs[MEM_MAP] >> metis_tac[FST]) >>
+  qpat_x_assum ‘crel _ _ _ _ _ _ _ _ _’ (strip_assume_tac o REWRITE_RULE [crel_def]) >>
+  qpat_x_assum ‘∀hd. hl_refused hd ps ∨ hl_eof hd ps ⇒ ¬MEM hd (MAP FST hs.tbl)’
+    (qspec_then ‘hd’ mp_tac) >> simp[]
+QED
+
+Theorem crel_read:
+  crel a N rqs lfd st rdyf ps w hs ∧ k < N ∧ MEM hd (chd (EL k st.cs)) ∧
+  (∀h. EL k st.cs = CPend h ⇒ hd ∈ rdyf k) ⇒
+  ∃r w1 hs1. ehdo lfd (w, hs) (ERead hd cread) = SOME (r, (w1, hs1)) ∧
+     crel a N rqs lfd (cupd rqs st [(k, ERead hd cread)] [r]) ((k =+ ∅) rdyf)
+       (ps ++ [(ERead hd cread, r)]) w1 hs1 ∧ wkeep w w1
+Proof
+  strip_tac >> drule_all crel_handle >> strip_tac >>
+  ‘chd (EL k st.cs) = [hd]’
+    by (qpat_x_assum ‘MEM hd (chd _)’ mp_tac >> Cases_on ‘EL k st.cs’ >> simp[chd_def]) >>
+  ‘(EL j w.chans).status ≠ Connecting ∧ (EL j w.chans).status ≠ Failed ∧
+   ¬(EL j w.chans).shut ∧
+   ((EL j w.chans).status = Refused ⇒ EL k st.cs = CPend hd) ∧
+   hl_sent hd ps = (EL j w.chans).sent ∧
+   (EL k st.cs = CPend hd ⇒ hl_sent hd ps = [])’
+    by (Cases_on ‘EL k st.cs’ >> gvs[cok_def, chd_def]) >>
+  ‘0 < cread ∧ cread < 256 ** 8’ by simp[] >>
+  drule_all ehdo_read >> disch_then (qspec_then ‘lfd’ strip_assume_tac) >>
+  qexistsl_tac [‘r’, ‘w'’, ‘hs'’] >> simp[] >>
+  drule_all crel_open_not_ended >> strip_tac >>
+  ‘(EL j w.chans).status = Up ∨ (EL j w.chans).status = Refused’
+    by (Cases_on ‘(EL j w.chans).status’ >> fs[]) >>
+  (* refused *)
+  TRY (qpat_x_assum ‘r = ERefused’ SUBST_ALL_TAC >> qpat_x_assum ‘hs' = _’ SUBST_ALL_TAC >>
+       ‘EL k st.cs = CPend hd’
+         by (qpat_x_assum ‘_ ⇒ EL k st.cs = CPend hd’ irule >> first_assum ACCEPT_TAC) >>
+       simp[cres_def, new_hd_def] >> conj_tac
+       >- (irule crel_close >> simp[chd_def, combinTheory.APPLY_UPDATE_THM] >>
+           qexistsl_tac [‘j’, ‘ps’, ‘rdyf’, ‘w’] >> simp[chd_def, combinTheory.APPLY_UPDATE_THM]) >>
+       fs[wkeep_def, wframe_def] >> rw[] >> Cases_on ‘j' = j’ >> simp[] >> NO_TAC) >>
+  (* EOF *)
+  TRY (qpat_x_assum ‘r = EGot (SOME [])’ SUBST_ALL_TAC >> qpat_x_assum ‘hs' = _’ SUBST_ALL_TAC >>
+       simp[cres_def, new_hd_def] >> conj_tac
+       >- (irule crel_close >> simp[chd_def, combinTheory.APPLY_UPDATE_THM] >>
+           qexistsl_tac [‘j’, ‘ps’, ‘rdyf’, ‘w’] >> simp[chd_def, combinTheory.APPLY_UPDATE_THM]) >>
+       fs[wkeep_def, wframe_def] >> rw[] >> Cases_on ‘j' = j’ >> simp[] >> NO_TAC) >>
+  (* data, none: the connection stays (CPend becomes CUp) *)
+  ‘∀d. r = EGot (SOME d) ⇒ d ≠ []’ by (rw[] >> fs[cread_def]) >>
+  ‘∃rest. cres (brequests (rqs k)) (EL k st.cs) (ERead hd cread) r = CUp hd rest ∧
+          (EL j w.chans).sent ++ rest = brequests (rqs k)’
+    by (Cases_on ‘EL k st.cs’ >> gvs[chd_def, cok_def, cres_def] >>
+        Cases_on ‘TAKE cread (EL j w.chans).inbox’ >> gvs[TAKE_EQ_NIL]) >>
+  qpat_x_assum ‘r = _’ (fn th => RULE_ASSUM_TAC (REWRITE_RULE [th]) >> assume_tac th) >>
+  qpat_x_assum ‘cres _ _ _ _ = _’ (fn th => simp[new_hd_def, th]) >>
+  TRY (conj_tac >- (irule crel_keep >> simp[chd_def, combinTheory.APPLY_UPDATE_THM] >>
+                    qexistsl_tac [‘j’, ‘ps’, ‘rdyf’, ‘w’] >> simp[cok_def] >>
+                    gvs[wframe_def] >> metis_tac[rich_listTheory.IS_PREFIX_APPEND]) >>
+       fs[wkeep_def, wframe_def] >> rw[] >> Cases_on ‘j' = j’ >> simp[] >> NO_TAC) >>
+  irule crel_keep >> simp[chd_def, combinTheory.APPLY_UPDATE_THM] >>
+  qexistsl_tac [‘j’, ‘ps’, ‘rdyf’, ‘w’] >> simp[cok_def] >>
+  metis_tac[rich_listTheory.IS_PREFIX_APPEND]
+QED
+
+Theorem crel_write:
+  crel a N rqs lfd st rdyf ps w hs ∧ k < N ∧ EL k st.cs = CUp hd rest ∧ rest ≠ [] ⇒
+  ∃r w1 hs1. ehdo lfd (w, hs) (EWrite hd rest) = SOME (r, (w1, hs1)) ∧
+     crel a N rqs lfd (cupd rqs st [(k, EWrite hd rest)] [r]) rdyf
+       (ps ++ [(EWrite hd rest, r)]) w1 hs1 ∧ wkeep w w1 ∧
+     EL k (cupd rqs st [(k, EWrite hd rest)] [r]).cs = CUp hd []
+Proof
+  strip_tac >> ‘MEM hd (chd (EL k st.cs))’ by simp[chd_def] >>
+  drule_all crel_handle >> strip_tac >> drule crel_takes >> strip_tac >>
+  ‘(EL j w.chans).status = Up ∧ ¬(EL j w.chans).shut ∧
+   (EL j w.chans).sent ++ rest = brequests (rqs k) ∧ hl_sent hd ps = (EL j w.chans).sent’
+    by gvs[cok_def] >>
+  drule_all ehdo_write_up >> disch_then (fn th => simp[th]) >>
+  simp[cres_def, new_hd_def, EL_LUPDATE] >>
+  qabbrev_tac ‘w1 = upd_chan j (λc. c with <| sent := c.sent ++ rest;
+                                              inflight := c.inflight + LENGTH rest |>) w’ >>
+  ‘wframe j w w1 ∧ w1.open_fds = w.open_fds ∧
+   EL j w1.chans = (EL j w.chans) with <| sent := (EL j w.chans).sent ++ rest;
+                                         inflight := (EL j w.chans).inflight + LENGTH rest |>’
+    by simp[Abbr ‘w1’, wframe_def, upd_chan_def, EL_LUPDATE] >>
+  conj_tac
+  >- (irule crel_keep >> simp[chd_def, cok_def, hl_one] >>
+      qexistsl_tac [‘j’, ‘ps’, ‘rdyf’, ‘w’] >> simp[chd_def] >> rw[] >>
+      gvs[hl_one, Abbr ‘w1’, upd_chan_def, EL_LUPDATE]) >>
+  simp[wkeep_def, Abbr ‘w1’, upd_chan_def, EL_LUPDATE] >> rw[]
 QED

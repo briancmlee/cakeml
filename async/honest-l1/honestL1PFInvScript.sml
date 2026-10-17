@@ -30,13 +30,41 @@ Proof
   simp[psmall_def]
 QED
 
+(* D25: the j-th handle (skipping lfd's number) is a word64 exactly when
+   j + 1 < 2^64: there are 2^64 − 1 handles *)
+Theorem l1hdln_lt:
+  l1hdln (w2n (lfd : word64)) j < dimword (:64) ⇔ j + 1 < dimword (:64)
+Proof
+  ‘w2n lfd < 18446744073709551616’ by (mp_tac (INST_TYPE [alpha |-> “:64”] w2n_lt) >> simp[]) >>
+  Cases_on ‘j < w2n lfd’ >> simp[l1hdln_def]
+QED
+
+Theorem l1do_write_ok:
+  l0_rely w ∧ small_fds lfd st ⇒
+  ∃r w' st' evs. l1do lfd (w, st) (Write h bs) = SOME (r, (w', st'), evs) ∧ l0_rely w' ∧
+                 small_fds lfd st' ∧ st'.nxt = st.nxt
+Proof
+  strip_tac >> simp[l1do_def] >>
+  Cases_on ‘ALOOKUP st.tbl h’ >> simp[] >> rename1 ‘ALOOKUP _ _ = SOME f’ >>
+  ‘small f’ by metis_tac[small_tbl_lookup] >>
+  Cases_on ‘MEM f st.gone’ >> simp[] >>
+  Cases_on ‘outbox_of st f = []’ >> simp[]
+  >- (drule_all sys_send_ok >> disch_then (qspec_then ‘bs’ strip_assume_tac) >> simp[] >>
+      conj_tac
+      >- (irule small_fds_after_send >> simp[] >> irule small_fds_set_outbox >> simp[])
+      >> Cases_on ‘l0_res_of out’ >> simp[after_send_def, set_outbox_def] >> rw[])
+  >> conj_tac >- (irule small_fds_set_outbox >> simp[])
+  >> simp[set_outbox_def]
+QED
+
 Theorem pdo_ok:
-  l0_rely w ∧ psmall lfd ps ∧ pact_ok lfd a ∧ l1hdln (w2n lfd) ps.b.nxt < dimword (:64) ⇒
+  l0_rely w ∧ psmall lfd ps ∧ pact_ok lfd a ∧ ps.b.nxt + naccepts [a] < dimword (:64) ⇒
   ∃r w' ps' evs. pdo lfd (w, ps) a = SOME (r, (w', ps'), evs) ∧ l0_rely w' ∧
-                 psmall lfd ps' ∧ ps'.b.nxt ≤ ps.b.nxt + 1
+                 psmall lfd ps' ∧ ps'.b.nxt ≤ ps.b.nxt + naccepts [a]
 Proof
   Cases_on ‘a’ >> rw[pact_ok_def, act_ok_def] >> simp[pdo_def]
-  >- (Cases_on ‘ps.acq’ >> gvs[psmall_def, small_fds_def])
+  >- (‘∀x : word64. l1hdln (w2n x) ps.b.nxt < dimword (:64)’ by fs[l1hdln_lt] >>
+      Cases_on ‘ps.acq’ >> gvs[psmall_def, small_fds_def])
   >- (rename1 ‘ALOOKUP ps.b.tbl h’ >>
       Cases_on ‘ALOOKUP ps.b.tbl h’ >> simp[] >>
       rename1 ‘ALOOKUP _ h = SOME f’ >>
@@ -47,28 +75,25 @@ Proof
       TRY (gvs[small_fds_def, set_inb_def] >> NO_TAC) >>
       drule_all l1_close_ok >> strip_tac >> simp[] >>
       gvs[l1_close_def, AllCaseEqs(), forget_def, set_outbox_def])
-  >> qmatch_goalsub_abbrev_tac ‘l1do lfd (w, ps.b) act’ >>
-  ‘small_fds lfd ps.b ∧ act_ok act’ by gvs[psmall_def, Abbr ‘act’, act_ok_def] >>
-  ‘l1hdln (w2n lfd) ps.b.nxt < dimword (:64)’ by simp[] >>
-  drule_all l1do_ok >> strip_tac >> simp[] >> gvs[psmall_def]
+  >> rename1 ‘Write h bs’ >>
+  ‘small_fds lfd ps.b’ by gvs[psmall_def] >>
+  drule_all l1do_write_ok >> disch_then (qspecl_then [‘h’, ‘bs’] strip_assume_tac) >>
+  simp[] >> gvs[psmall_def]
 QED
 
 Theorem pacts_ok:
   ∀acts w ps.
     l0_rely w ∧ psmall lfd ps ∧ EVERY (pact_ok lfd) acts ∧
-    l1hdln (w2n lfd) (ps.b.nxt + LENGTH acts) < dimword (:64) ⇒
+    ps.b.nxt + naccepts acts < dimword (:64) ⇒
     ∃rs evs w' ps'. pacts lfd (w, ps) acts = SOME (rs, evs, (w', ps')) ∧
-                    l0_rely w' ∧ psmall lfd ps' ∧ ps'.b.nxt ≤ ps.b.nxt + LENGTH acts
+                    l0_rely w' ∧ psmall lfd ps' ∧ ps'.b.nxt ≤ ps.b.nxt + naccepts acts
 Proof
   Induct >> simp[pacts_def] >> rpt gen_tac >> strip_tac >>
-  ‘l1hdln (w2n lfd) ps.b.nxt < dimword (:64)’
-    by (qspecl_then [‘ps.b.nxt’, ‘ps.b.nxt + SUC (LENGTH acts)’, ‘w2n lfd’] mp_tac
-          (Q.GENL [‘j’, ‘k’, ‘n’] l1hdln_mono) >> gvs[]) >>
+  ‘naccepts (h :: acts) = naccepts [h] + naccepts acts’
+    by (Cases_on ‘h’ >> simp[]) >>
+  ‘ps.b.nxt + naccepts [h] < dimword (:64)’ by gvs[] >>
   drule_all pdo_ok >> strip_tac >> simp[] >>
-  first_x_assum (qspecl_then [‘w'’, ‘ps'’] mp_tac) >> impl_tac
-  >- (simp[] >>
-      qspecl_then [‘ps'.b.nxt + LENGTH acts’, ‘ps.b.nxt + SUC (LENGTH acts)’, ‘w2n lfd’] mp_tac
-        (Q.GENL [‘j’, ‘k’, ‘n’] l1hdln_mono) >> gvs[]) >>
+  first_x_assum (qspecl_then [‘w'’, ‘ps'’] mp_tac) >> impl_tac >- gvs[] >>
   strip_tac >> simp[]
 QED
 
@@ -149,9 +174,9 @@ QED
 
 Theorem pround_ok:
   l0_rely w ∧ psmall lfd ps ∧ EVERY (pact_ok lfd) acts ∧
-  l1hdln (w2n lfd) (ps.b.nxt + LENGTH acts) < dimword (:64) ⇒
+  ps.b.nxt + naccepts acts < dimword (:64) ⇒
   ∃snap w' ps' log evs. pround lfd pol hs (w, ps) acts = SOME (snap, (w', ps'), log, evs) ∧
-                        l0_rely w' ∧ psmall lfd ps' ∧ ps'.b.nxt ≤ ps.b.nxt + LENGTH acts
+                        l0_rely w' ∧ psmall lfd ps' ∧ ps'.b.nxt ≤ ps.b.nxt + naccepts acts
 Proof
   strip_tac >> simp[pround_def] >>
   drule_all pacts_ok >> strip_tac >> simp[] >>
@@ -163,7 +188,7 @@ Definition pl2_ok_def:
   pl2_ok lfd pol ifds m ws0 ⇔
     ∀n h ws evs logs. prounds lfd pol ifds m ws0 n = SOME (h, ws, evs, logs) ⇒
       EVERY (pact_ok lfd) (new_actions (log_of m) h) ∧
-      l1hdln (w2n lfd) ((SND ws).b.nxt + LENGTH (new_actions (log_of m) h)) < dimword (:64)
+      (SND ws).b.nxt + naccepts (new_actions (log_of m) h) < dimword (:64)
 End
 
 Theorem prounds_ok:
@@ -175,7 +200,7 @@ Proof
   gvs[] >> simp[prounds_def] >>
   qpat_x_assum ‘pl2_ok _ _ _ _ _’ (mp_tac o REWRITE_RULE [pl2_ok_def]) >>
   disch_then drule >> simp[] >> strip_tac >>
-  ‘l1hdln (w2n lfd) (ps.b.nxt + LENGTH (new_actions (log_of m) h)) < dimword (:64)’
+  ‘ps.b.nxt + naccepts (new_actions (log_of m) h) < dimword (:64)’
     by gvs[] >>
   drule_all pround_ok >>
   disch_then (qspecl_then [‘pol’, ‘ifds h’] strip_assume_tac) >> simp[]

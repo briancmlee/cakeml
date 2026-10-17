@@ -1015,7 +1015,7 @@ QED
 Theorem pdo_names:
   pdo lfd (w, ps) a = SOME (r, (w', ps'), evs) ⇒
   EVERY (λev. ev_name ev = ExtCall «sys_send» ∨ ev_name ev = ExtCall «sys_close») evs ∧
-  ps'.b.nxt ≤ ps.b.nxt + 1
+  ps'.b.nxt ≤ ps.b.nxt + naccepts [a]
 Proof
   Cases_on ‘a’ >> simp[pdo_def] >> rw[AllCaseEqs()] >> gvs[] >>
   TRY (PairCases_on ‘z’) >> gvs[set_inb_def] >>
@@ -1029,11 +1029,13 @@ Theorem pacts_names:
   ∀acts w ps rs evs w' ps'.
     pacts lfd (w, ps) acts = SOME (rs, evs, (w', ps')) ⇒
     EVERY (λev. ev_name ev = ExtCall «sys_send» ∨ ev_name ev = ExtCall «sys_close») evs ∧
-    ps'.b.nxt ≤ ps.b.nxt + LENGTH acts
+    ps'.b.nxt ≤ ps.b.nxt + naccepts acts
 Proof
   Induct >> simp[pacts_def] >> rpt gen_tac >> strip_tac >>
   gvs[AllCaseEqs()] >> PairCases_on ‘ws1’ >>
-  drule pdo_names >> strip_tac >> first_x_assum drule >> simp[]
+  drule pdo_names >> strip_tac >> first_x_assum drule >> strip_tac >>
+  ‘naccepts (h :: acts) = naccepts [h] + naccepts acts’ by (Cases_on ‘h’ >> simp[]) >>
+  simp[]
 QED
 
 Theorem l1hdl_not_lfd:
@@ -1044,13 +1046,11 @@ QED
 
 (* The listener's handle is no connection's handle *)
 Theorem tbl_lfd:
-  pown lfd ps ∧ l1hdln (w2n lfd) ps.b.nxt < dimword (:64) ⇒ ALOOKUP ps.b.tbl lfd = NONE
+  pown lfd ps ∧ ps.b.nxt < dimword (:64) ⇒ ALOOKUP ps.b.tbl lfd = NONE
 Proof
   rw[pown_def] >> Cases_on ‘ALOOKUP ps.b.tbl lfd’ >> simp[] >>
   first_x_assum drule >> strip_tac >>
-  ‘l1hdln (w2n lfd) i < dimword (:64)’
-    by (irule LESS_EQ_LESS_TRANS >> qexists_tac ‘l1hdln (w2n lfd) ps.b.nxt’ >>
-        simp[l1hdln_mono]) >>
+  ‘l1hdln (w2n lfd) i < dimword (:64)’ by simp[l1hdln_lt] >>
   drule l1hdl_not_lfd >> simp[]
 QED
 
@@ -1084,7 +1084,7 @@ QED
 Theorem pround_lfd:
   pround lfd pol hs (w, ps) acts = SOME (snap, (w', ps'), log, evs) ∧
   winv w ∧ linv lfd w ∧ pv_rel lfd cm ps s ∧ pown lfd ps ∧ psmall lfd ps ∧
-  l1hdln (w2n lfd) (ps.b.nxt + LENGTH acts) < dimword (:64) ⇒
+  ps.b.nxt + naccepts acts < dimword (:64) ⇒
   linv lfd w' ∧
   (∃d. ps'.acq = DROP d ps.acq ++ log_conns log ∧
        (MEM (Accept lfd) acts ∧ ps.acq ≠ [] ⇒ 0 < d)) ∧
@@ -1105,9 +1105,7 @@ Proof
   drule_all pacts_winv >> strip_tac >>
   drule_all pacts_qof >> disch_then (qx_choose_then ‘t1’ assume_tac) >>
   drule_all pacts_hacts >> strip_tac >>
-  ‘l1hdln (w2n lfd) pa.b.nxt < dimword (:64)’
-    by (irule LESS_EQ_LESS_TRANS >>
-        qexists_tac ‘l1hdln (w2n lfd) (ps.b.nxt + LENGTH acts)’ >> simp[l1hdln_mono]) >>
+  ‘pa.b.nxt < dimword (:64)’ by simp[] >>
   ‘ALOOKUP pa.b.tbl lfd = NONE’ by metis_tac[tbl_lfd] >>
   ‘∀h. ALOOKUP pa.b.tbl h ≠ SOME lfd’
     by (rpt strip_tac >> imp_res_tac ALOOKUP_MEM >>

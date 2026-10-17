@@ -12,7 +12,7 @@
 *)
 Theory honestEchoL0EofCase
 Ancestors
-  honestEchoL0EofOrigin honestEchoL0Eof honestEchoL0Peer honestEchoL0DataOut
+  honestEchoL0FlAt honestEchoL0EofOrigin honestEchoL0Eof honestEchoL0Peer honestEchoL0DataOut
   honestEchoL0DataIn honestEchoL0OutAny honestEchoL0Excuse honestEchoL0LiveOwn
   honestEchoL0Inv honestEchoL0Obl honestL1PFObl
   honestL1PFBroken honestL1PFInput honestL1PFStream honestL1PFClient honestL1PFFlush
@@ -71,7 +71,7 @@ Theorem eof_data_out:
   ALOOKUP (SND (l0_ep_st (0, []) (revs (n2w lfdn) pol EI ES w0 n))) f = SOME j0 ∧ n ≤ N ⇒
   (∃n'. (EL c (rworld (n2w lfdn) pol EI ES w0 N).chans).peer_sent ≼
         csent (rworld (n2w lfdn) pol EI ES w0 n') c) ∨
-  (∃k. k ≤ n ∧ flushed (rworld (n2w lfdn) pol EI ES w0 k) f ∧
+  (∃k. k ≤ n ∧ fl_at (n2w lfdn) pol EI ES w0 f j0 k ∧
        l0_chan_of (rworld (n2w lfdn) pol EI ES w0 k) f = SOME c) ∨
   ep_hard_err j0 io ∨ ep_timed_out pf_sendwait j0 io
 Proof
@@ -137,18 +137,21 @@ Proof
         by (irule eof_final >> simp[] >> rpt conj_tac >> TRY (first_assum ACCEPT_TAC) >>
             rpt strip_tac >> qpat_x_assum ‘∀i. a < i ∧ i < n ⇒ _’ irule >> simp[]) >>
       ‘j = c’ by fs[] >> rveq >>
-      TRY (disj2_tac >> disj1_tac >> qexists_tac ‘SUC k’ >> fs[] >> NO_TAC) >>
+      ‘ALOOKUP (SND (l0_ep_st (0, []) (revs (n2w lfdn) pol EI ES w0 (SUC k)))) f = SOME j0’
+        by (irule keep_to_round >> simp[] >> qexists_tac ‘k’ >> simp[] >> rpt strip_tac >>
+            ‘i = SUC k’ by decide_tac >>
+            qpat_x_assum ‘∀i. k < i ∧ i ≤ n ⇒ MEM f (MAP SND _)’ (qspec_then ‘i’ mp_tac) >>
+            simp[]) >>
+      ‘MEM f (MAP SND (rstate (n2w lfdn) pol EI ES w0 (SUC k)).b.tbl)’
+        by (qpat_x_assum ‘∀i. k < i ∧ i ≤ n ⇒ MEM f (MAP SND _)’ irule >> decide_tac) >>
+      TRY (disj2_tac >> disj1_tac >> qexists_tac ‘SUC k’ >>
+           simp[fl_at_def, owned_def] >> fs[] >> NO_TAC) >>
       ((* the peer's data is final at SUC k *)
           ‘(EL c (rworld (n2w lfdn) pol EI ES w0 N).chans).peer_sent =
            (EL c (rworld (n2w lfdn) pol EI ES w0 (SUC k)).chans).peer_sent’
             by (‘SUC k ≤ N’ by decide_tac >>
                 drule_all run_psmono >> disch_then (qspec_then ‘c’ mp_tac) >>
                 simp[psmono_def] >> impl_tac >- metis_tac[chan_lt] >> simp[]) >>
-          ‘ALOOKUP (SND (l0_ep_st (0, []) (revs (n2w lfdn) pol EI ES w0 (SUC k)))) f = SOME j0’
-            by (irule keep_to_round >> simp[] >> qexists_tac ‘k’ >> simp[] >> rpt strip_tac >>
-                ‘i = SUC k’ by decide_tac >>
-                qpat_x_assum ‘∀i. k < i ∧ i ≤ n ⇒ MEM f (MAP SND _)’ (qspec_then ‘i’ mp_tac) >>
-                simp[]) >>
           ‘∃n'. (EL c (rworld (n2w lfdn) pol EI ES w0 N).chans).peer_sent ≼
                   csent (rworld (n2w lfdn) pol EI ES w0 n') c ∨
                 ep_hard_err j0 io ∨ ep_timed_out pf_sendwait j0 io’

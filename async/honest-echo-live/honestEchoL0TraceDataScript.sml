@@ -15,7 +15,7 @@
 *)
 Theory honestEchoL0TraceData
 Ancestors
-  honestEchoL0AccOnce honestEchoL0DataAt honestEchoL0ChanId honestEchoL0RoundData honestEchoL0Acq
+  honestEchoL0FlAt honestEchoL0AccOnce honestEchoL0DataAt honestEchoL0ChanId honestEchoL0RoundData honestEchoL0Acq
   honestEchoL0EofCase honestEchoL0Peer honestEchoL0Excuse honestEchoL0Chain
   honestEchoL0LiveOwn honestEchoL0Obl honestL1PFObl honestL1BFaith honestL1BStmts
   honestL1PFBroken honestL1PFLive honestL1PFOutLive honestL1PFOut honestL1PFRefine
@@ -52,28 +52,6 @@ Proof
   Cases_on ‘P x’
   >- (qexistsl_tac [‘l’, ‘x’, ‘[]’] >> simp[SNOC_APPEND]) >>
   fs[] >> qexistsl_tac [‘p1’, ‘e’, ‘p2 ++ [x]’] >> simp[SNOC_APPEND]
-QED
-
-(* L1 holding f without EOF at a round's start: the round ends no
-   episode of f *)
-Theorem run_keep_noend:
-  run_ok lfd pol ifds m w0 ∧ winv w0 ∧ MEM lfd (l0_used w0) ∧
-  keep f (rstate lfd pol ifds m w0 i) ⇒
-  ¬EXISTS (ep_ends f) (rrev lfd pol ifds m w0 i)
-Proof
-  strip_tac >>
-  drule_all run_own >> strip_tac >>
-  first_x_assum (qspec_then ‘i’ strip_assume_tac) >>
-  drule prun_round' >> disch_then (qspecl_then [‘f’, ‘i’] strip_assume_tac) >>
-  drule prun_some >> disch_then (qspec_then ‘i’ assume_tac) >>
-  ‘(rstate lfd pol ifds m w0 i).b.nxt +
-   naccepts (new_actions (log_of m) (rhist lfd pol ifds m w0 i)) < dimword (:64)’
-    by (Cases_on ‘prun lfd pol ifds m w0 i’ >> rename1 ‘_ = (hh, r)’ >> PairCases_on ‘r’ >>
-        gvs[rstate_def, rhist_def, run_ok_def, pl2_ok_def] >>
-        first_x_assum drule >> simp[]) >>
-  Cases_on ‘l0_ep_st (0, []) (revs lfd pol ifds m w0 i)’ >>
-  ‘own_ok lfd (q, r) (rstate lfd pol ifds m w0 i)’ by metis_tac[] >>
-  drule_all pround_noend >> REWRITE_TAC [EXISTS_ep_ends] >> simp[]
 QED
 
 (* An episode open inside round r that ends later in the round started
@@ -123,7 +101,7 @@ Theorem zombie_data_out:
   ALOOKUP (SND (l0_ep_st (0, []) (revs (n2w lfdn) pol EI ES w0 m ++ pre))) f = SOME j ⇒
   (∃n'. (EL c (rworld (n2w lfdn) pol EI ES w0 N).chans).peer_sent ≼
         csent (rworld (n2w lfdn) pol EI ES w0 n') c) ∨
-  (∃k. flushed (rworld (n2w lfdn) pol EI ES w0 k) f) ∨
+  (∃k. fl_at (n2w lfdn) pol EI ES w0 f j k) ∨
   ep_hard_err j io ∨ ep_timed_out pf_sendwait j io
 Proof
   disch_then (fn th => MAP_EVERY assume_tac (CONJUNCTS th)) >>
@@ -174,7 +152,7 @@ Theorem trace_open_data:
   ALOOKUP (SND (l0_ep_st (0, []) (revs (n2w lfdn) pol EI ES w0 r ++ pre))) f = SOME j ∧
   ALOOKUP (SND (l0_ep_st (0, []) (revs (n2w lfdn) pol EI ES w0 (SUC r)))) f = SOME j ⇒
   (∃n'. (EL c w.chans).peer_sent ≼ csent (rworld (n2w lfdn) pol EI ES w0 n') c) ∨
-  (∃k. flushed (rworld (n2w lfdn) pol EI ES w0 k) f) ∨
+  (∃k. fl_at (n2w lfdn) pol EI ES w0 f j k) ∨
   ep_hard_err j io ∨ ep_timed_out pf_sendwait j io
 Proof
   disch_then (fn th => MAP_EVERY assume_tac (CONJUNCTS th)) >>
@@ -201,7 +179,7 @@ Proof
   (* the data chain from some round N ≥ r + 1, for peer_sent at r + 1 *)
   ‘(∃n'. (EL c (rworld (n2w lfdn) pol EI ES w0 (SUC r)).chans).peer_sent ≼
          csent (rworld (n2w lfdn) pol EI ES w0 n') c) ∨
-   (∃k. flushed (rworld (n2w lfdn) pol EI ES w0 k) f) ∨
+   (∃k. fl_at (n2w lfdn) pol EI ES w0 f j k) ∨
    ep_hard_err j io ∨ ep_timed_out pf_sendwait j io’
     suffices_by (strip_tac >> TRY (metis_tac[] >> NO_TAC) >>
                  disj1_tac >> qexists_tac ‘n'’ >> irule pfx_trans >>
@@ -237,7 +215,7 @@ Theorem trace_end_data:
   ALOOKUP (SND (l0_ep_st (0, []) (revs (n2w lfdn) pol EI ES w0 r ++ pre))) f = SOME j ∧
   EXISTS (ep_ends f) post ⇒
   (∃n'. (EL c w.chans).peer_sent ≼ csent (rworld (n2w lfdn) pol EI ES w0 n') c) ∨
-  (∃k. flushed (rworld (n2w lfdn) pol EI ES w0 k) f) ∨
+  (∃k. fl_at (n2w lfdn) pol EI ES w0 f j k) ∨
   ep_hard_err j io ∨ ep_timed_out pf_sendwait j io
 Proof
   disch_then (fn th => MAP_EVERY assume_tac (CONJUNCTS th)) >>
@@ -261,7 +239,7 @@ Proof
         fs[psmono_def]) >>
   ‘(∃n'. (EL c (rworld (n2w lfdn) pol EI ES w0 (SUC r)).chans).peer_sent ≼
          csent (rworld (n2w lfdn) pol EI ES w0 n') c) ∨
-   (∃k. flushed (rworld (n2w lfdn) pol EI ES w0 k) f) ∨
+   (∃k. fl_at (n2w lfdn) pol EI ES w0 f j k) ∨
    ep_hard_err j io ∨ ep_timed_out pf_sendwait j io’
     suffices_by (strip_tac >> TRY (metis_tac[] >> NO_TAC) >>
                  disj1_tac >> qexists_tac ‘n'’ >> irule pfx_trans >>
@@ -284,7 +262,7 @@ Proof
         metis_tac[run_world_at, SOME_11]) >>
   (* L1 did not hold f without EOF at round r *)
   ‘¬keep f (rstate (n2w lfdn) pol EI ES w0 r)’
-    by (strip_tac >> drule_all run_keep_noend >> simp[]) >>
+    by (strip_tac >> drule_all run_keep_noend >> strip_tac >> metis_tac[EXISTS_APPEND]) >>
   ‘pown (n2w lfdn) (rstate (n2w lfdn) pol EI ES w0 r)’
     by metis_tac[run_pown, echo_run_hyp] >>
   Cases_on ‘MEM f (MAP SND (rstate (n2w lfdn) pol EI ES w0 r).b.tbl) ∧
@@ -309,7 +287,7 @@ Theorem trace_data:
   world_at w0 (revs (n2w lfdn) pol EI ES w0 r ++ pre) = SOME w ∧ l0_chan_of w f = SOME c ∧
   ALOOKUP (SND (l0_ep_st (0, []) (revs (n2w lfdn) pol EI ES w0 r ++ pre))) f = SOME j ⇒
   (∃n'. (EL c w.chans).peer_sent ≼ csent (rworld (n2w lfdn) pol EI ES w0 n') c) ∨
-  (∃k. flushed (rworld (n2w lfdn) pol EI ES w0 k) f) ∨
+  (∃k. fl_at (n2w lfdn) pol EI ES w0 f j k) ∨
   ep_hard_err j io ∨ ep_timed_out pf_sendwait j io
 Proof
   strip_tac >>

@@ -63,7 +63,7 @@ Theorem conn_data_out:
   ALOOKUP (SND (l0_ep_st (0, []) (revs (n2w lfdn) pol EI ES w0 n))) f = SOME j0 ⇒
   (∃n'. (EL c (rworld (n2w lfdn) pol EI ES w0 n).chans).peer_sent ≼
         csent (rworld (n2w lfdn) pol EI ES w0 n') c) ∨
-  (∃k. n ≤ k ∧ flushed (rworld (n2w lfdn) pol EI ES w0 k) f) ∨
+  (∃k. n ≤ k ∧ fl_at (n2w lfdn) pol EI ES w0 f j0 k) ∨
   ep_hard_err j0 io ∨ ep_timed_out pf_sendwait j0 io
 Proof
   disch_then (fn th => MAP_EVERY assume_tac (CONJUNCTS th)) >>
@@ -80,7 +80,7 @@ Proof
   ‘(∃d. fopen (n2w lfdn) pol EI ES w0 h f n d ∧
         (EL c (rworld (n2w lfdn) pol EI ES w0 n).chans).peer_sent ≼
         fdata f (rlogs (n2w lfdn) pol EI ES w0 a (n − a + d))) ∨
-   (∃k. n ≤ k ∧ flushed (rworld (n2w lfdn) pol EI ES w0 k) f) ∨
+   (∃k. n ≤ k ∧ fl_at (n2w lfdn) pol EI ES w0 f j0 k) ∨
    ∃k. n ≤ k ∧ fopen (n2w lfdn) pol EI ES w0 h f n (SUC (k − n)) ∧
        hard_recv f (rrev (n2w lfdn) pol EI ES w0 k)’
     by (irule in_chain >> rpt conj_tac >> TRY (first_assum ACCEPT_TAC) >>

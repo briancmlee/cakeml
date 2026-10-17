@@ -49,7 +49,7 @@ Theorem eof_held_data_out:
   ALOOKUP (SND (l0_ep_st (0, []) (revs (n2w lfdn) pol EI ES w0 k))) f = SOME j0 ∧ k ≤ N ⇒
   (∃n'. (EL c (rworld (n2w lfdn) pol EI ES w0 N).chans).peer_sent ≼
         csent (rworld (n2w lfdn) pol EI ES w0 n') c) ∨
-  (∃k'. flushed (rworld (n2w lfdn) pol EI ES w0 k') f) ∨
+  (∃k'. fl_at (n2w lfdn) pol EI ES w0 f j0 k') ∨
   ep_hard_err j0 io ∨ ep_timed_out pf_sendwait j0 io
 Proof
   disch_then (fn th => MAP_EVERY assume_tac (CONJUNCTS th)) >>
@@ -108,7 +108,7 @@ Theorem known_data_out:
   ALOOKUP (SND (l0_ep_st (0, []) (revs (n2w lfdn) pol EI ES w0 n))) f = SOME j0 ⇒
   (∃n'. (EL c (rworld (n2w lfdn) pol EI ES w0 n).chans).peer_sent ≼
         csent (rworld (n2w lfdn) pol EI ES w0 n') c) ∨
-  (∃k. flushed (rworld (n2w lfdn) pol EI ES w0 k) f) ∨
+  (∃k. fl_at (n2w lfdn) pol EI ES w0 f j0 k) ∨
   ep_hard_err j0 io ∨ ep_timed_out pf_sendwait j0 io
 Proof
   disch_then (fn th => MAP_EVERY assume_tac (CONJUNCTS th)) >>
@@ -135,7 +135,7 @@ Proof
       rveq >>
       ‘(∃n''. (EL c (rworld (n2w lfdn) pol EI ES w0 n').chans).peer_sent ≼
               csent (rworld (n2w lfdn) pol EI ES w0 n'') c) ∨
-       (∃k. flushed (rworld (n2w lfdn) pol EI ES w0 k) f) ∨
+       (∃k. fl_at (n2w lfdn) pol EI ES w0 f j0 k) ∨
        ep_hard_err j0 io ∨ ep_timed_out pf_sendwait j0 io’
         by (irule held_data_out >> simp[] >> metis_tac[]) >>
       TRY (disj2_tac >> fs[] >> metis_tac[] >> NO_TAC) >>

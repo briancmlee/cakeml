@@ -206,3 +206,159 @@ Proof
       simp[]) >>
   first_assum ACCEPT_TAC
 QED
+
+(* ------------------------------------------------------------------------
+   The converse bridge: an fd of k's channel j in the run is j's fd in the
+   world of k's trace.  Deliveries keep open_fds; a channel they add is
+   queued at a listener, and queued channels have no fd (pinv)
+   ------------------------------------------------------------------------ *)
+
+Theorem queued_AFUPDKEY:
+  ∀L. MEM x (FLAT (MAP (SND o SND) L)) ⇒
+      MEM x (FLAT (MAP (SND o SND) (AFUPDKEY l (λ(p, q). (p, q ++ [c])) L)))
+Proof
+  Induct >> simp[AFUPDKEY_def] >> PairCases >> rw[AFUPDKEY_def] >> gvs[]
+QED
+
+Theorem queued_AFUPDKEY_new:
+  ∀L. MEM l (MAP FST L) ⇒
+      MEM c (FLAT (MAP (SND o SND) (AFUPDKEY l (λ(p, q). (p, q ++ [c])) L)))
+Proof
+  Induct >> simp[AFUPDKEY_def] >> PairCases >> rw[AFUPDKEY_def] >> gvs[]
+QED
+
+Theorem deliver_open_fds[simp]:
+  (l0_deliver w a).open_fds = w.open_fds
+Proof
+  Cases_on ‘a’ >> rw[l0_deliver_def, upd_lchan_def] >> every_case_tac >> simp[]
+QED
+
+Theorem FOLDL_deliver_open_fds[simp]:
+  ∀as w. (FOLDL l0_deliver w as).open_fds = w.open_fds
+Proof
+  Induct >> simp[]
+QED
+
+Theorem deliver_queued:
+  MEM j (FLAT (MAP (SND o SND) w.listeners)) ⇒
+  MEM j (FLAT (MAP (SND o SND) (l0_deliver w a).listeners))
+Proof
+  Cases_on ‘a’ >> rw[l0_deliver_def, upd_lchan_def] >> every_case_tac >> simp[] >>
+  irule queued_AFUPDKEY >> first_assum ACCEPT_TAC
+QED
+
+Theorem FOLDL_deliver_queued:
+  ∀as w. MEM j (FLAT (MAP (SND o SND) w.listeners)) ⇒
+         MEM j (FLAT (MAP (SND o SND) (FOLDL l0_deliver w as).listeners))
+Proof
+  Induct >> simp[] >> rpt strip_tac >> first_x_assum irule >> irule deliver_queued >>
+  first_assum ACCEPT_TAC
+QED
+
+Theorem deliver_len:
+  LENGTH (l0_deliver w a).chans = LENGTH w.chans ∨
+  LENGTH (l0_deliver w a).chans = LENGTH w.chans + 1 ∧
+  MEM (LENGTH w.chans) (FLAT (MAP (SND o SND) (l0_deliver w a).listeners))
+Proof
+  Cases_on ‘a’ >> rw[l0_deliver_def, upd_lchan_def] >> every_case_tac >> simp[] >>
+  irule queued_AFUPDKEY_new >>
+  rename1 ‘FILTER _ w.listeners = (l, r) :: _’ >>
+  ‘MEM (l, r) w.listeners’
+    by (qpat_x_assum ‘FILTER _ _ = _’ (mp_tac o Q.AP_TERM ‘MEM (l, r)’) >>
+        simp[MEM_FILTER]) >>
+  simp[MEM_MAP, EXISTS_PROD] >> PairCases_on ‘r’ >> metis_tac[]
+QED
+
+(* A channel that deliveries added is queued at a listener *)
+Theorem FOLDL_deliver_new_queued:
+  ∀as w. j < LENGTH (FOLDL l0_deliver w as).chans ∧ LENGTH w.chans ≤ j ⇒
+         MEM j (FLAT (MAP (SND o SND) (FOLDL l0_deliver w as).listeners))
+Proof
+  Induct >> simp[] >> rpt strip_tac >>
+  qspecl_then [‘w’, ‘h’] strip_assume_tac (GEN_ALL deliver_len)
+  >- (first_x_assum irule >> simp[]) >>
+  Cases_on ‘j = LENGTH w.chans’
+  >- (irule FOLDL_deliver_queued >> gvs[]) >>
+  first_x_assum irule >> simp[]
+QED
+
+(* Queued channels have no fd *)
+Theorem irun_queued_no_fd:
+  l0sys_irun ps ss rs ∧ k < LENGTH ps ∧
+  MEM j (FLAT (MAP (SND o SND) (EL k (ss t).procs).listeners)) ⇒
+  l0_chan_of (EL k (ss t).procs) f ≠ SOME j
+Proof
+  strip_tac >> ‘k < LENGTH (ss t).procs’ by metis_tac[irun_procs_length] >>
+  drule irun_sinv >> disch_then (qspec_then ‘t’ strip_assume_tac) >>
+  fs[sinv_def] >> first_x_assum drule >>
+  simp[pk_def, LET_THM, l0sysInvTheory.pinv_def] >> strip_tac >>
+  gvs[MEM_FLAT, MEM_MAP, EXISTS_PROD] >> metis_tac[]
+QED
+
+Theorem world_of_fd_at:
+  l0sys_irun ps ss rs ∧ k < LENGTH ps ∧ (ss t).alive k ∧
+  w0 = (EL k (ss 0).procs) with env := (λn h nm. fenv k ss AS n) ∧
+  (∀t. ∃V. agrees_to l0_oracle w0 (ptr rs k t) V ∧
+           ((ss t).alive k ⇒
+            V.clock = fclk k ss t ∧
+            (EL k (ss t).procs) with env := w0.env = FOLDL l0_deliver V (fseg k ss AS t))) ∧
+  fd_at ss k j f t ⇒
+  ∃V. moonshotLiveCopy$world_at w0 (ptr rs k t) = SOME V ∧ l0_chan_of V f = SOME j
+Proof
+  strip_tac >>
+  qpat_x_assum ‘∀t. ∃V. _’ (qspec_then ‘t’ strip_assume_tac) >>
+  qexists_tac ‘V’ >> conj_tac >- (irule agrees_world_at >> first_assum ACCEPT_TAC) >>
+  ‘(ss t).alive k ⇒ V.clock = fclk k ss t ∧
+     (EL k (ss t).procs) with env := w0.env = FOLDL l0_deliver V (fseg k ss AS t)’
+    by first_assum ACCEPT_TAC >>
+  pop_assum mp_tac >> impl_tac >- first_assum ACCEPT_TAC >> strip_tac >>
+  qabbrev_tac ‘P = EL k (ss t).procs’ >>
+  ‘l0_chan_of P f = SOME j’ by fs[fd_at_def, Abbr ‘P’] >>
+  ‘(P with env := w0.env).open_fds = V.open_fds ∧
+   (P with env := w0.env).chans = (FOLDL l0_deliver V (fseg k ss AS t)).chans ∧
+   (P with env := w0.env).listeners = (FOLDL l0_deliver V (fseg k ss AS t)).listeners’
+    by (qpat_x_assum ‘_ with env := _ = _’ SUBST1_TAC >> simp[]) >>
+  fs[] >>
+  ‘ALOOKUP V.open_fds f = SOME j ∧ j < LENGTH P.chans’
+    by (qpat_x_assum ‘l0_chan_of P f = _’ mp_tac >> simp[l0_chan_of_def, AllCaseEqs()]) >>
+  simp[l0_chan_of_def] >> CCONTR_TAC >> fs[NOT_LESS] >>
+  ‘MEM j (FLAT (MAP (SND o SND) P.listeners))’
+    by (qpat_x_assum ‘P.listeners = _’ SUBST1_TAC >> irule FOLDL_deliver_new_queued >>
+        conj_tac >- (qpat_x_assum ‘P.chans = _’ (SUBST1_TAC o SYM) >> first_assum ACCEPT_TAC) >>
+        first_assum ACCEPT_TAC) >>
+  ‘l0_chan_of P f ≠ SOME j’ by (qunabbrev_tac ‘P’ >> irule irun_queued_no_fd >>
+                                      conj_tac >- first_assum ACCEPT_TAC >>
+                                      qexistsl_tac [‘ps’, ‘rs’] >> asm_rewrite_tac[]) >>
+  fs[]
+QED
+
+(* ------------------------------------------------------------------------
+   Episodes.  TEMPORARY COPIES of honestL1BStmts' ep_ends and ep_open
+   (spike/kv-live-l0 @bbf45dfe8); remove when the lines merge.
+   ------------------------------------------------------------------------ *)
+
+Definition kv_ep_ends_def:
+  kv_ep_ends f e ⇔ l0_event_closed e = SOME f ∨ l0_event_accepted e = SOME f
+End
+
+Definition kv_ep_open_def:
+  kv_ep_open j evs ⇔
+    ∃pre ev post f.
+      evs = pre ++ [ev] ++ post ∧ LENGTH (l0_accepted pre) = j ∧
+      l0_event_accepted ev = SOME f ∧ EVERY (λe. ¬kv_ep_ends f e) post
+End
+
+(* A successful accept by k at t opens episode j = #accepts before t, on
+   the fd it returned *)
+Theorem ep_open_accept:
+  rs t = Call k nm conf bts out ∧
+  l0_event_accepted (IO_event (ExtCall nm) conf (ZIP (bts, out))) = SOME f ⇒
+  kv_ep_open (LENGTH (l0_accepted (ptr rs k t))) (ptr rs k (SUC t)) ∧
+  EL (LENGTH (l0_accepted (ptr rs k t))) (l0_accepted (ptr rs k (SUC t))) = f
+Proof
+  strip_tac >> simp[ptr_SUC, l0_accepted_append] >>
+  conj_tac >- (simp[kv_ep_open_def] >>
+               qexistsl_tac [‘ptr rs k t’, ‘IO_event (ExtCall nm) conf (ZIP (bts, out))’, ‘[]’] >>
+               simp[]) >>
+  simp[honestEchoL0SpecCopyTheory.l0_accepted_def, EL_APPEND2]
+QED

@@ -1,18 +1,19 @@
 (*
-  L3-09 (S3): D(c) (drains) transfers from the blocking trace to the PF
-  trace.  A PF prefix inside an idle segment sees the world after i steps
-  of time; bytes in flight there were in flight before (steps of time add
-  none), and either the peer reads before the blocking poll returns (the
-  prefix after it is the witness) or nothing was read, so the bytes are
-  still in flight after it and the blocking trace's D(c) applies there.
-  If the blocking run sleeps, its trace ends at the sleep, and its D(c)
-  rules out bytes in flight there (drained counts only grow).
+  L3-09 (S3): D(c) (drains, #153 821835ed2: once the program sends no more
+  on c, c empties) transfers from the blocking trace to the PF trace.  A PF
+  prefix is anchored at a blocking prefix bp with the same non-poll events
+  (its world is bp's after some steps of time, which change no sends and
+  add nothing in flight).  The PF image of a blocking extension of bp
+  either extends the PF prefix or stops short of it by polls only
+  (image_cmp), so the PF trace's "no more sends" gives the blocking
+  trace's, and the blocking trace's empty channel shows on the PF image or
+  already on the PF prefix.
 
   MAIN: drains_transfer.
 *)
 Theory honestL1BDrains
 Ancestors
-  honestL1BTransfer honestL1BChan honestL1BCorr honestL1BObs honestL1BRuns
+  honestL1BFaith honestL1BTransfer honestL1BChan honestL1BCorr honestL1BObs honestL1BRuns
   honestL1BReplay honestL1BSim honestL1BRefine honestL1BPoll honestL1BModel
   honestL1BStmts honestL0Reindex honestL0Part honestL1PFRound honestL1Model
   honestL0World honestL0 llist
@@ -156,25 +157,177 @@ Proof
   qexistsl_tac [‘pp’, ‘lift (btr lfd hw ifds bz m (w0, ps0)) hp wb’] >> simp[]
 QED
 
-(* Bytes in flight at a blocking prefix: some PF prefix drains more *)
-Theorem b_drains_p:
-  bquiet m ifds bz ∧ l0_rely w0 ∧
-  btrace lfd hw ifds bz m w0 ps0 io_b ∧ ptrace lfd hw ifds bz m w0 ps0 io_p ∧
-  drains w0 io_b c ∧ bpre lfd hw ifds bz m (w0, ps0) bq ∧ world_at w0 bq = SOME wq ∧
-  c < LENGTH wq.chans ∧ 0 < (EL c wq.chans).inflight ⇒
-  ∃pp w. LPREFIX (fromList pp) io_p ∧
-         world_at (reindex (btr lfd hw ifds bz m (w0, ps0)) w0) pp = SOME w ∧
-         c < LENGTH w.chans ∧ (EL c wq.chans).drained < (EL c w.chans).drained
+(* ------------------------------------------------------------------------
+   Steps of time and polls: a channel stays, its sends stay, and its bytes
+   in flight do not grow
+   ------------------------------------------------------------------------ *)
+
+Definition pmono_def:
+  pmono c (u : l0world) (u' : l0world) ⇔
+    c < LENGTH u.chans ⇒
+    c < LENGTH u'.chans ∧ (EL c u'.chans).sent = (EL c u.chans).sent ∧
+    (EL c u'.chans).inflight ≤ (EL c u.chans).inflight
+End
+
+Theorem pmono_refl[simp]:
+  pmono c u u
 Proof
-  strip_tac >>
-  ‘LPREFIX (fromList bq) io_b’ by metis_tac[btrace_def] >>
-  qpat_x_assum ‘drains _ _ _’ (fn th => mp_tac (REWRITE_RULE[drains_def] th)) >>
-  disch_then (qspecl_then [‘bq’, ‘wq’] mp_tac) >> simp[] >> strip_tac >>
-  ‘bpre lfd hw ifds bz m (w0, ps0) evs'’ by metis_tac[btrace_def] >>
-  drule_all b_reach >> strip_tac >> metis_tac[]
+  simp[pmono_def]
 QED
 
-(* MAIN: D(c) (blocking ⇒ PF) *)
+Theorem pmono_trans:
+  pmono c u1 u2 ∧ pmono c u2 u3 ⇒ pmono c u1 u3
+Proof
+  rw[pmono_def] >> fs[] >> rfs[] >> metis_tac[LESS_EQ_TRANS]
+QED
+
+Theorem pmono_hist[simp]:
+  pmono c u (u' with hist := h) ⇔ pmono c u u'
+Proof
+  simp[pmono_def]
+QED
+
+Theorem deliver_sent[local]:
+  c < LENGTH w.chans ⇒ (EL c (l0_deliver w a).chans).sent = (EL c w.chans).sent
+Proof
+  Cases_on ‘a’ >> rw[l0_deliver_def] >> every_case_tac >>
+  simp[upd_lchan_def, EL_LUPDATE, EL_APPEND1] >> rw[break_lchan_def]
+QED
+
+Theorem deliver_len_ge[local]:
+  c < LENGTH w.chans ⇒ c < LENGTH (l0_deliver w a).chans
+Proof
+  Cases_on ‘a’ >> rw[l0_deliver_def] >> every_case_tac >> simp[upd_lchan_def]
+QED
+
+Theorem FOLDL_deliver_sent[local]:
+  ∀as w. c < LENGTH w.chans ⇒
+         c < LENGTH (FOLDL l0_deliver w as).chans ∧
+         (EL c (FOLDL l0_deliver w as).chans).sent = (EL c w.chans).sent
+Proof
+  Induct >> simp[] >> rpt gen_tac >> strip_tac >>
+  first_x_assum (qspec_then ‘l0_deliver w h’ mp_tac) >>
+  simp[deliver_len_ge, deliver_sent]
+QED
+
+Theorem tick_pmono:
+  pmono c w (l0_tick nm w)
+Proof
+  rw[pmono_def]
+  >- simp[l0_tick_def, FOLDL_deliver_sent]
+  >- simp[l0_tick_def, FOLDL_deliver_sent]
+  >> qspecl_then [‘c’, ‘w’, ‘nm’] mp_tac (Q.GENL [‘c’, ‘w’, ‘nm’] tick_inflight) >>
+  simp[inflight_le_def] >> rw[] >> fs[] >>
+  ‘c < LENGTH (l0_tick nm w).chans’ by simp[l0_tick_def, FOLDL_deliver_sent] >> fs[]
+QED
+
+Theorem ticks_pmono:
+  ∀k w. pmono c w (l0_ticks nm k w)
+Proof
+  Induct >> simp[l0_ticks_def] >> metis_tac[pmono_trans, tick_pmono]
+QED
+
+(* A poll is a step of time, and (blocking) more steps of time *)
+Theorem poll_ffi_pmono:
+  l0_ffi_fn «sys_poll» conf bytes u = SOME (FFIreturn out u') ⇒ pmono c u u'
+Proof
+  rw[l0_ffi_fn_def, AllCaseEqs()] >> simp[] >>
+  irule pmono_trans >> qexists_tac ‘l0_tick «sys_poll» u’ >> simp[tick_pmono] >>
+  qpat_x_assum ‘l0_call _ _ _ _ = _’ mp_tac >> simp[Once l0_call_def] >>
+  rw[AllCaseEqs()] >> simp[ticks_pmono]
+QED
+
+Theorem polls_pmono:
+  ∀ys u u'. faithful u ys ∧ EVERY is_poll ys ∧
+            FOLDL l0_step (SOME u) (MAP ev_lcall ys) = SOME u' ⇒ pmono c u u'
+Proof
+  Induct >> rw[faithful_def] >> gvs[ev_lcall_def, l0_step_def, is_poll_def] >>
+  irule pmono_trans >> qexists_tac ‘u''’ >> simp[] >>
+  metis_tac[poll_ffi_pmono]
+QED
+
+(* The PF trace is faithful *)
+Theorem pf_faithful:
+  l0_rely w0 ∧ ptrace lfd hw ifds bz m w0 ps0 io_p ∧ LPREFIX (fromList pp) io_p ⇒
+  faithful (reindex (btr lfd hw ifds bz m (w0, ps0)) w0) pp
+Proof
+  rw[ptrace_def, ppre_def] >> first_x_assum (qspec_then ‘pp’ mp_tac) >> simp[] >>
+  strip_tac >> PairCases_on ‘ws’ >>
+  drule fplays_prounds >> simp[fplays_def, l0_rely_reindex] >> strip_tac >>
+  fs[IS_PREFIX_APPEND] >> metis_tac[faithful_prefix]
+QED
+
+(* Between two PF prefixes with the same non-poll events there are only
+   polls *)
+Theorem pf_poll_gap:
+  l0_rely w0 ∧ ptrace lfd hw ifds bz m w0 ps0 io_p ∧
+  LPREFIX (fromList (pa ++ ys)) io_p ∧ nopoll ys = [] ∧
+  world_at (reindex (btr lfd hw ifds bz m (w0, ps0)) w0) pa = SOME a ∧
+  world_at (reindex (btr lfd hw ifds bz m (w0, ps0)) w0) (pa ++ ys) = SOME b ⇒
+  pmono c a b
+Proof
+  strip_tac >> drule_all pf_faithful >> strip_tac >>
+  irule polls_pmono >> qexists_tac ‘ys’ >> rpt conj_tac >>
+  TRY (irule faithful_drop >> qexistsl_tac [‘pa’, ‘reindex (btr lfd hw ifds bz m (w0, ps0)) w0’] >>
+       fs[world_at_def, l0_replay_def] >> NO_TAC) >>
+  TRY (fs[nopoll_def, FILTER_EQ_NIL, EVERY_MEM] >> NO_TAC) >>
+  qpat_x_assum ‘world_at _ (pa ++ ys) = _’ mp_tac >>
+  REWRITE_TAC[world_at_append] >> asm_rewrite_tac[optionTheory.OPTION_BIND_def] >>
+  BETA_TAC >> REWRITE_TAC[]
+QED
+
+(* A PF prefix is anchored at a blocking prefix: the same non-poll events,
+   and its world is the blocking world after some steps of time *)
+Theorem p_anchor:
+  bquiet m ifds bz ∧ l0_rely w0 ∧ (∀n. brounds lfd hw ifds bz m (w0, ps0) n ≠ NONE) ∧
+  ppre lfd hw ifds m (reindex (btr lfd hw ifds bz m (w0, ps0)) w0, ps0) pp ∧
+  world_at (reindex (btr lfd hw ifds bz m (w0, ps0)) w0) pp = SOME w ⇒
+  ∃bp wb x hp. bpre lfd hw ifds bz m (w0, ps0) bp ∧ world_at w0 bp = SOME wb ∧
+               nopoll pp = nopoll bp ∧ w = lift (btr lfd hw ifds bz m (w0, ps0)) hp x ∧
+               pmono c wb x ∧
+               (¬(c < LENGTH wb.chans) ∧ c < LENGTH x.chans ⇒ (EL c x.chans).inflight = 0)
+Proof
+  strip_tac >> drule_all p2b >> strip_tac
+  >- (qpat_x_assum ‘palign _ _ _ _ _ _ _ _’ (strip_assume_tac o REWRITE_RULE[palign_def]) >>
+      qexistsl_tac [‘bp’, ‘wb’, ‘wb’, ‘hp’] >> simp[] >> fs[] >> rw[])
+  >> qpat_x_assum ‘pmid _ _ _ _ _ _ _ _’ (strip_assume_tac o REWRITE_RULE[pmid_def]) >>
+  ‘bpre lfd hw ifds bz m (w0, ps0) bp’ by (irule bpre_round >> metis_tac[IS_PREFIX_REFL]) >>
+  qexistsl_tac [‘bp’, ‘wb’, ‘l0_ticks «sys_poll» i wb’, ‘hp’] >> simp[ticks_pmono] >> fs[] >>
+  rw[] >> qspecl_then [‘i’, ‘wb’] mp_tac (Q.INST [‘nm’ |-> ‘«sys_poll»’] ticks_inflight) >>
+  simp[inflight_le_def]
+QED
+
+(* The PF image of a blocking extension of bp either extends a PF prefix
+   anchored at bp, or that prefix extends it by polls only *)
+Theorem image_cmp:
+  bquiet m ifds bz ∧ l0_rely w0 ∧ ptrace lfd hw ifds bz m w0 ps0 io_p ∧
+  LPREFIX (fromList pp) io_p ∧ nopoll pp = nopoll bp ∧
+  bpre lfd hw ifds bz m (w0, ps0) (bp ++ bx) ∧ world_at w0 (bp ++ bx) = SOME wq ⇒
+  ∃pq hq. LPREFIX (fromList pq) io_p ∧
+          world_at (reindex (btr lfd hw ifds bz m (w0, ps0)) w0) pq =
+            SOME (lift (btr lfd hw ifds bz m (w0, ps0)) hq wq) ∧
+          ((∃ys. pq = pp ++ ys) ∨ (∃ys. pp = pq ++ ys ∧ nopoll ys = []))
+Proof
+  strip_tac >> drule_all b2p >> strip_tac >> gvs[] >>
+  rename1 ‘ppre _ _ _ _ _ pq’ >>
+  ‘LPREFIX (fromList pq) io_p’ by metis_tac[ptrace_def] >>
+  qexistsl_tac [‘pq’, ‘hp’] >> simp[] >>
+  Cases_on ‘LENGTH pp ≤ LENGTH pq’
+  >- (disj1_tac >> ‘pp ≼ pq’ by metis_tac[prefix_cmp] >> fs[IS_PREFIX_APPEND])
+  >> disj2_tac >> ‘pq ≼ pp’ by (irule prefix_cmp >> metis_tac[NOT_LESS_EQUAL, LESS_IMP_LESS_OR_EQ]) >>
+  fs[IS_PREFIX_APPEND] >>
+  qpat_x_assum ‘pp = _’ SUBST_ALL_TAC >> fs[] >>
+  ‘LENGTH (nopoll pq ++ nopoll l) = LENGTH (nopoll bp)’ by metis_tac[] >>
+  ‘LENGTH (nopoll pq) = LENGTH (nopoll bp) + LENGTH (nopoll bx)’ by metis_tac[LENGTH_APPEND] >>
+  Cases_on ‘nopoll l’ >> fs[]
+QED
+
+(* MAIN: D(c) (blocking ⇒ PF).  A PF prefix is anchored at a blocking
+   prefix bp; the PF trace's "no more sends" gives the blocking trace's
+   (PF images of extensions of bp extend the PF prefix, or stop short of
+   it by polls only, which change no sends), and the blocking trace's
+   empty channel shows on the PF image (or already on the PF prefix,
+   when the image stops short: polls add nothing in flight) *)
 Theorem drains_transfer:
   bquiet m ifds bz ∧ l0_rely w0 ∧ (∀n. brounds lfd hw ifds bz m (w0, ps0) n ≠ NONE) ∧
   btrace lfd hw ifds bz m w0 ps0 io_b ∧ ptrace lfd hw ifds bz m w0 ps0 io_p ∧
@@ -183,38 +336,37 @@ Proof
   strip_tac >> REWRITE_TAC[drains_def] >> rpt strip_tac >>
   ‘ppre lfd hw ifds m (reindex (btr lfd hw ifds bz m (w0, ps0)) w0, ps0) evs’
     by metis_tac[ptrace_def] >>
-  drule_all p2b >> strip_tac
-  >- (gvs[palign_def] >> irule b_drains_p >> simp[] >> metis_tac[])
-  >> gvs[pmid_def] >>
-  qabbrev_tac ‘u = l0_ticks «sys_poll» i wb’ >>
-  ‘inflight_le c wb u’ by simp[Abbr ‘u’, ticks_inflight] >>
-  ‘c < LENGTH wb.chans ∧ 0 < (EL c wb.chans).inflight’
-    by (fs[inflight_le_def] >> Cases_on ‘c < LENGTH wb.chans’ >> fs[]) >>
-  ‘bpre lfd hw ifds bz m (w0, ps0) bp’ by metis_tac[bpre_round, IS_PREFIX_REFL]
-  >- ((* asleep: the blocking trace ends at bp, where c is never drained *)
-      ‘∃cb. brounds lfd hw ifds bz m (w0, ps0) (SUC n) = SOME (BSlept h bp cb)’
-        by (irule idle_asleep >> metis_tac[]) >>
-      ‘LPREFIX (fromList bp) io_b’ by metis_tac[btrace_def] >>
-      qpat_x_assum ‘drains _ _ _’ (fn th => mp_tac (REWRITE_RULE[drains_def] th)) >>
-      disch_then (qspecl_then [‘bp’, ‘wb’] mp_tac) >> simp[] >> strip_tac >>
-      ‘bpre lfd hw ifds bz m (w0, ps0) evs'’ by metis_tac[btrace_def] >>
-      ‘evs' ≼ bp’ by metis_tac[asleep_prefixes] >>
-      fs[IS_PREFIX_APPEND] >> rveq >>
-      drule_all world_at_mono_dmono >> disch_then (qspec_then ‘c’ mp_tac) >>
-      simp[dmono_def])
-  >> (* the poll returns after k ≥ i steps of time *)
-  drule_at (Pos (el 2)) idle_wake_pre >> simp[] >> strip_tac >>
-  ‘chan_mono c u v’
-    by (‘l0_ticks «sys_poll» (SUC k) wb = l0_ticks «sys_poll» (SUC k − i) u’
-          by (qunabbrev_tac ‘u’ >> REWRITE_TAC[GSYM ticks_add] >>
-              AP_THM_TAC >> AP_TERM_TAC >> decide_tac) >>
-        simp[chan_mono_def] >> qspecl_then [‘SUC k − i’, ‘u’] mp_tac (Q.INST [‘nm’ |-> ‘«sys_poll»’] ticks_chan) >>
-        simp[chan_mono_def]) >>
-  qpat_x_assum ‘v.chans = _’ kall_tac >> fs[chan_mono_def] >>
-  Cases_on ‘(EL c u.chans).drained < (EL c v.chans).drained’
-  >- (drule_all b_reach >> strip_tac >> metis_tac[])
-  >> ‘(EL c v.chans).drained = (EL c u.chans).drained’ by (fs[] >> decide_tac) >>
-  ‘c < LENGTH v.chans ∧ 0 < (EL c v.chans).inflight’ by fs[] >>
-  drule_all (Q.INST [‘bq’ |-> ‘bp ++ [ev]’, ‘wq’ |-> ‘v’] b_drains_p) >>
-  strip_tac >> qexistsl_tac [‘pp’, ‘w’] >> fs[]
+  drule_all p_anchor >> disch_then (qspec_then ‘c’ strip_assume_tac) >>
+  qpat_x_assum ‘w = _’ SUBST_ALL_TAC >>
+  qabbrev_tac ‘tr = btr lfd hw ifds bz m (w0, ps0)’ >>
+  reverse (Cases_on ‘c < LENGTH wb.chans’)
+  >- (qexistsl_tac [‘[]’, ‘lift tr hp x’] >> fs[]) >>
+  ‘(EL c x.chans).sent = (EL c wb.chans).sent ∧
+   (EL c x.chans).inflight ≤ (EL c wb.chans).inflight ∧ c < LENGTH x.chans’
+    by fs[pmono_def] >>
+  (* the blocking trace sends no more on c after bp *)
+  ‘∀bx wq. LPREFIX (fromList (bp ++ bx)) io_b ∧ world_at w0 (bp ++ bx) = SOME wq ⇒
+           (EL c wq.chans).sent = (EL c wb.chans).sent’
+    by (rpt strip_tac >>
+        ‘bpre lfd hw ifds bz m (w0, ps0) (bp ++ bx)’ by metis_tac[btrace_def] >>
+        ‘dmono c wb wq’ by metis_tac[world_at_mono_dmono] >>
+        ‘c < LENGTH wq.chans’ by fs[dmono_def] >>
+        drule_all image_cmp >> strip_tac
+        >- (gvs[] >>
+            qpat_x_assum ‘∀evs' w'. LPREFIX _ _ ∧ _ ⇒ _’
+              (qspecl_then [‘ys’, ‘lift tr hq wq’] mp_tac) >>
+            simp[])
+        >> gvs[] >>
+        mp_tac (Q.INST [‘pa’ |-> ‘pq’, ‘a’ |-> ‘lift tr hq wq’, ‘b’ |-> ‘lift tr hp x’]
+                  pf_poll_gap) >>
+        simp[pmono_def]) >>
+  qpat_x_assum ‘drains _ _ _’ (mp_tac o REWRITE_RULE[drains_def]) >>
+  disch_then (qspecl_then [‘bp’, ‘wb’] mp_tac) >>
+  impl_tac >- (simp[] >> metis_tac[btrace_def]) >> strip_tac >>
+  ‘bpre lfd hw ifds bz m (w0, ps0) (bp ++ evs')’ by metis_tac[btrace_def] >>
+  drule_all image_cmp >> strip_tac
+  >- (qexistsl_tac [‘ys’, ‘lift tr hq w'’] >> gvs[])
+  >> qexistsl_tac [‘[]’, ‘lift tr hp x’] >> gvs[] >>
+  mp_tac (Q.INST [‘pa’ |-> ‘pq’, ‘a’ |-> ‘lift tr hq w'’, ‘b’ |-> ‘lift tr hp x’] pf_poll_gap) >>
+  simp[pmono_def]
 QED

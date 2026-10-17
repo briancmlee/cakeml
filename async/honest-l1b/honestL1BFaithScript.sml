@@ -48,6 +48,19 @@ Proof
   Induct >> rw[faithful_def] >> gvs[ev_lcall_def, l0_step_def] >> metis_tac[]
 QED
 
+Theorem faithful_prefix:
+  ∀a b w. faithful w (a ++ b) ⇒ faithful w a
+Proof
+  Induct >> rw[faithful_def] >> metis_tac[]
+QED
+
+Theorem faithful_drop:
+  ∀a b w w'. faithful w (a ++ b) ∧ FOLDL l0_step (SOME w) (MAP ev_lcall a) = SOME w' ⇒
+             faithful w' b
+Proof
+  Induct >> rw[faithful_def] >> gvs[ev_lcall_def, l0_step_def] >> metis_tac[]
+QED
+
 Theorem fplays_nil[simp]:
   fplays w w []
 Proof

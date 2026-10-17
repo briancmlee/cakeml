@@ -24,6 +24,9 @@
    [R4] The rely is run_rely (eh_round_ok), as for the client: valid
         along the run's own rounds; nosock (option (b)) is the world's.
 
+  REVISION 4: the program takes its listener: pprog lfd b hw (it accepts
+  on lfd, and polls it).
+
   REVISION 3: every condition on the program is one it can observe.  The
   world's up_at is replaced by hl_up (c has answered a read, so it was not
   refused): the program tells Up from Refused only by reading c, and that
@@ -158,13 +161,13 @@ Definition proxy_guar_hl_def:
 End
 
 (* The proxy on the layer, in every proxy world with the run-local rely.
-   pprog b hw / pifds b hw: the proxy's computation and interest (a pure
+   pprog lfd b hw / pifds lfd b hw: the proxy's computation and interest (a pure
    step function, design/44) *)
 Definition proxy_hl_claim_def:
   proxy_hl_claim pprog pifds ⇔
     ∀a b hw lfd lv W.
-      proxy_world lfd a W ∧ run_rely lfd lv (pifds b hw) (pprog b hw) W ⇒
-      proxy_guar_hl b hw lfd lv (pifds b hw) (pprog b hw) W
+      proxy_world lfd a W ∧ run_rely lfd lv (pifds lfd b hw) (pprog lfd b hw) W ⇒
+      proxy_guar_hl b hw lfd lv (pifds lfd b hw) (pprog lfd b hw) W
 End
 
 (* Through E1, along every run of the honest L1 (as client_l1_claim).
@@ -174,10 +177,10 @@ Definition proxy_l1_claim_def:
   proxy_l1_claim pprog pifds ⇔
     ∀a b lfd hw w0 calls.
       l0_rely w0 ∧ fds_lt w0 ∧ MEM lfd (l0_used w0) ∧
-      (∀n. SND (ecm lfd pol_never (pifds b hw) (pprog b hw) w0 n) + 1 < dimword (:64)) ∧
-      (∀n. erounds lfd pol_never (pifds b hw) (pprog b hw) (w0, einit) n ≠ NONE) ⇒
-      proxy_guar_hl b hw lfd (elv lfd pol_never (pifds b hw) (pprog b hw) w0)
-        (pifds b hw) (pprog b hw) (pew lfd a pol_never (pifds b hw) (pprog b hw) w0 calls)
+      (∀n. SND (ecm lfd pol_never (pifds lfd b hw) (pprog lfd b hw) w0 n) + 1 < dimword (:64)) ∧
+      (∀n. erounds lfd pol_never (pifds lfd b hw) (pprog lfd b hw) (w0, einit) n ≠ NONE) ⇒
+      proxy_guar_hl b hw lfd (elv lfd pol_never (pifds lfd b hw) (pprog lfd b hw) w0)
+        (pifds lfd b hw) (pprog lfd b hw) (pew lfd a pol_never (pifds lfd b hw) (pprog lfd b hw) w0 calls)
 End
 
 (* ------------------------------------------------------------------------

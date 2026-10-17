@@ -86,6 +86,23 @@ accepts_fail_io); conn_live_l0 (generic pf_conn_live; the echo's
 echo_conn_live_trace under the statement's premises, the client bound from
 accepts_below).
 
+### D progress (2026-10-17, later)
+
+Proved (Holmake, no cheats), honest-echo-live/:
+- (i) output accounting: `l0_sent_open` (Sent), `faithful_csent`,
+  `faithful_accept_csent`, `episode_csent` (KSent): while episode j is open
+  on f and no close was called on f, f's channel holds `l0_sent j` as sent.
+- (3) input hypothesis: `echo_writes_stop` (Stop), and with honest-ffi's
+  `S4w_of_stop`, `echo_S4w`: the PF echo meets S4w on every fd.
+- (4) the server: `hst_written`, `echo_out_live` (SrvOut): what client j of
+  psk sends is eventually in its outgoing stream.
+
+Open: (2) kernel input accounting (peer_sent = fetched ++ inbox);
+locating a trace prefix in the run; the excuse mapping; the close step
+(prove "a close call on f while open"; derive ep_closed only under no
+close failure, per the coordinator, pending the user's ruling on the
+interrupted-close finding); assembly.
+
 ## D: echo_live_l0, decomposed
 
 Fix a prefix evs of the trace with episode j open on channel c (fd f), and

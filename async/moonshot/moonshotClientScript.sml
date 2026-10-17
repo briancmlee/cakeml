@@ -2235,3 +2235,93 @@ Proof
     by (qpat_x_assum ‘∀hd. crel _ _ _ _ _ _ _ _ _ ∧ _ ⇒ _’ irule >> simp[]) >>
   simp[]
 QED
+
+(* The poll, for a handle in the interest *)
+Theorem poll_keep:
+  ehpoll lfd hs1 hfds w1 = (rdy', w2, hs2) ∧
+  ALOOKUP hs1.tbl hd = SOME f ∧ ALOOKUP w1.open_fds f = SOME j ∧ j < LENGTH w1.chans ∧
+  MEM hd hfds ⇒
+  ALOOKUP hs2.tbl hd = SOME f ∧
+  (hstat (w1, hs1) hd ≠ SOME Connecting ⇒ hstat (w2, hs2) hd = hstat (w1, hs1) hd) ∧
+  (hstat (w2, hs2) hd ≠ SOME Connecting ⇒ ¬MEM hd hs2.settling)
+Proof
+  strip_tac >> qpat_x_assum ‘ehpoll _ _ _ _ = _’ mp_tac >> simp[ehpoll_def] >> strip_tac >>
+  ‘tick_rel w1 w2’ by (gvs[] >> simp[tick_rel_tick]) >>
+  pop_assum (strip_assume_tac o REWRITE_RULE [tick_rel_def]) >>
+  first_x_assum drule >> strip_tac >>
+  gvs[hstat_def, chan_status_def, ep_chan_of_def, MEM_FILTER]
+QED
+
+Theorem hstat_SOME:
+  hstat (w, hs) hd = SOME s ⇒
+  ∃f j. ALOOKUP hs.tbl hd = SOME f ∧ ALOOKUP w.open_fds f = SOME j ∧ j < LENGTH w.chans ∧
+        s = (EL j w.chans).status
+Proof
+  simp[hstat_def, chan_status_def, ep_chan_of_def, AllCaseEqs()] >> rw[] >> simp[]
+QED
+
+(* One round of the run, for connection i *)
+Theorem cround_trans:
+  client_world lfd c w0 ∧ N < cbound ∧ i < N ⇒
+  ∃qs. hl_pairs (cprog a N rqs) (cH a N rqs lfd lv w0 (SUC n)) =
+       hl_pairs (cprog a N rqs) (cH a N rqs lfd lv w0 n) ++ qs ∧
+     ctr (brequests (rqs i)) (EL i (cst a N rqs lfd lv w0 n).cs)
+       (EL i (cst a N rqs lfd lv w0 (SUC n)).cs) (hstat (cS a N rqs lfd lv w0 n))
+       (crdy (cH a N rqs lfd lv w0 n)) qs ∧
+     ∀hd. EL i (cst a N rqs lfd lv w0 n).cs = CPend hd ∧
+          EL i (cst a N rqs lfd lv w0 (SUC n)).cs = CPend hd ⇒
+          ALOOKUP (SND (cS a N rqs lfd lv w0 (SUC n))).tbl hd =
+            ALOOKUP (SND (cS a N rqs lfd lv w0 n)).tbl hd ∧
+          (hstat (cS a N rqs lfd lv w0 n) hd ≠ SOME Connecting ⇒
+           hstat (cS a N rqs lfd lv w0 (SUC n)) hd = hstat (cS a N rqs lfd lv w0 n) hd) ∧
+          (hstat (cS a N rqs lfd lv w0 (SUC n)) hd ≠ SOME Connecting ⇒
+           ¬MEM hd (SND (cS a N rqs lfd lv w0 (SUC n))).settling)
+Proof
+  strip_tac >> drule_all cinv_all >> disch_then (qspecl_then [‘a’, ‘rqs’, ‘lv’, ‘n’] mp_tac) >>
+  qmatch_goalsub_abbrev_tac ‘ehst lfd lv ifds m w0 n’ >>
+  simp[cinv_def] >> strip_tac >>
+  qabbrev_tac ‘h = ehhist lfd lv ifds m w0 n’ >>
+  qabbrev_tac ‘st = cstate a N rqs h’ >>
+  Cases_on ‘ehst lfd lv ifds m w0 n’ >> rename1 ‘_ = (w, hs)’ >> fs[] >>
+  ‘new_actions (log_of m) h = MAP SND st.last’ by simp[Abbr ‘m’, Abbr ‘st’, cprog_new_actions] >>
+  Cases_on ‘ehacts_tot lfd lv n (w, hs) (MAP SND st.last)’ >> rename1 ‘_ = (rs, st1)’ >>
+  PairCases_on ‘st1’ >> rename1 ‘_ = (rs, (w1, hs1))’ >>
+  Cases_on ‘ehpoll lfd hs1 (ifds h) w1’ >> rename1 ‘_ = (rdy', r2)’ >>
+  PairCases_on ‘r2’ >> rename1 ‘_ = (rdy', w2, hs2)’ >>
+  ‘ehhist lfd lv ifds m w0 (SUC n) = h ++ [ssnap rdy' rs] ∧
+   ehst lfd lv ifds m w0 (SUC n) = (w2, hs2)’
+    by (qunabbrev_tac ‘h’ >> irule honestL1EPRefineTheory.ehround_step >> gvs[]) >>
+  ‘st.nh < cbound + N’ by simp[] >>
+  drule_all crel_round >> strip_tac >>
+  simp[cstate_SNOC, hl_pairs_SNOC, cstep_def, asyncM3WorldTheory.ssnap_def] >>
+  ‘LENGTH st.cs = N’ by fs[crel_def] >>
+  ‘cacts a st (crdy h) = cacts_upto a st (crdy h) N’ by simp[cacts_upto_all] >>
+  pop_assum (fn th => REWRITE_TAC [th] >> RULE_ASSUM_TAC (REWRITE_RULE [th])) >>
+  ‘N < dimword (:64) ∧ (st.nh < cbound ⇒ st.nh + N + 1 < dimword (:64))’ by fs[cbound_def] >>
+  qpat_x_assum ‘st.last = _’ (fn th => RULE_ASSUM_TAC (REWRITE_RULE [th])) >>
+  qspecl_then [‘st’, ‘crdy h’, ‘hl_pairs m h’, ‘w’, ‘hs’, ‘lv’, ‘n’] mp_tac
+    (Q.GENL [‘st0’, ‘rdy’, ‘ps’, ‘w’, ‘hs’, ‘lv’, ‘n’] acts_trans) >>
+  impl_tac >- simp[] >>
+  disch_then (qspecl_then [‘N’, ‘rs’, ‘w1’, ‘hs1’] mp_tac) >> impl_tac >- simp[] >>
+  strip_tac >> conj_tac >- (first_x_assum irule >> simp[]) >>
+  rpt gen_tac >> strip_tac >>
+  ‘hd ∉ crdy h’
+    by (strip_tac >> qpat_x_assum ‘∀i. i < N ⇒ ctr _ _ _ _ _ _’ (qspec_then ‘i’ mp_tac) >>
+        simp[ctr_def]) >>
+  ‘MEM hd (chd (EL i st.cs))’ by simp[chd_def] >>
+  qpat_x_assum ‘crel _ _ _ _ st _ _ _ _’ (fn th => assume_tac th >>
+    strip_assume_tac (REWRITE_RULE [crel_def] th)) >>
+  ‘MEM hd (MAP FST hs.tbl)’ by metis_tac[] >>
+  ‘ALOOKUP hs1.tbl hd = ALOOKUP hs.tbl hd ∧ hstat (w1, hs1) hd = hstat (w, hs) hd’
+    by (qpat_x_assum ‘∀hd. (∀i. i < N ∧ _ ⇒ _) ∧ _ ⇒ _’ irule >> simp[] >> rpt strip_tac >>
+        ‘i' = i’ by (qpat_x_assum ‘∀i1 i2 hd. _ ⇒ i1 = i2’ irule >> simp[] >>
+                     qexists_tac ‘hd’ >> simp[chd_def]) >>
+        gvs[cact1_def]) >>
+  drule_all crel_handle >> strip_tac >>
+  drule_all hstat_eq >> strip_tac >>
+  ‘∃s. hstat (w1, hs1) hd = SOME s’ by simp[] >>
+  drule hstat_SOME >> strip_tac >>
+  ‘MEM hd (ifds h)’
+    by (simp[Abbr ‘ifds’, cifds_def, MEM_FLAT, MEM_MAP] >> metis_tac[EL_MEM]) >>
+  drule_all poll_keep >> strip_tac >> gvs[]
+QED

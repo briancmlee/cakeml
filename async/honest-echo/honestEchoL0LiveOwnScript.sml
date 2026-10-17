@@ -8,12 +8,14 @@
   run_own: at every round boundary.
   call_open: at every send or recv call of a round, the call's fd is open
   in the episode map of the trace before it.
+  call_poll_open: likewise every fd a poll lists for output.
 *)
 Theory honestEchoL0LiveOwn
 Ancestors
   alist ffi honestL0 honestL0World honestL0WorldProps honestL0Rely
   asyncHLModel honestL1Model honestL1Steps honestL1PFModel honestL1PFInv
-  honestL1PFRound honestL1PFLive honestL1PFFlush
+  honestL1PFRound honestL1PFLive honestL1PFFlush honestL1PFOutLive honestL1PFConn
+  honestL1PFConnRun honestL1Inv
   asyncM3World honestEchoL0Spec honestEchoL0Trace honestEchoL0Events
   honestEchoL0Model honestEchoL0Inv honestEchoL0Round honestEchoL0Out
 Libs
@@ -258,7 +260,7 @@ Proof
   simp[AllCaseEqs(), PULL_EXISTS] >> rpt gen_tac >> strip_tac >> gvs[] >>
   rename1 ‘sys_send h _ w = SOME (out, w1, ev)’ >>
   drule_all sys_send_event >> strip_tac >>
-  ‘MEM h (MAP SND b.tbl) ∨ MEM h b.closing’ by gvs[okb_def] >>
+  ‘MEM h (MAP SND b.tbl) ∨ MEM h b.closing’ by metis_tac[okb_held] >>
   ‘∃i. i < b.nxt ∧ ALOOKUP opn h = SOME i’
     by (mp_tac (Q.INST [‘ps’ |-> ‘ps with b := b’, ‘f’ |-> ‘h’] own_held2) >> simp[]) >>
   ‘l0_rely w1’ by (gvs[sys_send_def] >> metis_tac[l0_do_rely]) >>
@@ -435,4 +437,148 @@ Proof
                 pround_so)) th)) >>
         rpt (impl_tac >- fs[]) >> simp[]) >>
   gvs[] >> metis_tac[sr_open_at]
+QED
+
+(* ------------------------------------------------------------------------
+   (b′) At every poll, the fds it lists for output are open
+   ------------------------------------------------------------------------ *)
+
+Definition po_open_def:
+  po_open s [] = T ∧
+  po_open s (ev :: evs) =
+    ((∀f. ev_polls_out f ev ⇒ ∃j. ALOOKUP (SND s) f = SOME j) ∧
+     po_open (l0_ep_step s ev) evs)
+End
+
+Theorem po_open_APPEND:
+  ∀xs s. po_open s (xs ++ ys) ⇔ po_open s xs ∧ po_open (l0_ep_st s xs) ys
+Proof
+  Induct >> simp[po_open_def] >> metis_tac[]
+QED
+
+Theorem po_open_at:
+  po_open s (pre ++ [ev] ++ post) ∧ ev_polls_out f ev ⇒
+  ∃j. ALOOKUP (SND (l0_ep_st s pre)) f = SOME j
+Proof
+  rw[po_open_APPEND, po_open_def] >> metis_tac[]
+QED
+
+Theorem ev_polls_out_name:
+  ev_polls_out f ev ⇒ ev_name ev = ExtCall «sys_poll»
+Proof
+  rw[ev_polls_out_def] >> simp[ev_name_def]
+QED
+
+Theorem po_open_quiet:
+  ∀evs s. EVERY (λev. ev_name ev ≠ ExtCall «sys_poll») evs ⇒ po_open s evs
+Proof
+  Induct >> simp[po_open_def] >> rpt strip_tac >> imp_res_tac ev_polls_out_name >> gvs[]
+QED
+
+(* A poll lists for output exactly the fds its set asks output of *)
+Theorem sys_poll_out_mem:
+  sys_poll fes w = SOME (out, w', ev) ∧ l0_rely w ∧ EVERY (λ(g, e). small g ∧ e < 4) fes ∧
+  ev_polls_out f ev ⇒
+  ∃e. MEM (f, e) fes ∧ 2 ≤ e
+Proof
+  simp[sys_poll_def] >> strip_tac >>
+  drule_all l0_do_buf_event >> strip_tac >>
+  gvs[ev_polls_out_def, MAP_ZIP] >>
+  gvs[poll_buf_def, DROP_APPEND, pollfd_entries_buf, MAP_MAP_o, MEM_MAP] >>
+  rename1 ‘MEM yy fes’ >> PairCases_on ‘yy’ >> gvs[EVERY_MEM] >>
+  first_x_assum drule >> simp[] >> strip_tac >>
+  drule_all pe_pfd_bytes >> strip_tac >> gvs[] >> metis_tac[]
+QED
+
+(* The fds L1 polls for output are held *)
+Theorem pf_poll_set_out_held:
+  okb ps.b ∧ MEM (f, e) (pf_poll_set lfd pol ps hs) ∧ 2 ≤ e ⇒
+  MEM f (MAP SND ps.b.tbl) ∨ MEM f ps.b.closing
+Proof
+  rw[pf_poll_set_def, MEM_FLAT, MEM_MAP, MEM_FILTER, EXISTS_PROD] >>
+  TRY (gvs[okb_def, MEM_MAP, EXISTS_PROD] >> metis_tac[] >> NO_TAC) >>
+  every_case_tac >> gvs[] >>
+  imp_res_tac ALOOKUP_MEM >> simp[MEM_MAP, EXISTS_PROD] >> metis_tac[]
+QED
+
+(* The one poll of a round's tail *)
+Theorem l1_polls_po:
+  l1_polls [fes] w = SOME (rv, w', evs) ∧ l0_rely w ∧
+  EVERY (λ(g, e). small g ∧ e < 4) fes ∧
+  (∀f e. MEM (f, e) fes ∧ 2 ≤ e ⇒ ∃j. ALOOKUP (SND s) f = SOME j) ⇒
+  po_open s evs
+Proof
+  simp[l1_polls_def, AllCaseEqs(), PULL_EXISTS] >> rpt strip_tac >> gvs[] >>
+  drule_all sys_poll_event >> strip_tac >>
+  ‘l0_ep_step s ev = s’ by (PairCases_on ‘s’ >> simp[l0_ep_step_def]) >>
+  simp[po_open_def] >> rpt strip_tac >>
+  drule_all sys_poll_out_mem >> metis_tac[]
+QED
+
+Theorem pround_po:
+  pround lfd pol hs (w, ps) acts = SOME (sn, (w', ps'), log, evs) ∧
+  wown lfd w ps ∧ own_ok lfd (k, opn) ps ∧ LENGTH ps.acq ≤ 1 ∧ okb ps.b ∧
+  psmall lfd ps ∧ EVERY (pact_ok lfd) acts ∧
+  ps.b.nxt + naccepts acts < dimword (:64) ⇒
+  po_open (k, opn) evs
+Proof
+  strip_tac >> qpat_x_assum ‘pround _ _ _ _ _ = _’ mp_tac >>
+  simp[pround_def, AllCaseEqs(), PULL_EXISTS] >> rpt gen_tac >> strip_tac >>
+  rename1 ‘pacts _ _ _ = SOME (rs, evs1, ws1)’ >> PairCases_on ‘ws1’ >>
+  rename1 ‘pf_tail _ _ _ _ = SOME (rdy, _, log2, tevs)’ >>
+  ‘l0_rely w’ by gvs[wown_def] >>
+  ‘po_open (k, opn) evs1’
+    by (irule po_open_quiet >> drule pacts_names >> rw[EVERY_MEM] >> res_tac >> gvs[]) >>
+  ‘psmall lfd ws11’
+    by (drule_all pacts_ok >> strip_tac >> gvs[]) >>
+  drule_all pacts_in >> strip_tac >>
+  drule_all pacts_okb >> strip_tac >>
+  Cases_on ‘l0_ep_st (k, opn) evs1’ >> gvs[] >>
+  rename1 ‘own_ok lfd (k, opn1) ws11’ >>
+  qpat_x_assum ‘pf_tail _ _ _ _ = _’ mp_tac >>
+  simp[pf_tail_def, AllCaseEqs(), PULL_EXISTS] >> rpt gen_tac >> strip_tac >>
+  rename1 ‘l1_polls _ ws10 = SOME (rv, w1, pevs)’ >>
+  ‘po_open (k, opn1) pevs’
+    by (‘EVERY (λ(g, e). small g ∧ e < 4) (pf_poll_set lfd pol ws11 hs)’
+          by (irule pf_poll_set_small >> simp[]) >>
+        drule l1_polls_po >> disch_then irule >> fs[] >>
+        rpt strip_tac >> drule_all pf_poll_set_out_held >> strip_tac >>
+        metis_tac[own_held2]) >>
+  ‘∀s. po_open s fevs’
+    by (gen_tac >> irule po_open_quiet >> drule l1_flush_names >> simp[EVERY_MEM]) >>
+  ‘∀s. po_open s gevs’
+    by (gen_tac >> irule po_open_quiet >> drule pf_fetch_names >> rw[EVERY_MEM] >>
+        res_tac >> gvs[]) >>
+  ‘∀s. po_open s cevs’
+    by (gen_tac >> irule po_open_quiet >> drule l1_reap_names >> simp[EVERY_MEM]) >>
+  qpat_x_assum ‘_ = tevs’ (SUBST_ALL_TAC o SYM) >>
+  simp[po_open_APPEND]
+QED
+
+(* MAIN (b′): every fd a poll of round k lists for output is open in the
+   episode map of the trace before it *)
+Theorem call_poll_open:
+  run_ok lfd pol ifds m w0 ∧ winv w0 ∧ MEM lfd (l0_used w0) ∧
+  rrev lfd pol ifds m w0 k = pre ++ [ev] ++ post ∧ ev_polls_out f ev ⇒
+  ∃j. ALOOKUP (SND (l0_ep_st (0, []) (revs lfd pol ifds m w0 k ++ pre))) f = SOME j
+Proof
+  strip_tac >>
+  drule_all run_own >> disch_then (qspec_then ‘k’ strip_assume_tac) >>
+  drule prun_round' >> disch_then (qspecl_then [‘f’, ‘k’] strip_assume_tac) >>
+  drule prun_some >> disch_then (qspec_then ‘k’ assume_tac) >>
+  ‘psmall lfd (rstate lfd pol ifds m w0 k)’ by metis_tac[psmall_run] >>
+  ‘EVERY (pact_ok lfd) (new_actions (log_of m) (rhist lfd pol ifds m w0 k)) ∧
+   (rstate lfd pol ifds m w0 k).b.nxt +
+   naccepts (new_actions (log_of m) (rhist lfd pol ifds m w0 k)) < dimword (:64)’
+    by (Cases_on ‘prun lfd pol ifds m w0 k’ >> rename1 ‘_ = (hh, r)’ >> PairCases_on ‘r’ >>
+        gvs[rstate_def, rhist_def, run_ok_def, pl2_ok_def] >>
+        first_x_assum drule >> simp[]) >>
+  Cases_on ‘l0_ep_st (0, []) (revs lfd pol ifds m w0 k)’ >>
+  ‘po_open (q, r) (rrev lfd pol ifds m w0 k)’
+    by (qpat_x_assum ‘pround _ _ _ _ _ = _’
+          (fn th => mp_tac (MATCH_MP (REWRITE_RULE [GSYM AND_IMP_INTRO]
+             (INST [“k:num” |-> “q:num”, “opn:(word64 # num) list” |-> “r:(word64 # num) list”]
+                pround_po)) th)) >>
+        rpt (impl_tac >- fs[]) >> simp[]) >>
+  gvs[] >> metis_tac[po_open_at]
 QED

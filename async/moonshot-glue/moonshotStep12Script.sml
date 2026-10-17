@@ -166,6 +166,26 @@ QED
 (*---------------------------------------------------------------------------*)
 (* THE HEADLINE, from b2_iso_stmt *)
 
+(*---------------------------------------------------------------------------*)
+(* fd0_safe (B2's hypothesis): from an early outcome, or from stdio_open and
+   no_close_stdio *)
+
+Theorem early_fd0_safe:
+  EVERY early_ev evs ⇒ fd0_safe evs
+Proof
+  rw[fd0_safe_def] >> disj2_tac >> rw[] >> strip_tac >>
+  fs[EVERY_MEM] >> res_tac >> fs[early_ev_def]
+QED
+
+Theorem main_fd0_safe:
+  stdio_open io ∧ LPREFIX (fromList evs) io ∧ no_close_stdio evs ⇒ fd0_safe evs
+Proof
+  rw[stdio_open_def] >> Cases_on ‘evs’ >- simp[fd0_safe_def] >>
+  simp[fd0_safe_def] >> disj1_tac >> conj_tac
+  >- fs[LPREFIX_LCONS] >>
+  fs[no_close_stdio_def] >> metis_tac[]
+QED
+
 Theorem moonshot_safe:
   b2_iso_stmt ⇒ moonshot_safe_stmt kt hw cprog pprog kprog
 Proof
@@ -177,7 +197,8 @@ Proof
   ‘l0sys_run sy rs’
     by (rewrite_tac[l0sys_run_def] >> qexistsl_tac [‘s0’, ‘ss’] >> asm_rewrite_tac[]) >>
   (* the client's ports *)
-  ‘listens_only c (proc_events 0 rs) ∧ connects_only a (proc_events 0 rs)’
+  ‘fd0_safe (proc_events 0 rs) ∧
+   listens_only c (proc_events 0 rs) ∧ connects_only a (proc_events 0 rs)’
     by (qspecl_then [‘sy’, ‘rs’, ‘0’,
           ‘λbeh. stdio_closed beh ∨ l0_listen_failed beh ∨
              stdio_open (beh_io beh) ∧ ∃lc. client_safe_l0 a c N rqs lc (beh_io beh)’]
@@ -188,8 +209,14 @@ Proof
             disch_then (qspecl_then [‘a’, ‘c’, ‘N’, ‘rqs’, ‘w0’] mp_tac) >>
             impl_tac >- (rpt conj_tac >> first_assum ACCEPT_TAC) >> simp[]) >>
         simp[] >> strip_tac
-        >- (‘early b'’ by simp[early_def] >> drule_all early_prefix >> simp[early_ports])
-        >- (‘early b'’ by simp[early_def] >> drule_all early_prefix >> simp[early_ports]) >>
+        >- (‘early b'’ by simp[early_def] >> drule_all early_prefix >>
+            simp[early_ports, early_fd0_safe])
+        >- (‘early b'’ by simp[early_def] >> drule_all early_prefix >>
+            simp[early_ports, early_fd0_safe]) >>
+        ‘no_close_stdio (proc_events 0 rs)’
+          by (qpat_x_assum ‘client_safe_l0 _ _ _ _ _ _’ mp_tac >>
+              rewrite_tac[client_safe_l0_def] >> disch_then drule >> simp[]) >>
+        ‘fd0_safe (proc_events 0 rs)’ by (irule main_fd0_safe >> metis_tac[]) >>
         drule_all client_ports >> simp[]) >>
   (* the proxy: its ports and W2, and its safe form *)
   ‘∀w0. l0_rely w0 ∧ l0_fresh w0 ∧ fds_lt w0 ⇒
@@ -203,7 +230,7 @@ Proof
         impl_tac >- (rpt conj_tac >> first_assum ACCEPT_TAC) >>
         disch_then (qx_choose_then ‘beh’ assume_tac) >> qexists_tac ‘beh’ >>
         pop_assum mp_tac >> rewrite_tac[early_def, GSYM DISJ_ASSOC]) >>
-  ‘EVERY (λev. ∀r. ev_new ev ≠ SOME (0w, r)) (proc_events 1 rs) ∧
+  ‘fd0_safe (proc_events 1 rs) ∧ EVERY (λev. ∀r. ev_new ev ≠ SOME (0w, r)) (proc_events 1 rs) ∧
    listens_only a (proc_events 1 rs) ∧ connects_only b (proc_events 1 rs)’
     by (qspecl_then [‘sy’, ‘rs’, ‘1’,
           ‘λbp. early bp ∨
@@ -212,7 +239,7 @@ Proof
           mp_tac (Q.GENL [‘ps’, ‘rs’, ‘k’, ‘Q’] g2_one_io) >>
         impl_tac >- simp[] >>
         simp[] >> strip_tac
-        >- (drule_all early_prefix >> simp[early_ports]) >>
+        >- (drule_all early_prefix >> simp[early_ports, early_fd0_safe]) >>
         ‘no_close_stdio (proc_events 1 rs)’ by (first_x_assum drule >> simp[]) >>
         ‘EVERY (λev. ∀r. ev_new ev ≠ SOME (0w, r)) (proc_events 1 rs)’
           by (qspecl_then [‘sy’, ‘s0’, ‘rs’, ‘ss’, ‘1’, ‘beh_io b'’] mp_tac
@@ -223,6 +250,7 @@ Proof
                 (Q.GENL [‘ps’, ‘s0’, ‘rs’, ‘ss’, ‘k’] l0sys_ep_ok) >>
               asm_rewrite_tac[] >> simp[]) >>
         ‘EVERY opens_ok (proc_events 1 rs)’ by fs[ep_ok_def] >>
+        ‘fd0_safe (proc_events 1 rs)’ by (irule main_fd0_safe >> metis_tac[]) >>
         drule_all proxy_ports >> simp[]) >>
   (* KV *)
   ‘∀w0. l0_rely w0 ∧ l0_fresh w0 ∧ fds_lt w0 ⇒
@@ -237,7 +265,8 @@ Proof
         impl_tac >- (rpt conj_tac >> first_assum ACCEPT_TAC) >>
         disch_then (qx_choose_then ‘beh’ assume_tac) >> qexists_tac ‘beh’ >>
         pop_assum mp_tac >> rewrite_tac[early_def, GSYM DISJ_ASSOC]) >>
-  ‘listens_only b (proc_events 2 rs) ∧ no_connects (proc_events 2 rs)’
+  ‘fd0_safe (proc_events 2 rs) ∧
+   listens_only b (proc_events 2 rs) ∧ no_connects (proc_events 2 rs)’
     by (qspecl_then [‘sy’, ‘rs’, ‘2’,
           ‘λbk. early bk ∨
              stdio_open (beh_io bk) ∧ kv_safe_g l0_ep_recvd l0_ep_sent (beh_io bk) ∧
@@ -246,8 +275,17 @@ Proof
           mp_tac (Q.GENL [‘ps’, ‘rs’, ‘k’, ‘Q’] g2_one_io) >>
         impl_tac >- simp[] >>
         simp[] >> strip_tac
-        >- (drule_all early_prefix >> simp[early_ports]) >>
-        first_x_assum drule >> simp[]) >>
+        >- (drule_all early_prefix >> simp[early_ports, early_fd0_safe]) >>
+        first_x_assum drule >> strip_tac >>
+        ‘fd0_safe (proc_events 2 rs)’ by (irule main_fd0_safe >> metis_tac[]) >>
+        asm_rewrite_tac[]) >>
+  (* fd0_safe for every process (B2's hypothesis) *)
+  ‘∀k. k < LENGTH sy ⇒ fd0_safe (proc_events k rs)’
+    by (rpt strip_tac >>
+        ‘k = 0 ∨ k = 1 ∨ k = 2’
+          by (qpat_x_assum ‘k < LENGTH sy’ mp_tac >>
+              qpat_assum ‘LENGTH sy = 3’ (fn th => rewrite_tac [th]) >> DECIDE_TAC) >>
+        pop_assum strip_assume_tac >> rveq >> first_assum ACCEPT_TAC) >>
   (* topology *)
   ‘topology (sys_rl rs) 0 1 2 a b’
     by (mp_tac topology_stmt_holds >> rewrite_tac[topology_stmt_def] >>
@@ -269,8 +307,10 @@ Proof
         b2_quiet_ab a b rs cn’
     by (qpat_x_assum ‘b2_iso_stmt’ mp_tac >> rewrite_tac[b2_iso_stmt_def] >>
         disch_then (qspecl_then [‘sy’, ‘a’, ‘b’, ‘rs’] mp_tac) >>
-        impl_tac >- (rewrite_tac[l0sys_iso_run_def] >> qexistsl_tac [‘s0’, ‘ss’] >>
-                     asm_rewrite_tac[]) >>
+        impl_tac
+        >- (conj_tac >- (rewrite_tac[l0sys_iso_run_def] >> qexistsl_tac [‘s0’, ‘ss’] >>
+                         asm_rewrite_tac[]) >>
+            first_assum ACCEPT_TAC) >>
         strip_tac >> qexists_tac ‘cn’ >> rpt conj_tac
         >- first_assum ACCEPT_TAC
         >- (rpt strip_tac >> qpat_x_assum ‘∀k j k' j'. _’ drule >> simp[]) >>

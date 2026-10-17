@@ -33,6 +33,9 @@
      nothing.  An unpaired end gets bytes only from an outside peer (Env
      EArrive) or from a peer in the system (Move).  On a and b, isolated
      rules out the outside peer, and an end with a system peer is paired.
+     Hypothesis fd0_safe: no process ever has a socket on fd 0, which
+     carries no bytes in ep_io (added 2026-10-17; see the counterexamples
+     at the definition).
 
   4. topology_stmt: moonshot_sys plus the three claims' port clauses
      (listens_only / connects_only / no_connects on each process's whole
@@ -123,9 +126,34 @@ End
    3. B2, isolated (for m4-server)
    ------------------------------------------------------------------------ *)
 
+(* fd 0 is never a socket: the process checked fd 0 first (so it is open)
+   and never closes it, or it makes no connect and no accept.  Prefix-closed. *)
+Definition fd0_safe_def:
+  fd0_safe evs ⇔
+    (∃i rest. evs = IO_event (ExtCall «sys_fdok») [0w] [(i, 1w)] :: rest) ∧
+    (∀conf bs. MEM (IO_event (ExtCall «sys_close») conf bs) evs ∧ LENGTH conf = 8 ⇒
+               bytes_fd conf ≠ 0w) ∨
+    ∀conf bs. ¬MEM (IO_event (ExtCall «sys_connect») conf bs) evs ∧
+              ¬MEM (IO_event (ExtCall «sys_accept») conf bs) evs
+End
+
+(* Corrected 2026-10-17 (m4-server): without a hypothesis on fd 0 the
+   statement is false, because ep_io gives no bytes to an episode on fd 0.
+   Counterexample 1: P2 listens on a, closes fd 0, then accepts P1's connect
+   on fd 0 and sends "x" there; P2's episode has l0_ep_sent = [] while P1's
+   Connected-a episode receives "x", so no cn pairs them and leaving P1's
+   episode unpaired breaks b2_quiet_ab.  Counterexample 2 rules out the
+   weaker "no ev_new on fd 0": a connect that fails in progress on a freshly
+   allocated fd 0 reports value 0 (ev_new = NONE, pinv_connect_hidden), the
+   hidden channel can still complete by Handshake to a listener on a, and the
+   process can send on fd 0 into the proxy's Accepted-a episode, whose peer
+   is no episode.  Hence fd0_safe: fd 0 is never allocated.  In moonshot_safe
+   it comes from each claim's stdio_open ∧ no_close_stdio, or from an early
+   outcome's lack of connects and accepts. *)
 Definition b2_iso_stmt_def:
   b2_iso_stmt ⇔
-    ∀S a b rs. l0sys_iso_run S a b rs ⇒
+    ∀S a b rs. l0sys_iso_run S a b rs ∧
+               (∀k. k < LENGTH S ⇒ fd0_safe (proc_events k rs)) ⇒
       ∃cn. (∀e e'. cn e = SOME e' ⇔ cn e' = SOME e) ∧
            (∀k j k' j'. cn (k, j) = SOME (k', j') ⇒
               k < LENGTH S ∧ k' < LENGTH S ∧

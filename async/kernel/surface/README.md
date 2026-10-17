@@ -24,5 +24,15 @@ holds them (design/36 §4.3: probes, random tests, mutants), and
 - the fairness definitions [F1]/[F2] and `hup_spin_bite`, which are on
   L3-00 for now.
 
-Design: `design/36-honest-ffi.md` (§§3–4, §9 for the decisions). The names
+**Source:** `spike/d20-poll` @e282d1996, verbatim except the renamed
+ancestor (`ffiSpikeSocketFFI` → `socketWorld`, names.tsv). It includes
+- D20: `sys_poll` polls the caller's `struct pollfd` buffer in place, with no cap;
+- D21: a [P] looseness, with user approval: after the peer's EOF, with an
+  empty inbox and a reset error pending, `recv` may return 0 and leave the
+  error pending (world choice `eof_first`). So an EOF may be seen on a
+  channel whose reset error is still pending, and a later send reports it;
+- D22: no model change ([X5], Linux's shutdown of a pending connect,
+  which L1 never calls).
+
+Design: `design/36-honest-ffi.md` (§§3–4, §3.6 for D20, §9 for the decisions). The names
 are the spike names, provisionally.

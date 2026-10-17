@@ -20,7 +20,8 @@ def scenario(lib, seed, steps, port):
     rnd = random.Random(seed)
     s = Server(lib); s.start_log()
     code, l, _, _ = s.listen(port)
-    assert code == 0
+    if code != 0:
+        s.stop(); raise AssertionError("listen on %d: code %d" % (port, code))
     if rnd.random() < 0.3:
         s.rlimit(l + 1 + rnd.randint(1, 3))           # EMFILE after a few connections
     clients, live = [], []                            # live: clients not closed
@@ -92,7 +93,12 @@ if __name__ == "__main__":
     runs, tot, findings, warns, calls = {}, {}, 0, 0, 0
     base = 30000 + os.getpid() % 20000
     for seed in range(args.seeds):
-        log, st = scenario(lib, seed, args.steps, base + seed)
+        for tries in range(5):                        # the port may be taken (shared machine)
+            try:
+                log, st = scenario(lib, seed, args.steps, base + seed + 1000 * tries)
+                break
+            except AssertionError:
+                if tries == 4: raise
         runs["seed%d" % seed] = log
         calls += sum(1 for ev in log if ev[0] == "call")
         for k, v in st.items(): tot[k] = tot.get(k, 0) + v

@@ -1378,6 +1378,75 @@ Proof
   rw[pone_def, pconnects_def, pwrites_def, preads_def] >> every_case_tac >> rw[]
 QED
 
+(* ------------------------------------------------------------------------
+   The pairs across a round: a pair keeps its front, and its backend once
+   it has one; pairs are only added
+   ------------------------------------------------------------------------ *)
+
+Theorem pres_fh[simp]:
+  (pres p x r).fh = p.fh
+Proof
+  Cases_on ‘x’ >> Cases_on ‘r’ >> rw[pres_def] >> every_case_tac >> simp[]
+QED
+
+Theorem pres_bh:
+  (∀a. x ≠ EConnect a) ⇒ (pres p x r).bh = p.bh
+Proof
+  Cases_on ‘x’ >> Cases_on ‘r’ >> rw[pres_def] >> every_case_tac >> simp[]
+QED
+
+Definition pkeep_def:
+  pkeep (pc : pconn list) pc' ⇔
+    LENGTH pc ≤ LENGTH pc' ∧
+    ∀i. i < LENGTH pc ⇒ (EL i pc').fh = (EL i pc).fh ∧
+                        ((EL i pc).bh ≠ NONE ⇒ (EL i pc').bh = (EL i pc).bh)
+End
+
+Theorem pkeep_refl[simp]:
+  pkeep pc pc
+Proof
+  simp[pkeep_def]
+QED
+
+Theorem pkeep_trans:
+  pkeep pc1 pc2 ∧ pkeep pc2 pc3 ⇒ pkeep pc1 pc3
+Proof
+  rw[pkeep_def] >> res_tac >> ‘i < LENGTH pc2’ by simp[] >> res_tac >> gvs[] >>
+  strip_tac >> gvs[]
+QED
+
+(* Pair k's actions keep the pairs, if they connect only a pair with no
+   backend *)
+Theorem pupd_pkeep_one:
+  ∀xs rs st. EVERY (λx. (∀l. x ≠ ELevel l) ∧ (∀l. x ≠ EAccept l)) xs ∧ k < LENGTH st.pc ∧
+    (EVERY (λx. ∀a. x ≠ EConnect a) xs ∨ (EL k st.pc).bh = NONE ∧ ∃a. xs = [EConnect a]) ⇒
+    pkeep st.pc (pupd st (MAP (λx. (k, x)) xs) rs).pc
+Proof
+  Induct >- simp[pupd_def] >> rpt gen_tac >> Cases_on ‘rs’ >- simp[pupd_def] >>
+  REWRITE_TAC [MAP, EVERY_DEF] >> BETA_TAC >>
+  disch_then (fn th => MAP_EVERY assume_tac (CONJUNCTS th)) >> ONCE_REWRITE_TAC [pupd_cons] >>
+  ‘pupd st [(k, h)] [h'] = st with pc := LUPDATE (pres (EL k st.pc) h h') k st.pc’
+    by (irule pupd_pc_keep >> simp[]) >>
+  pop_assum SUBST1_TAC >>
+  irule pkeep_trans >> qexists_tac ‘LUPDATE (pres (EL k st.pc) h h') k st.pc’ >>
+  conj_tac
+  >- (simp[pkeep_def, EL_LUPDATE] >> rw[] >> rw[] >> fs[] >> gvs[pres_bh])
+  >> first_x_assum (qspecl_then [‘t’, ‘st with pc := LUPDATE (pres (EL k st.pc) h h') k st.pc’]
+                      mp_tac) >>
+  simp[EL_LUPDATE] >> impl_tac >- (fs[] >> gvs[]) >> simp[]
+QED
+
+Theorem pone_connect_shape:
+  pok w hs ps rdy p ⇒
+  ∀b hw lvs lw nw rdy'.
+  EVERY (λx. ∀a. x ≠ EConnect a) (pone b hw lvs lw nw rdy' p) ∨
+  p.bh = NONE ∧ ∃a. pone b hw lvs lw nw rdy' p = [EConnect a]
+Proof
+  strip_tac >> rpt gen_tac >>
+  rw[pone_def, pconnects_def, pwrites_def, preads_def] >> Cases_on ‘p.bh’ >> fs[pok_def] >>
+  rw[] >> every_case_tac >> fs[]
+QED
+
 Theorem prel_pairs:
   prel lfd st rdy ps w hs ∧ LENGTH pc0 ≤ LENGTH st.pc ∧
   (∀j. j < LENGTH pc0 ⇒ EL j st.pc = EL j pc0) ⇒
@@ -1392,7 +1461,8 @@ Theorem prel_pairs:
       (∀j. m ≤ j ∧ j < LENGTH pc0 ⇒
            EL j (pupd st (pupto (pone b hw lvs lw nw rdy) pc0 m) rs).pc = EL j pc0) ∧
       (pupd st (pupto (pone b hw lvs lw nw rdy) pc0 m) rs).lv = st.lv ∧
-      (pupd st (pupto (pone b hw lvs lw nw rdy) pc0 m) rs).last = st.last
+      (pupd st (pupto (pone b hw lvs lw nw rdy) pc0 m) rs).last = st.last ∧
+      pkeep st.pc (pupd st (pupto (pone b hw lvs lw nw rdy) pc0 m) rs).pc
 Proof
   strip_tac >> Induct
   >- (simp[pupto_def, ehacts_def, pupd_def]) >>
@@ -1427,7 +1497,15 @@ Proof
   >- simp[]
   >- (rpt strip_tac >> simp[] >> ‘j ≠ m ∧ m ≤ j’ by simp[] >> simp[])
   >- simp[]
-  >> simp[]
+  >- simp[]
+  >> asm_rewrite_tac [] >> irule pkeep_trans >> qexists_tac ‘st1.pc’ >> asm_rewrite_tac [] >>
+  irule pupd_pkeep_one >> simp[] >>
+  ‘pok w1 hs1 (ps ++ ZIP (MAP SND (pupto F' pc0 m), rs)) rdy (EL m st1.pc)’
+    by (irule prel_pok >> simp[] >> qexists_tac ‘lfd’ >> first_assum ACCEPT_TAC) >>
+  pop_assum (fn th => assume_tac (Q.SPECL [‘b’, ‘hw’, ‘lvs’, ‘lw’, ‘nw’, ‘rdy’]
+                                   (MATCH_MP pone_connect_shape th))) >>
+  qpat_x_assum ‘EL m st1.pc = _’ (fn th => RULE_ASSUM_TAC (REWRITE_RULE [th])) >>
+  fs[Abbr ‘F'’]
 QED
 
 Theorem ehdo_level:
@@ -1471,7 +1549,8 @@ Theorem prel_round_acts:
     ehacts lfd lv n 0 (w, hs) (MAP SND (pacts lfd b hw st' rdy)) = SOME (rs, (w1, hs1)) ∧
     prel lfd (pupd st (pacts lfd b hw st' rdy) rs) rdy
       (ps ++ ZIP (MAP SND (pacts lfd b hw st' rdy), rs)) w1 hs1 ∧
-    (pupd st (pacts lfd b hw st' rdy) rs).last = st.last
+    (pupd st (pacts lfd b hw st' rdy) rs).last = st.last ∧
+    pkeep st.pc (pupd st (pacts lfd b hw st' rdy) rs).pc
 Proof
   strip_tac >>
   qabbrev_tac ‘L = pall plevels st'.pc’ >>
@@ -1547,7 +1626,10 @@ Proof
            simp[pupd_APPEND]) >>
   ‘P = pupto F' st.pc (LENGTH st.pc)’ by simp[Abbr ‘P’] >>
   pop_assum (fn th => RULE_ASSUM_TAC (REWRITE_RULE [GSYM th]) >> REWRITE_TAC [GSYM th]) >>
-  qpat_x_assum ‘pupd st _ _ = _’ SUBST1_TAC >> first_assum ACCEPT_TAC
+  qpat_x_assum ‘pupd st _ _ = _’ SUBST1_TAC >> TRY (first_assum ACCEPT_TAC >> NO_TAC) >>
+  irule pkeep_trans >> qexists_tac ‘st2.pc’ >> conj_tac
+  >- (‘st2.pc = st.pc ++ new’ by fs[Abbr ‘st1’] >> simp[pkeep_def, EL_APPEND1])
+  >> ‘st2.pc = st.pc ++ new’ by fs[Abbr ‘st1’] >> asm_rewrite_tac []
 QED
 
 (* ------------------------------------------------------------------------
@@ -1717,7 +1799,9 @@ Theorem pinv_SUC:
   pinv lfd b hw lv W0 (SUC n) ∧
   ehacts lfd lv n 0 (ehst lfd lv (pifds lfd b hw) (pprog lfd b hw) W0 n)
     (new_actions (log_of (pprog lfd b hw)) (ehhist lfd lv (pifds lfd b hw) (pprog lfd b hw) W0 n))
-    ≠ NONE
+    ≠ NONE ∧
+  pkeep (pstate lfd b hw (ehhist lfd lv (pifds lfd b hw) (pprog lfd b hw) W0 n)).pc
+        (pstate lfd b hw (ehhist lfd lv (pifds lfd b hw) (pprog lfd b hw) W0 (SUC n))).pc
 Proof
   qmatch_goalsub_abbrev_tac ‘ehst lfd lv ifds m W0 n’ >>
   simp[pinv_def] >> strip_tac >>
@@ -1754,7 +1838,10 @@ Proof
         qpat_x_assum ‘prel _ st _ _ _ _’ (fn th => mp_tac (MATCH_MP prel_phds th)) >>
         simp[] >> strip_tac >> fs[]) >>
   drule_all prel_poll >> strip_tac >>
-  simp[] >> conj_tac >- (qpat_x_assum ‘st.last = _’ (fn th => fs[GSYM th])) >> qexists_tac ‘st1’ >> simp[]
+  simp[] >> rpt conj_tac
+  >- (qpat_x_assum ‘st.last = _’ (fn th => fs[GSYM th]))
+  >- (qexists_tac ‘st1’ >> simp[])
+  >> fs[]
 QED
 
 Theorem pinv_all:
@@ -1773,3 +1860,5 @@ Proof
   rpt strip_tac >> drule pinv_all >> disch_then (qspecl_then [‘lv’, ‘hw’, ‘b’, ‘n’] assume_tac) >>
   drule pinv_SUC >> simp[]
 QED
+
+

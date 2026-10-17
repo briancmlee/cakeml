@@ -1325,3 +1325,107 @@ Proof
   rpt strip_tac >>
   simp[pseq_ok_def, pstep_ok_def, EL_LUPDATE, pres_EWrite, pres_ERead_front]
 QED
+
+(* ------------------------------------------------------------------------
+   The round's actions
+   ------------------------------------------------------------------------ *)
+
+Theorem pupd_APPEND:
+  ∀xs rs st. LENGTH rs = LENGTH xs ⇒ pupd st (xs ++ ys) (rs ++ rs') = pupd (pupd st xs rs) ys rs'
+Proof
+  Induct >> simp[pupd_def] >> rpt gen_tac >> PairCases_on ‘h’ >> Cases_on ‘rs’ >>
+  simp[] >> strip_tac >> ONCE_REWRITE_TAC [pupd_cons] >> simp[]
+QED
+
+(* Actions on pair k only (no Level, no accept) leave the other pairs, the
+   Level answers and the last actions *)
+Theorem pupd_frame:
+  ∀xs rs st. EVERY (λx. (∀l. x ≠ ELevel l) ∧ (∀l. x ≠ EAccept l)) xs ∧ k < LENGTH st.pc ⇒
+    LENGTH (pupd st (MAP (λx. (k, x)) xs) rs).pc = LENGTH st.pc ∧
+    (∀j. j ≠ k ⇒ EL j (pupd st (MAP (λx. (k, x)) xs) rs).pc = EL j st.pc) ∧
+    (pupd st (MAP (λx. (k, x)) xs) rs).lv = st.lv ∧
+    (pupd st (MAP (λx. (k, x)) xs) rs).last = st.last
+Proof
+  Induct >- simp[pupd_def] >> rpt gen_tac >> Cases_on ‘rs’ >- simp[pupd_def] >>
+  REWRITE_TAC [MAP, EVERY_DEF] >> BETA_TAC >> strip_tac >> ONCE_REWRITE_TAC [pupd_cons] >>
+  ‘pupd st [(k, h)] [h'] = st with pc := LUPDATE (pres (EL k st.pc) h h') k st.pc’
+    by (irule pupd_pc_keep >> simp[]) >>
+  pop_assum SUBST1_TAC >>
+  first_x_assum (qspecl_then [‘t’, ‘st with pc := LUPDATE (pres (EL k st.pc) h h') k st.pc’]
+                   mp_tac) >>
+  simp[EL_LUPDATE]
+QED
+
+Definition pupto_def:
+  pupto f pc m = FLAT (GENLIST (λi. MAP (λx. (i, x)) (f (EL i pc))) m)
+End
+
+Theorem pupto_SUC:
+  pupto f pc (SUC m) = pupto f pc m ++ MAP (λx. (m, x)) (f (EL m pc))
+Proof
+  simp[pupto_def, GENLIST, SNOC_APPEND, FLAT_APPEND]
+QED
+
+Theorem pall_pupto:
+  pall f pc = pupto f pc (LENGTH pc)
+Proof
+  simp[pall_def, pupto_def]
+QED
+
+Theorem pone_noLevel:
+  EVERY (λx. (∀l. x ≠ ELevel l) ∧ (∀l. x ≠ EAccept l)) (pone b hw lvs lw nw rdy p)
+Proof
+  rw[pone_def, pconnects_def, pwrites_def, preads_def] >> every_case_tac >> rw[]
+QED
+
+Theorem prel_pairs:
+  prel lfd st rdy ps w hs ∧ LENGTH pc0 ≤ LENGTH st.pc ∧
+  (∀j. j < LENGTH pc0 ⇒ EL j st.pc = EL j pc0) ⇒
+  ∀m. m ≤ LENGTH pc0 ⇒
+    ∃rs w1 hs1.
+      ehacts lfd lv n ix (w, hs) (MAP SND (pupto (pone b hw lvs lw nw rdy) pc0 m)) =
+        SOME (rs, (w1, hs1)) ∧
+      LENGTH rs = LENGTH (pupto (pone b hw lvs lw nw rdy) pc0 m) ∧
+      prel lfd (pupd st (pupto (pone b hw lvs lw nw rdy) pc0 m) rs) rdy
+        (ps ++ ZIP (MAP SND (pupto (pone b hw lvs lw nw rdy) pc0 m), rs)) w1 hs1 ∧
+      LENGTH (pupd st (pupto (pone b hw lvs lw nw rdy) pc0 m) rs).pc = LENGTH st.pc ∧
+      (∀j. m ≤ j ∧ j < LENGTH pc0 ⇒
+           EL j (pupd st (pupto (pone b hw lvs lw nw rdy) pc0 m) rs).pc = EL j pc0) ∧
+      (pupd st (pupto (pone b hw lvs lw nw rdy) pc0 m) rs).lv = st.lv ∧
+      (pupd st (pupto (pone b hw lvs lw nw rdy) pc0 m) rs).last = st.last
+Proof
+  strip_tac >> Induct
+  >- (simp[pupto_def, ehacts_def, pupd_def]) >>
+  strip_tac >> fs[] >>
+  qabbrev_tac ‘F' = pone b hw lvs lw nw rdy’ >>
+  qabbrev_tac ‘st1 = pupd st (pupto F' pc0 m) rs’ >>
+  ‘m < LENGTH st1.pc ∧ EL m st1.pc = EL m pc0’ by simp[] >>
+  ‘pseq_ok b rdy st1 m (F' (EL m pc0))’
+    by (qpat_x_assum ‘EL m st1.pc = _’ (SUBST1_TAC o SYM) >> qunabbrev_tac ‘F'’ >>
+        irule pone_ok >> conj_tac >- simp[] >>
+        qexistsl_tac [‘hs1’, ‘lfd’,
+                      ‘ps ++ ZIP (MAP SND (pupto (pone b hw lvs lw nw rdy) pc0 m), rs)’, ‘w1’] >>
+        first_assum ACCEPT_TAC) >>
+  drule_all prel_seq >>
+  disch_then (qspecl_then [‘n’, ‘lv’, ‘ix + LENGTH (pupto F' pc0 m)’] strip_assume_tac) >>
+  qexistsl_tac [‘rs ++ rs'’, ‘w1'’, ‘hs1'’] >>
+  ‘MAP SND (pupto F' pc0 (SUC m)) = MAP SND (pupto F' pc0 m) ++ F' (EL m pc0)’
+    by simp[pupto_SUC, MAP_MAP_o, combinTheory.o_DEF] >>
+  ‘pupd st (pupto F' pc0 (SUC m)) (rs ++ rs') = pupd st1 (MAP (λx. (m, x)) (F' (EL m pc0))) rs'’
+    by (simp[pupto_SUC, Abbr ‘st1’] >> irule pupd_APPEND >> simp[]) >>
+  ‘EVERY (λx. (∀l. x ≠ ELevel l) ∧ (∀l. x ≠ EAccept l)) (F' (EL m pc0))’
+    by simp[Abbr ‘F'’, pone_noLevel] >>
+  drule_all pupd_frame >> disch_then (qspec_then ‘rs'’ strip_assume_tac) >>
+  rpt conj_tac
+  >- (simp[] >> irule ehacts_APPEND >> simp[] >> qexists_tac ‘(w1, hs1)’ >> simp[] >>
+      fs[])
+  >- simp[pupto_SUC]
+  >- (‘ZIP (MAP SND (pupto F' pc0 m) ++ F' (EL m pc0), rs ++ rs') =
+       ZIP (MAP SND (pupto F' pc0 m), rs) ++ ZIP (F' (EL m pc0), rs')’
+        by (irule (GSYM ZIP_APPEND) >> simp[]) >>
+      asm_rewrite_tac [APPEND_ASSOC])
+  >- simp[]
+  >- (rpt strip_tac >> simp[] >> ‘j ≠ m ∧ m ≤ j’ by simp[] >> simp[])
+  >- simp[]
+  >> simp[]
+QED

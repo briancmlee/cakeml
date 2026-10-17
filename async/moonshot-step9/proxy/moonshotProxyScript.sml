@@ -10,10 +10,9 @@
      open, and whether it has answered a read (so it was not refused);
    - fq: bytes read from the front, not yet written to the backend;
    - bq: bytes read from the backend, not yet written to the front.
-  Each round, in this order:
-   - the Level of every open handle;
-   - an accept (while handles last: two per pair, below cbound);
-   - a connect for each pair without a backend;
+  Each round: the Level of every open handle; an accept (while handles
+  last: two per pair, below cbound); then pair by pair:
+   - a connect, if the pair has no backend;
    - the writes of fq and bq (the relay lags one round);
    - the reads, each behind the CREDIT GATE: a handle is read only if its
      partner's Level, answered in the last round, plus the bytes written to
@@ -102,15 +101,18 @@ Definition preads_def:
         else []
 End
 
+(* Pair p's actions of the round, after the Levels and the accept: its
+   connect, its writes, its reads (nw: all the round's writes) *)
+Definition pone_def:
+  pone b hw lvs lw nw rdy p = pconnects b p ++ pwrites p ++ preads hw lvs lw nw rdy p
+End
+
 (* Round actions from state st with the ready handles rdy *)
 Definition pacts_def:
   pacts lfd b hw st (rdy : word64 set) =
-    let ws = pall pwrites st.pc in
-      pall plevels st.pc ++
-      (if 2 * LENGTH st.pc + 2 ≤ cbound then [(0, EAccept lfd)] else []) ++
-      pall (pconnects b) st.pc ++
-      ws ++
-      pall (preads hw st.lv (MAP SND st.last) (MAP SND ws) rdy) st.pc
+    pall plevels st.pc ++
+    (if 2 * LENGTH st.pc + 2 ≤ cbound then [(0, EAccept lfd)] else []) ++
+    pall (pone b hw st.lv (MAP SND st.last) (FLAT (MAP pwrites st.pc)) rdy) st.pc
 End
 
 (* One result r of action x on pair p *)
@@ -202,4 +204,112 @@ Proof
   >- simp[new_actions_def, log_of_def, pprog_def, pstate_def] >>
   simp[new_actions_def, log_of_def, SNOC_APPEND, FRONT_APPEND, pprog_actions_SNOC] >>
   simp[DROP_APPEND, DROP_LENGTH_TOO_LONG]
+QED
+
+(* ------------------------------------------------------------------------
+   The shape of a round's actions (program only)
+   ------------------------------------------------------------------------ *)
+
+Theorem pall_SND:
+  MAP SND (pall f ps) = FLAT (MAP f ps)
+Proof
+  simp[pall_def, MAP_FLAT, MAP_GENLIST, combinTheory.o_DEF, MAP_MAP_o] >>
+  simp[GENLIST_EL_MAP]
+QED
+
+Theorem pacts_SND:
+  MAP SND (pacts lfd b hw st rdy) =
+  FLAT (MAP plevels st.pc) ++
+  ((if 2 * LENGTH st.pc + 2 ≤ cbound then [EAccept lfd] else []) ++
+   FLAT (MAP (pone b hw st.lv (MAP SND st.last) (FLAT (MAP pwrites st.pc)) rdy) st.pc))
+Proof
+  simp[pacts_def, pall_SND] >> rw[]
+QED
+
+Theorem MEM_pacts:
+  MEM x (MAP SND (pacts lfd b hw st rdy)) ⇒
+  (∀a. x = EConnect a ⇒ a = b) ∧ (∀l. x = EAccept l ⇒ l = lfd)
+Proof
+  ONCE_REWRITE_TAC [pacts_SND] >> simp[MEM_FLAT, MEM_MAP, PULL_EXISTS] >> rw[] >>
+  gvs[plevels_def, MEM_MAP, pone_def, pconnects_def, pwrites_def, preads_def, AllCaseEqs()] >>
+  every_case_tac >> gvs[]
+QED
+
+Theorem wreq_APPEND[simp]:
+  wreq h (l1 ++ l2) = wreq h l1 + wreq h l2
+Proof
+  simp[wreq_def, SUM_APPEND]
+QED
+
+Theorem wreq_nowrite:
+  EVERY (λa. ∀h' bs. a ≠ EWrite h' bs) l ⇒ wreq h l = 0
+Proof
+  Induct_on ‘l’ >> simp[wreq_def] >> rw[] >> Cases_on ‘h'’ >> gvs[] >>
+  fs[wreq_def]
+QED
+
+Theorem wreq_FLAT_nowrite:
+  (∀p x. MEM x (f p) ⇒ ∀h' bs. x ≠ EWrite h' bs) ⇒ wreq h (FLAT (MAP f ps)) = 0
+Proof
+  strip_tac >> irule wreq_nowrite >>
+  simp[EVERY_MEM, MEM_FLAT, MEM_MAP, PULL_EXISTS] >> metis_tac[]
+QED
+
+(* A round writes only its pairs' writes *)
+Theorem wreq_pone:
+  wreq h (pone b hw lvs lw nw rdy p) = wreq h (pwrites p)
+Proof
+  simp[pone_def] >>
+  ‘wreq h (pconnects b p) = 0 ∧ wreq h (preads hw lvs lw nw rdy p) = 0’
+    by (conj_tac >> irule wreq_nowrite >>
+        rw[EVERY_MEM, pconnects_def, preads_def, AllCaseEqs()] >> every_case_tac >> gvs[]) >>
+  simp[]
+QED
+
+Theorem wreq_FLAT[simp]:
+  wreq h (FLAT ls) = SUM (MAP (wreq h) ls)
+Proof
+  Induct_on ‘ls’ >> simp[] >> simp[wreq_def]
+QED
+
+(* A round writes only its pairs' writes *)
+Theorem wreq_pacts:
+  wreq h (MAP SND (pacts lfd b hw st rdy)) = wreq h (FLAT (MAP pwrites st.pc))
+Proof
+  simp[pacts_SND, MAP_MAP_o, combinTheory.o_DEF, wreq_pone] >>
+  ‘wreq h (FLAT (MAP plevels st.pc)) = 0’
+    by (irule wreq_FLAT_nowrite >> rw[plevels_def, MEM_MAP] >> simp[]) >>
+  fs[MAP_MAP_o, combinTheory.o_DEF] >> rw[wreq_def]
+QED
+
+Theorem MEM_ZIP_FST:
+  ∀l1 l2. MEM (x, r) (ZIP (l1, l2)) ⇒ MEM x l1
+Proof
+  Induct >> Cases_on ‘l2’ >> simp[ZIP_def] >> metis_tac[]
+QED
+
+(* In a ZIP of levels-then-others with anything, a Level comes after Levels
+   only *)
+Theorem ZIP_levels_first:
+  ∀pre Ls Os rs x post.
+    EVERY P Ls ∧ EVERY ($¬ o P) Os ∧ ZIP (Ls ++ Os, rs) = pre ++ [x] ++ post ∧ P (FST x) ⇒
+    EVERY (P o FST) pre
+Proof
+  Induct >> simp[] >> rpt gen_tac >> strip_tac >>
+  Cases_on ‘Ls’ >> Cases_on ‘rs’ >> gvs[ZIP_def]
+  >- (Cases_on ‘Os’ >> gvs[ZIP_def] >>
+      ‘MEM x (ZIP (t', t))’ by (qpat_x_assum ‘ZIP _ = _’ (SUBST1_TAC) >> simp[]) >>
+      Cases_on ‘x’ >> drule MEM_ZIP_FST >> strip_tac >> fs[EVERY_MEM] >> res_tac >> fs[]) >>
+  first_x_assum irule >> metis_tac[]
+QED
+
+Theorem pacts_levels_first:
+  ZIP (MAP SND (pacts lfd b hw st rdy), rs) = pre ++ [x] ++ post ∧ is_level (FST x) ⇒
+  EVERY (is_level o FST) pre
+Proof
+  ONCE_REWRITE_TAC [pacts_SND] >> strip_tac >>
+  drule_at (Pos (el 3)) ZIP_levels_first >> disch_then irule >>
+  simp[EVERY_MEM, MEM_FLAT, MEM_MAP, PULL_EXISTS, plevels_def, is_level_def] >>
+  rw[] >> gvs[pone_def, pconnects_def, pwrites_def, preads_def, AllCaseEqs()] >>
+  every_case_tac >> gvs[]
 QED

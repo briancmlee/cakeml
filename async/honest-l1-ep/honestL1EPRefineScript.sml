@@ -2940,6 +2940,143 @@ Definition eh_round_ok_def:
       ep_step_ok (w1 with clock := w1.clock + 1) (w1.env w1.clock w1.hist)
 End
 
+(* ------------------------------------------------------------------------
+   C1(ii): what the layer's channels were sent, against what L1 sent on
+   the raw trace
+   ------------------------------------------------------------------------ *)
+
+Theorem ep_deliver_keep:
+  chans_keep w (ep_deliver w x)
+Proof
+  Cases_on ‘x’ >> simp[ep_deliver_def] >> rw[] >>
+  TRY (irule chans_keep_upd >> simp[] >> NO_TAC) >>
+  every_case_tac >> simp[chans_keep_def, EL_APPEND1] >> rw[] >>
+  ‘j = LENGTH w.chans’ by decide_tac >> simp[EL_APPEND2, new_chan_def]
+QED
+
+Theorem FOLDL_deliver_keep:
+  ∀l w. chans_keep w (FOLDL ep_deliver w l)
+Proof
+  Induct >> simp[] >> metis_tac[chans_keep_trans, ep_deliver_keep]
+QED
+
+Theorem ehpoll_keep:
+  ehpoll lfd hs hfds w = (rdy, w', hs') ⇒ chans_keep w w'
+Proof
+  rw[ehpoll_def, ep_tick_def] >> irule chans_keep_trans >>
+  qexists_tac ‘w with clock := w.clock + 1’ >> simp[FOLDL_deliver_keep]
+QED
+
+(* The connect table: a round's actions add only the round's connects *)
+Theorem edo_ctbl:
+  edo lfd pol (wl, es) act = SOME (r, (wl', es'), evs) ⇒
+  ∀f. MEM f (MAP SND es'.ctbl) ⇒ MEM f (MAP SND es.ctbl) ∨ MEM f (rfds es' [r])
+Proof
+  Cases_on ‘act’ >> simp[edo_def, AllCaseEqs()] >> rw[] >> TRY (PairCases_on ‘z’) >>
+  gvs[ec_del_def, rfds_def, conn_hdls_def] >>
+  metis_tac[MEM_SND_ADELKEY_sub]
+QED
+
+Theorem eacts_ctbl:
+  ∀acts wl es rs evs wl' es'.
+    eacts lfd pol (wl, es) acts = SOME (rs, evs, (wl', es')) ∧ ciss lfd es ⇒
+    (∀f. MEM f (MAP SND es'.ctbl) ⇒ MEM f (MAP SND es.ctbl) ∨ MEM f (rfds es' rs)) ∧
+    (∀f. MEM f (rfds es' rs) ⇒ MEM f (MAP SND es'.ctbl))
+Proof
+  Induct >- simp[eacts_def, rfds_def, conn_hdls_def] >>
+  rpt gen_tac >> rename1 ‘eacts _ _ _ (act :: acts)’ >> strip_tac >>
+  qpat_x_assum ‘eacts _ _ _ _ = _’ mp_tac >> simp[Once eacts_def] >>
+  Cases_on ‘edo lfd pol (wl, es) act’ >> simp[] >> rename1 ‘_ = SOME x’ >> PairCases_on ‘x’ >>
+  rename1 ‘edo _ _ _ _ = SOME (r1, (wl1, es1), evs1)’ >> simp[] >>
+  Cases_on ‘eacts lfd pol (wl1, es1) acts’ >> simp[] >> rename1 ‘_ = SOME y’ >>
+  PairCases_on ‘y’ >> simp[] >> strip_tac >> gvs[] >>
+  rename1 ‘eacts _ _ _ acts = SOME (rs1, evs2, (wl', es'))’ >>
+  ‘ciss lfd es1’ by metis_tac[edo_ciss] >>
+  first_x_assum drule_all >> strip_tac >>
+  ‘∀h. MEM h (conn_hdls [r1]) ⇒ ALOOKUP es'.ctbl h = ALOOKUP es1.ctbl h’
+    by (rpt strip_tac >> drule_all edo_conn_pending >> strip_tac >>
+        drule_all eacts_keeps_pending >> simp[]) >>
+  ‘rfds es' (r1 :: rs1) = rfds es1 [r1] ++ rfds es' rs1’
+    by (simp[rfds_def] >>
+        ‘conn_hdls (r1 :: rs1) = conn_hdls [r1] ++ conn_hdls rs1’ by metis_tac[conn_hdls_cons] >>
+        pop_assum SUBST1_TAC >> simp[MAP_APPEND] >> irule MAP_CONG >> simp[]) >>
+  ‘∀f. MEM f (rfds es1 [r1]) ⇒ MEM f (MAP SND es'.ctbl)’
+    by (simp[rfds_def, MEM_MAP] >> rpt strip_tac >> res_tac >>
+        drule_all edo_conn_pending >> strip_tac >> gvs[] >>
+        ‘ALOOKUP es'.ctbl h = SOME f’ by metis_tac[] >>
+        imp_res_tac ALOOKUP_MEM >> simp[MEM_MAP] >> qexists_tac ‘(h, f)’ >> simp[]) >>
+  drule edo_ctbl >> strip_tac >> simp[] >> metis_tac[]
+QED
+
+(* What round n's events sent on channel j's fd (as the map cm before the
+   round has it) *)
+Definition ecred_def:
+  ecred cm j evs =
+    case FILTER (λ(f, j'). j' = j) cm of
+    | (f, _) :: _ => if ALOOKUP cm f = SOME j then evs_sent f evs else []
+    | [] => []
+End
+
+Theorem FILTER_SND_unique:
+  ∀l. ALL_DISTINCT (MAP SND l) ∧ MEM (f, j) l ⇒ FILTER (λ(f', j'). j' = j) l = [(f, j)]
+Proof
+  Induct >> simp[FORALL_PROD] >> rw[] >> gvs[MEM_MAP, FORALL_PROD]
+  >- (simp[FILTER_EQ_NIL, EVERY_MEM, FORALL_PROD] >> metis_tac[])
+  >> metis_tac[]
+QED
+
+Theorem ecred_eq:
+  ALL_DISTINCT (MAP SND cm) ∧ ALOOKUP cm f = SOME j ⇒ ecred cm j evs = evs_sent f evs
+Proof
+  rw[ecred_def] >> imp_res_tac ALOOKUP_MEM >> drule_all FILTER_SND_unique >> simp[]
+QED
+
+Theorem ecred_nil:
+  (∀f. ALOOKUP cm f ≠ SOME j) ⇒ ecred cm j evs = []
+Proof
+  rw[ecred_def] >> every_case_tac >> gvs[]
+QED
+
+(* The account, before a round: R j is what L1 sent on channel j's fds so
+   far; a prefix of what the layer sent on j, and, for the fd j is now
+   (open, pre-accepted or connecting), that plus its outbox *)
+Definition sent_inv_def:
+  sent_inv cm (w : eworld) es (R : num -> word8 list) ⇔
+    okeys es.p.b ∧
+    (∀j. LENGTH w.chans ≤ j ⇒ R j = []) ∧
+    ∀j. j < LENGTH w.chans ⇒
+        R j ≼ (EL j w.chans).sent ∧
+        ∀f. ALOOKUP cm f = SOME j ∧ (live es f ∨ MEM f (MAP SND es.ctbl)) ⇒
+            oacct (R j) es.p.b f (EL j w.chans).sent
+End
+
+Theorem ALOOKUP_cm_split:
+  EVERY (λj. k + LENGTH fs ≤ j) (MAP SND new) ∧ EVERY (λj. j < k) (MAP SND cm) ⇒
+  (∀f j. ALOOKUP (new ++ (cnew k fs ++ cm)) f = SOME j ∧ j < k ⇒
+         ALOOKUP cm f = SOME j ∧ ¬MEM f (MAP FST new) ∧ ¬MEM f fs) ∧
+  (∀f j. ALOOKUP (new ++ (cnew k fs ++ cm)) f = SOME j ∧ k ≤ j ∧ j < k + LENGTH fs ⇒
+         MEM f fs ∧ ¬MEM f (MAP FST new)) ∧
+  (∀f j. ALOOKUP (new ++ (cnew k fs ++ cm)) f = SOME j ∧ k + LENGTH fs ≤ j ⇒
+         MEM f (MAP FST new)) ∧
+  (∀f. ¬MEM f (MAP FST new) ∧ ¬MEM f fs ⇒ ALOOKUP (new ++ (cnew k fs ++ cm)) f = ALOOKUP cm f)
+Proof
+  strip_tac >>
+  ‘∀f j. ALOOKUP (cnew k fs) f = SOME j ⇒ MEM f fs ∧ k ≤ j ∧ j < k + LENGTH fs’
+    by (rpt gen_tac >> strip_tac >> imp_res_tac ALOOKUP_MEM >>
+        ‘MEM f (MAP FST (cnew k fs)) ∧ MEM j (MAP SND (cnew k fs))’
+          by (simp[MEM_MAP] >> metis_tac[FST, SND]) >>
+        gvs[cnew_snd, MEM_GENLIST]) >>
+  ‘∀f. ALOOKUP (cnew k fs) f = NONE ⇔ ¬MEM f fs’
+    by simp[ALOOKUP_NONE, cnew_snd] >>
+  ‘∀f j. ALOOKUP new f = SOME j ⇒ k + LENGTH fs ≤ j’
+    by (rpt strip_tac >> imp_res_tac ALOOKUP_MEM >> gvs[EVERY_MEM, MEM_MAP] >> metis_tac[SND]) >>
+  ‘∀f j. ALOOKUP cm f = SOME j ⇒ j < k’
+    by (rpt strip_tac >> imp_res_tac ALOOKUP_MEM >> gvs[EVERY_MEM, MEM_MAP] >> metis_tac[SND]) >>
+  simp[ALOOKUP_APPEND] >> rpt conj_tac >> rpt gen_tac >>
+  every_case_tac >> rw[] >> gvs[ALOOKUP_NONE] >> res_tac >> fs[] >>
+  metis_tac[NOT_SOME_NONE, ALOOKUP_NONE]
+QED
+
 (* MAIN (R1-safe), for a run looked at up to round N: in ANY L0 world, the
    prefetching L1 with connects running the computation m has exactly the
    history of the endpoint handle layer running m in the endpoint world pew

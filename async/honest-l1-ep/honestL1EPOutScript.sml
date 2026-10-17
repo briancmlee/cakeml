@@ -659,6 +659,8 @@ Theorem etail_live:
   etail lfd pol hs (w, es) = SOME (rdy, (w', es'), log, tevs) ∧
   oown lfd es ∧ okeys es.p.b ∧ l0_rely w ∧ pown lfd es'.p ⇒
   l0_rely w' ∧ okeys es'.p.b ∧
+  (∀f. MEM f (MAP SND es'.ctbl) ⇒ MEM f (MAP SND es.ctbl)) ∧
+  (∀f. live es' f ⇒ live es f ∨ MEM f (MAP SND es.ctbl) ∨ MEM (FConn f) log) ∧
   ∀f. (live es f ⇒
          ostepc f es.p.b tevs [] ∧
          (live es' f ∧ ¬MEM (FConn f) log ⇒ ostep f es.p.b es'.p.b tevs [])) ∧
@@ -668,6 +670,9 @@ Theorem etail_live:
 Proof
   simp[etail_def, AllCaseEqs(), PULL_EXISTS] >> rpt gen_tac >> strip_tac >>
   ‘es'.p = (promote es5).p’ by (qpat_x_assum ‘_ = es'’ (SUBST1_TAC o SYM) >> simp[]) >>
+  ‘∀f. MEM f (MAP SND es'.ctbl) ⇒ MEM f (MAP SND es5.ctbl)’
+    by (qpat_x_assum ‘_ = es'’ (SUBST1_TAC o SYM) >>
+        simp[promote_def, MEM_MAP, MEM_FILTER] >> metis_tac[]) >>
   qpat_x_assum ‘FILTER _ hs = rdy’ kall_tac >> qpat_x_assum ‘_ = es'’ kall_tac >>
   qpat_x_assum ‘_ = tevs’ (SUBST_ALL_TAC o SYM) >>
   qabbrev_tac ‘ps3 = stall_step (pf_held ps3') (outbox_of es.p.b) log ps3'’ >>
@@ -692,6 +697,11 @@ Proof
         mp_tac (Q.INST [‘es’ |-> ‘es5’] promote_fields) >> simp[]) >>
   ‘∀f. outbox_of es'.p.b f = outbox_of b4 f’ by simp[outbox_of_def] >>
   ‘okeys es'.p.b’ by (gvs[okeys_def] >> metis_tac[]) >>
+  ‘∀f. MEM f (MAP SND es'.ctbl) ⇒ MEM f (MAP SND es.ctbl)’ by metis_tac[] >>
+  ‘∀f. live es' f ⇒ live es f ∨ MEM f (MAP SND es.ctbl) ∨ MEM (FConn f) log’
+    by (rpt strip_tac >> fs[live_def, held_def] >> rfs[] >>
+        ‘b4.tbl = es.p.b.tbl ∧ ps3.b.closing = es.p.b.closing’ by rfs[] >>
+        metis_tac[]) >>
   qpat_x_assum ‘es'.p = _’ (fn th => REWRITE_TAC [GSYM th]) >>
   rpt (conj_tac >- first_assum ACCEPT_TAC) >> gen_tac >>
   ‘evs_sent f (pevs ++ fevs ++ gevs ++ cevs ++ sevs) = evs_sent f fevs’ by simp[] >>
@@ -770,6 +780,8 @@ Theorem eround_live:
   ∃rs aevs w1 es1.
     eacts lfd pol (w, es) acts = SOME (rs, aevs, (w1, es1)) ∧
     l0_rely w' ∧ okeys es'.p.b ∧
+    (∀f. MEM f (MAP SND es'.ctbl) ⇒ MEM f (MAP SND es1.ctbl)) ∧
+    (∀f. live es' f ⇒ live es1 f ∨ MEM f (MAP SND es1.ctbl) ∨ MEM (FConn f) log) ∧
     ∀f. (live es f ⇒ ostepc f es.p.b evs (eawbytes lfd pol f (w, es) acts)) ∧
         (live es f ∧ live es1 f ∧ live es' f ∧ ¬MEM (FConn f) log ⇒
          ostep f es.p.b es'.p.b evs (eawbytes lfd pol f (w, es) acts)) ∧

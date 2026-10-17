@@ -1,0 +1,11 @@
+# DRAFT (moonshot step 9).  Typechecks in a checkout of spike/echo-live-pol
+# @332dc5303 with this directory copied to async/moonshot-step9/l0 (its
+# INCLUDES are that branch's async/honest-l1b/Holmakefile's, plus ../../honest-l1b).
+# (Named Holmakefile.draft so that this branch's project scan ignores it: rename
+# it to Holmakefile in the base checkout.)
+INCLUDES = ../../honest-l1b ../../honest-l1 ../../honest-echo ../../honest-l0-cf ../../honest-l0 \
+           ../../honest-ffi ../../ffi-spike ../../model ../../cf-actions ../../m3-assembly \
+           ../../socket-v2 ../../close-v2-loop
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

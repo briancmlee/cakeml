@@ -1,0 +1,23 @@
+# L3 link: R1-safe (design/36 §6): the lazy L1 refines the handle layer (honestL1Refine, honestL1Steps), and so does the prefetching L1, in any L0 world (honestL1PFRefine).
+INCLUDES = ../../cakeml/approx \
+           ../../cakeml/library \
+           ../surface \
+           ../world \
+           ../wrappers \
+           ../../lifetimes/loop \
+           ../../lifetimes/world \
+           ../../lifetimes/world-cf \
+           ../../loop/polling \
+           ../../model/core \
+           ../../model/level2 \
+           ../../programs/echo \
+           ../../servers/echo \
+           ../../servers/relabel \
+           ../../world/clock \
+           ../../world/composed \
+           ../../world/sockets \
+           ../../world/sockets-cf \
+           $(CAKEMLDIR)/semantics
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

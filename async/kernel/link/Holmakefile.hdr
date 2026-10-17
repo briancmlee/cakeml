@@ -1,0 +1,1 @@
+# L3 link: R1-safe (design/36 §6): the lazy L1 refines the handle layer (honestL1Refine, honestL1Steps), and so does the prefetching L1, in any L0 world (honestL1PFRefine).

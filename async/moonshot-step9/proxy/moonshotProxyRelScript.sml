@@ -1662,3 +1662,114 @@ Proof
        NO_TAC) >>
   qexistsl_tac [‘a'’, ‘q'’] >> simp[]
 QED
+
+(* The pairs' handles are the history's accepted and connected handles *)
+Theorem prel_phds:
+  prel lfd st rdy ps w hs ⇒
+  ∀h. MEM h (FLAT (MAP phds st.pc)) ⇔ MEM h (hl_acc_handles ps) ∨ MEM h (hl_conn_handles ps)
+Proof
+  simp[prel_def] >> strip_tac >>
+  qpat_x_assum ‘∀hd. MEM hd (hl_acc_handles ps) ⇔ _’ (fn th => REWRITE_TAC [th]) >>
+  qpat_x_assum ‘∀c. MEM c (hl_conn_handles ps) ⇔ _’ (fn th => REWRITE_TAC [th]) >>
+  rpt (pop_assum kall_tac) >> simp[MEM_FLAT, MEM_MAP, PULL_EXISTS, phds_def] >>
+  gen_tac >> eq_tac >> rw[] >> TRY (qexists_tac ‘p’ >> simp[] >> NO_TAC) >>
+  TRY (disj1_tac >> qexists_tac ‘y’ >> simp[] >> NO_TAC) >>
+  Cases_on ‘y.bh’ >> fs[] >> disj2_tac >> qexists_tac ‘y’ >> simp[]
+QED
+
+(* ------------------------------------------------------------------------
+   The run
+   ------------------------------------------------------------------------ *)
+
+Definition prdy_def:
+  prdy (h : (word64, eresp) snapshot list) = if h = [] then ∅ else (LAST h).ready
+End
+
+Theorem prel_init:
+  proxy_world lfd a W0 ⇒ prel lfd (pinit lfd b hw) ∅ [] W0 ehinit
+Proof
+  rw[proxy_world_def, prel_def, pinit_def, ehinit_def,
+     endpointSpecFormsTheory.no_backpressure_def] >>
+  simp[FUN_EQ_THM]
+QED
+
+(* The invariant at round n of the proxy's run in W0 *)
+Definition pinv_def:
+  pinv lfd b hw lv W0 n ⇔
+    let h = ehhist lfd lv (pifds lfd b hw) (pprog lfd b hw) W0 n;
+        st = pstate lfd b hw h in
+      prel lfd st (prdy h) (hl_pairs (pprog lfd b hw) h)
+        (FST (ehst lfd lv (pifds lfd b hw) (pprog lfd b hw) W0 n))
+        (SND (ehst lfd lv (pifds lfd b hw) (pprog lfd b hw) W0 n)) ∧
+      ∃st'. st'.pc = st.pc ∧ st.last = pacts lfd b hw st' (prdy h)
+End
+
+Theorem pinv_0:
+  proxy_world lfd a W0 ⇒ pinv lfd b hw lv W0 0
+Proof
+  strip_tac >> drule prel_init >> disch_then (qspecl_then [‘hw’, ‘b’] assume_tac) >>
+  simp[pinv_def, ehhist_def, ehst_def, ehrounds_def, pstate_def, prdy_def, hl_pairs_def] >>
+  simp[pinit_def] >> qexists_tac ‘<|pc := []; last := []; lv := []|>’ >> simp[]
+QED
+
+Theorem pinv_SUC:
+  pinv lfd b hw lv W0 n ⇒
+  pinv lfd b hw lv W0 (SUC n) ∧
+  ehacts lfd lv n 0 (ehst lfd lv (pifds lfd b hw) (pprog lfd b hw) W0 n)
+    (new_actions (log_of (pprog lfd b hw)) (ehhist lfd lv (pifds lfd b hw) (pprog lfd b hw) W0 n))
+    ≠ NONE
+Proof
+  qmatch_goalsub_abbrev_tac ‘ehst lfd lv ifds m W0 n’ >>
+  simp[pinv_def] >> strip_tac >>
+  qabbrev_tac ‘h = ehhist lfd lv ifds m W0 n’ >>
+  qabbrev_tac ‘st = pstate lfd b hw h’ >>
+  Cases_on ‘ehst lfd lv ifds m W0 n’ >> rename1 ‘_ = (w, hs)’ >> fs[] >>
+  ‘new_actions (log_of m) h = MAP SND st.last’ by simp[Abbr ‘m’, Abbr ‘st’, pprog_new_actions] >>
+  ‘st'.pc = (st with lv := []).pc’ by simp[] >>
+  ‘prel lfd (st with lv := []) (prdy h) (hl_pairs m h) w hs’ by simp[] >>
+  drule_all prel_round_acts >>
+  disch_then (qspecl_then [‘n’, ‘lv’, ‘hw’, ‘b’] strip_assume_tac) >>
+  ‘ehacts_tot lfd lv n (w, hs) (MAP SND st.last) = (rs, (w1, hs1))’
+    by gvs[ehacts_tot_def] >>
+  Cases_on ‘ehpoll lfd hs1 (ifds h) w1’ >> rename1 ‘_ = (rdy', r2)’ >>
+  PairCases_on ‘r2’ >> rename1 ‘_ = (rdy', w2, hs2)’ >>
+  ‘ehhist lfd lv ifds m W0 (SUC n) = h ++ [ssnap rdy' rs] ∧
+   ehst lfd lv ifds m W0 (SUC n) = (w2, hs2)’
+    by (qunabbrev_tac ‘h’ >> irule honestL1EPRefineTheory.ehround_step >> gvs[]) >>
+  qabbrev_tac ‘st1 = pupd (st with lv := []) (pacts lfd b hw st' (prdy h)) rs’ >>
+  ‘pstate lfd b hw (h ++ [ssnap rdy' rs]) = st1 with last := pacts lfd b hw st1 (set rdy')’
+    by (simp[pstate_SNOC, pstep_def, asyncM3WorldTheory.ssnap_def, Abbr ‘st1’] >>
+        qpat_x_assum ‘st.last = _’ (fn th => simp[GSYM th]) >> simp[Abbr ‘st’]) >>
+  ‘prdy (h ++ [ssnap rdy' rs]) = set rdy'’ by simp[prdy_def, asyncM3WorldTheory.ssnap_def] >>
+  ‘hl_pairs m (h ++ [ssnap rdy' rs]) = hl_pairs m h ++ ZIP (MAP SND st.last, rs)’
+    by simp[hl_pairs_SNOC, asyncM3WorldTheory.ssnap_def] >>
+  ‘ifds h = lfd :: FLAT (MAP popen st.pc)’ by simp[Abbr ‘ifds’, pifds_def, Abbr ‘st’] >>
+  ‘prel lfd st1 (prdy h) (hl_pairs m h ++ ZIP (MAP SND st.last, rs)) w1 hs1’
+    by (qpat_x_assum ‘st.last = _’ SUBST1_TAC >> simp[Abbr ‘st1’]) >>
+  ‘∀x. MEM x (ifds h) ⇒ x = lfd ∨ MEM x (FLAT (MAP phds st1.pc))’
+    by (asm_rewrite_tac [MEM] >> rpt strip_tac >> simp[] >> disj2_tac >>
+        ‘MEM x (FLAT (MAP phds st.pc))’
+          by (fs[MEM_FLAT, MEM_MAP] >> metis_tac[popen_phds]) >>
+        qpat_x_assum ‘prel _ st1 _ _ _ _’ (fn th => REWRITE_TAC [MATCH_MP prel_phds th]) >>
+        qpat_x_assum ‘prel _ st _ _ _ _’ (fn th => mp_tac (MATCH_MP prel_phds th)) >>
+        simp[] >> strip_tac >> fs[]) >>
+  drule_all prel_poll >> strip_tac >>
+  simp[] >> conj_tac >- (qpat_x_assum ‘st.last = _’ (fn th => fs[GSYM th])) >> qexists_tac ‘st1’ >> simp[]
+QED
+
+Theorem pinv_all:
+  proxy_world lfd a W0 ⇒ ∀n. pinv lfd b hw lv W0 n
+Proof
+  strip_tac >> Induct >- metis_tac[pinv_0] >> metis_tac[pinv_SUC]
+QED
+
+(* MAIN (no misuse): every round's actions run in the layer *)
+Theorem proxy_no_misuse:
+  proxy_world lfd a W0 ⇒
+  ∀n. ehacts lfd lv n 0 (ehst lfd lv (pifds lfd b hw) (pprog lfd b hw) W0 n)
+        (new_actions (log_of (pprog lfd b hw))
+           (ehhist lfd lv (pifds lfd b hw) (pprog lfd b hw) W0 n)) ≠ NONE
+Proof
+  rpt strip_tac >> drule pinv_all >> disch_then (qspecl_then [‘lv’, ‘hw’, ‘b’, ‘n’] assume_tac) >>
+  drule pinv_SUC >> simp[]
+QED

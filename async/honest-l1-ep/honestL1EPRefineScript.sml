@@ -874,6 +874,12 @@ Definition fconns_def:
   fconns (FReset f :: l) = fconns l
 End
 
+Theorem MEM_fconns:
+  ∀l. MEM f (fconns l) ⇔ MEM (FConn f) l
+Proof
+  Induct >> simp[fconns_def] >> Cases >> simp[fconns_def] >> metis_tac[]
+QED
+
 Theorem arrs_new:
   ∀l cm k as cm' k'.
     arrs lfd (cm, k) l = (as, (cm', k')) ⇒
@@ -3373,7 +3379,7 @@ Proof
   ‘k' + 1 < dimword (:64)’
     by (qpat_x_assum ‘∀n'. n' ≤ N ⇒ _’ (qspec_then ‘SUC n’ mp_tac) >> simp[]) >>
   ‘esett lfd pol ifds m w0 n = rsettles (cnew k fs ++ cm) ws11 ws1’
-    by simp[esett_def] >>
+    by fs[esett_def] >>
   ‘w1.env w1.clock w1.hist = MAP (conv a) as ++ rsettles (cnew k fs ++ cm) ws11 ws1’
     by (simp[earr_def] >> fs[]) >>
   qpat_x_assum ‘etail _ _ _ _ = _’ assume_tac >>
@@ -3401,18 +3407,34 @@ Proof
   ‘sent_inv cm' w2 ws1 (λj. ersent lfd pol ifds m w0 j (SUC n))’
     by (‘(λj. ersent lfd pol ifds m w0 j (SUC n)) =
          (λj. ersent lfd pol ifds m w0 j n ++ ecred cm j (aevs ++ tevs))’
-          by (simp[FUN_EQ_THM, ersent_def] >> rw[] >> simp[DROP_LENGTH_APPEND]) >>
+          by (rw[FUN_EQ_THM, Once ersent_def] >> fs[] >>
+              REWRITE_TAC [GSYM APPEND_ASSOC, DROP_LENGTH_APPEND]) >>
         pop_assum SUBST1_TAC >>
         qpat_x_assum ‘cm' = new2 ++ _’ SUBST1_TAC >>
-        qpat_x_assum ‘cnew k fs = _’ kall_tac >>
-        ‘k = LENGTH w.chans’ by fs[] >>
-        qpat_x_assum ‘Abbrev (fs = _)’ (fn th => fs[REWRITE_RULE [markerTheory.Abbrev_def] th]) >>
-        irule sent_round >> simp[] >>
-        cheat) >>
+        qspecl_then [‘cm’, ‘w’, ‘ws'1’, ‘λj. ersent lfd pol ifds m w0 j n’, ‘lfd’, ‘a’, ‘ws1’,
+                     ‘ws'0’, ‘pol’, ‘new_actions (log_of m) (ehhist lfd lv ifds m W0 n)’,
+                     ‘rs’, ‘aevs’, ‘ws10’, ‘ws11’, ‘ifds (ehhist lfd lv ifds m W0 n)’, ‘rdy’,
+                     ‘ws0’, ‘log’, ‘tevs’, ‘w1’, ‘w2’, ‘new2’] mp_tac
+          (Q.GENL [‘cm’, ‘w’, ‘es’, ‘R’, ‘lfd’, ‘a’, ‘es'’, ‘wl’, ‘pol’, ‘acts’, ‘rs’, ‘aevs’,
+                   ‘wl1’, ‘es1’, ‘hfds’, ‘rdy’, ‘wl'’, ‘log’, ‘tevs’, ‘w1’, ‘w2’, ‘new’]
+                  sent_round) >>
+        ‘fs = rfds ws11 rs’
+          by (qpat_x_assum ‘Abbrev (fs = _)’ (ACCEPT_TAC o REWRITE_RULE [markerTheory.Abbrev_def])) >>
+        ‘k = LENGTH w.chans’ by (qpat_x_assum ‘LENGTH w.chans = k’ (ACCEPT_TAC o SYM)) >>
+        BETA_TAC >> qpat_x_assum ‘fs = _’ SUBST_ALL_TAC >> qpat_x_assum ‘k = _’ SUBST_ALL_TAC >>
+        impl_tac
+        >- (rpt conj_tac >> TRY (first_assum ACCEPT_TAC) >>
+            REWRITE_TAC [GSYM MEM_fconns] >> first_assum ACCEPT_TAC) >>
+        disch_then ACCEPT_TAC) >>
+  qpat_x_assum ‘cm' = new2 ++ _’ kall_tac >>
+  qpat_x_assum ‘∀f. MEM f (MAP FST new2) ⇔ _’ kall_tac >>
+  qpat_x_assum ‘EVERY (λj. LENGTH w1.chans ≤ j) (MAP SND new2)’ kall_tac >>
+  qpat_x_assum ‘sent_inv cm w _ _’ kall_tac >>
   simp[] >> fs[] >>
   qpat_x_assum ‘ev_rel _ _ cm' ws1 w2’ mp_tac >>
+  qpat_x_assum ‘sent_inv cm' _ _ _’ mp_tac >>
   qpat_x_assum ‘cm' = _’ (fn th => rewrite_tac[th]) >>
-  rewrite_tac[APPEND_ASSOC]
+  rewrite_tac[APPEND_ASSOC] >> simp[]
 QED
 
 Theorem l1ep_refines_ehl_upto:
@@ -3465,6 +3487,28 @@ Proof
   mp_tac (Q.SPEC ‘n’ (Q.GEN ‘N’ l1ep_refines_ehl_upto)) >>
   impl_tac >- fs[] >>
   disch_then (qspecl_then [‘n’, ‘h’, ‘ws’, ‘evs’, ‘logs’] mp_tac) >> simp[]
+QED
+
+(* C1(ii): in every run, what L1 sent on the raw trace on channel j's fds
+   (ersent: each round's sys_send bytes on the fd the channel map gives j)
+   is a prefix of what the layer's channel j was sent *)
+Theorem l1ep_sent:
+  l0_rely w0 ∧ fds_lt w0 ∧ MEM lfd (l0_used w0) ∧
+  (∀n. SND (ecm lfd pol ifds m w0 n) + 1 < dimword (:64)) ⇒
+  ∀n h ws evs logs j.
+    erounds lfd pol ifds m (w0, einit) n = SOME (h, ws, evs, logs) ⇒
+    ersent lfd pol ifds m w0 j n ≼
+    (EL j (FST (ehst lfd (elv lfd pol ifds m w0) ifds m (pew lfd a pol ifds m w0 calls) n)).chans).sent
+Proof
+  rpt strip_tac >>
+  mp_tac (Q.SPEC ‘n’ (Q.GEN ‘N’ l1ep_refines_ehl_upto_sent)) >>
+  impl_tac >- fs[] >>
+  disch_then (qspecl_then [‘n’, ‘h’, ‘ws’, ‘evs’, ‘logs’] mp_tac) >> simp[sent_inv_def] >>
+  strip_tac >>
+  Cases_on ‘j < LENGTH (FST (ehst lfd (elv lfd pol ifds m w0) ifds m
+                               (pew lfd a pol ifds m w0 calls) n)).chans’
+  >- (res_tac >> simp[])
+  >> ‘ersent lfd pol ifds m w0 j n = []’ by fs[] >> simp[]
 QED
 
 Theorem erun_alloc_ok:

@@ -103,6 +103,34 @@ locating a trace prefix in the run; the excuse mapping; the close step
 close failure, per the coordinator, pending the user's ruling on the
 interrupted-close finding); assembly.
 
+### D assembly plan (2026-10-17, after flush_live2 / run_gone_cause)
+
+Target: for a prefix evs with ep_open j0 evs, f = EL j0 (l0_accepted evs),
+c = f's channel at world_at evs, drains c (and the pending forms of #2/#4):
+peer_sent c ≼ l0_sent j0 evs' eventually, unless ep_hard_err j0 ∨
+ep_timed_out K j0 ∨ flushed_ch c.
+
+Episode identity is the crux: every excuse must be j0's, not a later
+episode on the same fd number.  Tool: f's index in the episode fold's open
+map (KV's own_ok / call_open); a pure trace lemma `idx_stable`: if f maps to
+j at evs and at evs ++ mid, then no ep_ends f in mid (indices are fresh);
+with ep_state_open this pins j = j0.
+
+1. Locate: evs ≼ revs (SUC r), evs = revs r ++ pre; f maps to j0 there.
+2. Output (O): from round boundary N on (f held), flush_live2 gives
+   outgoing ≼ csent, or gone (run_gone_cause → hard_send ∨ rdrop at k),
+   or hard_send / rdrop at k; run_ep_hard_err / rdrop_excuse give the
+   trace excuse for f's episode at round k; idx_stable makes it j0's
+   (f held from N to k: KV's round_no_end).
+3. Input (I): run_peer_sent (+ acq_quiet, cdata_before_conn,
+   client_rounds) gives peer_sent ≼ cdata j (pars 0 N), or flushed
+   (→ flushed_ch); live_data covers the inbox.
+4. Server (S): echo_out_live: cdata j (pars 0 N) ≼ outgoing at N'.
+5. Accounting (A): episode_csent: csent c = l0_sent j0 while open and no
+   close call on f; after a close call, both frozen (run_closed_quiet).
+6. Close step: peer_eof ⇒ a close call on f while open (prove);
+   ep_closed j0 under no close failure (corollary), per the coordinator.
+
 ## D: echo_live_l0, decomposed
 
 Fix a prefix evs of the trace with episode j open on channel c (fd f), and

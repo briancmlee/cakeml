@@ -33,7 +33,8 @@ Theorem LPREFIX_rounds_any:
 Proof
   strip_tac >>
   Cases_on ‘∃m. ¬(FLAT (GENLIST f m) ≼ evs)’
-  >- (drule arithmeticTheory.WOP >> strip_tac >> rename1 ‘¬(FLAT (GENLIST f m) ≼ evs)’ >>
+  >- (qpat_x_assum ‘∃m. _’ (strip_assume_tac o HO_MATCH_MP arithmeticTheory.WOP) >>
+      rename1 ‘¬(FLAT (GENLIST f m) ≼ evs)’ >>
       Cases_on ‘m’ >> gvs[] >> rename1 ‘GENLIST f (SUC n)’ >>
       qexists_tac ‘n’ >> simp[] >>
       Cases_on ‘LENGTH evs ≤ LENGTH (FLAT (GENLIST f (SUC n)))’
@@ -54,7 +55,7 @@ Proof
               gvs[] >> imp_res_tac rich_listTheory.IS_PREFIX_LENGTH >>
               Cases_on ‘f p’ >> gvs[]) >>
         first_x_assum (qspec_then ‘SUC (LENGTH evs)’ strip_assume_tac) >>
-        first_x_assum (qspec_then ‘n’ assume_tac) >>
+        qpat_x_assum ‘∀m. FLAT _ ≼ evs’ (qspec_then ‘n’ assume_tac) >>
         imp_res_tac rich_listTheory.IS_PREFIX_LENGTH >> fs[]) >>
   qexists_tac ‘N’ >> simp[GENLIST, SNOC_APPEND] >>
   ‘LFLATTEN (LGENLIST (λi. fromList (f i)) NONE) = fromList (FLAT (GENLIST f N))’
@@ -63,4 +64,115 @@ Proof
           by simp[LFLATTEN_EQ_NIL, every_LGENLIST] >>
         simp[LAPPEND_NIL_2ND]) >>
   gvs[LPREFIX_fromList, from_toList]
+QED
+
+(* S4 at a round boundary *)
+Theorem boundary_safe:
+  ri lfd (srelabel (server k)) (h, (w, ps), evs) ∧ hdln (w2n lfd) j < dimword (:64) ⇒
+  ep_sn j (0, []) evs ≼ ep_rd j (0, []) evs
+Proof
+  strip_tac >> qpat_x_assum ‘ri _ _ _’ (strip_assume_tac o REWRITE_RULE [ri_def]) >>
+  first_x_assum (qspec_then ‘j’ mp_tac) >> simp[] >> strip_tac >>
+  ‘ep_sn j (0, []) evs ≼ hwritten (l1hdl lfd j) (texec (srelabel (server k)) h)’
+    by (gvs[oi_def] >> imp_res_tac isPREFIX_APPEND_L) >>
+  drule trans_texec >> strip_tac >>
+  ‘ALL_DISTINCT (haccepted (trans (srelabel (server k)) h))’
+    by (‘ALL_DISTINCT (GENLIST (λi. l1hdl lfd i) ps.b.nxt)’
+          by (irule ALL_DISTINCT_hdl >> irule hdln_mono >>
+              qexists_tac ‘ps.b.nxt + LENGTH ps.acq’ >> fs[]) >>
+        qpat_assum ‘trans _ _ = _’ (fn th => REWRITE_TAC [th]) >>
+        qpat_assum ‘haccepted (texec _ _) = _’
+          (fn th => REWRITE_TAC [haccepted_APPEND, haccepted_NONE, th, APPEND_NIL]) >>
+        first_assum ACCEPT_TAC) >>
+  ‘hwritten (l1hdl lfd j) (trans (srelabel (server k)) h) =
+   hread (l1hdl lfd j) (trans (srelabel (server k)) h)’
+    by (irule server_handle_echo >> first_assum ACCEPT_TAC) >>
+  ‘hwritten (l1hdl lfd j) (texec (srelabel (server k)) h) ≼
+   hread (l1hdl lfd j) (texec (srelabel (server k)) h)’
+    by (qpat_x_assum ‘hwritten _ (trans _ _) = _’ mp_tac >>
+        qpat_assum ‘trans _ _ = _’ (fn th => REWRITE_TAC [th]) >>
+        simp[hwritten_APPEND, hread_APPEND] >> strip_tac >>
+        pop_assum (SUBST1_TAC o SYM) >> simp[]) >>
+  irule isPREFIX_TRANS >>
+  qexists_tac ‘hwritten (l1hdl lfd j) (texec (srelabel (server k)) h)’ >>
+  conj_tac >- first_assum ACCEPT_TAC >>
+  irule isPREFIX_TRANS >>
+  qexists_tac ‘hread (l1hdl lfd j) (texec (srelabel (server k)) h)’ >>
+  conj_tac >- first_assum ACCEPT_TAC >>
+  fs[]
+QED
+
+(* An episode beyond the handle range is never opened *)
+Theorem fresh_safe:
+  ri lfd m (h, (w, ps), evs) ∧ pre ≼ evs ∧ ¬(hdln (w2n lfd) j < dimword (:64)) ⇒
+  ep_sn j (0, []) pre = []
+Proof
+  strip_tac >> qpat_x_assum ‘ri _ _ _’ (strip_assume_tac o REWRITE_RULE [ri_def]) >>
+  ‘FST (l0_ep_st (0, []) evs) = ps.b.nxt + LENGTH ps.acq’
+    by (Cases_on ‘l0_ep_st (0, []) evs’ >> gvs[own_ok_def]) >>
+  ‘ps.b.nxt + LENGTH ps.acq < j’
+    by (CCONTR_TAC >> ‘j ≤ ps.b.nxt + LENGTH ps.acq’ by simp[] >>
+        ‘hdln (w2n lfd) j < dimword (:64)’
+          by (irule hdln_mono >> qexists_tac ‘ps.b.nxt + LENGTH ps.acq’ >> fs[]) >>
+        fs[]) >>
+  irule ep_fold_fresh >> simp[ep_ok_def, FST_l0_ep_st] >>
+  ‘LENGTH (l0_accepted pre) ≤ LENGTH (l0_accepted evs)’
+    by (gvs[rich_listTheory.IS_PREFIX_APPEND, l0_accepted_def]) >>
+  gvs[FST_l0_ep_st]
+QED
+
+Theorem prun_FLAT:
+  (∀n. prounds_t lfd hw ifds m ws0 n ≠ NONE) ⇒
+  ∀n. FLAT (GENLIST (pround_evs lfd hw ifds m ws0) n) = FST (SND (SND (prun lfd hw ifds m ws0 n)))
+Proof
+  strip_tac >> Induct >> simp[GENLIST, SNOC_APPEND] >>
+  drule prun_SUC >> disch_then (qspec_then ‘n’ mp_tac) >> rw[] >> simp[]
+QED
+
+Theorem prun_ri:
+  ri lfd (srelabel (server k)) ([], ws0, []) ∧
+  (∀n. prounds_t lfd hw ifds (srelabel (server k)) ws0 n ≠ NONE) ⇒
+  ∀n. ri lfd (srelabel (server k))
+         (FST (prun lfd hw ifds (srelabel (server k)) ws0 n),
+          FST (SND (prun lfd hw ifds (srelabel (server k)) ws0 n)),
+          FST (SND (SND (prun lfd hw ifds (srelabel (server k)) ws0 n))))
+Proof
+  rpt strip_tac >> first_x_assum (qspec_then ‘n’ mp_tac) >>
+  Cases_on ‘prounds_t lfd hw ifds (srelabel (server k)) ws0 n’ >> simp[prun_def] >>
+  PairCases_on ‘x’ >> simp[] >> drule ri_echo >> disch_then drule >> simp[]
+QED
+
+(* MAIN, S4 for the loop: on every finite prefix of the loop's trace,
+   what each episode sent is a prefix of what it received *)
+Theorem echo_run_safe:
+  ri lfd (srelabel (server k)) ([], ws0, []) ∧
+  (∀n. prounds_t lfd hw ifds (srelabel (server k)) ws0 n ≠ NONE) ∧
+  LPREFIX (fromList evs)
+    (LFLATTEN (LGENLIST (λi. fromList (pround_evs lfd hw ifds (srelabel (server k)) ws0 i)) NONE)) ⇒
+  ∀j. ep_sn j (0, []) evs ≼ ep_rd j (0, []) evs
+Proof
+  strip_tac >> gen_tac >>
+  drule LPREFIX_rounds_any >> strip_tac >>
+  drule_all prun_FLAT >> strip_tac >> gvs[] >>
+  drule_all prun_ri >> strip_tac >>
+  qabbrev_tac ‘R = prun lfd hw ifds (srelabel (server k)) ws0’ >>
+  ‘ri lfd (srelabel (server k)) (FST (R n), FST (SND (R n)), FST (SND (SND (R n)))) ∧
+   ri lfd (srelabel (server k))
+      (FST (R (SUC n)), FST (SND (R (SUC n))), FST (SND (SND (R (SUC n)))))’
+    by simp[Abbr ‘R’] >>
+  Cases_on ‘hdln (w2n lfd) j < dimword (:64)’
+  >- (drule prun_SUC >> disch_then (qspec_then ‘n’ mp_tac) >> simp[] >>
+      IF_CASES_TAC >> simp[] >> strip_tac
+      >- (Cases_on ‘R n’ >> PairCases_on ‘r’ >> gvs[] >>
+          PairCases_on ‘ws'’ >>
+          qpat_x_assum ‘∀n. ri _ _ _’ (qspec_then ‘SUC n’ mp_tac) >> simp[] >> strip_tac >>
+          irule round_safe >> simp[] >> metis_tac[]) >>
+      ‘evs = FST (SND (SND (R n)))’ by (irule isPREFIX_ANTISYM >> gvs[]) >>
+      Cases_on ‘R n’ >> PairCases_on ‘r’ >> gvs[] >>
+      irule boundary_safe >> qexistsl [‘q’, ‘k’, ‘lfd’, ‘r1’, ‘r0’] >> fs[]) >>
+  Cases_on ‘R (SUC n)’ >> PairCases_on ‘r’ >> gvs[] >>
+  ‘ep_sn j (0, []) evs = []’ by (qpat_x_assum ‘ri _ _ (q, _, _)’
+          (fn th => irule (MATCH_MP (REWRITE_RULE [GSYM AND_IMP_INTRO] fresh_safe) th)) >>
+        fs[]) >>
+  simp[]
 QED

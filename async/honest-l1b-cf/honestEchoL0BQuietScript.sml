@@ -10,8 +10,8 @@
   the three checks (stdio_prefix), and the guarantee moves across the
   four setup events (honestL1BShift).
 
-  Under echo_pf_facts the D25 guard never fires (its run_ok includes the
-  PF run's handle bound), so the claim holds as L3-00 states it
+  Under echo_pf_facts the D40 guard never fires (its pl2_room is the PF
+  run's handle bound with the guard's two extra), so the claim holds as L3-00 states it
   (echo_l0b_quiet); the form with the PENDING amendment #3 (¬accepts_below
   io in the Diverge excuse) follows (echo_l0b_quiet_a).  The amendment
   matters only where the PF facts are relaxed to allow handle exhaustion.
@@ -30,20 +30,23 @@ Ancestors
 Libs
   preamble
 
-(* honestL0Outcome's stdio_closed is loaded too (via honestEchoL0Sem); the
-   claim reads this copy's *)
+(* honestL0Outcome's stdio_closed, stdio_open and no_close_stdio are loaded
+   too (via honestEchoL0Sem); the claim reads this copy's *)
 val _ = bring_to_front_overload "stdio_closed" {Name = "stdio_closed", Thy = "honestL1BStmts"};
+val _ = bring_to_front_overload "stdio_open" {Name = "stdio_open", Thy = "honestL1BStmts"};
+val _ = bring_to_front_overload "no_close_stdio" {Name = "no_close_stdio", Thy = "honestL1BStmts"};
+val _ = bring_to_front_overload "echo_port_conf" {Name = "echo_port_conf", Thy = "honestEchoL0Prog"};
 
 (* The claim, with amendment #3 (D29).  Since L3-00 c2b12a300 (and with
-   D33's stdio_closed since 907c32fdc) this is quiet_on_kernel_claim; kept
-   because D29 cites it *)
+   D33's stdio_closed since 907c32fdc, the D37 amendment's stdio_kept since
+   001babe7e) this is quiet_on_kernel_claim; kept because D29 cites it *)
 Definition quiet_on_kernel_claim_a_def:
   quiet_on_kernel_claim_a guar prog ⇔
     ∀w0. l0_server_world w0 ⇒
       ∃b. semantics_prog (init_state (l0_ffi w0)) init_env prog b ∧
           (stdio_closed b ∨ listen_failed b ∨
-           (∃io. b = Diverge io ∧ guar w0 io) ∨
-           (∃io. asleep_l0 b io ∧ guar w0 (fromList io))) ∧
+           (∃io. b = Diverge io ∧ stdio_kept io ∧ guar w0 io) ∨
+           (∃io. asleep_l0 b io ∧ stdio_kept (fromList io) ∧ guar w0 (fromList io))) ∧
           (arrivals_finite_l0 w0 ⇒
            stdio_closed b ∨ listen_failed b ∨ (∃io. asleep_l0 b io) ∨
            ∃io. b = Diverge io ∧ (¬F1_io io ∨ accepts_fail_io io ∨ ¬accepts_below io))
@@ -68,12 +71,14 @@ Definition stdio_prefix_def:
       l0_do «sys_fdok» [2w] 1 w2 = SOME (o2, w3, e2) ∧ stdio_all o0 o1 o2
 End
 
-(* The PF run's standing facts and the PF echo's guarantee there, and the
+(* The PF run's standing facts and the PF echo's guarantee there (with its
+   D37 no_close_stdio, as the KV worker's echo_run_nostdio), and the
    server's SQ; bquiet (echo_bquiet) and the world facts after the listen
    (listen_l0wf, listen_lone) are proved *)
 Definition echo_pf_facts_def:
   echo_pf_facts KK k w1 ⇔
     run_ok (elfd k) epol (eifds k) (esrv k) (epfw k w1) ∧
+    pl2_room (elfd k) epol (eifds k) (esrv k) (epfw k w1, pinit) ∧
     winv (epfw k w1) ∧ linv (elfd k) (epfw k w1) ∧ qfresh (epfw k w1) ∧
     MEM (elfd k) (l0_used (epfw k w1)) ∧
     (∀n. SND (pcm (elfd k) epol (eifds k) (esrv k) (epfw k w1) n) + 1 < dimword (:64)) ∧
@@ -81,6 +86,7 @@ Definition echo_pf_facts_def:
     S2 (elfd k) epol (eifds k) (esrv k) (epfw k w1) ∧
     SQ (elfd k) epol (eifds k) (K F) (esrv k) (epfw k w1) ∧
     ∀io_p. ptrace (elfd k) epol (eifds k) (K F) (esrv k) w1 pinit io_p ⇒
+           (∀evs. LPREFIX (fromList evs) io_p ⇒ no_close_stdio evs) ∧
            echo2_guar_l0 KK (epfw k w1) io_p
 End
 
@@ -116,7 +122,7 @@ Theorem listen_failed_echo:
 Proof
   rw[stdio_all_def] >> imp_res_tac fdok_open_ev >> rveq >>
   qpat_x_assum ‘sys_listen_echo _ = _’ mp_tac >>
-  rw[sys_listen_echo_def, l0_do_def, AllCaseEqs(), listen_failed_def] >>
+  rw[sys_listen_echo_def, l0_do_def, AllCaseEqs(), listen_failed_def, listen_failed_on_def] >>
   drule_all l0_ffi_fn_length >> strip_tac >>
   simp[l0_ev_res_def, MAP_ZIP] >>
   gvs[listen_fd_def, l0_res_of_def, AllCaseEqs()] >> rpt strip_tac >> gvs[]
@@ -236,7 +242,7 @@ Proof
   rw[sys_listen_echo_def, l0_do_def, l0_ffi_fn_def] >>
   ‘MAP FST (l0_tick «sys_listen» w0).listeners = []’
     by (REWRITE_TAC [l0_tick_def, deliver_keys] >> fs[l0_fresh_world_def]) >>
-  gvs[AllCaseEqs(), l0_call_def, echo_port_conf_def]
+  gvs[AllCaseEqs(), l0_call_def, honestEchoL0ProgTheory.echo_port_conf_def]
   >- (‘dec_res (enc_res (Ok (w2n f)) ++ []) = SOME (Ok (w2n f))’
         by (irule dec_enc_res >> simp[l0_res_ok_def] >>
             assume_tac (INST_TYPE [alpha |-> “:64”] wordsTheory.w2n_lt) >> fs[]) >>
@@ -269,6 +275,52 @@ Proof
   ‘l0_fresh_world w2’ by metis_tac[fdok_fresh_step] >>
   ‘l0_fresh_world w3’ by metis_tac[fdok_fresh_step] >>
   simp[]
+QED
+
+(* D37: the checks found fds 0-2 open, and the setup closes nothing *)
+Theorem stdio_open_echo[local]:
+  l0_do «sys_fdok» [0w] 1 w0 = SOME (o0, w1, e0) ∧
+  l0_do «sys_fdok» [1w] 1 w1 = SOME (o1, w2, e1) ∧
+  l0_do «sys_fdok» [2w] 1 w2 = SOME (o2, w3, e2) ∧ stdio_all o0 o1 o2 ⇒
+  ∀rest. stdio_open (LCONS e0 (LCONS e1 (LCONS e2 rest)))
+Proof
+  rw[stdio_all_def] >> imp_res_tac fdok_open_ev >> rveq >>
+  simp[honestL1BStmtsTheory.stdio_open_def] >> metis_tac[]
+QED
+
+Theorem no_close_setup[local]:
+  setup_ev e ∧ (∀evs. LPREFIX (fromList evs) io ⇒ no_close_stdio evs) ⇒
+  ∀evs. LPREFIX (fromList evs) (LCONS e io) ⇒ no_close_stdio evs
+Proof
+  rpt strip_tac >> Cases_on ‘evs’ >- simp[honestL1BStmtsTheory.no_close_stdio_def] >>
+  gvs[LPREFIX_LCONS] >> first_x_assum drule >>
+  gvs[honestL1BStmtsTheory.no_close_stdio_def, setup_ev_def] >> metis_tac[]
+QED
+
+Theorem stdio_kept_setup:
+  l0_rely w0 ∧
+  l0_do «sys_fdok» [0w] 1 w0 = SOME (o0, w1, e0) ∧
+  l0_do «sys_fdok» [1w] 1 w1 = SOME (o1, w2, e1) ∧
+  l0_do «sys_fdok» [2w] 1 w2 = SOME (o2, w3, e2) ∧ stdio_all o0 o1 o2 ∧
+  sys_listen_echo w3 = SOME (out, w4, ev) ∧
+  (∀evs. LPREFIX (fromList evs) io ⇒ no_close_stdio evs) ⇒
+  stdio_kept (LCONS e0 (LCONS e1 (LCONS e2 (LCONS ev io))))
+Proof
+  strip_tac >>
+  ‘l0_rely w1’ by (irule l0_do_rely >> metis_tac[]) >>
+  ‘l0_rely w2’ by (irule l0_do_rely >> metis_tac[]) >>
+  ‘l0_rely w3’ by (irule l0_do_rely >> metis_tac[]) >>
+  simp[stdio_kept_def] >> conj_tac >- (drule_all stdio_open_echo >> simp[]) >>
+  qpat_x_assum ‘l0_do _ [0w] _ _ = _’ (strip_assume_tac o MATCH_MP fdok_shift_ev o
+    CONJ (ASSUME “l0_rely w0”)) >>
+  qpat_x_assum ‘l0_do _ [1w] _ _ = _’ (strip_assume_tac o MATCH_MP fdok_shift_ev o
+    CONJ (ASSUME “l0_rely w1”)) >>
+  qpat_x_assum ‘l0_do _ [2w] _ _ = _’ (strip_assume_tac o MATCH_MP fdok_shift_ev o
+    CONJ (ASSUME “l0_rely w2”)) >>
+  qpat_x_assum ‘sys_listen_echo _ = _’ (strip_assume_tac o MATCH_MP sys_listen_echo_shift o
+    CONJ (ASSUME “l0_rely w3”)) >>
+  rpt (match_mp_tac no_close_setup >> conj_tac >- first_assum ACCEPT_TAC) >>
+  first_assum ACCEPT_TAC
 QED
 
 (* The guarantee across the three checks and the listen *)
@@ -321,6 +373,15 @@ QED
    The instance
    ------------------------------------------------------------------------ *)
 
+(* no_close_transfer, its premises named in the assumptions *)
+fun no_close_tac bpat w =
+  qpat_assum ‘bquiet _ _ _’ (fn bq =>
+  qpat_assum bpat (fn bt =>
+  qpat_assum ‘ptrace _ _ _ _ _ _ _ io’ (fn pt =>
+  qpat_assum ‘∀evs. LPREFIX (fromList evs) io ⇒ no_close_stdio evs’ (fn nc =>
+    ACCEPT_TAC (MATCH_MP no_close_transfer
+                  (LIST_CONJ [bq, ASSUME (mk_comb (“l0_rely”, w)), bt, pt, nc]))))));
+
 (* MAIN: the claim's clause at one startup world *)
 Theorem echo_l0b_quiet_world:
   l0_server_world w0 ∧
@@ -328,8 +389,8 @@ Theorem echo_l0b_quiet_world:
                     listen_fd out = SOME k ⇒ echo_pf_facts KK k w4) ⇒
   ∃b. semantics_prog (init_state (l0_ffi w0)) init_env echo_l0b_prog b ∧
       (stdio_closed b ∨ listen_failed b ∨
-       (∃io. b = Diverge io ∧ echo2_guar_l0 KK w0 io) ∨
-       (∃io. asleep_l0 b io ∧ echo2_guar_l0 KK w0 (fromList io))) ∧
+       (∃io. b = Diverge io ∧ stdio_kept io ∧ echo2_guar_l0 KK w0 io) ∨
+       (∃io. asleep_l0 b io ∧ stdio_kept (fromList io) ∧ echo2_guar_l0 KK w0 (fromList io))) ∧
       (arrivals_finite_l0 w0 ⇒
        stdio_closed b ∨ listen_failed b ∨ (∃io. asleep_l0 b io) ∨
        ∃io. b = Diverge io ∧ (¬F1_io io ∨ accepts_fail_io io))
@@ -358,7 +419,7 @@ Proof
     by (irule bt_guard_ok >> simp[]) >>
   drule pf_trace_exists >> strip_tac >>
   ‘ptrace (elfd k) epol (eifds k) (K F) (esrv k) w4 pinit io’ by simp[ptrace_def] >>
-  ‘echo2_guar_l0 KK (epfw k w4) io’ by metis_tac[] >>
+  qpat_x_assum ‘∀io_p. ptrace _ _ _ _ _ _ _ io_p ⇒ _’ (drule_then strip_assume_tac) >>
   ‘∀n. SND (pcm (elfd k) epol (eifds k) (esrv k) (epfw k w4) n) + 1 < dimword (:64)’
     by fs[] >>
   ‘∀ps f. outbox_of ps.b f = [] ⇒ ¬epol ps f’ by simp[pol_self_def]
@@ -367,7 +428,12 @@ Proof
       drule_all div_btrace >> strip_tac >>
       drule_all l1b_quiet >> strip_tac >>
       conj_tac
-      >- (disj2_tac >> disj2_tac >> disj1_tac >> irule echo2_guar_setup >> simp[] >>
+      >- (disj2_tac >> disj2_tac >> disj1_tac >> conj_tac
+          >- (irule stdio_kept_setup >> conj_tac
+              >- no_close_tac ‘btrace _ _ _ _ _ _ _ (echo_l0b_run _ _)’ “w4 : l0world” >>
+              qexistsl [‘o0’, ‘o1’, ‘o2’, ‘out’, ‘w0’, ‘w1’, ‘w2’, ‘w3’, ‘w4’] >>
+              ASM_REWRITE_TAC[]) >>
+          irule echo2_guar_setup >> simp[] >>
           metis_tac[]) >>
       strip_tac >> drule_all arrivals_finite_setup >> strip_tac >>
       qpat_x_assum ‘arrivals_finite_l0 w4 ⇒ _’ drule >> strip_tac
@@ -390,6 +456,13 @@ Proof
     by (‘fromList (e0 :: e1 :: e2 :: ev :: evs) =
          LCONS e0 (LCONS e1 (LCONS e2 (LCONS ev (fromList evs))))’ by simp[] >>
         pop_assum SUBST1_TAC >> irule echo2_guar_setup >> simp[] >> metis_tac[]) >>
+  ‘stdio_kept (fromList (e0 :: e1 :: e2 :: ev :: evs))’
+    by (‘fromList (e0 :: e1 :: e2 :: ev :: evs) =
+         LCONS e0 (LCONS e1 (LCONS e2 (LCONS ev (fromList evs))))’ by simp[] >>
+        pop_assum SUBST1_TAC >> irule stdio_kept_setup >> conj_tac
+        >- no_close_tac ‘btrace _ _ _ _ _ _ _ (fromList _)’ “w4 : l0world” >>
+        qexistsl [‘o0’, ‘o1’, ‘o2’, ‘out’, ‘w0’, ‘w1’, ‘w2’, ‘w3’, ‘w4’] >>
+        ASM_REWRITE_TAC[]) >>
   metis_tac[]
 QED
 
@@ -405,8 +478,8 @@ Proof
   rw[quiet_on_kernel_claim_def] >>
   ‘∃b. semantics_prog (init_state (l0_ffi w0)) init_env echo_l0b_prog b ∧
        (stdio_closed b ∨ listen_failed b ∨
-        (∃io. b = Diverge io ∧ echo2_guar_l0 KK w0 io) ∨
-        (∃io. asleep_l0 b io ∧ echo2_guar_l0 KK w0 (fromList io))) ∧
+        (∃io. b = Diverge io ∧ stdio_kept io ∧ echo2_guar_l0 KK w0 io) ∨
+        (∃io. asleep_l0 b io ∧ stdio_kept (fromList io) ∧ echo2_guar_l0 KK w0 (fromList io))) ∧
        (arrivals_finite_l0 w0 ⇒
         stdio_closed b ∨ listen_failed b ∨ (∃io. asleep_l0 b io) ∨
         ∃io. b = Diverge io ∧ (¬F1_io io ∨ accepts_fail_io io))’

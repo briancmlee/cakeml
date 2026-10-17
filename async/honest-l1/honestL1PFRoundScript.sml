@@ -529,7 +529,7 @@ QED
 
 Theorem pf_fetch_winv:
   ∀fs w ps w' ps' log evs.
-    pf_fetch lfd hw fs (w, ps) = SOME ((w', ps'), log, evs) ∧ winv w ⇒ winv w'
+    pf_fetch lfd pol fs (w, ps) = SOME ((w', ps'), log, evs) ∧ winv w ⇒ winv w'
 Proof
   Induct >> simp[pf_fetch_def] >> rpt gen_tac >> rw[] >>
   TRY (first_x_assum drule_all >> simp[] >> NO_TAC) >>
@@ -541,7 +541,7 @@ Proof
 QED
 
 Theorem pround_winv:
-  pround lfd hw hs (w, ps) acts = SOME (snap, (w', ps'), log, evs) ∧ winv w ⇒ winv w'
+  pround lfd pol hs (w, ps) acts = SOME (snap, (w', ps'), log, evs) ∧ winv w ⇒ winv w'
 Proof
   rw[pround_def, AllCaseEqs()] >>
   PairCases_on ‘ws1’ >> drule_all pacts_winv >> strip_tac >>
@@ -770,17 +770,18 @@ Proof
   rw[] >> gvs[] >> metis_tac[]
 QED
 
-Theorem wants_input_other:
-  g ≠ f ⇒
-  (wants_input lfd hw (set_inb g x ps) f ⇔ wants_input lfd hw ps f) ∧
-  (wants_input lfd hw (ps with eof := g :: ps.eof) f ⇔ wants_input lfd hw ps f)
+(* A policy that never pauses within hw: for f within hw, L1 wants input
+   on f exactly when it holds none of f's input and f is not at EOF *)
+Theorem wants_input_ok:
+  pol_ok hw pol ∧ f ≠ lfd ∧ LENGTH (outbox_of ps.b f) ≤ hw ⇒
+  (wants_input lfd pol ps f ⇔ inb_of ps f = [] ∧ ¬MEM f ps.eof)
 Proof
-  rw[wants_input_def]
+  rw[wants_input_def, pol_ok_def] >> metis_tac[]
 QED
 
 Theorem pf_fetch_names:
   ∀fs w ps w' ps' log evs.
-    pf_fetch lfd hw fs (w, ps) = SOME ((w', ps'), log, evs) ⇒
+    pf_fetch lfd pol fs (w, ps) = SOME ((w', ps'), log, evs) ⇒
     EVERY (λev. ev_name ev = ExtCall «sys_accept» ∨ ev_name ev = ExtCall «sys_recv») evs
 Proof
   Induct >> simp[pf_fetch_def] >> rpt gen_tac >> rw[] >>
@@ -792,11 +793,12 @@ QED
 
 Theorem pf_fetch_f:
   ∀fs w ps w' ps' log evs.
-    pf_fetch lfd hw fs (w, ps) = SOME ((w', ps'), log, evs) ∧ winv w ∧ pend w f ∧
+    pf_fetch lfd pol fs (w, ps) = SOME ((w', ps'), log, evs) ∧ winv w ∧ pend w f ∧
     fkeep lfd h f ps ⇒
     winv w' ∧
     EVERY (λev. ev_name ev = ExtCall «sys_accept» ∨ ev_name ev = ExtCall «sys_recv») evs ∧
-    (MEM f fs ∧ wants_input lfd hw ps f ⇒ EXISTS (ev_on «sys_recv» f) evs) ∧
+    (MEM f fs ∧ inb_of ps f = [] ∧ pol_ok hw pol ∧ LENGTH (outbox_of ps.b f) ≤ hw ⇒
+     EXISTS (ev_on «sys_recv» f) evs) ∧
     (∀ev. MEM ev evs ∧ ev_on «sys_recv» f ev ∧ ¬retried ev ⇒ fetched f log) ∧
     (¬fetched f log ⇒ pend w' f ∧ fkeep lfd h f ps' ∧
                       outbox_of ps'.b f = outbox_of ps.b f ∧ inb_of ps' f = inb_of ps f)
@@ -805,6 +807,8 @@ Proof
   rpt gen_tac >> rename1 ‘g :: fs’ >> strip_tac >>
   ‘¬MEM f ps.eof ∧ f ≠ lfd’
     by (qpat_x_assum ‘fkeep _ _ _ _’ mp_tac >> simp[fkeep_def]) >>
+  ‘inb_of ps f = [] ∧ pol_ok hw pol ∧ LENGTH (outbox_of ps.b f) ≤ hw ⇒
+   wants_input lfd pol ps f’ by metis_tac[wants_input_ok] >>
   qpat_x_assum ‘pf_fetch _ _ _ _ = _’ mp_tac >> simp[Once pf_fetch_def] >>
   IF_CASES_TAC
   >- (strip_tac >> first_x_assum (drule_all_then strip_assume_tac) >> simp[] >>
@@ -812,9 +816,6 @@ Proof
   >> IF_CASES_TAC
   >- ((* accept on the listener *)
       ‘g ≠ f’ by (strip_tac >> fs[]) >>
-      ‘∀q x. wants_input lfd hw (ps with acq := q) f = wants_input lfd hw ps f ∧
-             wants_input lfd hw (ps with pause := x) f =
-             wants_input lfd hw ps f’ by simp[wants_input_def] >>
       simp[AllCaseEqs(), PULL_EXISTS] >> rpt gen_tac >> strip_tac >>
       pairarg_tac >> fs[AllCaseEqs()] >> rveq >>
       ‘winv w1 ∧ pend w1 f ∧ ev_name ev = ExtCall «sys_accept»’
@@ -860,11 +861,11 @@ Proof
         >- (drule_at (Pos last) winv_do >> simp[])
         >- (drule_at (Pos last) pend_do >> simp[])
         >> drule l0_do_cases >> rw[] >> simp[ev_name_def, ev_on_def]) >>
-  gvs[AllCaseEqs(), wants_input_other] >>
+  gvs[AllCaseEqs()] >>
   first_x_assum drule >> impl_tac >>
   TRY (rpt conj_tac >> TRY (first_assum ACCEPT_TAC) >>
        qpat_x_assum ‘fkeep _ _ _ _’ mp_tac >> simp[fkeep_def] >> NO_TAC) >>
-  strip_tac >> fs[fetched_def, wants_input_other] >> rpt strip_tac >> gvs[] >>
+  strip_tac >> fs[fetched_def] >> rpt strip_tac >> gvs[] >>
   res_tac >> fs[]
 QED
 
@@ -902,10 +903,10 @@ QED
    f, always for input *)
 Theorem pf_poll_set_f:
   ALOOKUP ps.b.tbl h = SOME f ∧ (∀h'. ALOOKUP ps.b.tbl h' = SOME f ⇒ h' = h) ∧
-  f ≠ lfd ∧ MEM h hs ∧ wants_input lfd hw ps f ⇒
-  (∃e. MEM (f, e) (pf_poll_set lfd hw ps hs)) ∧
-  (∀e. MEM (f, e) (pf_poll_set lfd hw ps hs) ⇒ ODD e) ∧
-  EVERY (λ(g, e). e < 4) (pf_poll_set lfd hw ps hs)
+  f ≠ lfd ∧ MEM h hs ∧ wants_input lfd pol ps f ⇒
+  (∃e. MEM (f, e) (pf_poll_set lfd pol ps hs)) ∧
+  (∀e. MEM (f, e) (pf_poll_set lfd pol ps hs) ⇒ ODD e) ∧
+  EVERY (λ(g, e). e < 4) (pf_poll_set lfd pol ps hs)
 Proof
   strip_tac >> simp[pf_poll_set_def] >> rpt conj_tac
   >- (qexists_tac ‘1 + (if outbox_of ps.b f = [] then 0 else 2)’ >>
@@ -922,15 +923,15 @@ Proof
 QED
 
 (* One round, seen from f (f's handle h open, f's channel with input
-   pending): if L1 has no input of f's and f's outbox is within hw, and
+   pending): if L1 has no input of f's and f's outbox is within hw (and pol never pauses within hw), and
    the round's actions do not write to h, the round polls f, and a poll on
    f that is not retried leads to a recv on f; a recv on f that is not
    retried is logged; and if nothing is logged on f, the input stays
    pending and L1's view of f is kept *)
 Theorem pround_f:
-  pround lfd hw hs (w, ps) acts = SOME (snap, (w', ps'), log, evs) ∧
+  pround lfd pol hs (w, ps) acts = SOME (snap, (w', ps'), log, evs) ∧
   winv w ∧ pend w f ∧ fkeep lfd h f ps ∧ psmall lfd ps ⇒
-  (inb_of ps f = [] ∧ LENGTH (outbox_of ps.b f) ≤ hw ∧ MEM h hs ∧
+  (inb_of ps f = [] ∧ pol_ok hw pol ∧ LENGTH (outbox_of ps.b f) ≤ hw ∧ MEM h hs ∧
    (∀bs. ¬MEM (Write h bs) acts) ⇒
    EXISTS (ev_on «sys_poll» f) evs ∧
    ∀ev. MEM ev evs ∧ ev_on «sys_poll» f ev ∧ ¬retried ev ⇒
@@ -944,7 +945,7 @@ Proof
   drule_all pacts_f >> strip_tac >>
   rename1 ‘pacts _ _ _ = SOME (rs, aevs, wa, pa)’ >>
   ‘psmall lfd pa’ by metis_tac[pacts_psmall] >>
-  qabbrev_tac ‘fes = pf_poll_set lfd hw pa hs’ >>
+  qabbrev_tac ‘fes = pf_poll_set lfd pol pa hs’ >>
   ‘EVERY (λ(g, e). small g ∧ e < 4) fes’
     by (qunabbrev_tac ‘fes’ >> irule pf_poll_set_small >> simp[]) >>
   ‘¬MEM f pa.eof ∧ f ≠ lfd ∧ ALOOKUP pa.b.tbl h = SOME f ∧
@@ -954,13 +955,14 @@ Proof
   drule_all l1_polls_keep >> strip_tac >>
   drule_all l1_flush_f >> strip_tac >>
   ‘fkeep lfd h f (pa with b := b2)’ by (irule fkeep_b_same >> fs[]) >>
-  drule pf_fetch_f >> disch_then (drule_at Any) >> simp[] >> strip_tac >>
+  drule pf_fetch_f >> disch_then (drule_at Any) >> simp[] >>
+  disch_then (qspec_then ‘hw’ strip_assume_tac) >>
   drule l1_reap_names >> strip_tac >>
   rpt conj_tac
   >- ((* the poll and the recv, when L1 wants input on f *)
       strip_tac >> gvs[] >>
       ‘LENGTH (outbox_of pa.b f) ≤ hw’ by metis_tac[LESS_EQ_TRANS] >>
-      ‘wants_input lfd hw pa f’ by simp[wants_input_def] >>
+      ‘wants_input lfd pol pa f’ by metis_tac[wants_input_ok] >>
       ‘(∃e. MEM (f, e) fes) ∧ (∀e. MEM (f, e) fes ⇒ ODD e) ∧
        EVERY (λ(g, e). e < 4) fes’
         by (qunabbrev_tac ‘fes’ >> match_mp_tac pf_poll_set_f >>
@@ -974,11 +976,12 @@ Proof
             simp[MEM_MAP] >> qexists_tac ‘(f, e)’ >> simp[]) >>
       ‘MEM f (in_fds fes)’
         by (simp[in_fds_def, MEM_MAP, MEM_FILTER, EXISTS_PROD] >> metis_tac[]) >>
-      ‘wants_input lfd hw (pa with b := b2) f’
-        by (fs[wants_input_def] >> metis_tac[LESS_EQ_TRANS]) >>
+      ‘LENGTH (outbox_of b2 f) ≤ hw’
+        by (qpat_x_assum ‘∀f. winv w2 ∧ _’ (qspec_then ‘f’ strip_assume_tac) >> decide_tac) >>
       simp[] >> rpt strip_tac >> imp_res_tac ev_on_name >> fs[EVERY_MEM] >>
       res_tac >> fs[] >>
-      ‘MEM f (readable_fds rv)’ by metis_tac[] >> fs[MEM_FILTER])
+      ‘MEM f (readable_fds rv)’ by (first_assum ACCEPT_TAC ORELSE metis_tac[]) >>
+      fs[MEM_FILTER])
   >- ((* a recv on f happens only in the fetch *)
       rpt strip_tac >> imp_res_tac ev_on_name >> fs[EVERY_MEM] >> res_tac >> fs[])
   >> strip_tac >> gvs[] >>

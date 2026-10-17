@@ -1703,7 +1703,10 @@ QED
    Liveness (D16)
    ------------------------------------------------------------------------ *)
 
-Theorem client_live:
+(* The liveness to prove, as a proposition (proved below: TODO) *)
+Definition client_live_def:
+  client_live ⇔
+    ∀a N rqs lfd c w0 i.
   client_world lfd c w0 ∧ N < cbound ∧
   conn_fair lfd (cifds a N rqs) (cprog a N rqs) w0 ∧ i < N ⇒
   ∃n. (∃hd. clc a N rqs lfd w0 hd = i ∧ ever_up lfd (cifds a N rqs) (cprog a N rqs) w0 n hd ∧
@@ -1713,18 +1716,16 @@ Theorem client_live:
             hl_eof hd (hl_pairs (cprog a N rqs) (cH a N rqs lfd w0 n)) ∧
             hl_sent hd (hl_pairs (cprog a N rqs) (cH a N rqs lfd w0 n)) ≠ brequests (rqs i)) ∨
       cbound ≤ LENGTH (hl_conn_handles (hl_pairs (cprog a N rqs) (cH a N rqs lfd w0 n)))
-Proof
-  cheat
-QED
+End
 
 (* ------------------------------------------------------------------------
    The claim
    ------------------------------------------------------------------------ *)
 
-Theorem client_hl_claim_holds:
-  client_hl_claim cprog cifds
+Theorem client_hl_claim_of_live:
+  client_live ⇒ client_hl_claim cprog cifds
 Proof
-  simp[client_hl_claim_def] >> rpt gen_tac >> rename1 ‘client_world lfd c w0’ >> strip_tac >>
+  strip_tac >> simp[client_hl_claim_def] >> rpt gen_tac >> rename1 ‘client_world lfd c w0’ >> strip_tac >>
   simp[client_guar'_def] >> qexists_tac ‘clc a N rqs lfd w0’ >>
   ‘N < cbound’ by simp[] >>
   rpt conj_tac
@@ -1736,7 +1737,7 @@ Proof
   >- (rpt strip_tac >> drule_all cst_tbl_ifds >> simp[])
   >- (rpt strip_tac >> drule_all cst_sink >> simp[])
   >- (drule_all cst_handles >> simp[] >> metis_tac[])
-  >- (rpt strip_tac >> drule_all client_live >> simp[])
+  >- (rpt strip_tac >> fs[client_live_def] >> first_x_assum drule_all >> simp[])
   >> rpt strip_tac >> qexists_tac ‘n’ >> simp[] >> irule cst_done >>
   simp[] >> metis_tac[]
 QED

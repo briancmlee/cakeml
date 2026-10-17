@@ -2325,3 +2325,155 @@ Proof
     by (simp[Abbr ‘ifds’, cifds_def, MEM_FLAT, MEM_MAP] >> metis_tac[EL_MEM]) >>
   drule_all poll_keep >> strip_tac >> gvs[]
 QED
+
+(* ------------------------------------------------------------------------
+   Liveness: the argument
+   ------------------------------------------------------------------------ *)
+
+Theorem hstat_pair:
+  hstat p hd = case ALOOKUP (SND p).tbl hd of SOME f => chan_status (FST p) f | NONE => NONE
+Proof
+  Cases_on ‘p’ >> simp[hstat_def]
+QED
+
+Theorem up_at_hstat:
+  up_at lfd lv ifds m w0 n hd ⇔ hstat (ehst lfd lv ifds m w0 n) hd = SOME Up
+Proof
+  simp[up_at_def, hstat_pair] >> CASE_TAC >> simp[]
+QED
+
+Theorem cst_0:
+  i < N ⇒ EL i (cst a N rqs lfd lv w0 0).cs = CIdle
+Proof
+  simp[ehhist_def, ehrounds_def, cstate_def, cinit_def, EL_REPLICATE]
+QED
+
+Theorem crel_pend:
+  crel a N rqs lfd st rdyf ps w hs ∧ i < N ∧ EL i st.cs = CPend hd ⇒
+  ∃s. hstat (w, hs) hd = SOME s ∧
+      (s = Connecting ∧ MEM hd hs.settling ∧ hd ∉ rdyf i ∨
+       (s = Up ∨ s = Refused) ∧ (MEM hd hs.settling ∨ hd ∈ rdyf i)) ∧
+      hl_sent hd ps = [] ∧ ALOOKUP st.hlc hd = SOME i ∧ MEM hd (MAP FST hs.tbl) ∧
+      ∃f. ALOOKUP hs.tbl hd = SOME f
+Proof
+  strip_tac >> ‘MEM hd (chd (EL i st.cs))’ by simp[chd_def] >>
+  drule_all crel_handle >> strip_tac >> drule_all hstat_eq >> strip_tac >>
+  ‘MEM hd (MAP FST hs.tbl)’ by (imp_res_tac ALOOKUP_MEM >> fs[MEM_MAP] >> metis_tac[FST]) >>
+  gvs[cok_def]
+QED
+
+Theorem crel_up:
+  crel a N rqs lfd st rdyf ps w hs ∧ i < N ∧ EL i st.cs = CUp hd r ⇒
+  hstat (w, hs) hd = SOME Up ∧ hl_sent hd ps ++ r = brequests (rqs i) ∧
+  ALOOKUP st.hlc hd = SOME i
+Proof
+  strip_tac >> ‘MEM hd (chd (EL i st.cs))’ by simp[chd_def] >>
+  drule_all crel_handle >> strip_tac >> drule_all hstat_eq >> strip_tac >>
+  gvs[cok_def]
+QED
+
+Theorem crel_hlc_conn:
+  crel a N rqs lfd st rdyf ps w hs ∧ ALOOKUP st.hlc hd = SOME i ⇒
+  MEM hd (hl_conn_handles ps)
+Proof
+  rw[crel_def] >> imp_res_tac ALOOKUP_MEM >> fs[MEM_MAP] >> metis_tac[FST]
+QED
+
+Overload cC[local] = “λa N rqs lfd lv w0 i n. EL i (cst a N rqs lfd lv w0 n).cs”
+Overload cps[local] = “λa N rqs lfd lv w0 n. hl_pairs (cprog a N rqs) (cH a N rqs lfd lv w0 n)”
+
+Theorem run_crel:
+  client_world lfd c w0 ∧ N < cbound ⇒
+  crel a N rqs lfd (cst a N rqs lfd lv w0 n) (K (crdy (cH a N rqs lfd lv w0 n)))
+    (cps a N rqs lfd lv w0 n) (FST (cS a N rqs lfd lv w0 n)) (SND (cS a N rqs lfd lv w0 n))
+Proof
+  strip_tac >> drule_all cinv_crel >> simp[]
+QED
+
+(* An up connection: its handle is up, and it has sent all after one more round *)
+Theorem run_up:
+  client_world lfd c w0 ∧ N < cbound ∧ i < N ∧ cC a N rqs lfd lv w0 i n = CUp hd r ⇒
+  up_at lfd lv (cifds a N rqs) (cprog a N rqs) w0 n hd ∧ clc a N rqs lfd lv w0 hd = i ∧
+  hl_sent hd (cps a N rqs lfd lv w0 (SUC n)) = brequests (rqs i)
+Proof
+  strip_tac >> drule_all run_crel >> disch_then (qspecl_then [‘rqs’, ‘n’, ‘lv’, ‘a’] assume_tac) >>
+  drule_all crel_up >> strip_tac >>
+  ‘clc a N rqs lfd lv w0 hd = i’ by (irule clc_eq >> metis_tac[]) >>
+  simp[up_at_hstat] >>
+  qspecl_then [‘w0’, ‘rqs’, ‘n’, ‘lv’, ‘lfd’, ‘i’, ‘c’, ‘a’, ‘N’] mp_tac
+    (Q.GENL [‘w0’, ‘rqs’, ‘n’, ‘lv’, ‘lfd’, ‘i’, ‘c’, ‘a’, ‘N’] cround_trans) >>
+  simp[] >> strip_tac >> gvs[ctr_def]
+QED
+
+(* A pending connection that goes up or done: its handle was up *)
+Theorem run_enter:
+  client_world lfd c w0 ∧ N < cbound ∧ i < N ∧ cC a N rqs lfd lv w0 i n = CPend hd ∧
+  cC a N rqs lfd lv w0 i (SUC n) ≠ CPend hd ∧ cC a N rqs lfd lv w0 i (SUC n) ≠ CIdle ⇒
+  up_at lfd lv (cifds a N rqs) (cprog a N rqs) w0 n hd ∧ clc a N rqs lfd lv w0 hd = i ∧
+  hl_sent hd (cps a N rqs lfd lv w0 (SUC n)) = [] ∧
+  MEM hd (hl_conn_handles (cps a N rqs lfd lv w0 (SUC n))) ∧
+  (cC a N rqs lfd lv w0 i (SUC n) = CDone ∧ hl_eof hd (cps a N rqs lfd lv w0 (SUC n)) ∨
+   ∃r. cC a N rqs lfd lv w0 i (SUC n) = CUp hd r)
+Proof
+  strip_tac >> drule_all run_crel >> disch_then (qspecl_then [‘rqs’, ‘n’, ‘lv’, ‘a’] assume_tac) >>
+  drule_all crel_pend >> strip_tac >>
+  ‘clc a N rqs lfd lv w0 hd = i’ by (irule clc_eq >> metis_tac[]) >>
+  drule_all crel_hlc_conn >> strip_tac >>
+  qspecl_then [‘w0’, ‘rqs’, ‘n’, ‘lv’, ‘lfd’, ‘i’, ‘c’, ‘a’, ‘N’] mp_tac
+    (Q.GENL [‘w0’, ‘rqs’, ‘n’, ‘lv’, ‘lfd’, ‘i’, ‘c’, ‘a’, ‘N’] cround_trans) >>
+  simp[] >> strip_tac >> gvs[ctr_def, up_at_hstat] >> gvs[]
+QED
+
+Theorem LENGTH_distinct_le:
+  ALL_DISTINCT l ∧ (∀x. MEM x l ⇒ MEM x l') ⇒ LENGTH l ≤ LENGTH l'
+Proof
+  strip_tac >> ‘LENGTH l = CARD (set l)’ by simp[ALL_DISTINCT_CARD_LIST_TO_SET] >>
+  ‘CARD (set l) ≤ CARD (set l')’ by (irule CARD_SUBSET >> simp[SUBSET_DEF]) >>
+  ‘CARD (set l') ≤ LENGTH l'’ by simp[CARD_LIST_TO_SET] >> simp[]
+QED
+
+(* Out of handles: the guarantee's third disjunct *)
+Theorem run_nh:
+  client_world lfd c w0 ∧ N < cbound ∧ ¬((cst a N rqs lfd lv w0 n).nh < cbound) ⇒
+  cbound ≤ LENGTH (hl_conn_handles (cps a N rqs lfd lv w0 n))
+Proof
+  strip_tac >> drule_all run_crel >> disch_then (qspecl_then [‘rqs’, ‘n’, ‘lv’, ‘a’] mp_tac) >>
+  simp[crel_def] >> strip_tac >>
+  ‘LENGTH (MAP FST (cst a N rqs lfd lv w0 n).hlc) ≤ LENGTH (hl_conn_handles (cps a N rqs lfd lv w0 n))’
+    by (irule LENGTH_distinct_le >> simp[]) >> fs[]
+QED
+
+(* An idle connection, with handles to spare, connects *)
+Theorem run_connect:
+  client_world lfd c w0 ∧ N < cbound ∧ i < N ∧ cC a N rqs lfd lv w0 i n = CIdle ∧
+  (cst a N rqs lfd lv w0 n).nh < cbound ⇒
+  ∃p. MEM (EConnect p) (new_actions (log_of (cprog a N rqs)) (cH a N rqs lfd lv w0 n))
+Proof
+  strip_tac >> ‘cinv a N rqs lfd lv w0 n’ by metis_tac[cinv_all] >>
+  pop_assum mp_tac >> simp[cinv_def] >> strip_tac >> simp[cprog_new_actions, MEM_cacts] >>
+  ‘LENGTH (cst a N rqs lfd lv w0 n).cs = N’ by fs[crel_def] >>
+  qexists_tac ‘a’ >> qexists_tac ‘i’ >> simp[cact1_def]
+QED
+
+(* The transitions, without the pairs *)
+Theorem run_ctr:
+  client_world lfd c w0 ∧ N < cbound ∧ i < N ⇒
+  case cC a N rqs lfd lv w0 i n of
+  | CIdle => cC a N rqs lfd lv w0 i (SUC n) = CIdle ∨ ∃hd. cC a N rqs lfd lv w0 i (SUC n) = CPend hd
+  | CPend hd =>
+      cC a N rqs lfd lv w0 i (SUC n) = CPend hd ∨
+      cC a N rqs lfd lv w0 i (SUC n) = CIdle ∧
+      hstat (cS a N rqs lfd lv w0 n) hd = SOME Refused ∨
+      hstat (cS a N rqs lfd lv w0 n) hd ≠ SOME Refused ∧
+      (cC a N rqs lfd lv w0 i (SUC n) = CDone ∨ ∃r. cC a N rqs lfd lv w0 i (SUC n) = CUp hd r)
+  | CUp hd rest => cC a N rqs lfd lv w0 i (SUC n) = CDone ∨
+                   ∃r. cC a N rqs lfd lv w0 i (SUC n) = CUp hd r
+  | CDone => cC a N rqs lfd lv w0 i (SUC n) = CDone
+Proof
+  strip_tac >>
+  qspecl_then [‘w0’, ‘rqs’, ‘n’, ‘lv’, ‘lfd’, ‘i’, ‘c’, ‘a’, ‘N’] mp_tac
+    (Q.GENL [‘w0’, ‘rqs’, ‘n’, ‘lv’, ‘lfd’, ‘i’, ‘c’, ‘a’, ‘N’] cround_trans) >>
+  simp[] >> strip_tac >>
+  Cases_on ‘cC a N rqs lfd lv w0 i n’ >> gvs[ctr_def] >>
+  Cases_on ‘c' ∈ crdy (cH a N rqs lfd lv w0 n)’ >> gvs[] >> metis_tac[]
+QED

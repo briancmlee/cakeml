@@ -2567,3 +2567,91 @@ Proof
   first_x_assum (qspec_then ‘SUC k1’ mp_tac) >> simp[] >> rpt strip_tac >> gvs[] >>
   metis_tac[DECIDE “n ≤ k1 ⇒ n ≤ SUC k1”]
 QED
+
+(* Connection k has had a handle up, by round n *)
+Definition chi_def:
+  chi a N rqs lfd lv w0 n k ⇔
+    (∃hd r. cC a N rqs lfd lv w0 k n = CUp hd r) ∨ cC a N rqs lfd lv w0 k n = CDone ∨
+    ∃hd. cC a N rqs lfd lv w0 k n = CPend hd ∧ hstat (cS a N rqs lfd lv w0 n) hd = SOME Up
+End
+
+Definition cD_def:
+  cD a N rqs lfd lv w0 n = CARD {k | k < N ∧ chi a N rqs lfd lv w0 n k}
+End
+
+Theorem chi_SUC:
+  client_world lfd c w0 ∧ N < cbound ∧ k < N ∧ chi a N rqs lfd lv w0 n k ⇒
+  chi a N rqs lfd lv w0 (SUC n) k
+Proof
+  strip_tac >>
+  qspecl_then [‘w0’, ‘rqs’, ‘n’, ‘lv’, ‘lfd’, ‘k’, ‘c’, ‘a’, ‘N’] mp_tac
+    (Q.GENL [‘w0’, ‘rqs’, ‘n’, ‘lv’, ‘lfd’, ‘i’, ‘c’, ‘a’, ‘N’] run_ctr) >>
+  simp[] >> fs[chi_def] >> strip_tac >> gvs[] >>
+  rename1 ‘cC a N rqs lfd lv w0 k n = CPend hd’ >>
+  Cases_on ‘cC a N rqs lfd lv w0 k (SUC n) = CPend hd’ >> gvs[] >>
+  qspecl_then [‘w0’, ‘rqs’, ‘n’, ‘lv’, ‘lfd’, ‘k’, ‘hd’, ‘c’, ‘a’, ‘N’] mp_tac
+    (Q.GENL [‘w0’, ‘rqs’, ‘n’, ‘lv’, ‘lfd’, ‘i’, ‘hd’, ‘c’, ‘a’, ‘N’] run_pend_frame) >>
+  simp[]
+QED
+
+Theorem chi_mono:
+  client_world lfd c w0 ∧ N < cbound ∧ k < N ⇒
+  ∀d. chi a N rqs lfd lv w0 n k ⇒ chi a N rqs lfd lv w0 (n + d) k
+Proof
+  strip_tac >> Induct >> simp[] >> strip_tac >> fs[] >>
+  ‘n + SUC d = SUC (n + d)’ by simp[] >> pop_assum SUBST1_TAC >>
+  irule chi_SUC >> simp[] >> metis_tac[]
+QED
+
+Theorem cD_le:
+  cD a N rqs lfd lv w0 n ≤ N
+Proof
+  simp[cD_def] >>
+  ‘{k | k < N ∧ chi a N rqs lfd lv w0 n k} ⊆ count N’ by simp[SUBSET_DEF] >>
+  ‘CARD {k | k < N ∧ chi a N rqs lfd lv w0 n k} ≤ CARD (count N)’
+    by (irule CARD_SUBSET >> simp[]) >> fs[]
+QED
+
+Theorem cD_mono:
+  client_world lfd c w0 ∧ N < cbound ∧ n ≤ n' ⇒ cD a N rqs lfd lv w0 n ≤ cD a N rqs lfd lv w0 n'
+Proof
+  strip_tac >> simp[cD_def] >> irule CARD_SUBSET >> conj_tac
+  >- (irule SUBSET_FINITE >> qexists_tac ‘count N’ >> simp[SUBSET_DEF]) >>
+  simp[SUBSET_DEF] >> rpt strip_tac >>
+  ‘n' = n + (n' - n)’ by simp[] >> pop_assum SUBST1_TAC >>
+  irule chi_mono >> metis_tac[]
+QED
+
+Theorem up_at_0:
+  ¬up_at lfd lv ifds m w0 0 hd
+Proof
+  simp[up_at_hstat, hstat_pair, ehst_def, ehrounds_def, ehinit_def]
+QED
+
+(* A handle up for the first time belongs to a connection that has just
+   had a handle up *)
+Theorem newup_chi:
+  client_world lfd c w0 ∧ N < cbound ∧
+  up_at lfd lv (cifds a N rqs) (cprog a N rqs) w0 (SUC p) hd ∧
+  (∀n'. n' < SUC p ⇒ ¬up_at lfd lv (cifds a N rqs) (cprog a N rqs) w0 n' hd) ⇒
+  ∃k. k < N ∧ chi a N rqs lfd lv w0 (SUC p) k ∧ ¬chi a N rqs lfd lv w0 p k
+Proof
+  strip_tac >>
+  ‘hstat (cS a N rqs lfd lv w0 (SUC p)) hd = SOME Up’ by fs[up_at_hstat] >>
+  ‘MEM hd (MAP FST (SND (cS a N rqs lfd lv w0 (SUC p))).tbl)’
+    by (fs[hstat_pair] >> Cases_on ‘ALOOKUP (SND (cS a N rqs lfd lv w0 (SUC p))).tbl hd’ >>
+        fs[] >> imp_res_tac ALOOKUP_MEM >> fs[MEM_MAP] >> metis_tac[FST]) >>
+  drule_all run_crel >> disch_then (qspecl_then [‘rqs’, ‘SUC p’, ‘lv’, ‘a’] mp_tac) >>
+  simp[crel_def] >> strip_tac >> gvs[] >>
+  qexists_tac ‘i’ >> simp[] >>
+  ‘¬up_at lfd lv (cifds a N rqs) (cprog a N rqs) w0 p hd’ by simp[] >>
+  qspecl_then [‘w0’, ‘rqs’, ‘p’, ‘lv’, ‘lfd’, ‘i’, ‘c’, ‘a’, ‘N’] mp_tac
+    (Q.GENL [‘w0’, ‘rqs’, ‘n’, ‘lv’, ‘lfd’, ‘i’, ‘c’, ‘a’, ‘N’] run_ctr) >>
+  simp[] >> strip_tac >>
+  Cases_on ‘cC a N rqs lfd lv w0 i (SUC p)’ >> gvs[chd_def] >> simp[chi_def] >>
+  Cases_on ‘cC a N rqs lfd lv w0 i p’ >> gvs[] >>
+  TRY (qspecl_then [‘w0’, ‘rqs’, ‘p’, ‘lv’, ‘lfd’, ‘i’, ‘c'’, ‘l'’, ‘c’, ‘a’, ‘N’] mp_tac
+         (Q.GENL [‘w0’, ‘rqs’, ‘n’, ‘lv’, ‘lfd’, ‘i’, ‘hd’, ‘r’, ‘c’, ‘a’, ‘N’] run_up) >>
+       simp[] >> NO_TAC) >>
+  fs[up_at_hstat]
+QED

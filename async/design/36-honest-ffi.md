@@ -1393,6 +1393,20 @@ io` with R1-safe and R1-live, every byte delivered by a peer that
 drains is eventually written to that peer on the wire. The writes reach
 the wire because flushes progress under [F2] and D(c).
 
+**Correction (2026-10-17, moonshot step 8): S4 was not discharged.** D15
+says S4 is "discharged per server from v2 liveness and reply-only
+writes". That discharge needs L1's *output* liveness: if the peer drains,
+f's outbox shrinks. Nothing proved it; no PF theory used [F2] at all.
+So every R1-live result that assumes S4 (fetch_progress, live_data,
+the D16 corollary) rested on an unproved per-server obligation. The
+missing piece is the L1 lemma `flush_progress` (inflight falls to 0
+under D(c); then [F2] makes POLLOUT shown; then [F1] makes a send go
+through, so the outbox shrinks). With it, S4 is *derived* from the L2
+obligation `writes_follow_feeds` (design/45 §2.3) plus S3, not assumed.
+D(c) is made precise as `drains` (the peer's in-flight bytes eventually
+fall; an `LDrain` of 0 bytes does not count). Under construction on
+`spike/moonshot-s4g`.
+
 *Why it should hold:*
 - A byte in c's kernel inbox makes c's next unpaused poll report IN.
 - L1 then recvs, or retries after a transient failure ([F1]).

@@ -140,3 +140,64 @@ Proof
   gen_tac >> simp[ostep_def, wbytes_def, outbox_of_set_outbox] >>
   Cases_on ‘f' = f’ >> simp[]
 QED
+
+(* An fd that L1 stops holding during the step (closed): what was sent is
+   a prefix of what it had to send *)
+Definition ostepc_def:
+  ostepc f (b : l1st) evs adw ⇔
+    (¬MEM f b.gone ⇒ evs_sent f evs ≼ outbox_of b f ++ adw) ∧
+    (MEM f b.gone ⇒ evs_sent f evs = [])
+End
+
+Theorem ostep_ostepc:
+  ostep f b b' evs adw ⇒ ostepc f b evs adw
+Proof
+  rw[ostep_def, ostepc_def] >> Cases_on ‘MEM f b'.gone’ >> gvs[] >>
+  metis_tac[rich_listTheory.IS_PREFIX_APPEND3, IS_PREFIX_REFL]
+QED
+
+Theorem ostep_ostepc_trans:
+  ostep f b1 b2 e1 a1 ∧ ostepc f b2 e2 a2 ⇒ ostepc f b1 (e1 ++ e2) (a1 ++ a2)
+Proof
+  rw[ostep_def, ostepc_def] >>
+  Cases_on ‘MEM f b1.gone’ >> Cases_on ‘MEM f b2.gone’ >>
+  gvs[] >> fs[IS_PREFIX_APPEND] >> metis_tac[APPEND_ASSOC]
+QED
+
+Theorem ostepc_quiet:
+  ostepc f b e1 a1 ∧ evs_sent f e2 = [] ⇒ ostepc f b (e1 ++ e2) (a1 ++ a2)
+Proof
+  rw[ostepc_def] >> gvs[] >> fs[IS_PREFIX_APPEND] >> metis_tac[APPEND_ASSOC]
+QED
+
+Theorem ostepc_acct:
+  oacct raw b f hl ∧ ostepc f b evs adw ⇒ raw ++ evs_sent f evs ≼ hl ++ adw
+Proof
+  rw[oacct_def, ostepc_def] >> Cases_on ‘MEM f b.gone’ >> gvs[] >>
+  fs[IS_PREFIX_APPEND] >> metis_tac[APPEND_ASSOC]
+QED
+
+Theorem sys_close_quiet:
+  sys_close g w = SOME (out, w', ev) ⇒ ∀f. ev_sent f ev = []
+Proof
+  rw[sys_close_def] >> drule l0_do_cases >> rw[] >> simp[ev_sent_def]
+QED
+
+Theorem forget_other:
+  g ≠ f ⇒ outbox_of (forget g st) f = outbox_of st f ∧
+          (MEM f (forget g st).gone ⇔ MEM f st.gone) ∧
+          (MEM f (forget g st).closing ⇔ MEM f st.closing) ∧
+          (forget g st).tbl = st.tbl
+Proof
+  rw[forget_def, outbox_of_set_outbox, MEM_FILTER] >> simp[set_outbox_def, MEM_FILTER, outbox_of_def]
+QED
+
+Theorem l1_close_ostep:
+  l1_close g (w, b) = SOME ((w', b'), evs) ⇒
+  (∀f. evs_sent f evs = []) ∧ (∀f. f ≠ g ⇒ ostep f b b' evs []) ∧
+  b'.tbl = b.tbl ∧ (∀f. MEM f b'.closing ⇔ MEM f b.closing ∧ f ≠ g)
+Proof
+  simp[l1_close_def, AllCaseEqs(), PULL_EXISTS] >> rpt gen_tac >> strip_tac >>
+  drule sys_close_quiet >> strip_tac >> gvs[] >>
+  simp[ostep_def, forget_other] >> simp[forget_def, MEM_FILTER] >> metis_tac[]
+QED

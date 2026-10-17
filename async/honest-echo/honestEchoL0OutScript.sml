@@ -49,12 +49,39 @@ Definition live_def:
   live lfd ps j ⇔ ∃f. ALOOKUP ps.b.tbl (l1hdl lfd j) = SOME f ∧ ¬MEM f ps.b.gone
 End
 
-(* L1's outboxes: only held fds have one or are gone, and a gone fd has none *)
+(* L1's outboxes: only held fds have an outbox entry or are gone, and a
+   gone fd has an empty outbox *)
 Definition okb_def:
   okb (b : l1st) ⇔
-    ∀f. (outbox_of b f ≠ [] ∨ MEM f b.gone ⇒ MEM f (MAP SND b.tbl) ∨ MEM f b.closing) ∧
+    ∀f. (MEM f (MAP FST b.outbox) ∨ MEM f b.gone ⇒ MEM f (MAP SND b.tbl) ∨ MEM f b.closing) ∧
         (MEM f b.gone ⇒ outbox_of b f = [])
 End
+
+Theorem outbox_of_key:
+  outbox_of b f ≠ [] ⇒ MEM f (MAP FST b.outbox)
+Proof
+  rw[outbox_of_def] >> every_case_tac >> gvs[] >> imp_res_tac ALOOKUP_MEM >>
+  simp[MEM_MAP, EXISTS_PROD] >> metis_tac[]
+QED
+
+(* A fd with output, or gone, is held *)
+Theorem okb_held:
+  okb b ∧ (outbox_of b f ≠ [] ∨ MEM f b.gone) ⇒ MEM f (MAP SND b.tbl) ∨ MEM f b.closing
+Proof
+  rw[okb_def] >> metis_tac[outbox_of_key]
+QED
+
+Theorem MEM_FST_ADELKEY[simp]:
+  MEM g (MAP FST (ADELKEY k l)) ⇔ g ≠ k ∧ MEM g (MAP FST l)
+Proof
+  rw[ADELKEY_def, MEM_MAP, MEM_FILTER, EXISTS_PROD] >> metis_tac[]
+QED
+
+Theorem MEM_FST_set_outbox:
+  MEM g (MAP FST (set_outbox f x b).outbox) ⇒ g = f ∨ MEM g (MAP FST b.outbox)
+Proof
+  rw[set_outbox_def, ADELKEY_def, MEM_MAP, MEM_FILTER, EXISTS_PROD] >> metis_tac[]
+QED
 
 (* The bytes an action writes through handle hd *)
 Definition wr_def:
@@ -173,14 +200,16 @@ Theorem okb_set_outbox:
   okb b ∧ (MEM f (MAP SND b.tbl) ∨ MEM f b.closing) ∧ (MEM f b.gone ⇒ x = []) ⇒
   okb (set_outbox f x b)
 Proof
-  rw[okb_def] >> rw[] >> gvs[] >> metis_tac[]
+  rw[okb_def] >> rw[] >> gvs[] >>
+  TRY (drule MEM_FST_set_outbox >> strip_tac >> gvs[] >> NO_TAC) >>
+  metis_tac[]
 QED
 
 Theorem okb_after_send:
   okb b ∧ (MEM f (MAP SND b.tbl) ∨ MEM f b.closing) ⇒ okb (after_send f r b)
 Proof
   rw[after_send_def] >> every_case_tac >> gvs[]
-  >- (irule okb_set_outbox >> gvs[okb_def])
+  >- (irule okb_set_outbox >> fs[] >> strip_tac >> fs[okb_def])
   >> gvs[okb_def, MEM_FILTER, outbox_of_def, set_outbox_def, ALOOKUP_ADELKEY] >>
   rw[] >> gvs[] >> metis_tac[]
 QED
@@ -298,7 +327,7 @@ Proof
   ‘¬MEM f (MAP SND ps.b.tbl) ∧ ¬MEM f ps.b.closing’
     by (gvs[own_ok_def] >> conj_tac >>
         strip_tac >> gvs[MEM_MAP, EXISTS_PROD] >> res_tac >> gvs[]) >>
-  ‘outbox_of ps.b f = [] ∧ ¬MEM f ps.b.gone’ by (gvs[okb_def] >> metis_tac[]) >>
+  ‘outbox_of ps.b f = [] ∧ ¬MEM f ps.b.gone’ by metis_tac[okb_held] >>
   ‘ps.b.nxt < k’ by gvs[own_ok_def] >>
   ‘hdln (w2n l) ps.b.nxt < dimword (:64)’ by fs[] >>
   TRY (irule okb_acc >> simp[] >> NO_TAC) >>
@@ -566,7 +595,7 @@ Theorem send_out:
      (snt ++ ep_sn j (k, opn) [ev]) hwt j
 Proof
   strip_tac >> drule_all sys_send_event >> strip_tac >>
-  ‘MEM f (MAP SND b.tbl) ∨ MEM f b.closing’ by gvs[okb_def] >>
+  ‘MEM f (MAP SND b.tbl) ∨ MEM f b.closing’ by metis_tac[okb_held] >>
   ‘okb (after_send f (l0_res_of out) b)’ by (irule okb_after_send >> simp[]) >>
   simp[l0_ep_step_def] >>
   ‘ep_ok (k, opn)’ by gvs[own_ok_def] >>
@@ -665,7 +694,9 @@ Proof
     (Q.GENL [‘hfs’, ‘ob’, ‘log’, ‘ps’] stall_step_b) >>
   qabbrev_tac ‘ps' = stall_step hfs ob log ps’ >>
   conj_tac
-  >- (gvs[okb_def, FOLDL_drop_out] >> rw[] >> gvs[] >> metis_tac[]) >>
+  >- (‘∀g. MEM g (MAP FST ps'.b.outbox) ⇒ MEM g (MAP FST ps.b.outbox)’
+        by (gvs[] >> metis_tac[FOLDL_drop_out]) >>
+      gvs[okb_def, FOLDL_drop_out] >> rw[] >> gvs[] >> metis_tac[]) >>
   ‘snt = snt ++ []’ by simp[] >> pop_assum SUBST1_TAC >>
   irule oi_shift >> qexistsl [‘opn’, ‘ps’] >> simp[FOLDL_drop_out] >>
   simp[obp_def, live_def, FOLDL_drop_out] >>

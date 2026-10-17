@@ -71,7 +71,7 @@ Proof
   simp[AllCaseEqs(), PULL_EXISTS] >> rpt gen_tac >> strip_tac >> gvs[] >>
   rename1 ‘sys_send h _ w = SOME (out, w1, ev)’ >>
   drule_all sys_send_event >> strip_tac >>
-  ‘MEM h (MAP SND b.tbl) ∨ MEM h b.closing’ by gvs[okb_def] >>
+  ‘MEM h (MAP SND b.tbl) ∨ MEM h b.closing’ by metis_tac[okb_held] >>
   ‘∃i. i < b.nxt ∧ ALOOKUP opn h = SOME i’
     by (mp_tac (Q.INST [‘ps’ |-> ‘ps with b := b’, ‘f’ |-> ‘h’] own_held) >> simp[]) >>
   ‘l0_rely w1’ by (gvs[sys_send_def] >> metis_tac[l0_do_rely]) >>

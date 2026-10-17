@@ -77,23 +77,24 @@ QED
    ------------------------------------------------------------------------ *)
 
 (* Every send or recv in evs is on a fd open (in the episode map) just
-   before it, the map starting from s *)
+   before it, the map starting from s, under an index below N *)
 Definition sr_open_def:
-  sr_open s [] = T ∧
-  sr_open s (ev :: evs) =
-    ((∀f. ev_on «sys_send» f ev ∨ ev_on «sys_recv» f ev ⇒ ∃j. ALOOKUP (SND s) f = SOME j) ∧
-     sr_open (l0_ep_step s ev) evs)
+  sr_open N s [] = T ∧
+  sr_open N s (ev :: evs) =
+    ((∀f. ev_on «sys_send» f ev ∨ ev_on «sys_recv» f ev ⇒
+          ∃j. ALOOKUP (SND s) f = SOME j ∧ j < N) ∧
+     sr_open N (l0_ep_step s ev) evs)
 End
 
 Theorem sr_open_APPEND:
-  ∀xs s. sr_open s (xs ++ ys) ⇔ sr_open s xs ∧ sr_open (l0_ep_st s xs) ys
+  ∀xs s. sr_open N s (xs ++ ys) ⇔ sr_open N s xs ∧ sr_open N (l0_ep_st s xs) ys
 Proof
   Induct >> simp[sr_open_def] >> metis_tac[]
 QED
 
 Theorem sr_open_at:
-  sr_open s (pre ++ [ev] ++ post) ∧ (ev_on «sys_send» f ev ∨ ev_on «sys_recv» f ev) ⇒
-  ∃j. ALOOKUP (SND (l0_ep_st s pre)) f = SOME j
+  sr_open N s (pre ++ [ev] ++ post) ∧ (ev_on «sys_send» f ev ∨ ev_on «sys_recv» f ev) ⇒
+  ∃j. ALOOKUP (SND (l0_ep_st s pre)) f = SOME j ∧ j < N
 Proof
   rw[sr_open_APPEND, sr_open_def] >> metis_tac[]
 QED
@@ -101,7 +102,7 @@ QED
 (* Events that are neither sends nor recvs *)
 Theorem sr_open_quiet:
   ∀evs s. EVERY (λev. ev_name ev ≠ ExtCall «sys_send» ∧ ev_name ev ≠ ExtCall «sys_recv») evs ⇒
-          sr_open s evs
+          sr_open N s evs
 Proof
   Induct >> simp[sr_open_def] >> rpt strip_tac >> imp_res_tac ev_on_name >> gvs[]
 QED
@@ -143,7 +144,7 @@ QED
 
 (* A send: open if its fd is *)
 Theorem sr_open_send:
-  sys_send g bs w = SOME (out, w', ev) ∧ ALOOKUP (SND s) g = SOME j ⇒ sr_open s [ev]
+  sys_send g bs w = SOME (out, w', ev) ∧ ALOOKUP (SND s) g = SOME j ∧ j < N ⇒ sr_open N s [ev]
 Proof
   rw[sr_open_def] >> imp_res_tac sys_send_name >>
   TRY (drule ev_on_name >> simp[] >> NO_TAC) >>
@@ -151,22 +152,23 @@ Proof
 QED
 
 Theorem sr_open_recv:
-  sys_recv g n w = SOME (out, w', ev) ∧ ALOOKUP (SND s) g = SOME j ⇒ sr_open s [ev]
+  sys_recv g n w = SOME (out, w', ev) ∧ ALOOKUP (SND s) g = SOME j ∧ j < N ⇒ sr_open N s [ev]
 Proof
   rw[sr_open_def] >> drule ev_on_recv >> disch_then (qspec_then ‘f’ strip_assume_tac) >>
   imp_res_tac ev_on_name >> gvs[]
 QED
 
 Theorem sr_open_one_quiet:
-  ev_name ev = ExtCall nm ∧ nm ≠ «sys_send» ∧ nm ≠ «sys_recv» ⇒ sr_open s [ev]
+  ev_name ev = ExtCall nm ∧ nm ≠ «sys_send» ∧ nm ≠ «sys_recv» ⇒ sr_open N s [ev]
 Proof
   rw[sr_open_def] >> imp_res_tac ev_on_name >> gvs[]
 QED
 
 (* One action *)
 Theorem pdo_so:
-  pdo lfd (w, ps) a = SOME (r, (w', ps'), evs) ∧ l0_rely w ∧ own_ok lfd (k, opn) ps ⇒
-  sr_open (k, opn) evs
+  pdo lfd (w, ps) a = SOME (r, (w', ps'), evs) ∧ l0_rely w ∧ own_ok lfd (k, opn) ps ∧
+  ps.b.nxt ≤ N ⇒
+  sr_open N (k, opn) evs
 Proof
   strip_tac >> Cases_on ‘a’
   >- (drule pdo_accept_in >> strip_tac >> gvs[sr_open_def])
@@ -180,8 +182,8 @@ Proof
   qpat_x_assum ‘l1do _ _ _ = _’ mp_tac >> simp[l1do_def] >>
   rw[AllCaseEqs()] >> gvs[sr_open_def] >>
   drule_all own_tbl_lookup >> strip_tac >>
-  ‘ALOOKUP (SND (k, opn)) f = SOME j’ by simp[] >>
-  ‘sr_open (k, opn) [ev]’ by metis_tac[sr_open_send] >>
+  ‘ALOOKUP (SND (k, opn)) f = SOME j ∧ j < N’ by simp[] >>
+  ‘sr_open N (k, opn) [ev]’ by metis_tac[sr_open_send] >>
   fs[sr_open_def]
 QED
 
@@ -189,7 +191,7 @@ Theorem pacts_so:
   ∀acts w ps rs evs w' ps' opn.
     pacts lfd (w, ps) acts = SOME (rs, evs, (w', ps')) ∧ l0_rely w ∧
     own_ok lfd (k, opn) ps ∧ ps.b.nxt + naccepts acts < dimword (:64) ⇒
-    sr_open (k, opn) evs
+    sr_open k (k, opn) evs
 Proof
   Induct >> simp[pacts_def, sr_open_def] >> rpt gen_tac >> strip_tac >>
   gvs[AllCaseEqs()] >>
@@ -201,13 +203,14 @@ Proof
         fs[]) >>
   drule_all pdo_in >> strip_tac >>
   drule_all pdo_rely >> strip_tac >>
+  ‘ps.b.nxt ≤ k’ by gvs[own_ok_def] >>
   drule_all pdo_so >> strip_tac >>
   Cases_on ‘l0_ep_st (k, opn) evs1’ >> gvs[] >>
   simp[sr_open_APPEND] >> first_x_assum irule >> metis_tac[]
 QED
 
 Theorem l1_polls_so:
-  ∀cs w rv w' evs. l1_polls cs w = SOME (rv, w', evs) ∧ l0_rely w ⇒ ∀s. sr_open s evs
+  ∀cs w rv w' evs. l1_polls cs w = SOME (rv, w', evs) ∧ l0_rely w ⇒ ∀s. sr_open N s evs
 Proof
   Induct >> simp[l1_polls_def, sr_open_def] >> rpt gen_tac >> strip_tac >>
   gvs[AllCaseEqs()] >> drule_all sys_poll_event >> strip_tac >>
@@ -218,7 +221,7 @@ QED
 
 Theorem l1_reap_so:
   ∀fs w b w' b' evs.
-    l1_reap fs (w, b) = SOME ((w', b'), evs) ∧ l0_rely w ⇒ ∀s. sr_open s evs
+    l1_reap fs (w, b) = SOME ((w', b'), evs) ∧ l0_rely w ⇒ ∀s. sr_open N s evs
 Proof
   Induct >> simp[l1_reap_def, sr_open_def] >> rpt gen_tac >> strip_tac >>
   gvs[AllCaseEqs()] >>
@@ -250,8 +253,8 @@ QED
 Theorem l1_flush_so:
   ∀fs w b w' b' evs.
     l1_flush fs (w, b) = SOME ((w', b'), evs) ∧ l0_rely w ∧ okb b ∧
-    own_ok lfd (k, opn) (ps with b := b) ⇒
-    sr_open (k, opn) evs
+    own_ok lfd (k, opn) (ps with b := b) ∧ b.nxt ≤ N ⇒
+    sr_open N (k, opn) evs
 Proof
   Induct >> simp[l1_flush_def, sr_open_def] >> rpt gen_tac >> strip_tac >>
   qpat_x_assum ‘(if _ then _ else _) = _’ mp_tac >> IF_CASES_TAC >> simp[]
@@ -269,11 +272,11 @@ Proof
     by (mp_tac (Q.INST [‘ps'’ |-> ‘ps with b := after_send h (l0_res_of out) b’,
                         ‘ps’ |-> ‘ps with b := b’, ‘es’ |-> ‘(k, opn)’] own_ok_cong) >>
         simp[after_send_nfields2]) >>
-  ‘sr_open (k, opn) evs'’
+  ‘sr_open N (k, opn) evs'’
     by (first_x_assum (qspecl_then [‘w1’, ‘after_send h (l0_res_of out) b’, ‘w'’, ‘b'’, ‘evs'’]
           mp_tac) >> simp[]) >>
-  ‘ALOOKUP (SND (k, opn)) h = SOME i’ by simp[] >>
-  ‘sr_open (k, opn) [ev]’ by metis_tac[sr_open_send] >>
+  ‘ALOOKUP (SND (k, opn)) h = SOME i ∧ i < N’ by simp[] >>
+  ‘sr_open N (k, opn) [ev]’ by metis_tac[sr_open_send] >>
   ‘l0_ep_step (k, opn) ev = (k, opn)’ by simp[l0_ep_step_def] >>
   mp_tac (Q.INST [‘ys’ |-> ‘evs'’] (Q.SPECL [‘[ev]’, ‘(k, opn)’] sr_open_APPEND)) >>
   simp[] >> disch_then SUBST1_TAC >> fs[]
@@ -283,9 +286,9 @@ Theorem pf_fetch_so:
   ∀fs w ps k opn w' ps' log evs.
     pf_fetch lfd hw fs (w, ps) = SOME ((w', ps'), log, evs) ∧
     wown lfd w ps ∧ own_ok lfd (k, opn) ps ∧ LENGTH ps.acq ≤ 1 ∧
-    ps.b.nxt < dimword (:64) ∧
+    ps.b.nxt < dimword (:64) ∧ ps.b.nxt ≤ N ∧
     (∀f. MEM f fs ⇒ f = lfd ∨ MEM f (MAP SND ps.b.tbl)) ⇒
-    sr_open (k, opn) evs
+    sr_open N (k, opn) evs
 Proof
   Induct >- (rw[pf_fetch_def] >> simp[sr_open_def]) >>
   rpt gen_tac >> strip_tac >>
@@ -328,8 +331,8 @@ Proof
   >- (gvs[] >> rpt conj_tac >> TRY (every_case_tac >> gvs[] >> NO_TAC) >> metis_tac[]) >>
   strip_tac >>
   ‘∃i. i < ps.b.nxt ∧ ALOOKUP opn h = SOME i’ by metis_tac[own_held2] >>
-  ‘ALOOKUP (SND (k, opn)) h = SOME i’ by simp[] >>
-  ‘sr_open (k, opn) [ev]’ by metis_tac[sr_open_recv] >>
+  ‘ALOOKUP (SND (k, opn)) h = SOME i ∧ i < N’ by simp[] >>
+  ‘sr_open N (k, opn) [ev]’ by metis_tac[sr_open_recv] >>
   gvs[] >>
   mp_tac (Q.INST [‘ys’ |-> ‘evs'’] (Q.SPECL [‘[ev]’, ‘(k, opn)’] sr_open_APPEND)) >>
   simp[] >> disch_then SUBST1_TAC >> fs[]
@@ -344,8 +347,8 @@ QED
 Theorem pf_tail_so:
   pf_tail lfd hw hs (w, ps) = SOME (rdy, (w', ps'), log, evs) ∧
   wown lfd w ps ∧ own_ok lfd (k, opn) ps ∧ LENGTH ps.acq ≤ 1 ∧
-  ps.b.nxt < dimword (:64) ∧ okb ps.b ⇒
-  sr_open (k, opn) evs
+  ps.b.nxt < dimword (:64) ∧ okb ps.b ∧ ps.b.nxt ≤ N ⇒
+  sr_open N (k, opn) evs
 Proof
   strip_tac >> qpat_x_assum ‘pf_tail _ _ _ _ = _’ mp_tac >>
   simp[pf_tail_def, AllCaseEqs(), PULL_EXISTS] >> rpt gen_tac >> strip_tac >>
@@ -360,13 +363,13 @@ Proof
   drule_all l1_flush_in >> disch_then (qspec_then ‘(k, opn)’ strip_assume_tac) >>
   ‘wown lfd w2 (ps with b := b2)’ by (irule l1_flush_wown >> metis_tac[]) >>
   ‘own_ok lfd (k, opn) (ps with b := ps.b)’ by simp[l1p_b_id] >>
-  ‘sr_open (k, opn) fevs’
+  ‘sr_open N (k, opn) fevs’
     by (mp_tac (Q.SPECL [‘writable_fds rv’, ‘w1’, ‘ps.b’, ‘w2’, ‘b2’, ‘fevs’] l1_flush_so) >>
         impl_tac >- fs[] >> simp[]) >>
   ‘own_ok lfd (k, opn) (ps with b := b2)’
     by (mp_tac (Q.INST [‘ps'’ |-> ‘ps with b := b2’, ‘es’ |-> ‘(k, opn)’] own_ok_cong) >>
         simp[]) >>
-  ‘sr_open (k, opn) gevs’
+  ‘sr_open N (k, opn) gevs’
     by (irule pf_fetch_so >>
         qexistsl [‘FILTER (λf. MEM f (in_fds (pf_poll_set lfd hw ps hs))) (readable_fds rv)’,
                   ‘hw’, ‘lfd’, ‘log’, ‘ps with b := b2’, ‘ps3'’, ‘w2’, ‘w3’] >>
@@ -386,14 +389,14 @@ Theorem pround_so:
   pround lfd hw hs (w, ps) acts = SOME (sn, (w', ps'), log, evs) ∧
   wown lfd w ps ∧ own_ok lfd (k, opn) ps ∧ LENGTH ps.acq ≤ 1 ∧ okb ps.b ∧
   ps.b.nxt + naccepts acts < dimword (:64) ⇒
-  sr_open (k, opn) evs
+  sr_open k (k, opn) evs
 Proof
   strip_tac >> qpat_x_assum ‘pround _ _ _ _ _ = _’ mp_tac >>
   simp[pround_def, AllCaseEqs(), PULL_EXISTS] >> rpt gen_tac >> strip_tac >>
   rename1 ‘pacts _ _ _ = SOME (rs, evs1, ws1)’ >> PairCases_on ‘ws1’ >>
   rename1 ‘pf_tail _ _ _ _ = SOME (rdy, _, log2, tevs)’ >>
   ‘l0_rely w’ by gvs[wown_def] >>
-  ‘sr_open (k, opn) evs1’
+  ‘sr_open k (k, opn) evs1’
     by (qspecl_then [‘acts’, ‘w’, ‘ps’, ‘rs’, ‘evs1’, ‘ws10’, ‘ws11’, ‘opn’] mp_tac pacts_so >>
         impl_tac >- fs[] >> simp[]) >>
   drule_all pacts_in >> strip_tac >>
@@ -405,9 +408,10 @@ Proof
   rename1 ‘own_ok lfd (k, opn1) ws11’ >>
   ‘LENGTH ws11.acq ≤ 1’ by (Cases_on ‘acts’ >> gvs[own_ok_def]) >>
   ‘ws11.b.nxt < dimword (:64)’ by fs[] >>
-  ‘sr_open (k, opn1) tevs’
+  ‘ws11.b.nxt ≤ k’ by gvs[own_ok_def] >>
+  ‘sr_open k (k, opn1) tevs’
     by (mp_tac (Q.INST [‘w’ |-> ‘ws10’, ‘ps’ |-> ‘ws11’, ‘opn’ |-> ‘opn1’, ‘evs’ |-> ‘tevs’,
-                        ‘log’ |-> ‘log2’] pf_tail_so) >>
+                        ‘log’ |-> ‘log2’, ‘N’ |-> ‘k’] pf_tail_so) >>
         impl_tac >- fs[] >> simp[]) >>
   fs[sr_open_APPEND]
 QED
@@ -430,7 +434,7 @@ Proof
         gvs[rstate_def, rhist_def, run_ok_def, pl2_ok_def] >>
         first_x_assum drule >> simp[]) >>
   Cases_on ‘l0_ep_st (0, []) (revs lfd pol ifds m w0 k)’ >>
-  ‘sr_open (q, r) (rrev lfd pol ifds m w0 k)’
+  ‘sr_open q (q, r) (rrev lfd pol ifds m w0 k)’
     by (qpat_x_assum ‘pround _ _ _ _ _ = _’
           (fn th => mp_tac (MATCH_MP (REWRITE_RULE [GSYM AND_IMP_INTRO]
              (INST [“k:num” |-> “q:num”, “opn:(word64 # num) list” |-> “r:(word64 # num) list”]
@@ -723,6 +727,37 @@ Proof
         rpt (impl_tac >- fs[]) >> simp[]) >>
   ‘∃j. ALOOKUP (SND (l0_ep_st (q, r) pre)) f = SOME j ∧ j < q’
     by (irule po_open_at >> gvs[] >> metis_tac[]) >>
+  strip_tac >>
+  ‘q ≤ j’
+    by (qspecl_then [‘pre’, ‘(q, r)’] mp_tac ep_end_reindex >> simp[]) >>
+  fs[]
+QED
+
+(* MAIN: no event of round i before a send or recv on f ends f's episode *)
+Theorem send_no_end_before:
+  run_ok lfd pol ifds m w0 ∧ winv w0 ∧ MEM lfd (l0_used w0) ∧
+  rrev lfd pol ifds m w0 i = pre ++ [ev] ++ post ∧
+  (ev_on «sys_send» f ev ∨ ev_on «sys_recv» f ev) ⇒
+  ¬EXISTS (λe. l0_event_closed e = SOME f ∨ l0_event_accepted e = SOME f) pre
+Proof
+  strip_tac >>
+  drule_all run_own >> disch_then (qspec_then ‘i’ strip_assume_tac) >>
+  drule prun_round' >> disch_then (qspecl_then [‘f’, ‘i’] strip_assume_tac) >>
+  drule prun_some >> disch_then (qspec_then ‘i’ assume_tac) >>
+  ‘(rstate lfd pol ifds m w0 i).b.nxt +
+   naccepts (new_actions (log_of m) (rhist lfd pol ifds m w0 i)) < dimword (:64)’
+    by (Cases_on ‘prun lfd pol ifds m w0 i’ >> rename1 ‘_ = (hh, r)’ >> PairCases_on ‘r’ >>
+        gvs[rstate_def, rhist_def, run_ok_def, pl2_ok_def] >>
+        first_x_assum drule >> simp[]) >>
+  Cases_on ‘l0_ep_st (0, []) (revs lfd pol ifds m w0 i)’ >>
+  ‘sr_open q (q, r) (rrev lfd pol ifds m w0 i)’
+    by (qpat_x_assum ‘pround _ _ _ _ _ = _’
+          (fn th => mp_tac (MATCH_MP (REWRITE_RULE [GSYM AND_IMP_INTRO]
+             (INST [“k:num” |-> “q:num”, “opn:(word64 # num) list” |-> “r:(word64 # num) list”]
+                pround_so)) th)) >>
+        rpt (impl_tac >- fs[]) >> simp[]) >>
+  ‘∃j. ALOOKUP (SND (l0_ep_st (q, r) pre)) f = SOME j ∧ j < q’
+    by (irule sr_open_at >> gvs[] >> metis_tac[]) >>
   strip_tac >>
   ‘q ≤ j’
     by (qspecl_then [‘pre’, ‘(q, r)’] mp_tac ep_end_reindex >> simp[]) >>

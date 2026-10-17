@@ -716,13 +716,13 @@ Definition l0_call_def:
       (if LENGTH conf = 8 ∧ LENGTH bytes = l0_hdr ∧ fd_ok (bytes_fd conf) then
          let (r, w') = l0_close (bytes_fd conf) w in SOME (FFIreturn (enc_res r) w')
        else NONE)
-    else if n = «sys_stdio» then
-      (* Whether fds 0, 1 and 2 are open (design/50 (c2)), one byte each:
-         1 open, 0 closed.  [P fcntl] F_GETFD fails with EBADF exactly when
-         "the fildes argument is not a valid open file descriptor", so the
-         answer is exact; the world is unchanged *)
-      (if conf = [] ∧ LENGTH bytes = 3 then
-         SOME (FFIreturn (GENLIST (λi. if MEM (n2w i) (l0_used w) then 1w else 0w) 3) w)
+    else if n = «sys_fdok» then
+      (* Whether the fd conf names (one byte) is open (D33): 1 open, 0 not.
+         [P fcntl] F_GETFD fails with EBADF exactly when "the fildes
+         argument is not a valid open file descriptor", so the answer is
+         exact; the world is unchanged *)
+      (if LENGTH conf = 1 ∧ LENGTH bytes = 1 then
+         SOME (FFIreturn [if MEM (w2w (HD conf)) (l0_used w) then 1w else 0w] w)
        else NONE)
     else NONE
 End

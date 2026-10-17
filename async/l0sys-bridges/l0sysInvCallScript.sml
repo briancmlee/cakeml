@@ -170,7 +170,8 @@ Theorem l0_send_cases:
   l0_send f bs w = (r, w') ⇒
   (∃e. r = fail w e) ∧
   (w' = w ∨ ∃j. l0_chan_of w f = SOME j ∧ w' = upd_lchan j (λc. c with err := NONE) w) ∨
-  ∃j k. l0_chan_of w f = SOME j ∧ r = Ok k ∧ k ≤ w.ch.takes j w.hist (EL j w.chans).inflight (LENGTH bs) ∧
+  ∃j k. l0_chan_of w f = SOME j ∧ r = Ok k ∧ ¬(EL j w.chans).connecting ∧
+        k ≤ w.ch.takes j w.hist (EL j w.chans).inflight (LENGTH bs) ∧
         w' = upd_lchan j (λc. c with <| sent := c.sent ++ TAKE k bs;
                                         inflight := c.inflight + k |>) w
 Proof
@@ -262,6 +263,27 @@ Proof
 QED
 
 (*---------------------------------------------------------------------------*)
+(* The channel a new episode gets *)
+
+(* The first connection queued on listener l *)
+Definition pop_chan_def:
+  pop_chan (w : l0world) l =
+    case FILTER (λ(l', p, q). l' = l) w.listeners of
+    | (_, _, j :: _) :: _ => j
+    | _ => 0
+End
+
+(* The channels the episodes an event starts get: a connect's new channel,
+   or the connection an accept takes off the queue *)
+Definition new_chans_def:
+  new_chans (w : l0world) ev =
+    case ev_new ev of
+    | NONE => []
+    | SOME (f, INL p) => [LENGTH w.chans]
+    | SOME (f, INR l) => [pop_chan w l]
+End
+
+(*---------------------------------------------------------------------------*)
 (* accept *)
 
 Theorem l0_accept_cases:
@@ -284,25 +306,30 @@ QED
 Theorem pinv_call_accept:
   l0_rely w ∧ pinv evs w cs ∧
   l0_call «sys_accept» conf bytes w = SOME (FFIreturn out w1) ∧ LENGTH out = LENGTH bytes ⇒
-  ∃cs'. cs ≼ cs' ∧
-        pinv (evs ++ [IO_event (ExtCall «sys_accept») conf (ZIP (bytes, out))]) w1 cs'
+  pinv (evs ++ [IO_event (ExtCall «sys_accept») conf (ZIP (bytes, out))]) w1
+       (cs ++ new_chans w (IO_event (ExtCall «sys_accept») conf (ZIP (bytes, out))))
 Proof
   strip_tac >> ‘MAP SND (ZIP (bytes, out)) = out’ by metis_tac[MAP_ZIP] >>
   gvs[l0_call_def, AllCaseEqs()] >> pairarg_tac >> gvs[] >>
   drule l0_accept_cases >> strip_tac >> gvs[] >>
-  TRY (qexists_tac ‘cs’ >> simp[] >>
-       qmatch_goalsub_abbrev_tac ‘IO_event _ _ bl’ >>
+  TRY (qmatch_goalsub_abbrev_tac ‘IO_event _ _ bl’ >>
        ‘∀v. dec_res (MAP SND bl) ≠ SOME (Ok v)’
          by (unabbrev_all_tac >> gvs[] >>
              ‘enc_res (fail w e) = enc_res (fail w e) ++ []’ by simp[] >>
              pop_assum SUBST1_TAC >> simp[dec_res_fail]) >>
        ‘ev_new (IO_event (ExtCall «sys_accept») conf bl) = NONE’
          by (simp[ev_new_def] >> every_case_tac >> gvs[]) >>
-       drule ev_not_ok >> strip_tac >> simp[pinv_noop] >>
+       drule ev_not_ok >> strip_tac >> simp[pinv_noop, new_chans_def] >>
        TRY (drule_all pinv_pop >> simp[] >> NO_TAC) >>
        TRY (irule pinv_break >> drule_all pinv_pop >> simp[] >> NO_TAC) >> NO_TAC) >>
   (* the accepted connection: a new episode *)
-  qexists_tac ‘cs ++ [j]’ >> simp[] >>
+  ‘pop_chan w (bytes_fd conf) = j’ by simp[pop_chan_def] >>
+  ‘new_chans w (IO_event (ExtCall «sys_accept») conf (ZIP (bytes, enc_res (Ok (w2n f))))) = [j]’
+    by (simp[new_chans_def, ev_new_def] >>
+        ‘enc_res (Ok (w2n f)) = enc_res (Ok (w2n f)) ++ []’ by simp[] >>
+        pop_assum SUBST1_TAC >> DEP_REWRITE_TAC[dec_res_ok] >>
+        assume_tac (w2n_lt |> INST_TYPE [alpha |-> “:64”]) >> gvs[]) >>
+  simp[] >>
   qabbrev_tac ‘pop = w with listeners := AFUPDKEY (bytes_fd conf) (K (p, q')) w.listeners’ >>
   ‘pinv evs pop cs ∧ ∀l' p' q''. MEM (l', p', q'') pop.listeners ⇒ ¬MEM j q''’
     by (simp[Abbr ‘pop’] >> irule pinv_pop >> metis_tac[]) >>
@@ -428,8 +455,8 @@ QED
 Theorem pinv_call_connect:
   l0_rely w ∧ pinv evs w cs ∧
   l0_call «sys_connect» conf bytes w = SOME (FFIreturn out w1) ∧ LENGTH out = LENGTH bytes ⇒
-  ∃cs'. cs ≼ cs' ∧
-        pinv (evs ++ [IO_event (ExtCall «sys_connect») conf (ZIP (bytes, out))]) w1 cs'
+  pinv (evs ++ [IO_event (ExtCall «sys_connect») conf (ZIP (bytes, out))]) w1
+       (cs ++ new_chans w (IO_event (ExtCall «sys_connect») conf (ZIP (bytes, out))))
 Proof
   strip_tac >> ‘MAP SND (ZIP (bytes, out)) = out’ by metis_tac[MAP_ZIP] >>
   qabbrev_tac ‘ev = IO_event (ExtCall «sys_connect») conf (ZIP (bytes, out))’ >>
@@ -445,14 +472,15 @@ Proof
             pop_assum SUBST1_TAC >> irule dec_res_ok >>
             assume_tac (w2n_lt |> INST_TYPE [alpha |-> “:64”]) >> gvs[]) >>
       ‘ev_new ev = SOME (f, INL (w22n conf))’ by gvs[Abbr ‘ev’, ev_new_def] >>
-      qexists_tac ‘cs ++ [LENGTH w.chans]’ >> simp[] >>
+      ‘new_chans w ev = [LENGTH w.chans]’ by fs[new_chans_def] >> pop_assum SUBST1_TAC >>
       irule pinv_upd >> rpt conj_tac >>
       TRY (irule pinv_connect_episode >> gvs[] >> NO_TAC) >>
       simp[EL_APPEND2, in_ok_def]) >>
   (* a failed connect *)
   ‘LENGTH bytes = 13’ by gvs[l0_hdr_def] >>
   TRY (‘ev_new ev = NONE’ by simp[Abbr ‘ev’, ev_new_connect_fail] >>
-       qexists_tac ‘cs’ >> simp[pinv_noop] >> NO_TAC) >>
+       ‘new_chans w ev = []’ by fs[new_chans_def] >> pop_assum SUBST1_TAC >>
+       simp[pinv_noop] >> NO_TAC) >>
   ‘¬MEM f (l0_used w) ∧ w2n f < w.fd_limit’
     by (irule l0_alloc_fresh >> gvs[pinv_def, l0_rely_def]) >>
   ‘w2n f < 256 ** 8’ by (assume_tac (w2n_lt |> INST_TYPE [alpha |-> “:64”]) >> gvs[]) >>
@@ -460,12 +488,12 @@ Proof
     by (simp[Abbr ‘ev’, ev_new_connect_fail] >> rw[]) >>
   Cases_on ‘f = 0w’ >> gvs[] >>
   FIRST [
-    qexists_tac ‘cs’ >> simp[] >>
+    ‘new_chans w ev = []’ by fs[new_chans_def] >> pop_assum SUBST1_TAC >> simp[] >>
     FIRST [irule pinv_connect_hidden >> gvs[] >> NO_TAC,
            irule pinv_upd >> rpt conj_tac >>
            TRY (irule pinv_connect_hidden >> gvs[] >> NO_TAC) >>
            simp[EL_APPEND2, in_ok_def] >> NO_TAC],
-    qexists_tac ‘cs ++ [LENGTH w.chans]’ >> simp[] >>
+    ‘new_chans w ev = [LENGTH w.chans]’ by fs[new_chans_def] >> pop_assum SUBST1_TAC >>
     FIRST [irule pinv_connect_episode >> gvs[] >> NO_TAC,
            irule pinv_upd >> rpt conj_tac >>
            TRY (irule pinv_connect_episode >> gvs[] >> NO_TAC) >>
@@ -481,24 +509,31 @@ Proof
   simp[unblock_def]
 QED
 
+Theorem new_chans_other:
+  nm ≠ «sys_connect» ∧ nm ≠ «sys_accept» ⇒
+  new_chans w (IO_event (ExtCall nm) conf bl) = []
+Proof
+  simp[new_chans_def, ev_new_def]
+QED
+
 (* MAIN: a call as l0sys makes it keeps the invariant; the episodes it
-   knows only grow *)
+   starts get new_chans *)
 Theorem pinv_call:
   l0_rely w ∧ small_ch w.ch ∧ pinv evs w cs ∧
   l0_call nm (unblock nm conf) bytes w = SOME (FFIreturn out w1) ⇒
-  ∃cs'. cs ≼ cs' ∧ pinv (evs ++ [IO_event (ExtCall nm) conf (ZIP (bytes, out))]) w1 cs'
+  pinv (evs ++ [IO_event (ExtCall nm) conf (ZIP (bytes, out))]) w1
+       (cs ++ new_chans w (IO_event (ExtCall nm) conf (ZIP (bytes, out))))
 Proof
   strip_tac >>
   Cases_on ‘nm = «sys_poll»’
-  >- (gvs[] >> drule l0_call_poll_unblock >> strip_tac >> gvs[] >>
-      qexists_tac ‘cs’ >> simp[pinv_call_poll]) >>
+  >- (gvs[] >> drule l0_call_poll_unblock >> strip_tac >> gvs[new_chans_other] >>
+      simp[pinv_call_poll]) >>
   gvs[unblock_other] >>
   ‘LENGTH out = LENGTH bytes’ by metis_tac[l0_call_length] >>
-  Cases_on ‘nm = «sys_listen»’
-  >- (gvs[] >> qexists_tac ‘cs’ >> simp[] >> irule pinv_call_listen >> metis_tac[]) >>
   Cases_on ‘nm = «sys_accept»’ >- (gvs[] >> irule pinv_call_accept >> metis_tac[]) >>
   Cases_on ‘nm = «sys_connect»’ >- (gvs[] >> irule pinv_call_connect >> metis_tac[]) >>
-  qexists_tac ‘cs’ >> simp[] >>
+  simp[new_chans_other] >>
+  Cases_on ‘nm = «sys_listen»’ >- (gvs[] >> irule pinv_call_listen >> metis_tac[]) >>
   Cases_on ‘nm = «sys_send»’ >- (gvs[] >> irule pinv_call_send >> metis_tac[]) >>
   Cases_on ‘nm = «sys_recv»’ >- (gvs[] >> irule pinv_call_recv >> metis_tac[]) >>
   Cases_on ‘nm = «sys_shutdown»’ >- (gvs[] >> irule pinv_call_shutdown >> metis_tac[]) >>

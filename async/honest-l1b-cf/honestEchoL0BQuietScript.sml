@@ -5,12 +5,11 @@
   reindexed post-listen world (echo_pf_facts).  Nothing here is trusted:
   every fact used is a hypothesis of the final theorem.
 
-  The claim proved is quiet_on_kernel_claim with the PENDING amendment
-  (ruling #3, agreed with async-spike, routed to the user): the
-  arrivals_finite clause's Diverge case also allows ¬accepts_below io
-  (D25: after 2^64 − 1 connections the loop stops making calls).  Under
-  echo_pf_facts the guard never fires, so the amendment is not used in
-  this instance's proof; it is stated as amended for the claim's shape.
+  Under echo_pf_facts the D25 guard never fires (its run_ok includes the
+  PF run's handle bound), so the claim holds as L3-00 states it
+  (echo_l0b_quiet); the form with the PENDING amendment #3 (¬accepts_below
+  io in the Diverge excuse) follows (echo_l0b_quiet_a).  The amendment
+  matters only where the PF facts are relaxed to allow handle exhaustion.
 
   MAIN: echo_l0b_quiet_world, echo_l0b_quiet.
 *)
@@ -48,10 +47,11 @@ Overload esrv = “λk. srelabel (server k)”
 Overload epfw = “λk w1. reindex (btr (elfd k) epol (eifds k) (K F) (esrv k) (w1, pinit)) w1”
 
 (* The PF run's standing facts and the PF echo's guarantee there, and the
-   server facts the blocking refinement uses (bquiet, SQ) *)
+   server facts the blocking refinement uses (bquiet, SQ); the world facts
+   after the listen (l0wf, lone) are derived (listen_l0wf, listen_lone) *)
 Definition echo_pf_facts_def:
   echo_pf_facts KK k w1 ⇔
-    bquiet (esrv k) (eifds k) (K F) ∧ l0wf w1 ∧ lone (elfd k) w1 ∧
+    bquiet (esrv k) (eifds k) (K F) ∧
     run_ok (elfd k) epol (eifds k) (esrv k) (epfw k w1) ∧
     winv (epfw k w1) ∧ linv (elfd k) (epfw k w1) ∧ qfresh (epfw k w1) ∧
     MEM (elfd k) (l0_used (epfw k w1)) ∧
@@ -160,6 +160,42 @@ Proof
   drule ffi_fn_env >> simp[] >> metis_tac[]
 QED
 
+(* After the listen: the world is well formed, with the one listener *)
+Theorem listen_l0wf:
+  l0_server_world w0 ∧ sys_listen_echo w0 = SOME (out, w1, ev) ⇒ l0wf w1
+Proof
+  rw[sys_listen_echo_def, l0_do_def, AllCaseEqs()] >>
+  irule l0wf_ffi_fn >> first_x_assum (irule_at Any) >>
+  fs[l0_server_world_def, l0wf_def, used_chans_def]
+QED
+
+Theorem deliver_keys[local]:
+  ∀as w. MAP FST (FOLDL l0_deliver w as).listeners = MAP FST w.listeners
+Proof
+  Induct >> simp[] >> rpt gen_tac >>
+  Cases_on ‘h’ >> simp[l0_deliver_def] >> rw[upd_lchan_def] >> every_case_tac >>
+  simp[alistTheory.MAP_FST_AFUPDKEY]
+QED
+
+Theorem listen_lone:
+  l0_server_world w0 ∧ sys_listen_echo w0 = SOME (out, w1, ev) ∧ listen_fd out = SOME k ⇒
+  lone (n2w k) w1
+Proof
+  rw[sys_listen_echo_def, l0_do_def, l0_ffi_fn_def] >>
+  ‘MAP FST (l0_tick «sys_listen» w0).listeners = []’
+    by (REWRITE_TAC [l0_tick_def, deliver_keys] >> fs[l0_server_world_def]) >>
+  gvs[AllCaseEqs(), l0_call_def, echo_port_conf_def]
+  >- (‘dec_res (enc_res (Ok (w2n f)) ++ []) = SOME (Ok (w2n f))’
+        by (irule dec_enc_res >> simp[l0_res_ok_def] >>
+            assume_tac (INST_TYPE [alpha |-> “:64”] wordsTheory.w2n_lt) >> fs[]) >>
+      gvs[listen_fd_def, l0_res_of_def] >>
+      gvs[l0_listen_def, AllCaseEqs(), lone_def])
+  >> PairCases_on ‘ke’ >>
+  ‘n2w (err_code ke1) ≠ (0w:word8)’
+    by (mp_tac (Q.INST [‘e’ |-> ‘ke1’] err_code_range) >> simp[wordsTheory.n2w_11]) >>
+  gvs[enc_listen_fail_def, listen_fd_def, l0_res_of_def, dec_res_def, AllCaseEqs()]
+QED
+
 (* ------------------------------------------------------------------------
    The instance
    ------------------------------------------------------------------------ *)
@@ -175,7 +211,7 @@ Theorem echo_l0b_quiet_world:
        (∃io. asleep_l0 b io ∧ echo2_guar_l0 KK w0 (fromList io))) ∧
       (arrivals_finite_l0 w0 ⇒
        listen_failed b ∨ (∃io. asleep_l0 b io) ∨
-       ∃io. b = Diverge io ∧ (¬F1_io io ∨ accepts_fail_io io ∨ ¬accepts_below io))
+       ∃io. b = Diverge io ∧ (¬F1_io io ∨ accepts_fail_io io))
 Proof
   strip_tac >>
   ‘l0_rely w0 ∧ w0.hist = [] ∧ w0.listeners = []’ by fs[l0_server_world_def] >>
@@ -185,6 +221,7 @@ Proof
       drule_all listen_failed_echo >> simp[]) >>
   (* the listen succeeds: the loop's facts, in the PF world *)
   first_x_assum drule_all >> simp[echo_pf_facts_def] >> strip_tac >>
+  ‘l0wf w1 ∧ lone (elfd k) w1’ by metis_tac[listen_l0wf, listen_lone] >>
   drule_all sys_listen_echo_shift >> strip_tac >>
   ‘l0_reach w0 w1’
     by (‘l0_reach w0 w0’ by simp[l0_reach_init] >>
@@ -224,11 +261,23 @@ Proof
   metis_tac[]
 QED
 
-(* MAIN: the claim, under the facts at every startup world *)
+(* MAIN: the claim (L3-00's quiet_on_kernel_claim, unamended), under the
+   facts at every startup world *)
 Theorem echo_l0b_quiet:
+  (∀w0 out w1 ev k. l0_server_world w0 ∧ sys_listen_echo w0 = SOME (out, w1, ev) ∧
+                    listen_fd out = SOME k ⇒ echo_pf_facts KK k w1) ⇒
+  quiet_on_kernel_claim (echo2_guar_l0 KK) echo_l0b_prog
+Proof
+  rw[quiet_on_kernel_claim_def] >> irule echo_l0b_quiet_world >> metis_tac[]
+QED
+
+(* The amended form (#3) follows *)
+Theorem echo_l0b_quiet_a:
   (∀w0 out w1 ev k. l0_server_world w0 ∧ sys_listen_echo w0 = SOME (out, w1, ev) ∧
                     listen_fd out = SOME k ⇒ echo_pf_facts KK k w1) ⇒
   quiet_on_kernel_claim_a (echo2_guar_l0 KK) echo_l0b_prog
 Proof
-  rw[quiet_on_kernel_claim_a_def] >> irule echo_l0b_quiet_world >> metis_tac[]
+  rw[quiet_on_kernel_claim_a_def] >>
+  drule_then (qspec_then ‘w0’ mp_tac) (SIMP_RULE std_ss [quiet_on_kernel_claim_def] echo_l0b_quiet) >>
+  simp[] >> metis_tac[]
 QED

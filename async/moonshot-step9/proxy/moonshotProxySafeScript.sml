@@ -351,3 +351,17 @@ Proof
   drule PS_last >> disch_then (strip_assume_tac o SPEC_ALL) >>
   fs[] >> drule_all pacts_levels_first >> simp[]
 QED
+
+(* MAIN (rev 5: a pair is an accepted front and a connected backend) *)
+Theorem proxy_pair_roles:
+  proxy_world lfd a W0 ⇒
+  ∀hd c. ppair lfd b hw lv W0 hd = SOME c ⇒
+         ∃n. MEM hd (hl_acc_handles (hl_pairs (pprog lfd b hw) (PH lfd b hw lv W0 n))) ∧
+             MEM c (hl_conn_handles (hl_pairs (pprog lfd b hw) (PH lfd b hw lv W0 n)))
+Proof
+  rpt strip_tac >> drule ppair_SOME >> strip_tac >> gvs[] >>
+  qexists_tac ‘n’ >> drule PS_prel_n >> disch_then (assume_tac o SPEC_ALL) >>
+  qpat_x_assum ‘prel _ _ _ _ _ _’ mp_tac >> rewrite_tac[prel_def] >> strip_tac >>
+  asm_rewrite_tac[] >> conj_tac >> qexists_tac ‘EL i (PS lfd b hw lv W0 n).pc’ >>
+  simp[EL_MEM]
+QED

@@ -584,3 +584,48 @@ Proof
   ‘MEM 0w (l0_used w1)’ by fs[] >>
   first_x_assum drule_all >> simp[]
 QED
+
+Theorem etail_ep:
+  etail lfd pol hs (w, es) = SOME (rdy, (w', es'), log, tevs) ∧ oown lfd es ∧
+  okeys es.p.b ∧ l0_rely w ∧ fds_lt w ∧ fd0_ok w es ∧ pown lfd es'.p ∧
+  (∀g. ALOOKUP opn g ≠ ALOOKUP cm g ⇒ ¬live es g) ⇒
+  ep_io l0sysEpisodes$ev_sent j opn kk tevs = credit cm j tevs ∧
+  FOLDL ep_next (opn, kk) tevs = SND (arrs lfd (opn, kk) log)
+Proof
+  strip_tac >> drule_all etail_live >> strip_tac >>
+  qpat_x_assum ‘etail _ _ _ _ = _’ mp_tac >> simp[etail_def, AllCaseEqs(), PULL_EXISTS] >>
+  rpt gen_tac >> strip_tac >>
+  drule l1_polls_names >> strip_tac >> drule l1_flush_names >> strip_tac >>
+  drule pf_fetch_names >> strip_tac >> drule l1_reap_names >> strip_tac >>
+  drule settle_fds_names >> strip_tac >>
+  drule_all l1_polls_l0 >> strip_tac >> drule_all l1_flush_l0 >> strip_tac >>
+  ‘fds_lt w2 ∧ MEM 0w (l0_used w2)’
+    by gvs[honestL0WorldPropsTheory.fds_lt_def, fd0_ok_def] >>
+  qpat_x_assum ‘pf_fetch _ _ _ _ = _’ assume_tac >>
+  drule_all pf_fetch_ep >> disch_then (qspecl_then [‘opn’, ‘kk’] strip_assume_tac) >>
+  ‘EVERY (λev. ev_new ev = NONE) (pevs ++ fevs) ∧
+   EVERY (λev. ev_new ev = NONE) (cevs ++ sevs) ∧
+   EVERY (λev. l0sysEpisodes$ev_sent ev = NONE) (gevs ++ cevs ++ sevs)’
+    by (rpt (qpat_x_assum ‘EVERY (λev. ev_name ev = _) _’ mp_tac) >>
+        simp[EVERY_MEM] >> rpt strip_tac >> res_tac >>
+        TRY (irule name_new >> simp[] >> NO_TAC) >> irule name_sent >> simp[]) >>
+  qpat_x_assum ‘_ = tevs’ (SUBST_ALL_TAC o SYM) >>
+  fs[EVERY_APPEND] >>
+  ‘∀o1 n1. ep_io l0sysEpisodes$ev_sent j o1 n1 pevs = credit o1 j pevs ∧
+           FOLDL ep_next (o1, n1) pevs = (o1, n1)’ by metis_tac[ep_io_nonew] >>
+  ‘∀o1 n1. ep_io l0sysEpisodes$ev_sent j o1 n1 fevs = credit o1 j fevs ∧
+           FOLDL ep_next (o1, n1) fevs = (o1, n1)’ by metis_tac[ep_io_nonew] >>
+  ‘∀o1 n1. ep_io l0sysEpisodes$ev_sent j o1 n1 cevs = [] ∧
+           FOLDL ep_next (o1, n1) cevs = (o1, n1)’ by metis_tac[ep_io_nonew, ep_io_nosend] >>
+  ‘∀o1 n1. ep_io l0sysEpisodes$ev_sent j o1 n1 sevs = [] ∧
+           FOLDL ep_next (o1, n1) sevs = (o1, n1)’ by metis_tac[ep_io_nonew, ep_io_nosend] >>
+  ‘∀o1 n1. ep_io l0sysEpisodes$ev_sent j o1 n1 gevs = []’ by metis_tac[ep_io_nosend] >>
+  ‘credit cm j gevs = [] ∧ credit cm j cevs = [] ∧ credit cm j sevs = []’
+    by metis_tac[credit_nosend] >>
+  ‘credit opn j pevs = credit cm j pevs ∧ credit opn j fevs = credit cm j fevs’
+    by (conj_tac >> irule credit_cong >> rpt strip_tac >>
+        ‘¬live es g’ by (qpat_x_assum ‘∀g. ALOOKUP opn g ≠ _ ⇒ _’ irule >> simp[]) >>
+        qpat_x_assum ‘∀f. (live es f ⇒ _) ∧ _’ (qspec_then ‘g’ strip_assume_tac) >> gvs[]) >>
+  asm_rewrite_tac[ep_io_append, FOLDL_APPEND, credit_simps, APPEND_NIL] >>
+  simp[arrs_fold] >> Cases_on ‘FOLDL fc_next (opn, kk) log’ >> asm_rewrite_tac[]
+QED

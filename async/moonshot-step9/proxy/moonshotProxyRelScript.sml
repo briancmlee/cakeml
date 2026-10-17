@@ -1246,3 +1246,82 @@ Proof
   >> drule_all prel_read_back >> disch_then (qspec_then ‘v’ strip_assume_tac) >>
   qexistsl_tac [‘r’, ‘w1’, ‘hs1’] >> asm_rewrite_tac []
 QED
+
+(* A list of actions for pair k, each possible after the ones before,
+   whatever their results *)
+Definition pseq_ok_def:
+  pseq_ok b rdy st k [] = T ∧
+  pseq_ok b rdy st k (x :: xs) =
+    (pstep_ok b rdy st k x ∧ ∀r. pseq_ok b rdy (pupd st [(k, x)] [r]) k xs)
+End
+
+Theorem pupd_cons:
+  pupd st ((i, x) :: xs) (r :: rs) = pupd (pupd st [(i, x)] [r]) xs rs
+Proof
+  simp[Once pupd_def] >> simp[pupd_def]
+QED
+
+Theorem prel_seq:
+  ∀xs st ps w hs ix.
+    prel lfd st rdy ps w hs ∧ pseq_ok b rdy st k xs ⇒
+    ∃rs w1 hs1. ehacts lfd lv n ix (w, hs) xs = SOME (rs, (w1, hs1)) ∧
+      LENGTH rs = LENGTH xs ∧
+      prel lfd (pupd st (MAP (λx. (k, x)) xs) rs) rdy (ps ++ ZIP (xs, rs)) w1 hs1
+Proof
+  Induct >- (simp[ehacts_def, pupd_def]) >>
+  rpt gen_tac >> REWRITE_TAC [pseq_ok_def] >> strip_tac >>
+  drule_all prel_step >> disch_then (qspec_then ‘lv n ix’ strip_assume_tac) >>
+  qpat_x_assum ‘∀r. pseq_ok _ _ _ _ _’ (qspec_then ‘r’ assume_tac) >>
+  qpat_x_assum ‘∀st ps w hs ix. _’ drule_all >>
+  disch_then (qspec_then ‘ix + 1’ strip_assume_tac) >>
+  qexistsl_tac [‘r :: rs’, ‘w1'’, ‘hs1'’] >>
+  simp[ehacts_def] >> ONCE_REWRITE_TAC [pupd_cons] >>
+  full_simp_tac std_ss [GSYM APPEND_ASSOC, APPEND]
+QED
+
+Theorem pres_EWrite:
+  (pres p (EWrite h bs) r).fh = p.fh ∧ (pres p (EWrite h bs) r).fo = p.fo ∧
+  (pres p (EWrite h bs) r).bh = p.bh ∧ (pres p (EWrite h bs) r).bo = p.bo ∧
+  (pres p (EWrite h bs) r).bup = p.bup ∧
+  (h = p.fh ⇒ (pres p (EWrite h bs) r).fq = p.fq)
+Proof
+  Cases_on ‘r’ >> rw[pres_def]
+QED
+
+Theorem pres_ERead_front:
+  h = p.fh ⇒
+  (pres p (ERead h n) r).fh = p.fh ∧ (pres p (ERead h n) r).bh = p.bh ∧
+  (pres p (ERead h n) r).bo = p.bo ∧ (pres p (ERead h n) r).bup = p.bup
+Proof
+  strip_tac >> Cases_on ‘r’ >> rw[pres_def] >> every_case_tac >> simp[]
+QED
+
+Theorem pseq_ok_one:
+  pstep_ok b rdy st k x ⇒ pseq_ok b rdy st k [x]
+Proof
+  simp[pseq_ok_def]
+QED
+
+(* A pair's actions of the round can be taken one after the other *)
+Theorem pone_ok:
+  prel lfd st rdy ps w hs ∧ k < LENGTH st.pc ⇒
+  pseq_ok b rdy st k (pone b hw lvs lw nw rdy (EL k st.pc))
+Proof
+  strip_tac >>
+  ‘pok w hs ps rdy (EL k st.pc)’ by (irule prel_pok >> metis_tac[]) >>
+  qabbrev_tac ‘p = EL k st.pc’ >>
+  Cases_on ‘p.bh’
+  >- (‘p.bq = []’ by fs[pok_def] >>
+      simp[pone_def, pconnects_def, pwrites_def, preads_def] >>
+      irule pseq_ok_one >> simp[pstep_ok_def]) >>
+  rename1 ‘p.bh = SOME c’ >>
+  simp[pone_def, pconnects_def, pwrites_def, preads_def] >>
+  rw[] >>
+  simp[pseq_ok_def, pstep_ok_def, EL_LUPDATE, pres_EWrite, pres_ERead_front] >>
+  rpt strip_tac >>
+  simp[pseq_ok_def, pstep_ok_def, EL_LUPDATE, pres_EWrite, pres_ERead_front] >>
+  rpt strip_tac >>
+  simp[pseq_ok_def, pstep_ok_def, EL_LUPDATE, pres_EWrite, pres_ERead_front] >>
+  rpt strip_tac >>
+  simp[pseq_ok_def, pstep_ok_def, EL_LUPDATE, pres_EWrite, pres_ERead_front]
+QED

@@ -97,15 +97,17 @@ Definition dlv_at_def:
   dlv_at (ss : num -> sysstate) e n = (sys_chan (ss n) e).peer_sent
 End
 
-(* Everything f had at any instant, g has at some later instant *)
+(* Everything f had at any instant from m on, g has at some later instant
+   (from m: an end's streams are defined once it exists) *)
 Definition ev_ext_def:
-  ev_ext (f : num -> 'a list) (g : num -> 'a list) ⇔ ∀n. ∃n'. n ≤ n' ∧ f n ≼ g n'
+  ev_ext m (f : num -> 'a list) (g : num -> 'a list) ⇔
+    ∀n. m ≤ n ⇒ ∃n'. n ≤ n' ∧ f n ≼ g n'
 End
 
 (* As ev_ext, unless B holds by then *)
 Definition ev_ext_unless_def:
-  ev_ext_unless (B : num -> bool) (f : num -> 'a list) (g : num -> 'a list) ⇔
-    ∀n. ∃n'. n ≤ n' ∧ (f n ≼ g n' ∨ B n')
+  ev_ext_unless m (B : num -> bool) (f : num -> 'a list) (g : num -> 'a list) ⇔
+    ∀n. m ≤ n ⇒ ∃n'. n ≤ n' ∧ (f n ≼ g n' ∨ B n')
 End
 
 (* End e has lost its stream at instant n: broken, or closed by its
@@ -123,14 +125,14 @@ Definition sys_delivers_claim_def:
     ∀ps ss rs m e k' j'.
       l0sys_irun ps ss rs ∧ kernel_fair_obs ss rs ∧
       (ss m).peer e = SOME (k', j') ∧ io (asks_in ss rs k' j') ⇒
-      ev_ext_unless (lost ss (k', j')) (sent_at ss e) (dlv_at ss (k', j'))
+      ev_ext_unless m (lost ss (k', j')) (sent_at ss e) (dlv_at ss (k', j'))
 End
 
 (* KV answers every complete request that has arrived (count only: which
    replies is kv_safe's) *)
 Definition kv_answers_def:
-  kv_answers X (ss : num -> sysstate) e ⇔
-    ∀n rqs. EVERY valid_brequest rqs ∧ brequests rqs ≼ dlv_at ss e n ⇒
+  kv_answers m X (ss : num -> sysstate) e ⇔
+    ∀n rqs. m ≤ n ∧ EVERY valid_brequest rqs ∧ brequests rqs ≼ dlv_at ss e n ⇒
             X ∨ ∃n' ans. LENGTH ans = LENGTH rqs ∧ reply_bytes ans ≼ sent_at ss e n'
 End
 
@@ -164,11 +166,11 @@ Definition chain_served_claim_def:
       (sys_drains ss (kv, jk) ⇒ X ∨ io (asks_in ss rs kv jk)) ∧
       (sys_drains ss (px, jb) ⇒ X ∨ io (asks_in ss rs px ja)) ∧
       (* the programs' liveness (N6, N7, proxy_live_l0), at system level *)
-      (sys_drains ss (cl, jc) ⇒ X ∨ ∃n. brequests rq ≼ sent_at ss (cl, jc) n) ∧
-      (sys_drains ss (px, jb) ⇒ X ∨ ev_ext (dlv_at ss (px, ja)) (sent_at ss (px, jb))) ∧
-      (sys_drains ss (kv, jk) ⇒ kv_answers X ss (kv, jk)) ∧
-      (sys_drains ss (px, ja) ⇒ X ∨ ev_ext (dlv_at ss (px, jb)) (sent_at ss (px, ja))) ∧
-      (X ∨ ev_ext (dlv_at ss (cl, jc)) (λn. l0_ep_recvd jep (ptr rs cl n))) ∧
+      (sys_drains ss (cl, jc) ⇒ X ∨ ∃n. m ≤ n ∧ brequests rq ≼ sent_at ss (cl, jc) n) ∧
+      (sys_drains ss (px, jb) ⇒ X ∨ ev_ext m (dlv_at ss (px, ja)) (sent_at ss (px, jb))) ∧
+      (sys_drains ss (kv, jk) ⇒ kv_answers m X ss (kv, jk)) ∧
+      (sys_drains ss (px, ja) ⇒ X ∨ ev_ext m (dlv_at ss (px, jb)) (sent_at ss (px, ja))) ∧
+      (X ∨ ev_ext m (dlv_at ss (cl, jc)) (λn. l0_ep_recvd jep (ptr rs cl n))) ∧
       (* a chain end lost before the client is served *)
       (∀n e. MEM e [(cl, jc); (px, ja); (px, jb); (kv, jk)] ∧ lost ss e n ∧
              ¬served_by rs cl jep rq n ⇒ X) ⇒

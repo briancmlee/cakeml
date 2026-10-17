@@ -207,7 +207,7 @@ Theorem pf_tail_inb:
   inb_of ps' f = inb_of ps f
 Proof
   rw[pf_tail_def, AllCaseEqs()] >> gvs[] >>
-  drule_all pf_fetch_inb >> simp[hup_step_def, inb_of_def]
+  drule_all pf_fetch_inb >> simp[stall_step_def, inb_of_def]
 QED
 
 (* A round: f's inbox loses a prefix, a strictly shorter one if the server
@@ -261,7 +261,7 @@ Theorem pf_tail_tbl:
 Proof
   rw[pf_tail_def, AllCaseEqs()] >> gvs[] >>
   imp_res_tac l1_flush_tbl >> imp_res_tac pf_fetch_b >> imp_res_tac l1_reap_tbl >>
-  gvs[hup_step_def]
+  gvs[stall_step_def]
 QED
 
 (* If f's inbox is not empty after the actions, it never was empty on the way,

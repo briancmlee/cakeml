@@ -166,14 +166,6 @@ QED
    S3w
    ------------------------------------------------------------------------ *)
 
-(* S3w (honest-ffi's form, moonshot step 8: S3 under "no more fetches on
-   f"; S3 is false for the echo, as a round's fetch refills an inbox the
-   server emptied).  TEMPORARY copy until that commit is merged *)
-Definition S3w_def:
-  S3w lfd pol ifds m w0 ⇔
-    ∀n f. (∀k. n ≤ k ⇒ ¬fetched_at lfd pol ifds m w0 k f) ⇒
-          ∃n'. n ≤ n' ∧ inb_of (rstate lfd pol ifds m w0 n') f = []
-End
 
 Theorem echo_run_hyp:
   echo_run lfdn pol w0 ⇒ run_hyp (n2w lfdn) pol EI ES w0
@@ -236,7 +228,7 @@ Theorem echo_S3w:
 Proof
   strip_tac >> drule echo_run_hyp >> strip_tac >>
   ‘run_ok (n2w lfdn) pol EI ES w0’ by fs[run_hyp_def] >>
-  simp[S3w_def] >> rpt strip_tac >>
+  simp[S3w_def, GSYM fetched_at_def] >> rpt strip_tac >>
   ‘∀L r. n ≤ r ∧ LENGTH (inb_of (rstate (n2w lfdn) pol EI ES w0 r) f) = L ⇒
          ∃n'. n ≤ n' ∧ inb_of (rstate (n2w lfdn) pol EI ES w0 n') f = []’
     suffices_by metis_tac[LESS_EQ_REFL] >>

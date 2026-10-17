@@ -24,6 +24,19 @@
    [R4] The rely is run_rely (eh_round_ok), as for the client: valid
         along the run's own rounds; nosock (option (b)) is the world's.
 
+  REVISION 8 (user ruling D39, Q-8 option (a)): the backend's settle read
+  is ungated.  The credit gate on reading backend c applies only once
+  hl_up c: until c has answered a read, the proxy reads c whenever it is
+  ready, whatever hd's Level, so a refused connect is observed (with an
+  adversarial Level oracle, rev 7's gate made pairing liveness
+  unprovable for every program).  Nothing has been written to hd before
+  c's first answer, so the raw-trace bound is unchanged.
+
+  REVISION 7 (user rulings): pairing liveness has the observed excuse
+  "connects return no socket infinitely often" (hl_nosock; [F4] is not
+  assumed).  The raw-trace bound is now exact, hw + pf_chunk + pread,
+  with D23's timeout excuse (proxyL0Stmts).
+
   REVISION 4: the program takes its listener: pprog lfd b hw (it accepts
   on lfd, and polls it).
 
@@ -84,6 +97,11 @@ Definition hl_up_def:
   hl_up c ps ⇔ ∃k r. MEM (ERead c k, EGot r) ps
 End
 
+(* The connects that returned no socket (EConnected NONE) *)
+Definition hl_nosock_def:
+  hl_nosock (ps : (eact # eresp) list) = LENGTH (FILTER (λ(x, r). r = EConnected NONE) ps)
+End
+
 Definition is_level_def:
   is_level (x : eact) ⇔ ∃h. x = ELevel h
 End
@@ -135,7 +153,9 @@ Definition proxy_guar_hl_def:
       (∀n hd c k. pair hd = SOME c ∧ MEM (ERead hd k) (A n) ⇒
                   0 < n ∧ ∃l. MEM (ELevel c, ELvl l) (R (n − 1)) ∧
                               l + wreq c (A (n − 1)) + wreq c (A n) ≤ hw) ∧
-      (∀n hd c k. pair hd = SOME c ∧ MEM (ERead c k) (A n) ⇒
+      (* (rev 8, D39) the backend's gate applies once it has answered a
+         read: its settle read is ungated, so a refused backend is seen *)
+      (∀n hd c k. pair hd = SOME c ∧ MEM (ERead c k) (A n) ∧ hl_up c (ps n) ⇒
                   0 < n ∧ ∃l. MEM (ELevel hd, ELvl l) (R (n − 1)) ∧
                               l + wreq hd (A (n − 1)) + wreq hd (A n) ≤ hw) ∧
       (* the gate is evaluated every round, and is all that holds a read
@@ -157,11 +177,13 @@ Definition proxy_guar_hl_def:
       (∀n hd k. MEM (ERead hd k) (new_actions (log_of m) (H n)) ∧ MEM hd (hl_acc_handles (ps n)) ⇒
                 ∃c. pair hd = SOME c ∧ hl_up c (ps n) ∧ ever_up lfd lv ifds m W n c) ∧
       (* LIVENESS, under connect fairness: every accepted front gets a
-         backend that comes up or is refused.  (A socketless connect,
-         option (b), is retried by the program) *)
+         backend that comes up or is refused, unless (rev 7, user: [F4] is
+         not assumed) connects return no socket infinitely often.  (A
+         socketless connect, option (b), is retried by the program) *)
       (conn_fair lfd lv ifds m W ⇒
        ∀n hd. MEM hd (hl_acc_handles (ps n)) ⇒
-              ∃n' c. pair hd = SOME c ∧ (ever_up lfd lv ifds m W n' c ∨ hl_refused c (ps n')))
+              (∃n' c. pair hd = SOME c ∧ (ever_up lfd lv ifds m W n' c ∨ hl_refused c (ps n'))) ∨
+              ∀k. ∃n'. k ≤ hl_nosock (ps n'))
 End
 
 (* The proxy on the layer, in every proxy world with the run-local rely.

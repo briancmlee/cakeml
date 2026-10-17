@@ -97,7 +97,7 @@ Definition preads_def:
     | SOME c =>
         if p.fo ∧ p.bo then
           (if p.bup ∧ p.fh ∈ rdy ∧ pgate hw lvs lw nw c then [ERead p.fh pread] else []) ++
-          (if c ∈ rdy ∧ pgate hw lvs lw nw p.fh then [ERead c pread] else [])
+          (if c ∈ rdy ∧ (¬p.bup ∨ pgate hw lvs lw nw p.fh) then [ERead c pread] else [])
         else []
 End
 

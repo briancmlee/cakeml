@@ -321,3 +321,39 @@ Proof
   rpt gen_tac >> strip_tac >> PairCases_on ‘ws1’ >> drule_all edo_fd0 >> strip_tac >>
   first_x_assum drule_all >> simp[]
 QED
+
+Theorem settle_fds_used:
+  ∀fs w es w' es' evs.
+    settle_fds fs (w, es) = SOME ((w', es'), evs) ∧ l0_rely w ⇒ l0_used w' = l0_used w
+Proof
+  Induct >> simp[settle_fds_def] >> rpt gen_tac >> rw[AllCaseEqs()] >>
+  drule_all sys_connerr_l0 >> strip_tac >> first_x_assum drule_all >> simp[]
+QED
+
+Theorem etail_fd0:
+  etail lfd pol hs (w, es) = SOME (rdy, (w', es'), log, tevs) ∧
+  l0_rely w ∧ fds_lt w ∧ fd0_ok w es ⇒
+  fd0_ok w' es'
+Proof
+  simp[etail_def, AllCaseEqs(), PULL_EXISTS] >> rpt gen_tac >> strip_tac >>
+  ‘es'.p = (promote es5).p ∧ es'.ctbl = (promote es5).ctbl’
+    by (qpat_x_assum ‘_ = es'’ (SUBST1_TAC o SYM) >> simp[]) >>
+  qpat_x_assum ‘FILTER _ hs = rdy’ kall_tac >> qpat_x_assum ‘_ = es'’ kall_tac >>
+  qabbrev_tac ‘ps3 = stall_step (pf_held ps3') (outbox_of es.p.b) log ps3'’ >>
+  drule_all l1_polls_l0 >> strip_tac >>
+  drule_all l1_flush_l0 >> strip_tac >>
+  ‘fds_lt w2’ by gvs[honestL0WorldPropsTheory.fds_lt_def] >>
+  qpat_x_assum ‘pf_fetch _ _ _ _ = _’ assume_tac >>
+  drule_all fetch_acq >> strip_tac >> drule_all pf_fetch_quiet >> strip_tac >>
+  ‘ps3.b.tbl = ps3'.b.tbl ∧ ps3.b.closing = ps3'.b.closing ∧ ps3.acq = ps3'.acq’
+    by simp[Abbr ‘ps3’, stall_out] >>
+  drule_all l1_reap_l0 >> strip_tac >>
+  drule_all settle_fds_used >> strip_tac >>
+  drule_all settle_fds_quiet >> simp[] >> strip_tac >>
+  gvs[fd0_ok_def, tfds_def] >>
+  ‘¬MEM 0w (fconns log)’ by (strip_tac >> res_tac >> gvs[]) >>
+  mp_tac (Q.INST [‘es’ |-> ‘es5’] promote_fields) >> strip_tac >>
+  ‘∀f. MEM f (MAP SND (promote es5).ctbl) ⇒ MEM f (MAP SND es5.ctbl)’
+    by (simp[promote_def, MEM_MAP, MEM_FILTER] >> metis_tac[]) >>
+  gvs[] >> rpt strip_tac >> res_tac >> gvs[MEM_FILTER]
+QED

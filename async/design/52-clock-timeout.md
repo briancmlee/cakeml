@@ -1,6 +1,6 @@
 # 52 — A time-based write timeout (R1, option C): `sys_clock` and D23 in time
 
-Status: DESIGN for the user. No code.
+Status: APPROVED by the user (via the coordinator, 2026-10-17) as design/36 §9 D35; scheduled after echo liveness and the quiet echo, with D25 serve-on. No code yet.
 Author: m4-server, 2026-10-17. Base: spike/moonshot-live (R1, README §5).
 
 ## (0) The problem (R1)

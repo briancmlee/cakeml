@@ -1203,3 +1203,46 @@ Proof
   gen_tac >> strip_tac >> qpat_x_assum ‘∀h. hl_sent h ps1 ≠ [] ∨ _ ⇒ _’ irule >>
   CCONTR_TAC >> fs[]
 QED
+
+(* ------------------------------------------------------------------------
+   A pair's actions, one at a time
+   ------------------------------------------------------------------------ *)
+
+(* Action x can be taken for pair k in state st *)
+Definition pstep_ok_def:
+  pstep_ok b (rdy : word64 set) st k x ⇔
+    k < LENGTH st.pc ∧
+    let p = EL k st.pc in
+      (x = EConnect b ∧ p.bh = NONE) ∨
+      (x = EWrite p.fh p.bq ∧ p.fo ∧ p.bq ≠ []) ∨
+      (∃c. p.bh = SOME c ∧ x = EWrite c p.fq ∧ p.bo ∧ p.fq ≠ []) ∨
+      (∃c. p.bh = SOME c ∧ x = ERead p.fh pread ∧ p.fo ∧ p.bup) ∨
+      (∃c. p.bh = SOME c ∧ x = ERead c pread ∧ p.bo ∧ (¬p.bup ⇒ c ∈ rdy))
+End
+
+Theorem pupd_pc_keep:
+  (∀l. x ≠ ELevel l) ∧ (∀l. x ≠ EAccept l) ⇒
+  pupd st [(k, x)] [r] = st with pc := LUPDATE (pres (EL k st.pc) x r) k st.pc
+Proof
+  Cases_on ‘x’ >> simp[]
+QED
+
+Theorem prel_step:
+  prel lfd st rdy ps w hs ∧ pstep_ok b rdy st k x ⇒
+  ∃r w1 hs1. ehdo lfd v (w, hs) x = SOME (r, (w1, hs1)) ∧
+    prel lfd (pupd st [(k, x)] [r]) rdy (ps ++ [(x, r)]) w1 hs1
+Proof
+  strip_tac >>
+  qpat_x_assum ‘pstep_ok _ _ _ _ _’ (strip_assume_tac o SIMP_RULE bool_ss [pstep_ok_def, LET_THM]) >>
+  rveq
+  >- (drule_all prel_connect >> disch_then (qspecl_then [‘v’, ‘b’] strip_assume_tac) >>
+      qexistsl_tac [‘r’, ‘w1’, ‘hs1’] >> asm_rewrite_tac [])
+  >- (drule_all prel_write_front >> disch_then (qspec_then ‘v’ strip_assume_tac) >>
+      qexistsl_tac [‘EWrote (LENGTH (EL k st.pc).bq)’, ‘w1’, ‘hs’] >> asm_rewrite_tac [])
+  >- (drule_all prel_write_back >> disch_then (qspec_then ‘v’ strip_assume_tac) >>
+      qexistsl_tac [‘EWrote (LENGTH (EL k st.pc).fq)’, ‘w1’, ‘hs’] >> asm_rewrite_tac [])
+  >- (drule_all prel_read_front >> disch_then (qspec_then ‘v’ strip_assume_tac) >>
+      qexistsl_tac [‘r’, ‘w1’, ‘hs1’] >> asm_rewrite_tac [])
+  >> drule_all prel_read_back >> disch_then (qspec_then ‘v’ strip_assume_tac) >>
+  qexistsl_tac [‘r’, ‘w1’, ‘hs1’] >> asm_rewrite_tac []
+QED

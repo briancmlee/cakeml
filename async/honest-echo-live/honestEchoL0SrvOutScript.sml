@@ -22,7 +22,8 @@ Ancestors
   asyncHLSimTick asyncHLSimWorld asyncHLEof asyncHLEpisodes asyncHLModel asyncHLFair
   socketV2FFI socketV2Fair EchoSpec2 EchoSpec asyncM4EchoLive asyncM4Account
   asyncM4SockInv asyncM4GTrans asyncM4GRounds asyncM4EchoRunOk asyncM3World
-  honestEchoL0Obl honestL1PFOut honestL1PFRound honestL1PFRefine honestL1PFClient
+  honestEchoL0Obl honestL1PFFlush honestL1PFOutLive honestL1PFOut honestL1PFRound honestL1PFRefine
+  honestL1PFClient
 Libs
   preamble
 
@@ -420,4 +421,65 @@ Proof
   drule_all psk_server_world >> strip_tac >>
   drule_all echo_out_live2 >> disch_then (qspecl_then [‘j’, ‘d’] mp_tac) >>
   simp[psk_sent2]
+QED
+
+(* ------------------------------------------------------------------------
+   The echo writes to a handle only while L1 holds it, so client j's
+   outgoing stream is frozen once its fd is released
+   ------------------------------------------------------------------------ *)
+
+Theorem echo_psk_facts:
+  echo_run lfdn pol w0 ⇒
+  PSK.listening = [(n2w lfdn, [])] ∧ PSK.clients = [] ∧ PSK.open_fds = [] ∧
+  alloc_ok PSK.alloc ∧ sched_wf2 PSK ∧ lfdn < dimword (:64)
+Proof
+  strip_tac >>
+  ‘l0_rely w0 ∧ fds_lt w0 ∧ MEM (n2w lfdn) (l0_used w0) ∧
+   (∀n. SND (pcm (n2w lfdn) pol EI ES w0 n) + 1 < dimword (:64)) ∧ lfdn < dimword (:64)’
+    by fs[echo_run_def, winv_def] >>
+  drule_all psk_server_world >> simp[]
+QED
+
+Theorem snd_distinct_eq[local]:
+  ∀l. ALL_DISTINCT (MAP SND l) ∧ MEM (a, v) l ∧ MEM (b, v) l ⇒ a = b
+Proof
+  Induct >> simp[FORALL_PROD] >> rw[] >> gvs[] >>
+  fs[MEM_MAP, EXISTS_PROD] >> metis_tac[]
+QED
+
+(* An echo Write on handle c in round k: c is in L1's table at round k *)
+Theorem echo_write_held:
+  echo_run lfdn pol w0 ∧ MEM (Write c bs) (racts (n2w lfdn) pol EI ES w0 k) ⇒
+  ∃g. ALOOKUP (rstate (n2w lfdn) pol EI ES w0 k).b.tbl c = SOME g
+Proof
+  strip_tac >> drule echo_psk_facts >> strip_tac >>
+  drule_then (qspec_then ‘k’ strip_assume_tac) echo_sim >>
+  qabbrev_tac ‘s1 = V1’ >>
+  ‘s1.listeners = [(n2w lfdn, [])] ∧ s1.conns = []’ by simp[Abbr ‘s1’, v1of_def] >>
+  ‘grun_ok EI ES s1’ by (irule echo_grun_ok >> simp[]) >>
+  ‘MEM (Write c bs) (gacts EI ES s1 k)’ by gvs[racts_def, gacts_def, Abbr ‘s1’] >>
+  ‘gok_upto EI ES s1 k’ by simp[grun_ok_gok_upto] >>
+  drule echo_round_actions_ok >> simp[EVERY_MEM] >>
+  disch_then drule >> simp[action_ok_def] >>
+  qpat_x_assum ‘GENLIST _ _ = wacc _’ (assume_tac o SYM) >> gvs[Abbr ‘s1’] >>
+  rw[MEM_GENLIST] >> rename1 ‘hdl (n2w lfdn) m'’ >>
+  Cases_on ‘ALOOKUP (rstate (n2w lfdn) pol EI ES w0 k).b.tbl (hdl (n2w lfdn) m')’ >> simp[] >>
+  (* a closed handle: its EOF was read, and the echo never acts on it after *)
+  ‘closed_eof (n2w lfdn) (gperf EI ES V1 k) (SND (hst (n2w lfdn) EI ES PSK k))’
+    by metis_tac[hrun_events] >>
+  ‘∃kk. MEM (Read (hdl (n2w lfdn) m') kk, Got (SOME [])) (gperf EI ES V1 k)’
+    by (qpat_x_assum ‘closed_eof _ _ _’ mp_tac >>
+        qpat_assum ‘SND (hst _ _ _ _ _) = _’ (fn th => REWRITE_TAC [th]) >>
+        rw[closed_eof_def, hs_of_def] >> first_x_assum irule >> simp[]) >>
+  ‘no_after_eof (gperf EI ES V1 k) (ZIP (gacts EI ES V1 k, gres EI ES V1 k))’
+    by (irule round_no_after_eof >> simp[v1of_def]) >>
+  ‘LENGTH (gres EI ES V1 k) = LENGTH (gacts EI ES V1 k)’ by simp[LENGTH_gres] >>
+  ‘∃r. MEM (Write (hdl (n2w lfdn) m') bs, r) (ZIP (gacts EI ES V1 k, gres EI ES V1 k))’
+    by (gvs[MEM_EL] >> qexists_tac ‘EL n' (gres EI ES V1 k)’ >>
+        qexists_tac ‘n'’ >> simp[EL_ZIP]) >>
+  qpat_x_assum ‘MEM (Write _ _, r) _’ (strip_assume_tac o REWRITE_RULE [MEM_SPLIT]) >>
+  qpat_x_assum ‘no_after_eof _ _’ (mp_tac o REWRITE_RULE [no_after_eof_def]) >>
+  disch_then (qspecl_then [‘l1’, ‘Write (hdl (n2w lfdn) m') bs’, ‘r’, ‘l2’,
+                           ‘hdl (n2w lfdn) m'’, ‘kk’] mp_tac) >>
+  simp[sock_on_def]
 QED

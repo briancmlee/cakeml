@@ -10,12 +10,19 @@
     - l0_read j evs: the bytes the server received in episode j;
     - l0_sent j evs: of each send in episode j, the bytes the kernel took
       (the count in the result header): what the real client can receive.
-  echo_safe_l0: while fewer than 2^64 - 1 connections have been accepted,
-  in every episode, the bytes sent are a prefix of the bytes received.
+  echo_safe_l0: at every point, in every episode, the bytes sent are a
+  prefix of the bytes received (no bound on the number of connections:
+  user decision D31 dropped the 2^64 - 1 accept guard).
+  D33 (design/50 (c2)): the startup world no longer assumes fds 0-2 open;
+  a program checks them with sys_fdok first, and the claims allow its
+  stopping (honestL0Outcome's stdio_closed).  A run past the checks begins
+  with them (stdio_open) and never closes fds 0-2 (no_close_stdio); the
+  other early stop is a failed listen after them (l0_listen_failed_ev).
 *)
 Theory honestEchoL0Spec
 Ancestors
   llist ffi honestL0 honestL0World honestL0Rely honestL0WorldProps ffiSpikeSocketFFI
+  honestL0Outcome
 Libs
   preamble
 
@@ -100,17 +107,26 @@ Definition l0_sent_def:
 End
 
 (* The startup contract: no listener, no connections, only the process's
-   own fds (0-2 among them), within the fd limit, and the world's rely *)
+   own fds, within the fd limit, and the world's rely.  D33: fds 0-2 are
+   not assumed open; the programs ask (sys_fdok) and stop if one is
+   closed (stdio_closed) *)
 Definition l0_server_world_def:
   l0_server_world w0 ⇔
     w0.listeners = [] ∧ w0.chans = [] ∧ w0.open_fds = [] ∧ w0.hist = [] ∧
-    MEM 0w w0.reserved ∧ MEM 1w w0.reserved ∧ MEM 2w w0.reserved ∧
     fds_lt w0 ∧ l0_rely w0
+End
+
+(* A failed sys_listen (an event; moonshotClientL0Stmts' l0_listen_failed
+   is the behaviour form) *)
+Definition l0_listen_failed_ev_def:
+  l0_listen_failed_ev (IO_event (ExtCall n) conf bytes) =
+    (n = «sys_listen» ∧ ∃e v. l0_ev_res bytes = SOME (Fail e v)) ∧
+  l0_listen_failed_ev _ = F
 End
 
 (* Safety *)
 Definition echo_safe_l0_def:
   echo_safe_l0 io ⇔
-    ∀evs j. LPREFIX (fromList evs) io ∧ LENGTH (l0_accepted evs) < 2 ** 64 − 1 ⇒
+    ∀evs j. LPREFIX (fromList evs) io ⇒
             l0_sent j evs ≼ l0_read j evs
 End

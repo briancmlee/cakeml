@@ -2,12 +2,8 @@
   CF specs of the key-value server (asyncKvProg): kv_server implements
   srelabel (kv_server lfd).
 
-  - with_store_spec (generic): for any store representation STORE and any
-    CakeML step function implementing δ (DELTA), with_store implements the
-    model's with_store δ s0 m, if its argument implements m.  Proved by the
-    depth-indexed technique (asyncM4Approx): the residual ws_res carries the
-    store in its closure, and with_store_suspended (asyncWithStoreStep) is
-    the model's account of one poll.
+  - the store: kv_delta_al_DELTA (the translated association-list step
+    implements kv_delta), for asyncWithStoreSpec's generic with_store_spec;
   - the skeleton and the handler, in the vocabulary Sock sact | Kv query
     (asyncHttpSockSpec / asyncHttpSockSpecB, with the tags);
   - kv_server_spec: the instance.
@@ -21,200 +17,15 @@ Ancestors
   asyncHttpParse asyncHttpParseH asyncHttpParseB asyncHttpImplProg
   asyncHttpSockProg asyncHttpSockProgH asyncHttpSockProgB asyncWithStore
   asyncWithStoreStep asyncServerWithK asyncKvHandler asyncKvModel
-  asyncKvSockModel asyncKvProg ml_translator mlstring std_prelude
+  asyncKvSockModel asyncKvProg asyncWithStoreSpec ml_translator mlstring std_prelude
 Libs
   preamble basis ml_translatorLib cfTacticsLib ml_progLib basisFunctionsLib
 
-val _ = translation_extends "asyncKvProg"
+val _ = translation_extends "asyncWithStoreSpec"
 
 val eq_string_v_thm =
   MATCH_MP (DISCH_ALL (fetch "mlbasicsProg" "eq_v_thm"))
            (EqualityType_NUM_BOOL |> CONJUNCTS |> el 6);
-
-(* ------------------------------------------------------------------------
-   The vocabulary: Sock a | Kv q, and SockR r | KvR b
-   ------------------------------------------------------------------------ *)
-
-local
-  val env = get_env (get_ml_prog_state ())
-  fun stamp_of c =
-    EVAL “nsLookup (^env).c (Short ^c)” |> concl |> rhs
-    |> optionSyntax.dest_some |> pairSyntax.dest_pair |> snd
-in
-  val sock_stamp = stamp_of “«Sock»”
-  val kv_stamp = stamp_of “«Kv»”
-  val sockr_stamp = stamp_of “«Sockr»”
-  val kvr_stamp = stamp_of “«Kvr»”
-end
-
-Definition KACT_def:
-  KACT ACT QRY (Sock a) v = (∃av. v = Conv (SOME ^sock_stamp) [av] ∧ ACT a av) ∧
-  KACT ACT QRY (Kv q) v = (∃qv. v = Conv (SOME ^kv_stamp) [qv] ∧ QRY q qv)
-End
-
-Definition KRES_def:
-  KRES RES ANS (SockR r) v = (∃rv. v = Conv (SOME ^sockr_stamp) [rv] ∧ RES r rv) ∧
-  KRES RES ANS (KvR b) v = (∃bv. v = Conv (SOME ^kvr_stamp) [bv] ∧ ANS b bv)
-End
-
-(* The server's vocabulary *)
-Overload KQRY = “PAIR_TYPE NUM HTTPSPECBODIES_BREQUEST_TYPE”
-Overload KANS = “HTTPSPEC_RESPONSE_TYPE”
-Overload KSACT = “KACT SACT KQRY”
-Overload KSRESP = “KRES SRESP KANS”
-Overload KSSNAP = “SNAPSHOT SREADY KSRESP”
-
-(* DELTA p δ STORE QRY ANS deltav: the CakeML function deltav implements the
-   store step δ, for stores represented by STORE *)
-Definition DELTA_def:
-  DELTA (p:'ffi ffi_proj) δ STORE QRY ANS deltav ⇔
-    ∀s sv q qv. STORE s sv ∧ QRY q qv ⇒
-      app p deltav [sv; qv] emp
-        (POSTv v. &(∃bv sv'. v = Conv NONE [bv; sv'] ∧ ANS (FST (δ s q)) bv ∧
-                             STORE (SND (δ s q)) sv'))
-End
-
-(* ------------------------------------------------------------------------
-   with_store
-   ------------------------------------------------------------------------ *)
-
-Theorem ws_run_spec:
-  ∀acts actsv st stv.
-    DELTA p δ STORE QRY ANS deltav ∧
-    LIST_TYPE (KACT ACT QRY) acts actsv ∧ STORE st stv ⇒
-    app (p:'ffi ffi_proj) ws_run_v [deltav; stv; actsv] emp
-      (POSTv v. &(∃bsv st2v. v = Conv NONE [bsv; st2v] ∧
-                   LIST_TYPE ANS (FST (run_store δ st (queries acts))) bsv ∧
-                   STORE (SND (run_store δ st (queries acts))) st2v))
-Proof
-  Induct >> rpt strip_tac >> xcf_with_def (fetch "-" "ws_run_v_def") >>
-  gvs[LIST_TYPE_def] >> xmatch
-  >- (xcon >> xsimpl >> simp[run_store_def, LIST_TYPE_def]) >>
-  Cases_on ‘h’ >> gvs[KACT_def] >> xmatch
-  >- (xapp >> simp[] >> metis_tac[]) >>
-  rename1 ‘QRY q qv’ >>
-  xlet ‘POSTv v. &(∃bv sv'. v = Conv NONE [bv; sv'] ∧ ANS (FST (δ st q)) bv ∧
-                            STORE (SND (δ st q)) sv')’
-  >- (gvs[DELTA_def] >> xapp >> simp[]) >>
-  gvs[] >> xmatch >>
-  xlet ‘POSTv v. &(∃bsv st2v. v = Conv NONE [bsv; st2v] ∧
-                   LIST_TYPE ANS (FST (run_store δ (SND (δ st q)) (queries acts))) bsv ∧
-                   STORE (SND (run_store δ (SND (δ st q)) (queries acts))) st2v)’
-  >- (xapp >> simp[] >> metis_tac[]) >>
-  gvs[] >> xmatch >> xcon >> xsimpl >>
-  simp[run_store_def] >> rpt (pairarg_tac >> gvs[]) >> simp[LIST_TYPE_def]
-QED
-
-Theorem ws_merge_spec:
-  ∀acts actsv rs rsv ans ansv.
-    LIST_TYPE (KACT ACT QRY) acts actsv ∧ LIST_TYPE RES rs rsv ∧
-    LIST_TYPE ANS ans ansv ⇒
-    app (p:'ffi ffi_proj) ws_merge_v [actsv; rsv; ansv] emp
-      (POSTv v. &LIST_TYPE (KRES RES ANS) (merge acts rs ans) v)
-Proof
-  Induct >> rpt strip_tac >> xcf_with_def (fetch "-" "ws_merge_v_def") >>
-  gvs[LIST_TYPE_def] >> xmatch
-  >- (xcon >> xsimpl >> simp[merge_def, LIST_TYPE_def]) >>
-  Cases_on ‘h’ >> gvs[KACT_def] >> xmatch
-  >- (Cases_on ‘rs’ >> gvs[LIST_TYPE_def] >> xmatch
-      >- (xcon >> xsimpl >> simp[merge_def, LIST_TYPE_def]) >>
-      xlet ‘POSTv v. &LIST_TYPE (KRES RES ANS) (merge acts t ans) v’
-      >- (xapp >> simp[] >> metis_tac[]) >>
-      xlet ‘POSTv v. &KRES RES ANS (SockR h) v’
-      >- (xcon >> xsimpl >> simp[KRES_def]) >>
-      xcon >> xsimpl >> simp[merge_def, LIST_TYPE_def]) >>
-  Cases_on ‘ans’ >> gvs[LIST_TYPE_def] >> xmatch
-  >- (xcon >> xsimpl >> simp[merge_def, LIST_TYPE_def]) >>
-  xlet ‘POSTv v. &LIST_TYPE (KRES RES ANS) (merge acts rs t) v’
-  >- (xapp >> simp[] >> metis_tac[]) >>
-  xlet ‘POSTv v. &KRES RES ANS (KvR h) v’
-  >- (xcon >> xsimpl >> simp[KRES_def]) >>
-  xcon >> xsimpl >> simp[merge_def, LIST_TYPE_def]
-QED
-
-Theorem ws_socks_spec:
-  ∀acts actsv.
-    LIST_TYPE (KACT ACT QRY) acts actsv ⇒
-    app (p:'ffi ffi_proj) ws_socks_v [actsv] emp
-      (POSTv v. &LIST_TYPE ACT (socks acts) v)
-Proof
-  Induct >> rpt strip_tac >> xcf_with_def (fetch "-" "ws_socks_v_def") >>
-  gvs[LIST_TYPE_def] >> xmatch
-  >- (xcon >> xsimpl >> simp[LIST_TYPE_def]) >>
-  Cases_on ‘h’ >> gvs[KACT_def] >> xmatch
-  >- (xlet ‘POSTv v. &LIST_TYPE ACT (socks acts) v’ >- (xapp >> simp[]) >>
-      xcon >> xsimpl >> simp[LIST_TYPE_def]) >>
-  xapp >> simp[]
-QED
-
-(* MAIN (helper): the residual, up to depth n *)
-Theorem ws_res_spec_d:
-  ∀n m sv st stv actsv.
-    DELTA p δ STORE QRY ANS deltav ∧ wf m ∧
-    STEPA p (KACT ACT QRY) A (SNAPSHOT READY (KRES RES ANS)) m sv ∧
-    STORE st stv ∧ LIST_TYPE (KACT ACT QRY) (m []).actions actsv ⇒
-    app (p:'ffi ffi_proj) ws_res_v [deltav; stv; actsv; sv] emp
-      (POSTv v. &STEPAd p ACT A (SNAPSHOT READY RES) n (with_store δ st m) v)
-Proof
-  completeInduct_on ‘n’ >> rpt strip_tac >>
-  xcf_with_def (fetch "-" "ws_res_v_def") >>
-  qpat_x_assum ‘STEPA _ _ _ _ m sv’ (strip_assume_tac o ONCE_REWRITE_RULE [STEPA_cases]) >>
-  gvs[]
-  >- ((* finished *)
-      xmatch >> xcon >> xsimpl >>
-      simp[with_store_finished, STEPAd_finished]) >>
-  (* pending: the closure *)
-  xmatch >> xfun ‘f’ >> xcon >> xsimpl >>
-  Cases_on ‘n’ >> simp[STEPAd_def, with_store_first] >>
-  rename1 ‘STEPAd _ _ _ _ n’ >>
-  rpt strip_tac >> simp[returns_def] >>
-  qpat_x_assum ‘curried _ _ f ∧ _’ (irule o CONJUNCT2) >>
-  gvs[SNAPSHOT_def] >> xmatch >>
-  qabbrev_tac ‘bs = FST (first_answers δ st m)’ >>
-  qabbrev_tac ‘st2 = SND (first_answers δ st m)’ >>
-  xlet ‘POSTv v. &(∃bsv st2v. v = Conv NONE [bsv; st2v] ∧ LIST_TYPE ANS bs bsv ∧
-                              STORE st2 st2v)’
-  >- (xapp_spec ws_run_spec >> simp[Abbr ‘bs’, Abbr ‘st2’, first_answers_def] >>
-      metis_tac[]) >>
-  gvs[] >> xmatch >>
-  xlet ‘POSTv v. &LIST_TYPE (KRES RES ANS) (merge (m []).actions w.results bs) v’
-  >- (xapp_spec ws_merge_spec >> simp[] >> metis_tac[]) >>
-  qabbrev_tac ‘w' = merged (m []).actions bs w’ >>
-  xlet ‘POSTv v. &SNAPSHOT READY (KRES RES ANS) w' v’
-  >- (xcon >> xsimpl >> simp[SNAPSHOT_def, Abbr ‘w'’, merged_def]) >>
-  qpat_x_assum ‘∀w wv. _ ⇒ returns _ _ _ _’ (qspecl_then [‘w'’, ‘v'’] mp_tac) >>
-  simp[] >> strip_tac >>
-  xlet ‘POSTv v. &POLL_RESULT (KACT ACT QRY) (STEPA p (KACT ACT QRY) A
-                    (SNAPSHOT READY (KRES RES ANS))) (suspended m [w']) v’
-  >- (gvs[returns_def] >> xapp >> simp[]) >>
-  gvs[POLL_RESULT_def] >> xmatch >>
-  xlet ‘POSTv v. &LIST_TYPE ACT (socks (suspended m [w'] []).actions) v’
-  >- (xapp_spec ws_socks_spec >> simp[] >> metis_tac[]) >>
-  xlet ‘POSTv v. &STEPAd p ACT A (SNAPSHOT READY RES) n
-                    (with_store δ st2 (suspended m [w'])) v’
-  >- (first_x_assum (qspec_then ‘n’ mp_tac) >> simp[] >> strip_tac >>
-      xapp >> simp[wf_suspended] >> metis_tac[]) >>
-  xcon >> xsimpl >>
-  simp[POLL_RESULT_def, with_store_suspended, Abbr ‘w'’, Abbr ‘bs’, Abbr ‘st2’,
-       with_store_first]
-QED
-
-(* MAIN: with_store implements the model's with_store *)
-Theorem with_store_spec:
-  DELTA p δ STORE QRY ANS deltav ∧ wf m ∧ STORE s0 stv ∧
-  COMP p (KACT ACT QRY) A (SNAPSHOT READY (KRES RES ANS)) m cv ⇒
-  app (p:'ffi ffi_proj) with_store_v [deltav; stv; cv] emp
-    (POSTv v. &COMP p ACT A (SNAPSHOT READY RES) (with_store δ s0 m) v)
-Proof
-  strip_tac >> irule app_COMP_of_approxd >> simp[] >> gen_tac >>
-  xcf_with_def (fetch "-" "with_store_v_def") >>
-  gvs[COMP_def, POLL_RESULT_def] >> xmatch >>
-  xlet ‘POSTv v. &LIST_TYPE ACT (socks (m []).actions) v’
-  >- (xapp_spec ws_socks_spec >> simp[] >> metis_tac[]) >>
-  xlet ‘POSTv v. &STEPAd p ACT A (SNAPSHOT READY RES) n (with_store δ s0 m) v’
-  >- (xapp_spec ws_res_spec_d >> simp[] >> metis_tac[]) >>
-  xcon >> xsimpl >> simp[COMPd_def, POLL_RESULT_def, with_store_first]
-QED
 
 (* ------------------------------------------------------------------------
    The store
@@ -231,39 +42,16 @@ Theorem kv_delta_al_DELTA:
   DELTA (p:'ffi ffi_proj) kv_delta STORE_AL KQRY KANS kv_delta_al_v
 Proof
   rw[DELTA_def, STORE_AL_def] >>
-  xapp_spec (fetch "-" "kv_delta_al_v_thm" |> MATCH_MP ml_translatorTheory.Arrow_IMP_app_basic) >>
-  FAIL_TAC "TODO: DELTA for the translated kv_delta_al (WIP)"
+  xapp_spec (fetch "asyncKvProg" "kv_delta_al_v_thm") >> xsimpl >>
+  qexistsl_tac [‘q’, ‘al’] >> simp[] >> rpt strip_tac >>
+  Cases_on ‘kv_delta_al al q’ >> gvs[PAIR_TYPE_def] >>
+  drule (fetch "asyncKvProg" "kv_delta_al_thm") >> disch_then (qspec_then ‘q’ mp_tac) >>
+  simp[] >> strip_tac >> gvs[] >> metis_tac[]
 QED
 
 (* ------------------------------------------------------------------------
    The skeleton and the handler, in the vocabulary of with_store
    ------------------------------------------------------------------------ *)
-
-Theorem ksreadable_spec:
-  NUM fd fdv ⇒
-  app (p:'ffi ffi_proj) sreadable_v [fdv] emp
-    (POSTv v. &COMP p ACT UNIT_TYPE (SNAPSHOT SREADY R) (sreadable fd) v)
-Proof
-  rpt strip_tac >> xcf_with_def (fetch "asyncM4SockServer" "sreadable_v_def") >>
-  xfun ‘f’ >> simp[sreadable_def] >>
-  ‘∀w wv. SNAPSHOT SREADY R w wv ⇒
-     returns p f [wv]
-       (OPTION_TYPE UNIT_TYPE
-          (if ∃c. c ∈ w.ready ∧ w2n c = fd then SOME () else NONE))’
-    by (rpt strip_tac >> simp[returns_def] >>
-        qpat_x_assum ‘curried _ _ f ∧ _’ (irule o CONJUNCT2) >>
-        gvs[SNAPSHOT_def, SREADY_def] >> xmatch >>
-        xlet ‘POSTv bv. &BOOL (MEM fd (MAP w2n fds)) bv’
-        >- (xapp >> metis_tac[]) >>
-        xif >> rpt (xlet_auto >- (xcon >> xsimpl)) >> xcon >> xsimpl >>
-        gvs[MEM_MAP_w2n] >> rw[OPTION_TYPE_def] >> fs[UNIT_TYPE_def] >>
-        metis_tac[]) >>
-  ‘app p Async_wait_v [f] emp
-     (POSTv v. &COMP p ACT UNIT_TYPE (SNAPSHOT SREADY R)
-        (wait (λs. if ∃c. c ∈ s.ready ∧ w2n c = fd then SOME () else NONE)) v)’
-    by (irule Async_wait_spec >> simp[]) >>
-  qpat_x_assum ‘app _ Async_wait_v _ _ _’ xapp_spec >> xsimpl
-QED
 
 (* return (), at any depth *)
 val return_unit_tac =
@@ -275,8 +63,8 @@ val return_unit_tac =
   simp[COMP_IMP_COMPd];
 
 (* emit a, for a CakeML action value av *)
-fun emit_tac a =
-  ‘app p Async_emit_v [av] emp
+fun emit_tac a av =
+  ‘app p Async_emit_v [^av] emp
      (POSTv v. &COMP p KSACT KSRESP KSSNAP (emit ^a) v)’
     by (irule Async_emit_spec >> simp[]) >>
   qpat_x_assum ‘app _ Async_emit_v _ _ _’ xapp_spec >> xsimpl;
@@ -319,11 +107,11 @@ Theorem kserver_with_k_spec_d:
     app (p:'ffi ffi_proj) sserver_with_k_v [hv; lfdv] emp
       (POSTv v. &COMPd p KSACT UNIT_TYPE KSSNAP n (krelabel (server_with_k h lfd)) v)
 Proof
-  Induct >> rpt strip_tac >> xcf_with_def (fetch "-" "sserver_with_k_v_def") >>
+  Induct >> rpt strip_tac >> xcf_with_def (fetch "asyncKvProg" "sserver_with_k_v_def") >>
   simp_tac std_ss [Once kserver_with_k_unfold] >>
   xfun ‘k1’ >>
-  xlet ‘POSTv r. &COMP p KSACT UNIT_TYPE KSSNAP (sreadable lfd) r’
-  >- (xapp_spec ksreadable_spec >> simp[]) >>
+  xlet ‘POSTv r. &COMP p KSACT UNIT_TYPE KSSNAP (sreadable lfd) r’ >>
+  TRY (xapp_spec ksreadable_spec >> simp[] >> NO_TAC) >>
   qmatch_goalsub_abbrev_tac ‘bind (sreadable lfd) G’
   >- (‘app p Async_bind_v [r; k1] emp
          (POSTv v. &COMPd p KSACT UNIT_TYPE KSSNAP 0 (bind (sreadable lfd) G) v)’
@@ -340,7 +128,7 @@ Proof
         xlet ‘POSTv av. &KSACT (Sock (Accept (n2w lfd))) av’
         >- (xcon >> xsimpl >> simp[KACT_def]) >>
         xlet ‘POSTv ev. &COMP p KSACT KSRESP KSSNAP (emit (Sock (Accept (n2w lfd)))) ev’
-        >- emit_tac “Sock (Accept (n2w lfd)) : (sact, num # brequest) kact” >>
+        >- emit_tac “Sock (Accept (n2w lfd)) : (sact, num # brequest) kact” “av : v” >>
         qmatch_goalsub_abbrev_tac ‘bind (emit _) G2’ >>
         ‘∀res resv. KSRESP res resv ⇒
            returns p k2 [resv] (COMPd p KSACT UNIT_TYPE KSSNAP n (G2 res))’
@@ -419,7 +207,7 @@ Theorem kkv_handler_spec_d:
       (POSTv v. &COMPd p KSACT UNIT_TYPE KSSNAP n (krelabel (kv_handler (fd, buf))) v)
 Proof
   completeInduct_on ‘n’ >> rpt strip_tac >>
-  xcf_with_def (fetch "-" "kv_handler_v_def") >>
+  xcf_with_def (fetch "asyncKvProg" "kv_handler_v_def") >>
   xlet ‘POSTv rv. &ASYNCHTTPPARSEB_BPARSE_RESULT_TYPE (parse_brequest buf) rv’
   >- (xapp >> simp[]) >>
   simp_tac std_ss [Once kkv_handler_unfold] >>
@@ -433,7 +221,7 @@ Proof
       xlet ‘POSTv av. &KSACT (Kv (fd, req)) av’
       >- (xcon >> xsimpl >> simp[KACT_def]) >>
       xlet ‘POSTv ev. &COMP p KSACT KSRESP KSSNAP (emit (Kv (fd, req))) ev’
-      >- emit_tac “Kv (fd, req) : (sact, num # brequest) kact” >>
+      >- emit_tac “Kv (fd, req) : (sact, num # brequest) kact” “av : v” >>
       qmatch_goalsub_abbrev_tac ‘bind (emit _) G’ >>
       ‘app p Async_bind_v [ev; k1] emp
          (POSTv v. &COMPd p KSACT UNIT_TYPE KSSNAP n (bind (emit (Kv (fd, req))) G) v)’
@@ -453,10 +241,10 @@ Proof
             xlet ‘POSTv av0. &SACT (Write (n2w fd) bs) av0’
             >- (xcon >> xsimpl >> gs[SACT_def, Abbr ‘bs’, bytes_str_chars,
                                      sprint_response_thm]) >>
-            xlet ‘POSTv av. &KSACT (Sock (Write (n2w fd) bs)) av’
+            xlet ‘POSTv aw. &KSACT (Sock (Write (n2w fd) bs)) aw’
             >- (xcon >> xsimpl >> simp[KACT_def]) >>
             xlet ‘POSTv ev2. &COMP p KSACT KSRESP KSSNAP (emit (Sock (Write (n2w fd) bs))) ev2’
-            >- emit_tac “Sock (Write (n2w fd) bs) : (sact, num # brequest) kact” >>
+            >- emit_tac “Sock (Write (n2w fd) bs) : (sact, num # brequest) kact” “aw : v” >>
             ‘app p Async_bind_v [ev2; k2] emp
                (POSTv v. &COMPd p KSACT UNIT_TYPE KSSNAP (n - 1)
                    (bind (emit (Sock (Write (n2w fd) bs)))
@@ -485,7 +273,7 @@ Proof
             xlet ‘POSTv av. &KSACT (Sock (Read (n2w fd) bufsz)) av’
             >- (xcon >> xsimpl >> simp[KACT_def]) >>
             xlet ‘POSTv ev. &COMP p KSACT KSRESP KSSNAP (emit (Sock (Read (n2w fd) bufsz))) ev’
-            >- emit_tac “Sock (Read (n2w fd) bufsz) : (sact, num # brequest) kact” >>
+            >- emit_tac “Sock (Read (n2w fd) bufsz) : (sact, num # brequest) kact” “av : v” >>
             qmatch_goalsub_abbrev_tac ‘bind (emit _) G2’ >>
             ‘∀res resv. KSRESP res resv ⇒
                returns p k2 [resv]
@@ -543,7 +331,7 @@ Theorem kkv_inner_spec:
   app (p:'ffi ffi_proj) kv_inner_v [lfdv] emp
     (POSTv v. &COMP p KSACT UNIT_TYPE KSSNAP (krelabel (kv_inner lfd)) v)
 Proof
-  rpt strip_tac >> xcf_with_def (fetch "-" "kv_inner_v_def") >> xfun ‘h’ >>
+  rpt strip_tac >> xcf_with_def (fetch "asyncKvProg" "kv_inner_v_def") >> xfun ‘h’ >>
   simp[kv_inner_def] >> xapp_spec kserver_with_k_spec >>
   simp[KHANDLER_def, wf_kv_handler] >> rpt strip_tac >>
   qpat_x_assum ‘curried _ _ h ∧ _’ (irule o CONJUNCT2) >>
@@ -559,7 +347,7 @@ Theorem kv_server_spec:
   app (p:'ffi ffi_proj) kv_server_v [lfdv] emp
     (POSTv v. &COMP p SACT UNIT_TYPE SSNAP (srelabel (kv_server lfd)) v)
 Proof
-  rpt strip_tac >> xcf_with_def (fetch "-" "kv_server_v_def") >>
+  rpt strip_tac >> xcf_with_def (fetch "asyncKvProg" "kv_server_v_def") >>
   simp[srelabel_kv_server] >>
   xlet ‘POSTv cv. &COMP p KSACT UNIT_TYPE KSSNAP (krelabel (kv_inner lfd)) cv’
   >- (xapp_spec kkv_inner_spec >> simp[]) >>

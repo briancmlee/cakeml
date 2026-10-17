@@ -37,10 +37,13 @@ Proof
   >> res_tac >> simp[]
 QED
 
-Theorem interest_ghist_sub:
-  grun_ok (interest fds0) m s0 ⇒
-  ∀n c. MEM c (interest fds0 (ghist (interest fds0) m s0 n)) ⇒
-        MEM c fds0 ∨ MEM c (wacc (gperf (interest fds0) m s0 n))
+(* For any interest lists ifds the loop polls: the fds in interest fds0 of
+   its history are fds0's and the connections handed out (used for D26's
+   live lists, which are a sub-list of interest) *)
+Theorem interest_ghist_sub_gen:
+  grun_ok ifds m s0 ⇒
+  ∀n c. MEM c (interest fds0 (ghist ifds m s0 n)) ⇒
+        MEM c fds0 ∨ MEM c (wacc (gperf ifds m s0 n))
 Proof
   strip_tac >> Induct
   >- simp[ghist_def, grounds_def] >>
@@ -49,9 +52,17 @@ Proof
   rpt strip_tac
   >- (first_x_assum drule >> simp[GSYM ghist_def] >> metis_tac[]) >>
   drule grun_ok_sock_acts >> disch_then (qspec_then ‘n’ strip_assume_tac) >>
-  ‘FST (sock_acts_tot (gstate (interest fds0) m s0 n) (gacts (interest fds0) m s0 n)) =
-   gres (interest fds0) m s0 n’ by simp[gres_def] >>
+  ‘FST (sock_acts_tot (gstate ifds m s0 n) (gacts ifds m s0 n)) =
+   gres ifds m s0 n’ by simp[gres_def] >>
   gvs[] >> drule_all sock_acts_accepted >> simp[]
+QED
+
+Theorem interest_ghist_sub:
+  grun_ok (interest fds0) m s0 ⇒
+  ∀n c. MEM c (interest fds0 (ghist (interest fds0) m s0 n)) ⇒
+        MEM c fds0 ∨ MEM c (wacc (gperf (interest fds0) m s0 n))
+Proof
+  strip_tac >> drule interest_ghist_sub_gen >> simp[]
 QED
 
 (* ------------------------------------------------------------------------

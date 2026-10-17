@@ -26,7 +26,8 @@ Ancestors
   honestL1BModel honestL1BSim honestL1BRefine honestL1BTransfer honestL1BConn honestL1BStable
   honestL1BStmts honestL1BQuiet honestL1BShift
   honestL1BSpec honestL1BTrace honestEchoL0BProg honestEchoL0BMain honestEchoL0BSem
-  honestEchoL0BStutter honestL0Fdok honestL1PFRefine
+  honestEchoL0BStutter honestL0Fdok honestL1PFRefine honestEchoL0BSQ
+  honestEchoL0Setup
 Libs
   preamble
 
@@ -61,30 +62,15 @@ Overload esrv = “λk. srelabel (server k)”
 (* The PF world: the post-listen world w1, reindexed by the blocking run *)
 Overload epfw = “λk w1. reindex (btr (elfd k) epol (eifds k) (K F) (esrv k) (w1, pinit)) w1”
 
-(* The world w3 after main's three sys_fdok calls from w0, all answering
-   open (D33) *)
-Definition stdio_prefix_def:
-  stdio_prefix w0 w3 ⇔
-    ∃o0 w1 e0 o1 w2 e1 o2 e2.
-      l0_do «sys_fdok» [0w] 1 w0 = SOME (o0, w1, e0) ∧
-      l0_do «sys_fdok» [1w] 1 w1 = SOME (o1, w2, e1) ∧
-      l0_do «sys_fdok» [2w] 1 w2 = SOME (o2, w3, e2) ∧ stdio_all o0 o1 o2
-End
-
 (* The PF run's standing facts and the PF echo's guarantee there (with its
-   D37 no_close_stdio, as the KV worker's echo_run_nostdio), and the
-   server's SQ; bquiet (echo_bquiet) and the world facts after the listen
-   (listen_l0wf, listen_lone) are proved *)
+   D37 no_close_stdio, as the KV worker's echo_run_nostdio); S1, S2
+   (echo_S1, echo_S2) and SQ (echo_SQ) from echo_run, bquiet (echo_bquiet) and the world facts after the listen
+   (honestEchoL0Setup's listen_l0wf, listen_lone, post_listen_facts_reindexed) are proved *)
 Definition echo_pf_facts_def:
   echo_pf_facts KK k w1 ⇔
     run_ok (elfd k) epol (eifds k) (esrv k) (epfw k w1) ∧
     pl2_room (elfd k) epol (eifds k) (esrv k) (epfw k w1, pinit) ∧
-    winv (epfw k w1) ∧ linv (elfd k) (epfw k w1) ∧ qfresh (epfw k w1) ∧
-    MEM (elfd k) (l0_used (epfw k w1)) ∧
     (∀n. SND (pcm (elfd k) epol (eifds k) (esrv k) (epfw k w1) n) + 1 < dimword (:64)) ∧
-    S1 (elfd k) epol (eifds k) (esrv k) (epfw k w1) ∧
-    S2 (elfd k) epol (eifds k) (esrv k) (epfw k w1) ∧
-    SQ (elfd k) epol (eifds k) (K F) (esrv k) (epfw k w1) ∧
     ∀io_p. ptrace (elfd k) epol (eifds k) (K F) (esrv k) w1 pinit io_p ⇒
            (∀evs. LPREFIX (fromList evs) io_p ⇒ no_close_stdio evs) ∧
            echo2_guar_l0 KK (epfw k w1) io_p
@@ -192,7 +178,7 @@ Proof
 QED
 
 Theorem l0_call_env[local]:
-  l0_call n conf bytes w = SOME (FFIreturn bytes' w') ⇒ w'.env = w.env
+  l0_call n conf bs w = SOME (FFIreturn bs' w') ⇒ w'.env = w.env
 Proof
   rw[l0_call_def] >> gvs[AllCaseEqs()] >>
   rpt (pairarg_tac >> gvs[]) >> imp_res_tac ops_env >> simp[]
@@ -217,65 +203,11 @@ Proof
   rw[sys_listen_echo_def] >> metis_tac[arrivals_finite_do]
 QED
 
-(* After the listen from a fresh world: the world is well formed, with
-   the one listener *)
-Theorem listen_l0wf:
-  l0_fresh_world w0 ∧ sys_listen_echo w0 = SOME (out, w1, ev) ⇒ l0wf w1
-Proof
-  rw[sys_listen_echo_def, l0_do_def, AllCaseEqs()] >>
-  irule l0wf_ffi_fn >> first_x_assum (irule_at Any) >>
-  fs[l0_fresh_world_def, l0wf_def, used_chans_def]
-QED
-
-Theorem deliver_keys[local]:
-  ∀as w. MAP FST (FOLDL l0_deliver w as).listeners = MAP FST w.listeners
-Proof
-  Induct >> simp[] >> rpt gen_tac >>
-  Cases_on ‘h’ >> simp[l0_deliver_def] >> rw[upd_lchan_def] >> every_case_tac >>
-  simp[alistTheory.MAP_FST_AFUPDKEY]
-QED
-
-Theorem listen_lone:
-  l0_fresh_world w0 ∧ sys_listen_echo w0 = SOME (out, w1, ev) ∧ listen_fd out = SOME k ⇒
-  lone (n2w k) w1
-Proof
-  rw[sys_listen_echo_def, l0_do_def, l0_ffi_fn_def] >>
-  ‘MAP FST (l0_tick «sys_listen» w0).listeners = []’
-    by (REWRITE_TAC [l0_tick_def, deliver_keys] >> fs[l0_fresh_world_def]) >>
-  gvs[AllCaseEqs(), l0_call_def, honestEchoL0ProgTheory.echo_port_conf_def]
-  >- (‘dec_res (enc_res (Ok (w2n f)) ++ []) = SOME (Ok (w2n f))’
-        by (irule dec_enc_res >> simp[l0_res_ok_def] >>
-            assume_tac (INST_TYPE [alpha |-> “:64”] wordsTheory.w2n_lt) >> fs[]) >>
-      gvs[listen_fd_def, l0_res_of_def] >>
-      gvs[l0_listen_def, AllCaseEqs(), lone_def])
-  >> PairCases_on ‘ke’ >>
-  ‘n2w (err_code ke1) ≠ (0w:word8)’
-    by (mp_tac (Q.INST [‘e’ |-> ‘ke1’] err_code_range) >> simp[wordsTheory.n2w_11]) >>
-  gvs[enc_listen_fail_def, listen_fd_def, l0_res_of_def, dec_res_def, AllCaseEqs()]
-QED
 
 (* ------------------------------------------------------------------------
    Across the four setup events
    ------------------------------------------------------------------------ *)
 
-(* The world facts along the stdio checks, from a fresh relied-on world *)
-Theorem stdio_worlds[local]:
-  l0_rely w0 ∧ l0_fresh_world w0 ∧
-  l0_do «sys_fdok» [0w] 1 w0 = SOME (o0, w1, e0) ∧
-  l0_do «sys_fdok» [1w] 1 w1 = SOME (o1, w2, e1) ∧
-  l0_do «sys_fdok» [2w] 1 w2 = SOME (o2, w3, e2) ⇒
-  l0_rely w1 ∧ l0_rely w2 ∧ l0_rely w3 ∧
-  l0_fresh_world w1 ∧ l0_fresh_world w2 ∧ l0_fresh_world w3
-Proof
-  strip_tac >>
-  ‘l0_rely w1’ by (irule l0_do_rely >> metis_tac[]) >>
-  ‘l0_rely w2’ by (irule l0_do_rely >> metis_tac[]) >>
-  ‘l0_rely w3’ by (irule l0_do_rely >> metis_tac[]) >>
-  ‘l0_fresh_world w1’ by metis_tac[fdok_fresh_step] >>
-  ‘l0_fresh_world w2’ by metis_tac[fdok_fresh_step] >>
-  ‘l0_fresh_world w3’ by metis_tac[fdok_fresh_step] >>
-  simp[]
-QED
 
 (* D37: the checks found fds 0-2 open, and the setup closes nothing *)
 Theorem stdio_open_echo[local]:
@@ -407,11 +339,27 @@ Proof
       qexists_tac ‘Terminate Success [e0; e1; e2; ev]’ >> simp[] >>
       drule_all listen_failed_echo >> simp[]) >>
   (* the listen succeeds: the loop's facts, in the PF world *)
+  ‘stdio_prefix w0 w3’
+    by (simp[stdio_prefix_def] >>
+        qexistsl [‘o0’, ‘w1’, ‘e0’, ‘o1’, ‘w2’, ‘e1’, ‘o2’, ‘e2’] >> simp[]) >>
+  ‘winv (epfw k w4) ∧ linv (elfd k) (epfw k w4) ∧ qfresh (epfw k w4) ∧
+   MEM (elfd k) (l0_used (epfw k w4))’
+    by (mp_tac (Q.INST [‘tr’ |-> ‘btr (elfd k) epol (eifds k) (K F) (esrv k) (w4, pinit)’]
+                  post_listen_facts_reindexed) >>
+        impl_tac >- ASM_REWRITE_TAC[] >> strip_tac >> ASM_REWRITE_TAC[]) >>
   first_x_assum (qspecl_then [‘w3’, ‘out’, ‘w4’, ‘ev’, ‘k’] mp_tac) >>
-  (impl_tac
-   >- (simp[stdio_prefix_def] >>
-       qexistsl [‘o0’, ‘w1’, ‘e0’, ‘o1’, ‘w2’, ‘e1’, ‘o2’, ‘e2’] >> simp[])) >>
+  (impl_tac >- ASM_REWRITE_TAC[]) >>
   simp[echo_pf_facts_def] >> strip_tac >>
+  ‘echo_run k epol (epfw k w4)’
+    by (rewrite_tac[honestEchoL0OblTheory.echo_run_def] >>
+        drule honestEchoL0MainTheory.listen_fd_lt >> rewrite_tac[wordsTheory.dimword_64] >>
+        strip_tac >> ASM_REWRITE_TAC[wordsTheory.dimword_64]) >>
+  ‘SQ (elfd k) epol (eifds k) (K F) (esrv k) (epfw k w4)’
+    by (irule echo_SQ >> ASM_REWRITE_TAC[]) >>
+  ‘S1 (elfd k) epol (eifds k) (esrv k) (epfw k w4)’
+    by (irule honestEchoL0OblTheory.echo_S1 >> first_assum ACCEPT_TAC) >>
+  ‘S2 (elfd k) epol (eifds k) (esrv k) (epfw k w4)’
+    by (irule honestEchoL0OblTheory.echo_S2 >> first_assum ACCEPT_TAC) >>
   ‘l0wf w4 ∧ lone (elfd k) w4’ by metis_tac[listen_l0wf, listen_lone] >>
   ‘bquiet (esrv k) (eifds k) (K F)’ by simp[echo_bquiet_live] >>
   ‘l0_rely w4’ by (irule l0_do_rely >> fs[sys_listen_echo_def] >> metis_tac[]) >>

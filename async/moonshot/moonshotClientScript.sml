@@ -289,7 +289,7 @@ Definition crel_def:
     LENGTH st.cs = N ∧ st.nh = hs.nxt ∧
     w.takes = (λj b n. n) ∧ alloc_ok w.alloc ∧
     LENGTH w.reserved + LENGTH w.listening ≤ 1 ∧
-    ALL_DISTINCT (MAP FST hs.tbl) ∧
+    ALL_DISTINCT (MAP FST hs.tbl) ∧ ALL_DISTINCT (MAP SND hs.tbl) ∧
     ALL_DISTINCT (MAP FST w.open_fds) ∧ ALL_DISTINCT (MAP SND w.open_fds) ∧
     EVERY (λj. j < LENGTH w.chans) (MAP SND w.open_fds) ∧
     (∀f. MEM f (MAP FST w.open_fds) ⇔ MEM f (MAP SND hs.tbl)) ∧
@@ -531,4 +531,212 @@ Proof
   >> gen_tac >> disch_tac >> gen_tac >> strip_tac >> simp[EL_LUPDATE] >> IF_CASES_TAC
   >- (simp[chd_def] >> qpat_x_assum ‘∀x. _ ⇒ x ≠ hd’ irule >> first_assum ACCEPT_TAC) >>
   qpat_x_assum ‘∀hd. _ ⇒ ∀i. i < N ⇒ ¬MEM hd _’ drule >> disch_then drule >> simp[]
+QED
+
+(* ------------------------------------------------------------------------
+   Closing a connection's handle (refused, or EOF) keeps the relation
+   ------------------------------------------------------------------------ *)
+
+Theorem MAP_FST_ADELKEY:
+  MAP FST (ADELKEY k l) = FILTER (λx. x ≠ k) (MAP FST l)
+Proof
+  simp[ADELKEY_def, FILTER_MAP, combinTheory.o_DEF]
+QED
+
+Theorem ALL_DISTINCT_MAP_FILTER:
+  ∀l. ALL_DISTINCT (MAP f l) ⇒ ALL_DISTINCT (MAP f (FILTER P l))
+Proof
+  Induct >> rw[] >> gvs[MEM_MAP, MEM_FILTER] >> metis_tac[]
+QED
+
+Theorem MEM_SND_ADELKEY:
+  ∀l. ALL_DISTINCT (MAP SND l) ∧ ALL_DISTINCT (MAP FST l) ∧ ALOOKUP l k = SOME v ⇒
+      (MEM x (MAP SND (ADELKEY k l)) ⇔ MEM x (MAP SND l) ∧ x ≠ v)
+Proof
+  Induct >> simp[FORALL_PROD] >> rpt gen_tac >> rename1 ‘(k0, v0) :: l’ >> strip_tac >>
+  simp[ADELKEY_def] >> Cases_on ‘k0 = k’ >> gvs[]
+  >- (‘FILTER (λp. FST p ≠ k) l = l’
+        by (simp[FILTER_EQ_ID, EVERY_MEM] >> gvs[MEM_MAP] >> metis_tac[FST]) >>
+      simp[] >> metis_tac[]) >>
+  ‘MEM v (MAP SND l)’ by (imp_res_tac ALOOKUP_MEM >> simp[MEM_MAP] >> metis_tac[SND]) >>
+  ‘v0 ≠ v’ by metis_tac[] >>
+  gvs[ADELKEY_def] >> metis_tac[]
+QED
+
+Theorem ALL_DISTINCT_ADELKEY:
+  ALL_DISTINCT (MAP f l) ⇒ ALL_DISTINCT (MAP f (ADELKEY k l))
+Proof
+  simp[ADELKEY_def, ALL_DISTINCT_MAP_FILTER]
+QED
+
+Theorem ALOOKUP_SND_inj:
+  ∀l a b v. ALL_DISTINCT (MAP SND l) ∧ ALOOKUP l a = SOME v ∧ ALOOKUP l b = SOME v ⇒ a = b
+Proof
+  Induct >> simp[FORALL_PROD] >> rw[] >> gvs[] >>
+  imp_res_tac ALOOKUP_MEM >> gvs[MEM_MAP] >> metis_tac[SND]
+QED
+
+(* Frame facts for one connection's state change (LUPDATE c' k) *)
+Theorem lupd_owner:
+  (∀i1 i2 hd. i1 < N ∧ i2 < N ∧ MEM hd (chd (EL i1 cs)) ∧ MEM hd (chd (EL i2 cs)) ⇒ i1 = i2) ∧
+  LENGTH cs = N ∧ k < N ∧
+  (∀hd. MEM hd (chd c') ⇒ MEM hd (chd (EL k cs))) ⇒
+  Abbrev (
+  ∀i1 i2 hd. i1 < N ∧ i2 < N ∧ MEM hd (chd (EL i1 (LUPDATE c' k cs))) ∧
+             MEM hd (chd (EL i2 (LUPDATE c' k cs))) ⇒ i1 = i2)
+Proof
+  simp[markerTheory.Abbrev_def] >>
+  rw[EL_LUPDATE] >> rw[] >> gvs[] >> metis_tac[]
+QED
+
+Theorem lupd_tbl_close:
+  (∀hd. MEM hd (MAP FST tbl) ⇔ ∃i. i < N ∧ MEM hd (chd (EL i cs))) ∧
+  (∀i1 i2 hd. i1 < N ∧ i2 < N ∧ MEM hd (chd (EL i1 cs)) ∧ MEM hd (chd (EL i2 cs)) ⇒ i1 = i2) ∧
+  LENGTH cs = N ∧ k < N ∧ chd (EL k cs) = [hd0] ∧ chd c' = [] ⇒
+  Abbrev (
+  ∀hd. MEM hd (MAP FST (ADELKEY hd0 tbl)) ⇔ ∃i. i < N ∧ MEM hd (chd (EL i (LUPDATE c' k cs))))
+Proof
+  simp[markerTheory.Abbrev_def] >>
+  rw[MAP_FST_ADELKEY, MEM_FILTER, EL_LUPDATE] >> eq_tac >> rw[]
+  >- (qexists_tac ‘i’ >> rw[] >> gvs[]) >>
+  Cases_on ‘i = k’ >> gvs[] >- (strip_tac >> gvs[] >> metis_tac[MEM]) >> metis_tac[]
+QED
+
+Theorem close_cok:
+  (∀i hd. i < N ∧ MEM hd (chd (EL i cs)) ⇒
+          ∃f j. ALOOKUP tbl hd = SOME f ∧ ALOOKUP ofds f = SOME j ∧ ALOOKUP hlc hd = SOME i ∧
+                cok (brequests (rqs i)) (EL i cs) (EL j chans) (MEM hd sett) (hd ∈ rdyf i)
+                    (hl_sent hd ps)) ∧
+  (∀i1 i2 hd. i1 < N ∧ i2 < N ∧ MEM hd (chd (EL i1 cs)) ∧ MEM hd (chd (EL i2 cs)) ⇒ i1 = i2) ∧
+  LENGTH cs = N ∧ k < N ∧ chd (EL k cs) = [hd0] ∧ chd c' = [] ∧
+  ALOOKUP tbl hd0 = SOME f0 ∧ ALOOKUP ofds f0 = SOME j0 ∧
+  ALL_DISTINCT (MAP SND tbl) ∧ ALL_DISTINCT (MAP SND ofds) ∧
+  (∀j. j ≠ j0 ⇒ EL j chans' = EL j chans) ∧
+  (∀i. i ≠ k ⇒ rdyf' i = rdyf i) ∧ (∀hd. hl_sent hd ps' = hl_sent hd ps) ⇒
+  Abbrev (
+  ∀i hd. i < N ∧ MEM hd (chd (EL i (LUPDATE c' k cs))) ⇒
+         ∃f j. ALOOKUP (ADELKEY hd0 tbl) hd = SOME f ∧ ALOOKUP (ADELKEY f0 ofds) f = SOME j ∧
+               ALOOKUP hlc hd = SOME i ∧
+               cok (brequests (rqs i)) (EL i (LUPDATE c' k cs)) (EL j chans')
+                   (MEM hd (FILTER (λy. hd0 ≠ y) sett)) (hd ∈ rdyf' i) (hl_sent hd ps'))
+Proof
+  simp[markerTheory.Abbrev_def] >>
+  rpt strip_tac >> Cases_on ‘i = k’ >- gvs[EL_LUPDATE] >>
+  gvs[EL_LUPDATE] >>
+  ‘hd ≠ hd0’ by (strip_tac >> qpat_x_assum ‘hd = hd0’ SUBST_ALL_TAC >>
+                 qpat_x_assum ‘∀i1 i2 hd. i1 < N ∧ i2 < N ∧ _ ⇒ _’
+                   (qspecl_then [‘i’, ‘k’, ‘hd0’] mp_tac) >> simp[]) >>
+  qpat_x_assum ‘∀i hd. i < N ∧ MEM hd (chd _) ⇒ ∃f j. _’ drule_all >> strip_tac >>
+  ‘f ≠ f0’ by (strip_tac >> gvs[] >> metis_tac[ALOOKUP_SND_inj]) >>
+  ‘j ≠ j0’ by (strip_tac >> gvs[] >> metis_tac[ALOOKUP_SND_inj]) >>
+  qexistsl_tac [‘f’, ‘j’] >> simp[ALOOKUP_ADELKEY, MEM_FILTER]
+QED
+
+Theorem close_idle:
+  (∀i hd'. i < N ∧ (EL i cs = CIdle ∨ ∃hd. EL i cs = CPend hd) ∧ ALOOKUP hlc hd' = SOME i ⇒
+           hl_sent hd' ps = []) ∧
+  k < N ∧ LENGTH cs = N ∧ chd c' = [] ∧ (c' = CIdle ⇒ ∃h. EL k cs = CPend h) ∧
+  (∀hd. hl_sent hd ps' = hl_sent hd ps) ⇒
+  Abbrev (
+  ∀i hd'. i < N ∧ (EL i (LUPDATE c' k cs) = CIdle ∨ ∃hd. EL i (LUPDATE c' k cs) = CPend hd) ∧
+          ALOOKUP hlc hd' = SOME i ⇒ hl_sent hd' ps' = [])
+Proof
+  simp[markerTheory.Abbrev_def] >>
+  rpt strip_tac >> Cases_on ‘i = k’ >> gvs[EL_LUPDATE, chd_def] >> metis_tac[]
+QED
+
+Theorem close_up:
+  (∀i hd rest hd'. i < N ∧ EL i cs = CUp hd rest ∧ ALOOKUP hlc hd' = SOME i ∧
+                   hl_sent hd' ps ≠ [] ⇒ hd' = hd) ∧
+  k < N ∧ LENGTH cs = N ∧ (∀h r. c' ≠ CUp h r) ∧ (∀hd. hl_sent hd ps' = hl_sent hd ps) ⇒
+  Abbrev (
+  ∀i hd rest hd'. i < N ∧ EL i (LUPDATE c' k cs) = CUp hd rest ∧ ALOOKUP hlc hd' = SOME i ∧
+                  hl_sent hd' ps' ≠ [] ⇒ hd' = hd)
+Proof
+  simp[markerTheory.Abbrev_def] >>
+  rpt strip_tac >> Cases_on ‘i = k’ >> gvs[EL_LUPDATE] >> metis_tac[]
+QED
+
+Theorem close_ended:
+  (∀hd. MEM hd (MAP FST hlc) ⇔ MEM hd (hl_conn_handles ps)) ∧
+  (∀hd. hl_refused hd ps ∨ hl_eof hd ps ⇒ MEM hd (MAP FST hlc)) ∧
+  (∀hd. hl_refused hd ps ∨ hl_eof hd ps ⇒ ¬MEM hd (MAP FST tbl)) ∧
+  (∀hd. ¬(hl_refused hd ps ∧ hl_eof hd ps)) ∧
+  (∀hd. MEM hd (MAP FST tbl) ⇔ ∃i. i < N ∧ MEM hd (chd (EL i cs))) ∧
+  MEM hd0 (MAP FST hlc) ∧
+  (∀hd. hd ≠ hd0 ⇒ (hl_refused hd ps' ⇔ hl_refused hd ps) ∧ (hl_eof hd ps' ⇔ hl_eof hd ps)) ∧
+  ¬(hl_refused hd0 ps' ∧ hl_eof hd0 ps') ∧
+  (∀hd. MEM hd (MAP FST (ADELKEY hd0 tbl)) ⇔ ∃i. i < N ∧ MEM hd (chd (EL i cs'))) ⇒
+  Abbrev (
+  (∀hd. hl_refused hd ps' ∨ hl_eof hd ps' ⇒ MEM hd (hl_conn_handles ps)) ∧
+  (∀hd. hl_refused hd ps' ∨ hl_eof hd ps' ⇒ ¬MEM hd (MAP FST (ADELKEY hd0 tbl))) ∧
+  (∀hd. ¬(hl_refused hd ps' ∧ hl_eof hd ps')) ∧
+  (∀hd. hl_refused hd ps' ∨ hl_eof hd ps' ⇒ ∀i. i < N ⇒ ¬MEM hd (chd (EL i cs'))))
+Proof
+  simp[markerTheory.Abbrev_def] >>
+  strip_tac >> rpt conj_tac >> gen_tac >> Cases_on ‘hd = hd0’ >>
+  gvs[MAP_FST_ADELKEY, MEM_FILTER] >> metis_tac[]
+QED
+
+Theorem EVERY_ADELKEY:
+  EVERY P (MAP g l) ⇒ EVERY P (MAP g (ADELKEY k l))
+Proof
+  simp[ADELKEY_def, EVERY_MEM, MEM_MAP, MEM_FILTER, PULL_EXISTS]
+QED
+
+Theorem crel_close:
+  crel a N rqs lfd st rdyf ps w hs ∧ k < N ∧ chd (EL k st.cs) = [hd] ∧
+  ALOOKUP hs.tbl hd = SOME f ∧ ALOOKUP w.open_fds f = SOME j ∧
+  wframe j w w1 ∧ w1.open_fds = ADELKEY f w.open_fds ∧
+  chd c' = [] ∧ (∀h r. c' ≠ CUp h r) ∧
+  (c' = CIdle ⇒ (∃h. EL k st.cs = CPend h) ∧ hl_sent hd ps = []) ∧
+  (∀hd'. hl_sent hd' ps' = hl_sent hd' ps) ∧ hl_conn_handles ps' = hl_conn_handles ps ∧
+  (∀hd'. hd' ≠ hd ⇒ (hl_refused hd' ps' ⇔ hl_refused hd' ps) ∧ (hl_eof hd' ps' ⇔ hl_eof hd' ps)) ∧
+  ¬(hl_refused hd ps' ∧ hl_eof hd ps') ∧
+  (∀i. i ≠ k ⇒ rdyf' i = rdyf i) ⇒
+  crel a N rqs lfd (st with cs := LUPDATE c' k st.cs) rdyf' ps' w1 (eh_del hd hs)
+Proof
+  strip_tac >>
+  qpat_x_assum ‘crel _ _ _ _ _ _ _ _ _’ (strip_assume_tac o REWRITE_RULE [crel_def]) >>
+  qpat_x_assum ‘wframe _ _ _’ (strip_assume_tac o REWRITE_RULE [wframe_def]) >>
+  ‘MEM hd (chd (EL k st.cs))’ by simp[] >>
+  ‘ALOOKUP st.hlc hd = SOME k’
+    by (qpat_x_assum ‘∀i hd. i < N ∧ MEM hd (chd _) ⇒ ∃f j. _’ drule_all >> strip_tac >>
+        first_assum ACCEPT_TAC) >>
+  ‘MEM hd (MAP FST st.hlc)’
+    by (qpat_x_assum ‘ALOOKUP st.hlc hd = SOME k’ mp_tac >> rpt (pop_assum kall_tac) >>
+        rw[] >> imp_res_tac ALOOKUP_MEM >> fs[MEM_MAP] >> metis_tac[FST]) >>
+  ‘∀x. MEM x (MAP SND (ADELKEY hd hs.tbl)) ⇔ MEM x (MAP SND hs.tbl) ∧ x ≠ f’
+    by (gen_tac >> irule MEM_SND_ADELKEY >> simp[]) >>
+  ‘∀hd'. MEM hd' (chd c') ⇒ MEM hd' (chd (EL k st.cs))’ by simp[] >>
+  ‘c' = CIdle ⇒ ∃h. EL k st.cs = CPend h’ by (strip_tac >> fs[]) >>
+  drule_all lupd_tbl_close >>
+    disch_then (strip_assume_tac o REWRITE_RULE [markerTheory.Abbrev_def]) >>
+  drule_all close_cok >>
+    disch_then (strip_assume_tac o REWRITE_RULE [markerTheory.Abbrev_def]) >>
+  drule_all close_idle >>
+    disch_then (strip_assume_tac o REWRITE_RULE [markerTheory.Abbrev_def]) >>
+  drule_all close_up >>
+    disch_then (strip_assume_tac o REWRITE_RULE [markerTheory.Abbrev_def]) >>
+  drule_all close_ended >>
+    disch_then (strip_assume_tac o REWRITE_RULE [markerTheory.Abbrev_def]) >>
+  drule_all lupd_owner >>
+    disch_then (strip_assume_tac o REWRITE_RULE [markerTheory.Abbrev_def]) >>
+  SIMP_TAC (srw_ss()) [crel_def, eh_del_def] >> rpt conj_tac >> TRY (simp[] >> NO_TAC) >>
+  TRY (irule ALL_DISTINCT_ADELKEY >> simp[] >> NO_TAC) >>
+  TRY (irule EVERY_ADELKEY >> simp[] >> NO_TAC) >>
+  TRY (gen_tac >> simp[MAP_FST_ADELKEY, MEM_FILTER] >>
+       qpat_x_assum ‘∀f. MEM f (MAP FST w.open_fds) ⇔ _’ (fn th => REWRITE_TAC [th]) >>
+       eq_tac >> rw[] >> NO_TAC) >>
+  qpat_x_assum ‘w1.open_fds = _’ (fn th => REWRITE_TAC [th]) >>
+  TRY (first_assum MATCH_ACCEPT_TAC >> NO_TAC) >>
+  TRY (irule ALL_DISTINCT_ADELKEY >> simp[] >> NO_TAC) >>
+  TRY (irule EVERY_ADELKEY >> simp[] >> NO_TAC) >>
+  TRY (REWRITE_TAC [GSYM DE_MORGAN_THM] >> first_assum MATCH_ACCEPT_TAC >> NO_TAC) >>
+  TRY (rpt strip_tac >> qpat_x_assum ‘∀hd. MEM hd (MAP FST st.hlc) ⇔ _’ (fn th => REWRITE_TAC [th]) >>
+       qpat_x_assum ‘∀hd. hl_refused hd ps' ∨ hl_eof hd ps' ⇒ MEM hd (hl_conn_handles ps)’ irule >>
+       simp[] >> NO_TAC) >>
+  TRY (rpt gen_tac >> strip_tac >>
+       qpat_x_assum ‘∀hd'. hl_sent hd' ps' = _’ (fn th => REWRITE_TAC [th]) >>
+       qpat_x_assum ‘∀hd i. ALOOKUP st.hlc hd = SOME i ⇒ i < N ∧ _’ drule >> simp[] >> NO_TAC)
 QED

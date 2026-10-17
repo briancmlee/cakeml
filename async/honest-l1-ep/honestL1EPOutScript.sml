@@ -9,7 +9,7 @@
 *)
 Theory honestL1EPOut
 Ancestors
-  honestL1EPModel honestL1PFOut honestL1PFRound honestL1PFModel
+  honestL1EPModel honestL1PFOut honestL1PFRefine honestL1PFRound honestL1PFModel
   honestL1Steps honestL1Props honestL1Model honestL0WorldProps honestL0Rely honestL0World
   endpointHLModel endpointWorld
 Libs
@@ -175,12 +175,6 @@ Theorem ostepc_acct:
 Proof
   rw[oacct_def, ostepc_def] >> Cases_on ‘MEM f b.gone’ >> gvs[] >>
   fs[IS_PREFIX_APPEND] >> metis_tac[APPEND_ASSOC]
-QED
-
-Theorem l0_do_rely:
-  l0_do n conf alen w = SOME (out, w', ev) ∧ l0_rely w ⇒ l0_rely w'
-Proof
-  rw[l0_do_def, AllCaseEqs()] >> drule_all l0_ffi_fn_length >> simp[]
 QED
 
 Theorem sys_close_quiet:
@@ -489,4 +483,131 @@ Proof
   Cases_on ‘live es1 f’ >> gvs[]
   >- metis_tac[ostep_trans, ostep_ostepc_trans] >>
   metis_tac[ostepc_quiet, APPEND_NIL]
+QED
+
+(* ------------------------------------------------------------------------
+   The round's tail, stage by stage (on the trace: no L0 world invariant)
+   ------------------------------------------------------------------------ *)
+
+Theorem pf_fetch_quiet:
+  ∀fs w ps w' ps' log evs.
+    pf_fetch lfd pol fs (w, ps) = SOME ((w', ps'), log, evs) ∧ l0_rely w ⇒
+    l0_rely w' ∧ ps'.b = ps.b ∧ (∀f. evs_sent f evs = []) ∧
+    (∀f. MEM f ps'.acq ⇔ MEM f ps.acq ∨ MEM (FConn f) log)
+Proof
+  Induct >- simp[pf_fetch_def] >>
+  rpt gen_tac >> rename1 ‘pf_fetch _ _ (g :: fs)’ >> strip_tac >>
+  qpat_x_assum ‘pf_fetch _ _ _ _ = _’ mp_tac >>
+  simp[Once pf_fetch_def] >>
+  IF_CASES_TAC >- (strip_tac >> first_x_assum drule_all >> simp[]) >>
+  IF_CASES_TAC
+  >- (Cases_on ‘sys_accept lfd w’ >> simp[] >> rename1 ‘_ = SOME x’ >>
+      PairCases_on ‘x’ >> rename1 ‘sys_accept _ _ = SOME (out, w1, ev)’ >> simp[] >>
+      pairarg_tac >> simp[AllCaseEqs(), PULL_EXISTS] >> rpt gen_tac >> strip_tac >> gvs[] >>
+      ‘l0_rely w1’ by (gvs[sys_accept_def] >> metis_tac[l0_do_rely]) >>
+      first_x_assum drule_all >> strip_tac >>
+      ‘∀f. ev_sent f ev = []’ by (drule (cj 4 sys_ev_sent) >> simp[]) >>
+      Cases_on ‘l0_res_of out’ >> gvs[] >> rw[] >> gvs[] >> metis_tac[])
+  >> Cases_on ‘sys_recv g pf_chunk w’ >> simp[] >> rename1 ‘_ = SOME x’ >>
+  PairCases_on ‘x’ >> rename1 ‘sys_recv _ _ _ = SOME (out, w1, ev)’ >> simp[] >>
+  pairarg_tac >> simp[AllCaseEqs(), PULL_EXISTS] >> rpt gen_tac >> strip_tac >> gvs[] >>
+  ‘l0_rely w1’ by (gvs[sys_recv_def] >> metis_tac[l0_do_rely]) >>
+  first_x_assum drule_all >> strip_tac >>
+  ‘∀f. ev_sent f ev = []’ by (drule (cj 2 sys_ev_sent) >> simp[]) >>
+  ‘ps1.b = ps.b ∧ ps1.acq = ps.acq ∧ ∀f. ¬MEM (FConn f) fl'’
+    by (qpat_x_assum ‘_ = (ps1, fl')’ mp_tac >> rw[AllCaseEqs(), set_inb_def] >> gvs[]) >>
+  gvs[]
+QED
+
+Theorem drop_ostep:
+  ostep f b (drop_out b g) [] []
+Proof
+  rw[ostep_def, drop_out_def, outbox_of_set_outbox, MEM_FILTER] >> rw[] >> gvs[]
+QED
+
+Theorem FOLDL_drop_ostep:
+  ∀dl b. ostep f b (FOLDL drop_out b dl) [] []
+Proof
+  Induct >> simp[ostep_refl] >> rpt gen_tac >>
+  ‘ostep f b (FOLDL drop_out (drop_out b h) dl) ([] ++ []) ([] ++ [])’
+    by metis_tac[ostep_trans, drop_ostep] >>
+  fs[]
+QED
+
+Theorem stall_ostep:
+  ostep f ps.b (stall_step hfs ob log ps).b [] []
+Proof
+  simp[stall_step_def, FOLDL_drop_ostep]
+QED
+
+Theorem l1_reap_quiet:
+  ∀fs w b w' b' evs. l1_reap fs (w, b) = SOME ((w', b'), evs) ⇒ ∀f. evs_sent f evs = []
+Proof
+  Induct >> simp[l1_reap_def] >> rpt gen_tac >> rw[AllCaseEqs()] >>
+  TRY (PairCases_on ‘ws’) >> gvs[] >> res_tac >> gvs[l1_close_def, AllCaseEqs()] >>
+  metis_tac[sys_close_quiet]
+QED
+
+(* A closing fd with something to send stays as it is *)
+Theorem l1_reap_busy:
+  ∀fs w b w' b' evs.
+    l1_reap fs (w, b) = SOME ((w', b'), evs) ∧ outbox_of b f ≠ [] ∧ ¬MEM f b.gone ⇒
+    outbox_of b' f = outbox_of b f ∧ ¬MEM f b'.gone
+Proof
+  Induct >> simp[l1_reap_def] >> rpt gen_tac >> IF_CASES_TAC >> rw[AllCaseEqs()] >>
+  TRY (first_x_assum drule_all >> simp[] >> NO_TAC) >>
+  PairCases_on ‘ws’ >> gvs[l1_close_def, AllCaseEqs()] >>
+  ‘h ≠ f’ by (strip_tac >> gvs[]) >>
+  first_x_assum drule >> simp[forget_other]
+QED
+
+(* ... and one that leaves closing was closed: its account is empty *)
+Theorem l1_reap_closed:
+  ∀fs w b w' b' evs.
+    l1_reap fs (w, b) = SOME ((w', b'), evs) ∧ MEM f b.closing ∧ ¬MEM f b'.closing ⇒
+    outbox_of b' f = [] ∧ ¬MEM f b'.gone
+Proof
+  Induct >> simp[l1_reap_def] >> rpt gen_tac >> IF_CASES_TAC
+  >- (simp[AllCaseEqs(), PULL_EXISTS] >> rpt gen_tac >> strip_tac >> PairCases_on ‘ws’ >>
+      fs[l1_close_def, AllCaseEqs()] >> rveq >>
+      Cases_on ‘h = f’ >> fs[] >>
+      TRY (first_x_assum drule >> simp[forget_other] >> NO_TAC) >>
+      rveq >> ‘outbox_of (forget f b) f = [] ∧ ¬MEM f (forget f b).gone’
+        by simp[forget_keys, MEM_FILTER] >>
+      drule_all l1_reap_clean >> simp[])
+  >> strip_tac >> first_x_assum drule_all >> simp[]
+QED
+
+Theorem sys_connerr_quiet:
+  sys_connerr g w = SOME (out, w', ev) ⇒ ∀f. ev_sent f ev = []
+Proof
+  rw[sys_connerr_def] >> drule l0_do_cases >> rw[] >> simp[ev_sent_def]
+QED
+
+Theorem settle_fds_quiet:
+  ∀fs w es w' es' evs.
+    settle_fds fs (w, es) = SOME ((w', es'), evs) ∧ l0_rely w ⇒
+    l0_rely w' ∧ es'.p = es.p ∧ ∀f. evs_sent f evs = []
+Proof
+  Induct >> simp[settle_fds_def] >> rpt gen_tac >> rw[AllCaseEqs()] >>
+  ‘l0_rely w1’ by (gvs[sys_connerr_def] >> metis_tac[l0_do_rely]) >>
+  first_x_assum drule_all >> strip_tac >> gvs[] >>
+  drule sys_connerr_quiet >> simp[] >> disch_then kall_tac >>
+  every_case_tac >> gvs[]
+QED
+
+Theorem promote_fields:
+  (promote es).p.b.outbox = es.p.b.outbox ∧ (promote es).p.b.gone = es.p.b.gone ∧
+  (promote es).p.b.closing = es.p.b.closing ∧ (promote es).p.acq = es.p.acq ∧
+  (∀f. MEM f (MAP SND (promote es).p.b.tbl) ⇒
+       MEM f (MAP SND es.p.b.tbl) ∨ MEM f (MAP SND es.ctbl)) ∧
+  (∀f. MEM f (MAP SND es.p.b.tbl) ⇒ MEM f (MAP SND (promote es).p.b.tbl))
+Proof
+  simp[promote_def] >> rw[MEM_MAP, MEM_FILTER] >> metis_tac[]
+QED
+
+Theorem apply_early_p[simp]:
+  (apply_early es).p = es.p ∧ (apply_early es).ctbl = es.ctbl
+Proof
+  simp[apply_early_def]
 QED

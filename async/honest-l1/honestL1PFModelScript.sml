@@ -31,7 +31,8 @@
      auto-close (deferred while the outbox flushes); otherwise would-block.
      No syscall;
    - Accept: the oldest queued fd, under a fresh handle; none if the queue
-     is empty.  No syscall;
+     is empty or there is no room (D25′: serve-on at the cut-off, where
+     lfd is not polled and nothing is prefetched).  No syscall;
    - Write: as honestL1Model (buffered; one send if the outbox was empty).
   These are the version-2 world's semantics exactly (socketV2FFI), with the
   buffers as the world's state; the refinement (R1) is then a forward
@@ -104,19 +105,31 @@ End
    One action
    ------------------------------------------------------------------------ *)
 
+(* D25′ with D40's bound: room for one more connection from the kernel.
+   L1 takes a connection (prefetch into acq) only when acq is empty and
+   there is room, and hands it out under handle nxt, so the connections
+   taken from the kernel, nxt + LENGTH acq, stay below 2^64 - 1: within
+   the 2^64 - 2 clients of the version-2 world (socketV2Fair arrival_ok2),
+   which R1 (honestL1PFRefine) needs.  Past it, at most 2^64 - 2 handles
+   handed out, Accept answers "no connection yet" and lfd is not polled *)
+Definition pf_room_def:
+  pf_room ps ⇔ ps.b.nxt + 2 < dimword (:64)
+End
+
 Definition pdo_def:
   pdo lfd (w, ps) (Accept l) =
     (if l ≠ lfd then NONE
+     (* D25′: past the cut-off, "no connection yet" (no sys_accept) *)
+     else if ¬pf_room ps then
+       SOME (Accepted NONE, (w, ps), [])
      else
        case ps.acq of
        | [] => SOME (Accepted NONE, (w, ps), [])
        | f :: q =>
-           if l1hdln (w2n lfd) ps.b.nxt < dimword (:64) then
-             SOME (Accepted (SOME (l1hdl lfd ps.b.nxt)),
-                   (w, ps with <| b := ps.b with <| tbl := (l1hdl lfd ps.b.nxt, f) :: ps.b.tbl;
-                                                   nxt := ps.b.nxt + 1 |>;
-                                  acq := q |>), [])
-           else NONE) ∧
+           SOME (Accepted (SOME (l1hdl lfd ps.b.nxt)),
+                 (w, ps with <| b := ps.b with <| tbl := (l1hdl lfd ps.b.nxt, f) :: ps.b.tbl;
+                                                 nxt := ps.b.nxt + 1 |>;
+                                acq := q |>), [])) ∧
   pdo lfd (w, ps) (Read h n) =
     (if 0 < n ∧ n < 256 ** 8 then
        case ALOOKUP ps.b.tbl h of
@@ -200,11 +213,13 @@ Proof
 QED
 
 (* May L1 fetch on f now?  The listener: when no connection awaits a
-   handle and accepting is not paused (D17); a connection: when L1 holds
+   handle, accepting is not paused (D17) and there is room (D25′: past
+   the cut-off lfd leaves the poll set and nothing is prefetched, so acq
+   is empty there); a connection: when L1 holds
    none of its input, it is not at EOF, and the policy does not pause it *)
 Definition wants_input_def:
   wants_input lfd pol ps f ⇔
-    if f = lfd then ps.acq = [] ∧ ps.pause = 0
+    if f = lfd then ps.acq = [] ∧ ps.pause = 0 ∧ pf_room ps
     else inb_of ps f = [] ∧ ¬MEM f ps.eof ∧ ¬pol ps f
 End
 

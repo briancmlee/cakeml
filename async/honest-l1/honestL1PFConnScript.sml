@@ -689,7 +689,7 @@ Proof
   qpat_x_assum ‘pf_fetch _ _ _ _ = _’ mp_tac >> simp[Once pf_fetch_def] >>
   IF_CASES_TAC
   >- (strip_tac >> first_x_assum drule_all >> strip_tac >> simp[] >>
-      rpt strip_tac >> gvs[] >> gvs[wants_input_def] >> metis_tac[]) >>
+      rpt strip_tac >> gvs[] >> gvs[wants_input_def, pf_room_def] >> metis_tac[]) >>
   IF_CASES_TAC
   >- (gvs[] >> simp[AllCaseEqs(), PULL_EXISTS] >> rpt gen_tac >> strip_tac >>
       pairarg_tac >> gvs[AllCaseEqs()] >>
@@ -709,7 +709,7 @@ Proof
   qpat_assum ‘sys_recv _ _ _ = _’ (strip_assume_tac o REWRITE_RULE [sys_recv_def]) >>
   drule_all ev_do >> strip_tac >>
   ‘¬ev_on «sys_accept» lfd ev’ by simp[] >>
-  first_x_assum drule_all >> strip_tac >> gvs[log_conns_def, wants_input_def] >>
+  first_x_assum drule_all >> strip_tac >> gvs[log_conns_def, wants_input_def, pf_room_def] >>
   rpt strip_tac >> gvs[] >> metis_tac[]
 QED
 
@@ -938,27 +938,60 @@ Proof
   first_x_assum drule_all >> simp[]
 QED
 
+Theorem hdln_lt_room:
+  hdln (w2n (lfd : word64)) j < dimword (:64) ⇔ j + 1 < dimword (:64)
+Proof
+  REWRITE_TAC [GSYM l1hdl_hdl, l1hdln_lt]
+QED
+
+(* D25′: the actions keep the next handle plus the queue of accepted fds
+   (an Accept moves one fd from the queue to a handle) *)
+Theorem pdo_nxt_acq:
+  pdo lfd (w, ps) a = SOME (r, (w', ps'), evs) ⇒
+  ps'.b.nxt + LENGTH ps'.acq = ps.b.nxt + LENGTH ps.acq
+Proof
+  Cases_on ‘a’ >> simp[pdo_def] >> rw[AllCaseEqs()] >> gvs[] >>
+  TRY (PairCases_on ‘z’) >> gvs[] >>
+  rpt (qpat_x_assum ‘l1do _ _ _ = _’ mp_tac) >> rpt (qpat_x_assum ‘l1_close _ _ = _’ mp_tac) >>
+  simp[l1do_def, l1_close_def, AllCaseEqs()] >> rw[] >>
+  gvs[set_inb_def, forget_def, set_outbox_def] >>
+  rw[after_send_def] >> every_case_tac >> simp[set_outbox_def]
+QED
+
+Theorem pacts_nxt_acq:
+  ∀acts w ps rs evs w' ps'.
+    pacts lfd (w, ps) acts = SOME (rs, evs, (w', ps')) ⇒
+    ps'.b.nxt + LENGTH ps'.acq = ps.b.nxt + LENGTH ps.acq
+Proof
+  Induct >> simp[pacts_def] >> rpt gen_tac >> strip_tac >> gvs[AllCaseEqs()] >>
+  PairCases_on ‘ws1’ >> drule pdo_nxt_acq >> first_x_assum drule >> simp[]
+QED
+
 (* The actions: the pause is kept, accepted fds are only handed out (from
-   the front), and an Accept with fds queued hands one out *)
+   the front), and an Accept with fds queued hands one out (D25′: they can
+   get a handle, proom) *)
 Theorem pdo_lfd:
   pdo lfd (w, ps) a = SOME (r, (w', ps'), evs) ⇒
-  ps'.pause = ps.pause ∧ ∃d. ps'.acq = DROP d ps.acq ∧ (a = Accept lfd ∧ ps.acq ≠ [] ⇒ 0 < d)
+  ps'.pause = ps.pause ∧
+  ∃d. ps'.acq = DROP d ps.acq ∧ (a = Accept lfd ∧ ps.acq ≠ [] ∧ proom ps ⇒ 0 < d)
 Proof
   Cases_on ‘a’ >> simp[pdo_def] >> rw[AllCaseEqs()] >>
   TRY (PairCases_on ‘z’) >> gvs[set_inb_def] >> gvs[l1do_def, AllCaseEqs()] >>
   TRY (qexists_tac ‘0’ >> simp[] >> NO_TAC) >>
-  qexists_tac ‘1’ >> simp[]
+  TRY (qexists_tac ‘1’ >> simp[] >> NO_TAC) >>
+  qexists_tac ‘0’ >> rw[] >> Cases_on ‘ps.acq’ >> gvs[proom_def, pf_room_def]
 QED
 
 Theorem pacts_lfd:
   ∀acts w ps rs evs w' ps'.
     pacts lfd (w, ps) acts = SOME (rs, evs, (w', ps')) ⇒
     ps'.pause = ps.pause ∧
-    ∃d. ps'.acq = DROP d ps.acq ∧ (MEM (Accept lfd) acts ∧ ps.acq ≠ [] ⇒ 0 < d)
+    ∃d. ps'.acq = DROP d ps.acq ∧ (MEM (Accept lfd) acts ∧ ps.acq ≠ [] ∧ proom ps ⇒ 0 < d)
 Proof
   Induct >> simp[pacts_def] >- (rpt strip_tac >> qexists_tac ‘0’ >> simp[]) >>
   rpt gen_tac >> strip_tac >> gvs[AllCaseEqs()] >> PairCases_on ‘ws1’ >>
   drule pdo_lfd >> strip_tac >>
+  ‘proom ps ⇒ proom ws11’ by metis_tac[pdo_proom] >>
   first_x_assum drule >> strip_tac >> simp[] >>
   qexists_tac ‘d + d'’ >> simp[DROP_DROP_T] >> rw[] >> gvs[] >>
   Cases_on ‘d = 0’ >> gvs[] >>
@@ -1078,19 +1111,18 @@ QED
    are handed out from the front (one at least, on an Accept) and the
    round's FConn fds join them; while paused, the pause counts down and
    nothing is accepted; an accept that does not fail logs an FConn; and
-   unpaused, with no accepted fd held, the listener in the interest and its
+   unpaused, with no accepted fd held, room (D25′, pf_room), the listener in the interest and its
    queue not empty: the round polls the listener, and a poll on it that is
    not retried leads to an accept on it *)
 Theorem pround_lfd:
   pround lfd pol hs (w, ps) acts = SOME (snap, (w', ps'), log, evs) ∧
-  winv w ∧ linv lfd w ∧ pv_rel lfd cm ps s ∧ pown lfd ps ∧ psmall lfd ps ∧
-  ps.b.nxt + naccepts acts < dimword (:64) ⇒
+  winv w ∧ linv lfd w ∧ pv_rel lfd cm ps s ∧ pown lfd ps ∧ psmall lfd ps ⇒
   linv lfd w' ∧
   (∃d. ps'.acq = DROP d ps.acq ++ log_conns log ∧
        (MEM (Accept lfd) acts ∧ ps.acq ≠ [] ⇒ 0 < d)) ∧
   (0 < ps.pause ⇒ ps'.pause = ps.pause − 1 ∧ ¬EXISTS (ev_on «sys_accept» lfd) evs) ∧
   (∀ev. MEM ev evs ∧ ev_on «sys_accept» lfd ev ∧ ¬failed ev ⇒ log_conns log ≠ []) ∧
-  (ps.pause = 0 ∧ ps.acq = [] ∧ MEM lfd hs ∧ qof w lfd ≠ [] ⇒
+  (ps.pause = 0 ∧ ps.acq = [] ∧ pf_room ps ∧ MEM lfd hs ∧ qof w lfd ≠ [] ⇒
    EXISTS (ev_on «sys_poll» lfd) evs ∧
    ∀ev. MEM ev evs ∧ ev_on «sys_poll» lfd ev ∧ ¬retried ev ⇒
         EXISTS (ev_on «sys_accept» lfd) evs)
@@ -1099,13 +1131,15 @@ Proof
   gvs[pf_tail_def, AllCaseEqs()] >>
   rename1 ‘pacts _ _ _ = SOME (rs, aevs, wa, pa)’ >>
   ‘psmall lfd pa’ by metis_tac[pacts_psmall] >>
+  ‘proom ps’ by gvs[pown_def, proom_def] >>
+  drule pacts_nxt_acq >> strip_tac >>
   drule pacts_lfd >> strip_tac >>
   drule pacts_names >> strip_tac >>
   drule_all pacts_linv >> strip_tac >>
   drule_all pacts_winv >> strip_tac >>
   drule_all pacts_qof >> disch_then (qx_choose_then ‘t1’ assume_tac) >>
   drule_all pacts_hacts >> strip_tac >>
-  ‘pa.b.nxt < dimword (:64)’ by simp[] >>
+  ‘pa.b.nxt < dimword (:64)’ by gvs[pown_def] >>
   ‘ALOOKUP pa.b.tbl lfd = NONE’ by metis_tac[tbl_lfd] >>
   ‘∀h. ALOOKUP pa.b.tbl h ≠ SOME lfd’
     by (rpt strip_tac >> imp_res_tac ALOOKUP_MEM >>
@@ -1142,7 +1176,7 @@ Proof
       qpat_x_assum ‘∀ev. MEM ev gevs ∧ _ ⇒ _’ (qspec_then ‘ev’ mp_tac) >> metis_tac[])
   >> strip_tac >> gvs[] >>
   qabbrev_tac ‘fes = pf_poll_set lfd pol pa hs’ >>
-  ‘wants_input lfd pol pa lfd’ by gvs[wants_input_def] >>
+  ‘wants_input lfd pol pa lfd’ by gvs[wants_input_def, pf_room_def] >>
   ‘(∃e. MEM (lfd, e) fes) ∧ (∀e. MEM (lfd, e) fes ⇒ ODD e) ∧ EVERY (λ(g, e). e < 4) fes’
     by (qunabbrev_tac ‘fes’ >> match_mp_tac pf_poll_set_lfd >> simp[]) >>
   ‘EVERY (λ(g, e). small g ∧ e < 4) fes’
@@ -1156,7 +1190,7 @@ Proof
         simp[MEM_MAP] >> qexists_tac ‘(lfd, e)’ >> simp[]) >>
   ‘MEM lfd (in_fds fes)’
     by (simp[in_fds_def, MEM_MAP, MEM_FILTER, EXISTS_PROD] >> metis_tac[]) >>
-  ‘wants_input lfd pol (pa with b := b2) lfd’ by gvs[wants_input_def] >>
+  ‘wants_input lfd pol (pa with b := b2) lfd’ by gvs[wants_input_def, pf_room_def] >>
   conj_tac >- metis_tac[] >>
   rpt strip_tac >> gvs[] >>
   TRY (imp_res_tac ev_on_name >> gvs[EVERY_MEM] >> res_tac >> gvs[] >> NO_TAC) >>

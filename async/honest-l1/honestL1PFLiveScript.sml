@@ -273,8 +273,7 @@ Proof
   Cases_on ‘prun lfd pol ifds m w0 n’ >> rename1 ‘_ = (hh, r)’ >> PairCases_on ‘r’ >>
   gvs[rstate_def] >>
   mp_tac l1pf_refines_hl >> impl_tac >- simp[] >> disch_then drule >> strip_tac >>
-  ‘r1.b.nxt + naccepts (new_actions (log_of m) hh) < dimword (:64)’
-    by (gvs[run_ok_def, pl2_ok_def] >> first_x_assum drule >> simp[]) >>
+  ‘r1.b.nxt < dimword (:64)’ by gvs[pown_def] >>
   gvs[fkeep_def, pown_def] >>
   ‘MEM f (MAP SND r1.b.tbl)’
     by (imp_res_tac ALOOKUP_MEM >> simp[MEM_MAP, EXISTS_PROD] >> metis_tac[]) >>

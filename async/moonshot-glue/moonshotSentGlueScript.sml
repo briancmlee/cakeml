@@ -345,8 +345,8 @@ Proof
   >~ [‘pdo _ _ (Accept _) = _’]
   >- (PairCases_on ‘z’ >> gvs[] >> drule pdo_accept_ostep >> strip_tac >>
       gvs[fd0_ok_def, tfds_def] >> Cases_on ‘es.p.acq’ >> gvs[])
-  >~ [‘pdo _ _ (Read _ _) = _’]
-  >- (PairCases_on ‘z’ >> gvs[] >> qpat_x_assum ‘pdo _ _ _ = _’ mp_tac >>
+  >>~- ([‘pdo _ _ (Read _ _) = _’],
+      PairCases_on ‘z’ >> gvs[] >> qpat_x_assum ‘pdo _ _ _ = _’ mp_tac >>
       simp[pdo_def, AllCaseEqs()] >> rw[] >> gvs[fd0_ok_def, tfds_def, set_inb_def] >>
       TRY (PairCases_on ‘z’ >> gvs[] >> drule_all l1_close_l0 >> strip_tac) >>
       rename1 ‘ALOOKUP es.p.b.tbl h = SOME f’ >>

@@ -740,3 +740,136 @@ Proof
        qpat_x_assum ‘∀hd'. hl_sent hd' ps' = _’ (fn th => REWRITE_TAC [th]) >>
        qpat_x_assum ‘∀hd i. ALOOKUP st.hlc hd = SOME i ⇒ i < N ∧ _’ drule >> simp[] >> NO_TAC)
 QED
+
+(* ------------------------------------------------------------------------
+   An action that keeps a connection's handle open keeps the relation
+   ------------------------------------------------------------------------ *)
+
+Theorem keep_tbl:
+  (∀hd. MEM hd (MAP FST tbl) ⇔ ∃i. i < N ∧ MEM hd (chd (EL i cs))) ∧
+  LENGTH cs = N ∧ k < N ∧ chd c' = chd (EL k cs) ⇒
+  Abbrev (∀hd. MEM hd (MAP FST tbl) ⇔ ∃i. i < N ∧ MEM hd (chd (EL i (LUPDATE c' k cs))))
+Proof
+  simp[markerTheory.Abbrev_def] >> rw[EL_LUPDATE] >> eq_tac >> rw[]
+  >- (qexists_tac ‘i’ >> rw[] >> gvs[]) >>
+  qexists_tac ‘i’ >> Cases_on ‘i = k’ >> gvs[]
+QED
+
+Theorem keep_cok:
+  (∀i hd. i < N ∧ MEM hd (chd (EL i cs)) ⇒
+          ∃f j. ALOOKUP tbl hd = SOME f ∧ ALOOKUP ofds f = SOME j ∧ ALOOKUP hlc hd = SOME i ∧
+                cok (brequests (rqs i)) (EL i cs) (EL j chans) (MEM hd sett) (hd ∈ rdyf i)
+                    (hl_sent hd ps)) ∧
+  (∀i1 i2 hd. i1 < N ∧ i2 < N ∧ MEM hd (chd (EL i1 cs)) ∧ MEM hd (chd (EL i2 cs)) ⇒ i1 = i2) ∧
+  LENGTH cs = N ∧ k < N ∧ chd (EL k cs) = [hd0] ∧ chd c' = [hd0] ∧
+  ALOOKUP tbl hd0 = SOME f0 ∧ ALOOKUP ofds f0 = SOME j0 ∧
+  ALL_DISTINCT (MAP SND tbl) ∧ ALL_DISTINCT (MAP SND ofds) ∧
+  (∀j. j ≠ j0 ⇒ EL j chans' = EL j chans) ∧
+  cok (brequests (rqs k)) c' (EL j0 chans') (MEM hd0 sett) (hd0 ∈ rdyf' k) (hl_sent hd0 ps') ∧
+  (∀i. i ≠ k ⇒ rdyf' i = rdyf i) ∧ (∀hd. hd ≠ hd0 ⇒ hl_sent hd ps' = hl_sent hd ps) ⇒
+  Abbrev (
+  ∀i hd. i < N ∧ MEM hd (chd (EL i (LUPDATE c' k cs))) ⇒
+         ∃f j. ALOOKUP tbl hd = SOME f ∧ ALOOKUP ofds f = SOME j ∧ ALOOKUP hlc hd = SOME i ∧
+               cok (brequests (rqs i)) (EL i (LUPDATE c' k cs)) (EL j chans') (MEM hd sett)
+                   (hd ∈ rdyf' i) (hl_sent hd ps'))
+Proof
+  simp[markerTheory.Abbrev_def] >> rpt strip_tac >> Cases_on ‘i = k’
+  >- (qpat_x_assum ‘i = k’ SUBST_ALL_TAC >>
+      qpat_x_assum ‘∀i hd. i < N ∧ MEM hd (chd _) ⇒ ∃f j. _’ (qspecl_then [‘k’, ‘hd0’] mp_tac) >>
+      simp[] >> strip_tac >> gvs[EL_LUPDATE]) >>
+  gvs[EL_LUPDATE] >>
+  ‘hd ≠ hd0’ by (strip_tac >> qpat_x_assum ‘hd = hd0’ SUBST_ALL_TAC >>
+                 qpat_x_assum ‘∀i1 i2 hd. i1 < N ∧ i2 < N ∧ _ ⇒ _’
+                   (qspecl_then [‘i’, ‘k’, ‘hd0’] mp_tac) >> simp[]) >>
+  qpat_x_assum ‘∀i hd. i < N ∧ MEM hd (chd _) ⇒ ∃f j. _’ drule_all >> strip_tac >>
+  ‘f ≠ f0’ by (strip_tac >> gvs[] >> metis_tac[ALOOKUP_SND_inj]) >>
+  ‘j ≠ j0’ by (strip_tac >> gvs[] >> metis_tac[ALOOKUP_SND_inj]) >>
+  qexistsl_tac [‘f’, ‘j’] >> simp[]
+QED
+
+Theorem keep_sends:
+  (∀hd. hl_sent hd ps ≠ [] ⇒ MEM hd (MAP FST hlc)) ∧
+  (∀hd i. ALOOKUP hlc hd = SOME i ⇒ i < N ∧ hl_sent hd ps ≼ brequests (rqs i)) ∧
+  (∀hd hd' i. ALOOKUP hlc hd = SOME i ∧ ALOOKUP hlc hd' = SOME i ∧
+              hl_sent hd ps ≠ [] ∧ hl_sent hd' ps ≠ [] ⇒ hd = hd') ∧
+  (∀i hd'. i < N ∧ (EL i cs = CIdle ∨ ∃hd. EL i cs = CPend hd) ∧ ALOOKUP hlc hd' = SOME i ⇒
+           hl_sent hd' ps = []) ∧
+  (∀i hd rest hd'. i < N ∧ EL i cs = CUp hd rest ∧ ALOOKUP hlc hd' = SOME i ∧
+                   hl_sent hd' ps ≠ [] ⇒ hd' = hd) ∧
+  LENGTH cs = N ∧ k < N ∧ ALOOKUP hlc hd0 = SOME k ∧
+  ((∃rest. EL k cs = CUp hd0 rest) ∨ EL k cs = CPend hd0) ∧
+  ((∃rest. c' = CUp hd0 rest) ∨ c' = CPend hd0) ∧
+  (∀h. c' = CPend h ⇒ EL k cs = CPend h) ∧
+  (∀hd. hd ≠ hd0 ⇒ hl_sent hd ps' = hl_sent hd ps) ∧
+  hl_sent hd0 ps' ≼ brequests (rqs k) ∧ (hl_sent hd0 ps' ≠ [] ⇒ ∃rest. c' = CUp hd0 rest) ⇒
+  Abbrev (
+  (∀hd. hl_sent hd ps' ≠ [] ⇒ MEM hd (MAP FST hlc)) ∧
+  (∀hd i. ALOOKUP hlc hd = SOME i ⇒ i < N ∧ hl_sent hd ps' ≼ brequests (rqs i)) ∧
+  (∀hd hd' i. ALOOKUP hlc hd = SOME i ∧ ALOOKUP hlc hd' = SOME i ∧
+              hl_sent hd ps' ≠ [] ∧ hl_sent hd' ps' ≠ [] ⇒ hd = hd') ∧
+  (∀i hd'. i < N ∧ (EL i (LUPDATE c' k cs) = CIdle ∨ ∃hd. EL i (LUPDATE c' k cs) = CPend hd) ∧
+           ALOOKUP hlc hd' = SOME i ⇒ hl_sent hd' ps' = []) ∧
+  (∀i hd rest hd'. i < N ∧ EL i (LUPDATE c' k cs) = CUp hd rest ∧ ALOOKUP hlc hd' = SOME i ∧
+                   hl_sent hd' ps' ≠ [] ⇒ hd' = hd))
+Proof
+  simp[markerTheory.Abbrev_def] >> strip_tac >> rpt conj_tac >> rpt gen_tac >>
+  TRY (Cases_on ‘hd = hd0’) >> TRY (Cases_on ‘hd' = hd0’) >> TRY (Cases_on ‘i = k’) >>
+  rw[EL_LUPDATE] >> gvs[] >>
+  imp_res_tac ALOOKUP_MEM >> gvs[MEM_MAP] >> metis_tac[FST]
+QED
+
+Theorem keep_chd:
+  chd c' = chd (EL k cs) ∧ k < LENGTH cs ⇒
+  Abbrev (∀i. i < LENGTH cs ⇒ chd (EL i (LUPDATE c' k cs)) = chd (EL i cs))
+Proof
+  simp[markerTheory.Abbrev_def] >> rw[EL_LUPDATE] >> rw[] >> gvs[]
+QED
+
+Theorem crel_keep:
+  crel a N rqs lfd st rdyf ps w hs ∧ k < N ∧ chd (EL k st.cs) = [hd] ∧ chd c' = [hd] ∧
+  ALOOKUP hs.tbl hd = SOME f ∧ ALOOKUP w.open_fds f = SOME j ∧
+  wframe j w w1 ∧ w1.open_fds = w.open_fds ∧
+  cok (brequests (rqs k)) c' (EL j w1.chans) (MEM hd hs.settling) (hd ∈ rdyf' k) (hl_sent hd ps') ∧
+  (∀h. c' = CPend h ⇒ EL k st.cs = CPend h) ∧
+  (∀hd'. hd' ≠ hd ⇒ hl_sent hd' ps' = hl_sent hd' ps) ∧
+  hl_sent hd ps' ≼ brequests (rqs k) ∧ (hl_sent hd ps' ≠ [] ⇒ ∃rest. c' = CUp hd rest) ∧
+  hl_conn_handles ps' = hl_conn_handles ps ∧
+  (∀hd'. hl_refused hd' ps' ⇔ hl_refused hd' ps) ∧ (∀hd'. hl_eof hd' ps' ⇔ hl_eof hd' ps) ∧
+  (∀i. i ≠ k ⇒ rdyf' i = rdyf i) ⇒
+  crel a N rqs lfd (st with cs := LUPDATE c' k st.cs) rdyf' ps' w1 hs
+Proof
+  strip_tac >>
+  qpat_x_assum ‘crel _ _ _ _ _ _ _ _ _’ (strip_assume_tac o REWRITE_RULE [crel_def]) >>
+  qpat_x_assum ‘wframe _ _ _’ (strip_assume_tac o REWRITE_RULE [wframe_def]) >>
+  ‘MEM hd (chd (EL k st.cs))’ by simp[] >>
+  ‘ALOOKUP st.hlc hd = SOME k’
+    by (qpat_x_assum ‘∀i hd. i < N ∧ MEM hd (chd _) ⇒ ∃f j. _’ drule_all >> strip_tac >>
+        first_assum ACCEPT_TAC) >>
+  Q.SUBGOAL_THEN ‘(∃rest. EL k st.cs = CUp hd rest) ∨ EL k st.cs = CPend hd’ assume_tac
+  >- (qpat_x_assum ‘chd (EL k st.cs) = [hd]’ mp_tac >> rpt (pop_assum kall_tac) >>
+      Cases_on ‘EL k st.cs’ >> simp[chd_def]) >>
+  Q.SUBGOAL_THEN ‘(∃rest. c' = CUp hd rest) ∨ c' = CPend hd’ assume_tac
+  >- (qpat_x_assum ‘chd c' = [hd]’ mp_tac >> rpt (pop_assum kall_tac) >>
+      Cases_on ‘c'’ >> simp[chd_def]) >>
+  ‘chd c' = chd (EL k st.cs)’ by simp[] >>
+  ‘∀hd'. MEM hd' (chd c') ⇒ MEM hd' (chd (EL k st.cs))’ by simp[] >>
+  ‘k < LENGTH st.cs’ by simp[] >>
+  drule_all keep_chd >> disch_then (strip_assume_tac o REWRITE_RULE [markerTheory.Abbrev_def]) >>
+  drule_all keep_tbl >> disch_then (strip_assume_tac o REWRITE_RULE [markerTheory.Abbrev_def]) >>
+  drule_all keep_cok >> disch_then (strip_assume_tac o REWRITE_RULE [markerTheory.Abbrev_def]) >>
+  drule_all keep_sends >> disch_then (strip_assume_tac o REWRITE_RULE [markerTheory.Abbrev_def]) >>
+  drule_all lupd_owner >> disch_then (strip_assume_tac o REWRITE_RULE [markerTheory.Abbrev_def]) >>
+  SIMP_TAC (srw_ss()) [crel_def] >> rpt conj_tac >> TRY (simp[] >> NO_TAC) >>
+  qpat_x_assum ‘w1.open_fds = _’ (fn th => REWRITE_TAC [th]) >>
+  TRY (first_assum MATCH_ACCEPT_TAC >> NO_TAC) >>
+  TRY (REWRITE_TAC [GSYM DE_MORGAN_THM] >> first_assum MATCH_ACCEPT_TAC >> NO_TAC) >>
+  qpat_x_assum ‘∀hd'. hl_refused hd' ps' ⇔ _’ (fn th => REWRITE_TAC [th]) >>
+  qpat_x_assum ‘∀hd'. hl_eof hd' ps' ⇔ _’ (fn th => REWRITE_TAC [th]) >>
+  TRY (first_assum MATCH_ACCEPT_TAC >> NO_TAC) >>
+  TRY (REWRITE_TAC [GSYM DE_MORGAN_THM] >> first_assum MATCH_ACCEPT_TAC >> NO_TAC) >>
+  gen_tac >> disch_tac >> gen_tac >> strip_tac >>
+  ‘i < LENGTH st.cs’ by simp[] >>
+  qpat_x_assum ‘∀i. i < LENGTH st.cs ⇒ chd _ = _’ (fn th => simp[th]) >>
+  qpat_x_assum ‘∀hd. hl_refused hd ps ∨ hl_eof hd ps ⇒ ∀i. i < N ⇒ ¬MEM hd _’ drule >>
+  disch_then drule >> simp[]
+QED

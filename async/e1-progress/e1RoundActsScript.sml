@@ -158,11 +158,11 @@ Proof
           conj_tac >- (irule olive_forget >> simp[]) >>
           gvs[MEM_MAP, ALOOKUP_ADELKEY] >> rw[] >> rename1 ‘MEM y _’ >>
           Cases_on ‘y’ >> gvs[MEM_ADELKEY] >> metis_tac[SND])
-      >~ [‘pdo _ _ _ = SOME z’]
-      >- (PairCases_on ‘z’ >> gvs[] >>
-      ‘olive lfd f es.p’ by fs[eflive_def] >>
-      drule_all pdo_ewinv >> disch_then (qspec_then ‘c’ strip_assume_tac) >>
-      drule_all pdo_elive >> strip_tac >> fs[eflive_def] >> gvs[EVERY_MEM, EXISTS_MEM]) >>
+      >>~- ([‘pdo _ _ _ = SOME z’],
+            PairCases_on ‘z’ >> gvs[] >>
+            ‘olive lfd f es.p’ by fs[eflive_def] >>
+            drule_all pdo_ewinv >> disch_then (qspec_then ‘c’ strip_assume_tac) >>
+            drule_all pdo_elive >> strip_tac >> fs[eflive_def] >> gvs[EVERY_MEM, EXISTS_MEM]) >>
       gvs[eflive_def])
   >~ [‘edo _ _ _ (EWrite _ _)’]
   >- (simp[edo_def] >> rw[AllCaseEqs()] >> gvs[] >>

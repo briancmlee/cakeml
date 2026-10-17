@@ -120,7 +120,8 @@ Proof
     drule_all pdo_ok >> strip_tac >> gvs[edo_def, esmall_def],
     (* ERead *)
     rename1 ‘ERead h n’ >> simp[edo_def] >> Cases_on ‘ALOOKUP es.ctbl h’ >> simp[]
-    >- (‘psmall lfd es.p ∧ pact_ok lfd (Read h n) ∧ es.p.b.nxt + naccepts [Read h n] < dimword (:64)’
+    >- (IF_CASES_TAC >- simp[] >>   (* EOF: kept *)
+        ‘psmall lfd es.p ∧ pact_ok lfd (Read h n) ∧ es.p.b.nxt + naccepts [Read h n] < dimword (:64)’
           by gvs[esmall_def, pact_ok_def, act_ok_def] >>
         drule_all pdo_ok >> strip_tac >> gvs[esmall_def, naccepts_def]) >>
     rename1 ‘ALOOKUP _ h = SOME f’ >> IF_CASES_TAC >> simp[] >>

@@ -348,10 +348,13 @@ Proof
   >~ [‘pdo _ _ (Accept _) = _’]
   >- (PairCases_on ‘z’ >> gvs[] >> drule pdo_accept_ostep >> strip_tac >> gvs[] >>
       simp[ostep_def, ostepc_def, ewbytes_def, outbox_of_def])
+  (* ERead at EOF on a layer handle: kept, nothing changes *)
+  >~ [‘ep_eof _ _’]
+  >- simp[ostep_def, ostepc_def, ewbytes_def, evs_sent_def]
   (* ERead on a layer handle *)
-  >~ [‘pdo _ _ (Read _ _) = _’]
-  >- (PairCases_on ‘z’ >> gvs[] >> drule_all pdo_read_ostep >> strip_tac >>
-      simp[ewbytes_def] >> rpt strip_tac >> res_tac)
+  >>~- ([‘pdo _ _ (Read _ _) = _’],
+        PairCases_on ‘z’ >> gvs[] >> drule_all pdo_read_ostep >> strip_tac >>
+        simp[ewbytes_def] >> rpt strip_tac >> res_tac)
   (* EWrite on a layer handle *)
   >~ [‘pdo _ _ (Write _ _) = _’]
   >- (PairCases_on ‘z’ >> gvs[] >> drule_all pdo_write_ostep >> strip_tac >>
@@ -448,13 +451,13 @@ Proof
   >~ [‘pdo _ _ (Accept _) = _’]
   >- (PairCases_on ‘z’ >> gvs[] >> drule pdo_accept_ostep >> strip_tac >> gvs[held_def] >>
       rw[] >> qpat_x_assum ‘es.p.acq = _’ (fn th => ONCE_REWRITE_TAC [th]) >> simp[])
-  >~ [‘pdo _ _ (Read _ _) = _’]
-  >- (PairCases_on ‘z’ >> gvs[] >>
-      strip_tac >> qpat_x_assum ‘held _ _’ mp_tac >> qpat_x_assum ‘¬held _ _’ mp_tac >>
-      qpat_x_assum ‘pdo _ _ _ = _’ mp_tac >>
-      simp[pdo_def, AllCaseEqs(), held_def] >> rw[] >> gvs[set_inb_def] >>
-      TRY (PairCases_on ‘z’) >> gvs[l1_close_def, AllCaseEqs(), forget_def, MEM_FILTER] >>
-      metis_tac[honestL1PFRefineTheory.MEM_SND_ADELKEY_sub])
+  >>~- ([‘pdo _ _ (Read _ _) = _’],
+        PairCases_on ‘z’ >> gvs[] >>
+        strip_tac >> qpat_x_assum ‘held _ _’ mp_tac >> qpat_x_assum ‘¬held _ _’ mp_tac >>
+        qpat_x_assum ‘pdo _ _ _ = _’ mp_tac >>
+        simp[pdo_def, AllCaseEqs(), held_def] >> rw[] >> gvs[set_inb_def] >>
+        TRY (PairCases_on ‘z’) >> gvs[l1_close_def, AllCaseEqs(), forget_def, MEM_FILTER] >>
+        metis_tac[honestL1PFRefineTheory.MEM_SND_ADELKEY_sub])
   >~ [‘pdo _ _ (Write _ _) = _’]
   >- (PairCases_on ‘z’ >> gvs[] >> drule pdo_write_held >> strip_tac >> gvs[held_def])
   >>~- ([‘l1_close _ _ = _’],
@@ -491,14 +494,14 @@ Proof
   >- (PairCases_on ‘z’ >> gvs[] >> drule pdo_accept_ostep >> strip_tac >> gvs[held_def] >>
       rw[] >- (qpat_x_assum ‘es.p.acq = _’ (fn th => ONCE_REWRITE_TAC [th]) >> simp[]) >>
       fs[outbox_of_def])
-  >~ [‘pdo _ _ (Read _ _) = _’]
-  >- (PairCases_on ‘z’ >> gvs[] >>
-      ‘pown lfd es.p’ by fs[oown_def] >> drule_all pdo_read_ostep >> strip_tac >> simp[] >>
-      strip_tac >> qpat_x_assum ‘held _ _’ mp_tac >> qpat_x_assum ‘¬held _ _’ mp_tac >>
-      qpat_x_assum ‘pdo _ _ _ = _’ mp_tac >>
-      simp[pdo_def, AllCaseEqs(), held_def] >> rw[] >> gvs[set_inb_def] >>
-      TRY (PairCases_on ‘z’) >> gvs[l1_close_def, AllCaseEqs(), forget_def, MEM_FILTER] >>
-      metis_tac[honestL1PFRefineTheory.MEM_SND_ADELKEY_sub])
+  >>~- ([‘pdo _ _ (Read _ _) = _’],
+        PairCases_on ‘z’ >> gvs[] >>
+        ‘pown lfd es.p’ by fs[oown_def] >> drule_all pdo_read_ostep >> strip_tac >> simp[] >>
+        strip_tac >> qpat_x_assum ‘held _ _’ mp_tac >> qpat_x_assum ‘¬held _ _’ mp_tac >>
+        qpat_x_assum ‘pdo _ _ _ = _’ mp_tac >>
+        simp[pdo_def, AllCaseEqs(), held_def] >> rw[] >> gvs[set_inb_def] >>
+        TRY (PairCases_on ‘z’) >> gvs[l1_close_def, AllCaseEqs(), forget_def, MEM_FILTER] >>
+        metis_tac[honestL1PFRefineTheory.MEM_SND_ADELKEY_sub])
   >~ [‘pdo _ _ (Write _ _) = _’]
   >- (PairCases_on ‘z’ >> gvs[] >> drule_all pdo_write_ostep >> strip_tac >>
       drule pdo_write_held >> strip_tac >>
@@ -512,7 +515,7 @@ Proof
   >- (PairCases_on ‘z’ >> gvs[] >> ‘pown lfd es.p’ by fs[oown_def] >>
       drule_all eclose_pf >> strip_tac >> simp[] >> metis_tac[])
   >> TRY (drule sys_connect_quiet >> strip_tac) >>
-  TRY (PairCases_on ‘z’ >> gvs[] >> drule sys_close_quiet >> strip_tac) >> gvs[held_def]
+  TRY (PairCases_on ‘z’ >> gvs[] >> drule sys_close_quiet >> strip_tac) >> gvs[held_def, evs_sent_def]
 QED
 
 Theorem edo_live:

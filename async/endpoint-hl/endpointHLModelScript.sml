@@ -13,8 +13,9 @@
      (accepts a j: Up, or Refused); none if no fd is free;
    - ERead h n: a refused connect answers ERefused (once: ep_conn_err) and
      the handle is closed; otherwise ep_read: data, would-block, or EOF,
-     on which the handle is closed (AUTO-CLOSE, as asyncHLModel); a closed
-     handle reads EOF;
+     on which the handle is KEPT (PROVISIONAL Q-13(a), point (2): no
+     auto-close; was AUTO-CLOSE, as asyncHLModel; only EClose closes it);
+     a closed handle reads EOF;
    - EWrite h bs: the bytes the world takes (ep_send; its count); all of
      them in the no-backpressure world takes j b n = n; nothing on a
      refused or closed handle; a MISUSE while the connect is pending (as
@@ -112,8 +113,8 @@ Definition ehdo_def:
            | NONE =>
                case ep_read f n w of
                | NONE => NONE
-               | SOME (SOME [], w1) =>
-                   OPTION_MAP (λw2. (EGot (SOME []), (w2, eh_del h hs))) (ep_close f w1)
+               | SOME (SOME [], w1) =>   (* PROVISIONAL Q-13(a), point (2): EOF keeps h *)
+                   SOME (EGot (SOME []), (w1, hs))
                | SOME (r, w1) => SOME (EGot r, (w1, hs))
      else NONE) ∧
   ehdo lfd v (w, hs) (EWrite h bs) =

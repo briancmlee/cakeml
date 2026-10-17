@@ -144,6 +144,7 @@ val r = tr conn_stat_def;
 val r = tr conn_upd_def;
 val r = tr ewrite_resp_def;
 val r = tr elevel_def;
+val r = tr ep_eof_def;
 val r = tr settle_upd_def;
 val r = tr pend_fds_def;
 val r = tr etail_fes_def;
@@ -177,6 +178,9 @@ Quote add_cakeml:
                let val out = c_close f in (ec_close_upd h f es, Erefused) end
              else (es, Egot None)
          | None =>
+             (* PROVISIONAL Q-13(a), point (2): EOF keeps the handle *)
+             if ep_eof es h then (es, Egot (Some []))
+             else
              (case pread_step (e_p es) h n of
                 Rkgot r ps1 => (set_p es ps1, Egot r)
               | Rkclose f ps0 =>

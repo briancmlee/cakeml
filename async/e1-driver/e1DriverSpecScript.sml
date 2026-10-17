@@ -124,14 +124,17 @@ Theorem edo_ERead_split:
                   r = ERefused ∧ evs1 = [ev]) ∨
         ¬ec_refused es f ∧ es' = es ∧ r = EGot NONE ∧ w' = w ∧ evs1 = [])) ∨
   (ec_lookup es h = NONE ∧
-   ((∃ro ps1. pread_step es.p h n = RkGot ro ps1 ∧ r = EGot ro ∧ es' = set_p es ps1 ∧
-              w' = w ∧ evs1 = []) ∨
-    (∃f ps0 out ev. pread_step es.p h n = RkClose f ps0 ∧
-       sys_close f w = SOME (out, w', ev) ∧ es' = set_p es (pclose_upd f ps0) ∧
-       r = EGot (SOME []) ∧ evs1 = [ev])))
+   (ep_eof es h ∧ es' = es ∧ r = EGot (SOME []) ∧ w' = w ∧ evs1 = [] ∨
+    ¬ep_eof es h ∧
+    ((∃ro ps1. pread_step es.p h n = RkGot ro ps1 ∧ r = EGot ro ∧ es' = set_p es ps1 ∧
+               w' = w ∧ evs1 = []) ∨
+     (∃f ps0 out ev. pread_step es.p h n = RkClose f ps0 ∧
+        sys_close f w = SOME (out, w', ev) ∧ es' = set_p es (pclose_upd f ps0) ∧
+        r = EGot (SOME []) ∧ evs1 = [ev]))))
 Proof
   simp[edo_def, AllCaseEqs(), ec_lookup_def, ec_refused_def] >> strip_tac >>
   gvs[l1_close_def, AllCaseEqs(), ec_close_upd_def] >>
+  ‘¬ep_eof es h’ by (strip_tac >> gvs[pdo_def, ep_eof_def, AllCaseEqs()]) >>
   PairCases_on ‘z’ >> gvs[] >>
   drule pdo_Read_split >> rw[] >> gvs[set_p_def]
 QED
@@ -190,7 +193,9 @@ Proof
       >- (xapp_spec c_close_spec >> xsimpl >> metis_tac[]) >>
       drive_tac)
   >- (xlet_auto >- xsimpl >> xif >> qexists_tac ‘F’ >> simp[] >> drive_tac)
-  >> (xlet_auto >- xsimpl) >> (xlet_auto >- xsimpl)
+  >- (xlet_auto >- xsimpl >> xif >> qexists_tac ‘T’ >> simp[] >> drive_tac)
+  >> (xlet_auto >- xsimpl) >> xif >> qexists_tac ‘F’ >> simp[]
+  >> rpt (xlet_auto >- xsimpl)
   >- (gvs[e_p_def, fetch "honestL1PFProg" "HONESTL1PFPROG_RSTEP_TYPE_def"] >> xmatch >> drive_tac) >>
   gvs[e_p_def, fetch "honestL1PFProg" "HONESTL1PFPROG_RSTEP_TYPE_def"] >> xmatch >>
   xlet ‘POSTv v. &LIST_TYPE WORD out v * L0_EV w0 w' (evs ++ [ev])’

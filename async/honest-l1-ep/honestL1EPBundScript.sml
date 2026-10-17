@@ -296,8 +296,7 @@ Proof
             first_x_assum drule >> strip_tac >>
             qpat_x_assum ‘edo _ _ _ _ = _’ mp_tac >> simp[edo_def, FORALL_PROD]) >>
       ‘ALOOKUP ws11.ctbl (hdl lfd j) = NONE’
-        by (qpat_x_assum ‘edo _ _ _ _ = _’ mp_tac >> simp[edo_def] >> rw[] >>
-            PairCases_on ‘z’ >> gvs[]) >>
+        by (qpat_x_assum ‘edo _ _ _ _ = _’ mp_tac >> simp[edo_def] >> rw[] >> TRY (PairCases_on ‘z’) >> gvs[]) >>
       qpat_x_assum ‘eacts _ _ (ws10, ws11) _ = _’ assume_tac >>
       drule_at (Pos (el 2)) eacts_ctbl_none >> simp[]) >>
   first_x_assum (qspecl_then [‘ws10’, ‘ws11’, ‘rs'’, ‘evs'’, ‘wl'’, ‘es'’, ‘n'’, ‘n’, ‘y’, ‘j’]

@@ -50,7 +50,7 @@ Theorem round_facts:
   (∀n. SND (pcm lfd hw ifds m w0 n) + 1 < dimword (:64)) ⇒
   ∀k. ∃cm s. winv (rworld lfd hw ifds m w0 k) ∧
              pv_rel lfd cm (rstate lfd hw ifds m w0 k) s ∧
-             pown lfd (rstate lfd hw ifds m w0 k) ∧
+             pown lfd (rstate lfd hw ifds m w0 k) ∧ psmall lfd (rstate lfd hw ifds m w0 k) ∧
              l0own lfd (rworld lfd hw ifds m w0 k) (rstate lfd hw ifds m w0 k) ∧
              l1hdln (w2n lfd) ((rstate lfd hw ifds m w0 k).b.nxt +
                                LENGTH (new_actions (log_of m) (rhist lfd hw ifds m w0 k)))
@@ -58,6 +58,7 @@ Theorem round_facts:
 Proof
   rpt strip_tac >>
   ‘winv (rworld lfd hw ifds m w0 k)’ by (drule_all winv_run >> simp[]) >>
+  ‘psmall lfd (rstate lfd hw ifds m w0 k)’ by metis_tac[psmall_run] >>
   drule prun_some >> disch_then (qspec_then ‘k’ assume_tac) >>
   ‘l0_rely w0 ∧ fds_lt w0’ by gvs[run_ok_def, winv_def] >>
   ‘pl2_ok lfd hw ifds m (w0, pinit)’ by gvs[run_ok_def] >>
@@ -78,11 +79,6 @@ Proof
   drule_all pround_lfd >> simp[]
 QED
 
-Theorem poll_chunks_ne:
-  poll_chunks l ≠ []
-Proof
-  rw[Once poll_chunks_def]
-QED
 
 Theorem pround_evs_ne:
   pround lfd hw hs ws acts = SOME (snap, ws', log, evs) ⇒ evs ≠ []
@@ -90,9 +86,7 @@ Proof
   PairCases_on ‘ws’ >> simp[pround_def, AllCaseEqs()] >> strip_tac >> gvs[] >>
   rename1 ‘pf_tail _ _ _ wt = _’ >> PairCases_on ‘wt’ >>
   gvs[pf_tail_def, AllCaseEqs()] >>
-  qmatch_asmsub_abbrev_tac ‘l1_polls chs _’ >>
-  ‘chs ≠ []’ by simp[Abbr ‘chs’, poll_chunks_ne] >>
-  Cases_on ‘chs’ >> gvs[l1_polls_def, AllCaseEqs()]
+  gvs[l1_polls_def, AllCaseEqs()]
 QED
 
 Theorem revs_grows:
@@ -326,7 +320,7 @@ Proof
 QED
 
 Theorem pf_poll_set_lt:
-  EVERY (λ(g, e). e < 256) (pf_poll_set lfd hw ps hs)
+  EVERY (λ(g, e). e < 4) (pf_poll_set lfd hw ps hs)
 Proof
   simp[pf_poll_set_def, EVERY_APPEND, EVERY_FLAT, EVERY_MAP, EVERY_FILTER] >>
   conj_tac >- (simp[EVERY_MEM] >> rw[] >> every_case_tac >> gvs[]) >>
@@ -430,14 +424,22 @@ QED
 
 Theorem l1_polls_fds:
   ∀chs w rv w' evs.
-    l1_polls chs w = SOME (rv, w', evs) ∧ (∀c. MEM c chs ⇒ EVERY (λ(g, e). e < 256) c) ⇒
+    l1_polls chs w = SOME (rv, w', evs) ∧ l0_rely w ∧
+    (∀c. MEM c chs ⇒ EVERY (λ(g, e). small g ∧ e < 4) c) ⇒
     ∀ev. MEM ev evs ∧ ev_on «sys_poll» f ev ⇒ ∃c. MEM c chs ∧ MEM f (MAP FST c)
 Proof
   Induct >> simp[l1_polls_def] >> rpt gen_tac >> strip_tac >>
   gvs[AllCaseEqs(), DISJ_IMP_THM, FORALL_AND_THM] >> rpt strip_tac >> gvs[]
-  >- (gvs[sys_poll_def] >> drule l0_do_cases >> strip_tac >> gvs[ev_on_def] >>
-      drule call_fds_poll >> strip_tac >> gvs[] >> metis_tac[])
-  >> last_x_assum drule >> simp[] >> disch_then drule_all >> metis_tac[]
+  >- (gvs[sys_poll_def] >> drule l0_do_buf_cases >> strip_tac >> gvs[ev_on_def] >>
+      ‘LENGTH out = LENGTH (poll_buf h)’
+        by (qpat_x_assum ‘l0_do_buf _ _ _ _ = _’ mp_tac >>
+            simp[l0_do_buf_def, AllCaseEqs()] >> strip_tac >>
+            drule_all l0_ffi_fn_length >> simp[]) >>
+      gvs[MAP_ZIP] >> drule call_fds_poll >> strip_tac >> gvs[] >> metis_tac[])
+  >> ‘l0_rely w1’
+       by (qpat_x_assum ‘sys_poll _ _ = _’ mp_tac >> simp[sys_poll_def] >>
+           strip_tac >> drule_all l0_do_buf_rely >> simp[]) >>
+  last_x_assum drule >> simp[] >> disch_then drule_all >> metis_tac[]
 QED
 
 Theorem l1_polls_names:
@@ -446,7 +448,7 @@ Theorem l1_polls_names:
 Proof
   Induct >> simp[l1_polls_def] >> rpt gen_tac >> strip_tac >> gvs[AllCaseEqs()] >>
   first_x_assum drule >> simp[] >>
-  gvs[sys_poll_def] >> drule l0_do_cases >> rw[] >> simp[ev_name_def]
+  gvs[sys_poll_def] >> drule l0_do_buf_cases >> rw[] >> simp[ev_name_def]
 QED
 
 Theorem l1_flush_names:
@@ -462,12 +464,13 @@ QED
 
 Theorem pround_paused:
   pround lfd hw hs (w, ps) acts = SOME (snap, (w', ps'), log, evs) ∧
-  winv w ∧ pv_rel lfd cm ps s ∧ pown lfd ps ∧ noob lfd ps.b ∧ 0 < ps.pause ⇒
+  winv w ∧ pv_rel lfd cm ps s ∧ pown lfd ps ∧ psmall lfd ps ∧ noob lfd ps.b ∧ 0 < ps.pause ⇒
   ¬EXISTS (ev_on «sys_poll» lfd) evs
 Proof
   simp[pround_def, AllCaseEqs()] >> strip_tac >> PairCases_on ‘ws1’ >>
   gvs[pf_tail_def, AllCaseEqs()] >>
   rename1 ‘pacts _ _ _ = SOME (rs, aevs, wa, pa)’ >>
+  ‘psmall lfd pa’ by metis_tac[pacts_psmall] >>
   drule pacts_lfd >> strip_tac >>
   drule pacts_names >> strip_tac >>
   drule_all pacts_noob >> strip_tac >>
@@ -478,14 +481,11 @@ Proof
         gvs[pown_def, MEM_MAP] >> metis_tac[SND]) >>
   ‘¬MEM lfd (MAP FST (pf_poll_set lfd hw pa hs))’ by (irule pf_poll_set_paused >> simp[]) >>
   rename1 ‘l1_polls _ wa = SOME (rv, w1, pevs)’ >>
-  ‘∀c. MEM c (poll_chunks (pf_poll_set lfd hw pa hs)) ⇒ EVERY (λ(g, e). e < 256) c’
-    by (assume_tac (Q.GENL [‘lfd’, ‘hw’, ‘ps’, ‘hs’] pf_poll_set_lt) >>
-        rpt strip_tac >> gvs[EVERY_MEM] >> rpt strip_tac >>
-        ‘MEM e (FLAT (poll_chunks (pf_poll_set lfd hw pa hs)))’
-          by (simp[MEM_FLAT] >> metis_tac[]) >>
-        gvs[FLAT_poll_chunks] >> first_x_assum drule >> simp[]) >>
+  ‘∀c. MEM c [pf_poll_set lfd hw pa hs] ⇒ EVERY (λ(g, e). small g ∧ e < 4) c’
+    by (simp[] >> irule pf_poll_set_small >> simp[]) >>
+  ‘l0_rely wa’ by gvs[winv_def] >>
   ‘∀ev. MEM ev pevs ∧ ev_on «sys_poll» lfd ev ⇒
-        ∃c. MEM c (poll_chunks (pf_poll_set lfd hw pa hs)) ∧ MEM lfd (MAP FST c)’
+        ∃c. MEM c [pf_poll_set lfd hw pa hs] ∧ MEM lfd (MAP FST c)’
     by metis_tac[l1_polls_fds] >>
   drule l1_polls_names >> strip_tac >>
   drule l1_flush_names >> strip_tac >>
@@ -493,10 +493,7 @@ Proof
   drule l1_reap_names >> strip_tac >>
   simp[EVERY_MEM] >> rpt strip_tac >> imp_res_tac ev_on_name >>
   TRY (gvs[EVERY_MEM] >> res_tac >> gvs[] >> NO_TAC) >>
-  qpat_x_assum ‘∀ev. MEM ev pevs ∧ _ ⇒ _’ drule_all >> strip_tac >>
-  ‘MEM lfd (MAP FST (FLAT (poll_chunks (pf_poll_set lfd hw pa hs))))’
-    by (simp[MAP_FLAT, MEM_FLAT, MEM_MAP] >> gvs[MEM_MAP] >> metis_tac[]) >>
-  gvs[FLAT_poll_chunks]
+  qpat_x_assum ‘∀ev. MEM ev pevs ∧ _ ⇒ _’ drule_all >> strip_tac >> gvs[]
 QED
 
 (* ------------------------------------------------------------------------

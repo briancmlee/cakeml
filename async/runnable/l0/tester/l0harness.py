@@ -19,6 +19,35 @@ ERR = {1: "EAGAIN", 2: "EINTR", 3: "EINPROGRESS", 4: "ECONNREFUSED", 5: "ECONNRE
        16: "EBADF", 17: "ENOTSOCK", 18: "EINVAL", 19: "ENETUNREACH", 20: "EHOSTUNREACH",
        21: "ENETDOWN", 22: "EPROTO", 255: "OTHER"}
 HDR = 13
+POLL_OFF = 16       # sys_poll: the struct pollfd entries start here (D20)
+# The model's revents bits (1 IN, 2 OUT, 4 ERR, 8 HUP, 16 NVAL) and the
+# struct pollfd bits (POLLIN 1, POLLOUT 4, POLLERR 8, POLLHUP 16, POLLNVAL 32;
+# the C asserts these at build time)
+NATIVE = [(1, 1), (2, 4), (4, 8), (8, 16), (16, 32)]
+
+def to_native(b):
+    return sum(n for (m, n) in NATIVE if b & m)
+
+def from_native(r):
+    """The model's bits, or None if r has a bit the model never sets"""
+    if r & ~sum(n for (_, n) in NATIVE):
+        return None
+    return sum(m for (m, n) in NATIVE if r & n)
+
+def pollfd(fd, ev):
+    """A struct pollfd (int fd; short events; short revents), little-endian"""
+    return fd.to_bytes(4, "little", signed=True) + to_native(ev).to_bytes(2, "little") + bytes(2)
+
+def poll_buf(fds_events):
+    return bytes(POLL_OFF) + b"".join(pollfd(f, e) for (f, e) in fds_events)
+
+def poll_entries(buf):
+    """(fd, events, revents) per entry, all three as raw ints"""
+    def ent(k):
+        e = buf[POLL_OFF + 8 * k:POLL_OFF + 8 * k + 8]
+        return (int.from_bytes(e[0:4], "little", signed=True),
+                int.from_bytes(e[4:6], "little"), int.from_bytes(e[6:8], "little"))
+    return [ent(k) for k in range((len(buf) - POLL_OFF) // 8)]
 
 CHILD = r'''
 import ctypes, json, os, resource, sys
@@ -43,7 +72,7 @@ for line in rd:
     else:
         name, conf, alen = cmd[0], bytes.fromhex(cmd[1]), cmd[2]
         c = ctypes.create_string_buffer(conf, len(conf))
-        a = ctypes.create_string_buffer(alen)
+        a = ctypes.create_string_buffer(bytes.fromhex(cmd[3]), alen)
         getattr(lib, "ffisys_" + name)(c, ctypes.c_long(len(conf)), a, ctypes.c_long(alen))
         out = a.raw.hex()
     wr.write(json.dumps(out) + "\n"); wr.flush()
@@ -81,9 +110,10 @@ class Server:
             raise RuntimeError("server child died (exit %s)" % self.p.wait())
         return json.loads(line)
 
-    def call(self, name, conf, alen):
-        out = bytes.fromhex(self.raw([name, conf.hex(), alen]))
-        self.log.append(["call", name, conf.hex(), alen, out.hex()])
+    def call(self, name, conf, alen, ain=b""):
+        """ain: the array's contents going in (sys_poll's entries); else zeros"""
+        out = bytes.fromhex(self.raw([name, conf.hex(), alen, ain.hex()]))
+        self.log.append(["call", name, conf.hex(), alen, out.hex()] + ([ain.hex()] if ain else []))
         return out
 
     def client(self, port):
@@ -94,9 +124,10 @@ class Server:
         return decode(self.call("listen", port.to_bytes(2, "big"), HDR))
 
     def poll(self, fds_events, block=False):
-        conf = bytes([1 if block else 0]) + b"".join(fd8(f) + bytes([e]) for (f, e) in fds_events)
-        res = decode(self.call("poll", conf, HDR + len(fds_events)))
-        return res, list(res[3])
+        """fds_events with the model's bits; the revents come back the same way"""
+        ain = poll_buf(fds_events)
+        out = self.call("poll", bytes([1 if block else 0]), len(ain), ain)
+        return decode(out), [from_native(r) for (_, _, r) in poll_entries(out)]
 
     def accept(self, l):
         return decode(self.call("accept", fd8(l), HDR))

@@ -47,8 +47,15 @@
                   flight.  (A flag meaning MAY have been aborted.)
 
   Calls fail (NONE; the C exits) only on the C's misuse checks: buffer
-  lengths, a poll block flag other than 0/1, an fd above 2^31 - 1, more
-  than 4096 fds in a poll.  Every other outcome is a result.
+  lengths, a poll block flag other than 0/1, an fd above 2^31 - 1; and
+  (unchecked by the C, a precondition on the verified caller) a poll entry
+  requesting events other than POLLIN, POLLOUT.  Every other outcome is a
+  result.  sys_poll (D20) polls the caller's buffer in place: after the
+  13-byte header and 3 pad bytes, k struct pollfd entries (fd int32, events
+  int16, revents int16, little-endian; POLLIN 1, POLLOUT 4, POLLERR 8,
+  POLLHUP 16, POLLNVAL 32: the C's build-time-checked ABI assumption); no
+  limit on k ([P poll] EINVAL above OPEN_MAX and ENOMEM are among the
+  transient errors).
 *)
 Theory honestL0World
 Ancestors
@@ -149,6 +156,9 @@ Datatype:
              [EINPROGRESS] and fildes being closed (T)" *)
      ; misuse : lcall list -> errcode           (* a call on an fd of the wrong kind *)
      ; reserved_rev : lcall list -> word64 -> word8   (* poll flags of a reserved fd *)
+     ; poll_junk : lcall list -> num -> word8
+          (* byte i of a failed poll's revents fields: [P poll] does not say
+             what revents holds when poll fails *)
      ; connect_now : lcall list -> errcode option option
           (* connect's immediate outcome [P connect]: NONE: EINPROGRESS ("If the
              connection cannot be established immediately and O_NONBLOCK is set
@@ -307,8 +317,14 @@ Definition fd_revents_def:
             else revents_byte (no_revents with rnval := T)
 End
 
+(* revents for a poll entry (fd, events): [P poll] "If the value of fd is less than 0, events
+   shall be ignored, and revents shall be set to 0" *)
+Definition pfd_revents_def:
+  pfd_revents w (f, ev) = if 2 ** 31 ≤ w2n f then 0w else fd_revents w (f, ev)
+End
+
 Definition any_revents_def:
-  any_revents w fes ⇔ EXISTS (λfe. fd_revents w fe ≠ 0w) fes
+  any_revents w fes ⇔ EXISTS (λfe. pfd_revents w fe ≠ 0w) fes
 End
 
 (* A blocking poll ("block indefinitely until at least one descriptor
@@ -554,18 +570,80 @@ Definition enc_listen_fail_def:
   enc_listen_fail w (k, e) = n2w (err_code e) :: n2w8 k ++ w.ch.errno_of w.hist
 End
 
-(* poll's configuration: block flag, then 9 bytes per fd (fd, events) *)
-Definition poll_entries_def:
-  poll_entries (bs : word8 list) =
-    if LENGTH bs < 9 then []
-    else (bytes_fd (TAKE 8 bs), w2n (EL 8 bs)) :: poll_entries (DROP 9 bs)
+(* sys_poll's buffer (D20): 16 bytes (the header's 13, 3 pad), then
+   8-byte struct pollfd entries *)
+Definition pollfd_entries_def:
+  pollfd_entries (bs : word8 list) =
+    if LENGTH bs < 8 then [] else TAKE 8 bs :: pollfd_entries (DROP 8 bs)
 Termination
   WF_REL_TAC ‘measure LENGTH’ >> rw[LENGTH_DROP]
 End
 
+(* An entry's fd (int32, little-endian; 2^31 and above: negative) and
+   requested events (int16) *)
+Definition pe_fd_def:
+  pe_fd (e : word8 list) : word64 =
+    w2w (EL 0 e) || (w2w (EL 1 e) << 8) || (w2w (EL 2 e) << 16) || (w2w (EL 3 e) << 24)
+End
+
+Definition pe_events_def:
+  pe_events (e : word8 list) = w2n (EL 4 e) + 256 * w2n (EL 5 e)
+End
+
+(* Only POLLIN (1) and POLLOUT (4) may be requested *)
+Definition pe_ok_def:
+  pe_ok e ⇔ pe_events e = 0 ∨ pe_events e = 1 ∨ pe_events e = 4 ∨ pe_events e = 5
+End
+
+(* The entry as (fd, events) with the model's events bits (1 IN, 2 OUT) *)
+Definition pe_fe_def:
+  pe_fe e = (pe_fd e, (if ODD (pe_events e) then 1 else 0) +
+                      (if 4 ≤ pe_events e then 2 else 0n))
+End
+
+(* The model's revents byte (1 IN 2 OUT 4 ERR 8 HUP 16 NVAL) as the int16
+   revents field (POLLIN 1, POLLOUT 4, POLLERR 8, POLLHUP 16, POLLNVAL 32) *)
+Definition abi_rev_def:
+  abi_rev (b : word8) =
+    let r = byte_revents b in
+      [n2w ((if r.rin then 1 else 0) + (if r.rout then 4 else 0) +
+            (if r.rerr then 8 else 0) + (if r.rhup then 16 else 0) +
+            (if r.rnval then 32 else 0)) : word8; 0w]
+End
+
+(* The revents field (2 bytes) read back as the model's revents *)
+Definition abi_revents_def:
+  abi_revents (bs : word8 list) =
+    <| rin := word_bit 0 (HD bs); rout := word_bit 2 (HD bs); rerr := word_bit 3 (HD bs);
+       rhup := word_bit 4 (HD bs); rnval := word_bit 5 (HD bs) |>
+End
+
+Theorem abi_revents_abi_rev[simp]:
+  abi_revents (abi_rev b) = byte_revents b
+Proof
+  simp[abi_rev_def, abi_revents_def] >>
+  qabbrev_tac ‘r = byte_revents b’ >>
+  simp[honestL0Theory.revents_component_equality] >>
+  rpt (IF_CASES_TAC >> simp[]) >> EVAL_TAC
+QED
+
+(* A completed poll: the count, the pad bytes as they were, each entry's fd
+   and events as they were and its revents *)
 Definition poll_out_def:
-  poll_out w fes =
-    enc_res (Ok (LENGTH (FILTER (λfe. fd_revents w fe ≠ 0w) fes))) ++ MAP (fd_revents w) fes
+  poll_out w (bytes : word8 list) =
+    let ents = pollfd_entries (DROP 16 bytes) in
+      enc_res (Ok (LENGTH (FILTER (λe. pfd_revents w (pe_fe e) ≠ 0w) ents))) ++
+      TAKE 3 (DROP 13 bytes) ++
+      FLAT (MAP (λe. TAKE 6 e ++ abi_rev (pfd_revents w (pe_fe e))) ents)
+End
+
+(* A failed poll: revents unspecified *)
+Definition poll_failed_def:
+  poll_failed w e (bytes : word8 list) =
+    let ents = pollfd_entries (DROP 16 bytes) in
+      enc_res (fail w e) ++ TAKE 3 (DROP 13 bytes) ++
+      FLAT (MAPi (λi en. TAKE 6 en ++ [w.ch.poll_junk w.hist (2 * i);
+                                        w.ch.poll_junk w.hist (2 * i + 1)]) ents)
 End
 
 Definition l0_call_def:
@@ -577,19 +655,18 @@ Definition l0_call_def:
          | (INR ke, w') => SOME (FFIreturn (enc_listen_fail w ke) w')
        else NONE)
     else if n = «sys_poll» then
-      (let fes = poll_entries (DROP 1 conf) in
-       if conf ≠ [] ∧ (LENGTH conf − 1) MOD 9 = 0 ∧ w2n (HD conf) ≤ 1 ∧
-          LENGTH fes ≤ 4096 ∧ LENGTH bytes = l0_hdr + LENGTH fes ∧
-          EVERY (fd_ok o FST) fes
+      (let ents = pollfd_entries (DROP 16 bytes); fes = MAP pe_fe ents in
+       if LENGTH conf = 1 ∧ w2n (HD conf) ≤ 1 ∧ 16 ≤ LENGTH bytes ∧
+          (LENGTH bytes − 16) MOD 8 = 0 ∧ EVERY pe_ok ents
        then
          case w.ch.transient w.hist of
-         | SOME e => SOME (FFIreturn (enc_res (fail w e) ++ REPLICATE (LENGTH fes) 0w) w)
+         | SOME e => SOME (FFIreturn (poll_failed w e bytes) w)
          | NONE =>
-             if HD conf = 0w then SOME (FFIreturn (poll_out w fes) w)
+             if HD conf = 0w then SOME (FFIreturn (poll_out w bytes) w)
              else
                case l0_wait fes w of
                | NONE => SOME FFIdiverge
-               | SOME k => SOME (FFIreturn (poll_out (l0_ticks «sys_poll» k w) fes)
+               | SOME k => SOME (FFIreturn (poll_out (l0_ticks «sys_poll» k w) bytes)
                                            (l0_ticks «sys_poll» k w))
        else NONE)
     else if n = «sys_accept» then

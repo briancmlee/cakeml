@@ -100,7 +100,7 @@ Proof
 QED
 
 Theorem pf_poll_set_small:
-  psmall lfd ps ⇒ EVERY (λ(f, e). small f ∧ e < 256) (pf_poll_set lfd hw ps hs)
+  psmall lfd ps ⇒ EVERY (λ(f, e). small f ∧ e < 4) (pf_poll_set lfd hw ps hs)
 Proof
   rw[pf_poll_set_def, EVERY_MEM, MEM_FLAT, MEM_MAP, MEM_FILTER, EXISTS_PROD,
      FORALL_PROD] >>
@@ -125,8 +125,8 @@ Theorem pf_tail_ok:
 Proof
   strip_tac >> simp[pf_tail_def] >>
   qabbrev_tac ‘fes = pf_poll_set lfd hw ps hs’ >>
-  ‘EVERY (λc. LENGTH c ≤ 4096 ∧ EVERY (λ(f, e). small f ∧ e < 256) c) (poll_chunks fes)’
-    by (irule poll_chunks_ok >> simp[Abbr ‘fes’] >> irule pf_poll_set_small >> simp[]) >>
+  ‘EVERY (EVERY (λ(f, e). small f ∧ e < 4)) [fes]’
+    by (simp[Abbr ‘fes’] >> irule pf_poll_set_small >> simp[]) >>
   drule_all l1_polls_ok >> strip_tac >> simp[] >>
   rename1 ‘l1_polls _ _ = SOME (rv, w1, pevs)’ >>
   drule readable_small >> strip_tac >>
@@ -188,4 +188,29 @@ Theorem prun_total:
 Proof
   rpt strip_tac >> drule_all prounds_ok >> disch_then (qspec_then ‘n’ strip_assume_tac) >>
   gvs[]
+QED
+
+(* An action that succeeds keeps the fds small (D20: the poll's fd fields
+   are 32 bits) *)
+Theorem pdo_psmall:
+  pdo lfd (w, ps) a = SOME (r, (w', ps'), evs) ∧ psmall lfd ps ⇒ psmall lfd ps'
+Proof
+  Cases_on ‘a’ >> simp[pdo_def] >> rw[AllCaseEqs()] >> gvs[] >>
+  TRY (PairCases_on ‘z’) >> gvs[] >>
+  rpt (qpat_x_assum ‘l1do _ _ _ = _’ mp_tac) >> rpt (qpat_x_assum ‘l1_close _ _ = _’ mp_tac) >>
+  simp[l1do_def, l1_close_def, AllCaseEqs()] >> rw[] >> gvs[psmall_def, set_inb_def] >>
+  imp_res_tac small_tbl_lookup >>
+  TRY (irule small_fds_forget >> simp[small_fds_tbl_del] >> NO_TAC) >>
+  TRY (irule small_fds_after_send >> simp[small_fds_set_outbox] >> NO_TAC) >>
+  TRY (irule small_fds_set_outbox >> simp[] >> NO_TAC) >>
+  TRY (drule small_fds_tbl_del >> simp[small_fds_def] >> NO_TAC) >>
+  gvs[small_fds_def]
+QED
+
+Theorem pacts_psmall:
+  ∀acts w ps rs evs w' ps'.
+    pacts lfd (w, ps) acts = SOME (rs, evs, (w', ps')) ∧ psmall lfd ps ⇒ psmall lfd ps'
+Proof
+  Induct >> simp[pacts_def] >> rpt gen_tac >> strip_tac >> gvs[AllCaseEqs()] >>
+  PairCases_on ‘ws1’ >> metis_tac[pdo_psmall]
 QED

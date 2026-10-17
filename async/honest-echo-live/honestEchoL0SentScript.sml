@@ -6,31 +6,9 @@
 *)
 Theory honestEchoL0Sent
 Ancestors
-  honestEchoL0Trace honestEchoL0Spec honestL1BStmts alist
+  honestEchoL0Round honestEchoL0Trace honestEchoL0Spec honestL1BStmts alist
 Libs
   preamble
-
-(* An episode the fold has not reached gets no bytes (as honestEchoL0Round's
-   ep_fold_fresh, which is behind a theory not yet ported to D23) *)
-Theorem ep_fold_unreached:
-  ∀evs k opn. ep_ok (k, opn) ∧ FST (l0_ep_st (k, opn) evs) ≤ j ⇒
-              ep_fold pf fdf j (k, opn) evs = []
-Proof
-  Induct >> simp[ep_fold_def] >> rpt gen_tac >> strip_tac >>
-  ‘k ≤ FST (l0_ep_step (k, opn) h)’
-    by (simp[l0_ep_step_def] >> every_case_tac >> simp[]) >>
-  ‘FST (l0_ep_st (l0_ep_step (k, opn) h) evs) ≤ j’ by fs[] >>
-  ‘FST (l0_ep_st (l0_ep_step (k, opn) h) evs) =
-   FST (l0_ep_step (k, opn) h) + LENGTH (l0_accepted evs)’
-    by (Cases_on ‘l0_ep_step (k, opn) h’ >> simp[FST_l0_ep_st]) >>
-  conj_tac
-  >- (every_case_tac >> simp[] >> gvs[ep_ok_def, EVERY_MEM] >>
-      imp_res_tac ALOOKUP_MEM >>
-      ‘MEM j (MAP SND opn)’ by (simp[MEM_MAP, EXISTS_PROD] >> metis_tac[]) >>
-      res_tac >> fs[]) >>
-  Cases_on ‘l0_ep_step (k, opn) h’ >> first_x_assum irule >> fs[] >>
-  metis_tac[ep_ok_step]
-QED
 
 Theorem ep_ok_st:
   ∀evs s. ep_ok s ⇒ ep_ok (l0_ep_st s evs)
@@ -87,7 +65,7 @@ Proof
   rw[l0_sent_fold, ep_fold_APPEND] >>
   ‘ep_ok (0, [])’ by simp[ep_ok_def] >>
   ‘ep_sn (LENGTH (l0_accepted pre)) (0, []) pre = []’
-    by (irule ep_fold_unreached >> simp[FST_l0_ep_st]) >>
+    by (irule ep_fold_fresh >> simp[FST_l0_ep_st]) >>
   Cases_on ‘l0_ep_st (0, []) pre’ >> rename1 ‘_ = (k, opn)’ >>
   ‘k = LENGTH (l0_accepted pre)’
     by (qspecl_then [‘pre’, ‘0’, ‘[]’] mp_tac FST_l0_ep_st >> simp[]) >>

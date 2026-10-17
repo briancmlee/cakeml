@@ -9,7 +9,7 @@
    - nothing is ready for the server (else the PF L1 would tell it so in
      every round);
    - L1 has nothing only the clock would end: the listener is not paused,
-     every hung-up fd (D19's hups) is still held, with an empty outbox and
+     every hung-up fd (D19's stalls) is still held, with an empty outbox and
      a zero count, and every closing fd still has bytes to flush (none is
      due to be reaped).
   (D20: a poll has no size limit, so every poll set fits one call.)
@@ -41,7 +41,7 @@ Definition pf_after_def:
                (w2, ps with b := b2) of
         | NONE => NONE
         | SOME ((w3, ps3'), log, gevs) =>
-            let ps3 = hup_step (hup_fds rv) (outbox_of ps.b) log ps3' in
+            let ps3 = stall_step (pf_held ps3') (outbox_of ps.b) log ps3' in
             case l1_reap ps3.b.closing (w3, ps3.b) of
             | NONE => NONE
             | SOME ((w4, b4), cevs) =>
@@ -88,10 +88,9 @@ End
 
 Definition pf_idle_def:
   pf_idle lfd hw ps hs ⇔
-    ps.pause = 0 ∧ pf_ready lfd ps hs = [] ∧
-    EVERY (λ(f, n). outbox_of ps.b f = [] ∧ n = 0 ∧
-                    (MEM f (MAP SND ps.b.tbl) ∨ MEM f ps.b.closing)) ps.hups ∧
-    EVERY (λf. outbox_of ps.b f ≠ [] ∧ ¬MEM f ps.b.gone) ps.b.closing
+    ps.pause = 0 ∧ pf_ready lfd ps hs = [] ∧ ps.b.closing = [] ∧
+    EVERY (λf. outbox_of ps.b f = [] ∧ MEM f (MAP FST ps.stalls)) (pf_held ps) ∧
+    EVERY (λ(f, n). n = 0 ∧ MEM f (pf_held ps)) ps.stalls
 End
 
 Datatype:
@@ -148,31 +147,31 @@ End
    An idle round whose poll reports nothing changes nothing
    ------------------------------------------------------------------------ *)
 
-Theorem l1_reap_idle[local]:
-  ∀fs w b. EVERY (λf. outbox_of b f ≠ [] ∧ ¬MEM f b.gone) fs ⇒
-           l1_reap fs (w, b) = SOME ((w, b), [])
+Theorem stall_step_idle[local]:
+  EVERY (λf. outbox_of ps.b f = [] ∧ MEM f (MAP FST ps.stalls)) (pf_held ps) ∧
+  EVERY (λ(f, n). n = 0 ∧ MEM f (pf_held ps)) ps.stalls ⇒
+  stall_step (pf_held ps) ob [] ps = ps
 Proof
-  Induct >> simp[l1_reap_def]
-QED
-
-Theorem hup_step_idle[local]:
-  EVERY (λ(f, n). outbox_of ps.b f = [] ∧ n = 0 ∧
-                  (MEM f (MAP SND ps.b.tbl) ∨ MEM f ps.b.closing)) ps.hups ⇒
-  hup_step [] ob [] ps = ps
-Proof
-  rw[hup_step_def] >>
-  ‘FILTER (λ(f,n). MEM f (MAP SND ps.b.tbl) ∨ MEM f ps.b.closing) ps.hups = ps.hups’
+  rw[stall_step_def] >>
+  ‘∀f. MEM f (pf_held ps) ⇔ MEM f (MAP SND ps.b.tbl) ∨ MEM f ps.b.closing’
+    by simp[pf_held_def] >>
+  ‘FILTER (λ(f,n). MEM f (MAP SND ps.b.tbl) ∨ MEM f ps.b.closing) ps.stalls = ps.stalls’
     by (simp[FILTER_EQ_ID] >> fs[EVERY_MEM, FORALL_PROD] >> metis_tac[]) >>
+  ‘FILTER (λf. (MEM f (MAP SND ps.b.tbl) ∨ MEM f ps.b.closing) ∧
+               ¬MEM f (MAP FST ps.stalls)) (pf_held ps) = []’
+    by (rw[FILTER_EQ_NIL] >> qpat_x_assum ‘EVERY _ (pf_held ps)’ mp_tac >>
+        rw[EVERY_MEM] >> metis_tac[]) >>
   ‘MAP (λ(f,n). if outbox_of ps.b f = [] ∨ LENGTH (outbox_of ps.b f) < LENGTH (ob f)
-                then (f,0) else (f,n + 1)) ps.hups = ps.hups’
-    by (irule LIST_EQ >> rw[EL_MAP] >> Cases_on ‘EL x ps.hups’ >> simp[] >>
-        fs[EVERY_EL] >> first_x_assum drule >> simp[]) >>
+                then (f,0) else (f,n + 1)) ps.stalls = ps.stalls’
+    by (irule LIST_EQ >> rw[EL_MAP] >> Cases_on ‘EL x ps.stalls’ >> simp[] >>
+        ‘MEM (q, r) ps.stalls’ by metis_tac[MEM_EL] >>
+        fs[EVERY_MEM, FORALL_PROD] >> res_tac >> fs[] >> res_tac >> fs[]) >>
   simp[] >>
-  ‘FILTER (λ(f,n). pf_hupwait ≤ n) ps.hups = []’
-    by (simp[FILTER_EQ_NIL] >> fs[EVERY_MEM, FORALL_PROD, pf_hupwait_def] >>
+  ‘FILTER (λ(f,n). pf_sendwait ≤ n) ps.stalls = []’
+    by (simp[FILTER_EQ_NIL] >> fs[EVERY_MEM, FORALL_PROD, pf_sendwait_def] >>
         metis_tac[DECIDE “¬(8n ≤ 0)”]) >>
-  ‘FILTER (λ(f,n). n < pf_hupwait) ps.hups = ps.hups’
-    by (simp[FILTER_EQ_ID] >> fs[EVERY_MEM, FORALL_PROD, pf_hupwait_def] >>
+  ‘FILTER (λ(f,n). n < pf_sendwait) ps.stalls = ps.stalls’
+    by (simp[FILTER_EQ_ID] >> fs[EVERY_MEM, FORALL_PROD, pf_sendwait_def] >>
         metis_tac[DECIDE “0n < 8”]) >>
   simp[l1p_component_equality]
 QED
@@ -185,12 +184,12 @@ Theorem pf_after_idle:
   pf_after lfd hw hs ps fes (rv, w1, pevs) = SOME ([], (w1, ps), [], pevs)
 Proof
   rw[pf_idle_def, pf_after_def] >>
-  ‘writable_fds rv = [] ∧ readable_fds rv = [] ∧ hup_fds rv = []’
-    by (simp[writable_fds_def, readable_fds_def, hup_fds_def, FILTER_EQ_NIL] >>
+  ‘writable_fds rv = [] ∧ readable_fds rv = []’
+    by (simp[writable_fds_def, readable_fds_def, FILTER_EQ_NIL] >>
         fs[EVERY_MEM, FORALL_PROD] >> metis_tac[]) >>
   simp[l1_flush_def, pf_fetch_def] >>
   ‘ps with b := ps.b = ps’ by simp[l1p_component_equality] >>
-  simp[hup_step_idle, l1_reap_idle] >>
+  simp[stall_step_idle, l1_reap_def] >>
   ‘ps with <| b := ps.b; pause := 0 |> = ps’ by simp[l1p_component_equality] >>
   simp[]
 QED

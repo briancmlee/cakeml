@@ -52,9 +52,8 @@ Theorem round_facts:
              pv_rel lfd cm (rstate lfd pol ifds m w0 k) s ∧
              pown lfd (rstate lfd pol ifds m w0 k) ∧ psmall lfd (rstate lfd pol ifds m w0 k) ∧
              l0own lfd (rworld lfd pol ifds m w0 k) (rstate lfd pol ifds m w0 k) ∧
-             l1hdln (w2n lfd) ((rstate lfd pol ifds m w0 k).b.nxt +
-                               LENGTH (new_actions (log_of m) (rhist lfd pol ifds m w0 k)))
-               < dimword (:64)
+             (rstate lfd pol ifds m w0 k).b.nxt +
+               naccepts (new_actions (log_of m) (rhist lfd pol ifds m w0 k)) < dimword (:64)
 Proof
   rpt strip_tac >>
   ‘winv (rworld lfd pol ifds m w0 k)’ by (drule_all winv_run >> simp[]) >>

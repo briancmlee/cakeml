@@ -241,13 +241,7 @@ Proof
   ‘∀n. SND (pcm lfd hw ifds m pw n) + 1 < dimword (:64)’ by fs[] >>
   ‘ALOOKUP ps.b.tbl lfd = NONE’
     by (drule_all round_facts >> disch_then (qspec_then ‘N’ strip_assume_tac) >>
-        qpat_x_assum ‘pown _ _’ mp_tac >> qpat_x_assum ‘l1hdln _ _ < _’ mp_tac >>
-        asm_rewrite_tac[] >> rpt strip_tac >>
-        ‘l1hdln (w2n lfd) ps.b.nxt ≤
-           l1hdln (w2n lfd) (ps.b.nxt + LENGTH (new_actions (log_of m) full))’
-          by (irule honestL1InvTheory.l1hdln_mono >> simp[]) >>
-        irule tbl_lfd >> rpt conj_tac >> TRY (first_assum ACCEPT_TAC >> NO_TAC) >>
-        metis_tac[LESS_EQ_LESS_TRANS]) >>
+        irule tbl_lfd >> gvs[]) >>
   ‘ps.acq = [] ∧ ps.pause = 0’ by (fs[pf_idle_def] >> metis_tac[acq_idle]) >>
   CCONTR_TAC >>
   drule_all run_lfd >> disch_then (qspec_then ‘N’ mp_tac) >> asm_rewrite_tac[] >>

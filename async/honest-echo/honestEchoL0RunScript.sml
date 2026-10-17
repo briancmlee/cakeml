@@ -345,3 +345,69 @@ Proof
     by (irule pacts_fresh >> conj_tac >- fs[] >> qexistsl [‘evs1’, ‘k’, ‘opn’, ‘ps’, ‘ws11’, ‘w’, ‘ws10’] >> fs[]) >>
   fs[]
 QED
+
+Theorem ep_fold_prefix:
+  xs ≼ ys ⇒ ep_fold pf fdf j s xs ≼ ep_fold pf fdf j s ys
+Proof
+  rw[rich_listTheory.IS_PREFIX_APPEND] >> simp[ep_fold_APPEND]
+QED
+
+(* MAIN, S4 for one round: at any point of the round's events, what the
+   spec says episode j sent is a prefix of what it received *)
+Theorem round_safe:
+  ri lfd (srelabel (server k)) (h, (w, ps), evs) ∧
+  ri lfd (srelabel (server k)) (h ++ [sn], (w', ps'), evs ++ revs) ∧
+  hdl_room lfd ps (LENGTH (new_actions (log_of (srelabel (server k))) h)) ∧
+  pround lfd hw hs (w, ps) (new_actions (log_of (srelabel (server k))) h) =
+    SOME (sn, (w', ps'), log, revs) ∧
+  evs ≼ pre ∧ pre ≼ evs ++ revs ∧ hdln (w2n lfd) j < dimword (:64) ⇒
+  ep_sn j (0, []) pre ≼ ep_rd j (0, []) pre
+Proof
+  strip_tac >>
+  qabbrev_tac ‘acts = new_actions (log_of (srelabel (server k))) h’ >>
+  ‘ep_sn j (0, []) pre ≼ ep_sn j (0, []) (evs ++ revs) ∧
+   ep_rd j (0, []) evs ≼ ep_rd j (0, []) pre’ by simp[ep_fold_prefix] >>
+  (* the end of the round *)
+  qpat_assum ‘ri _ _ (h ++ [sn], _, _)’ (strip_assume_tac o REWRITE_RULE [ri_def]) >>
+  first_x_assum (qspec_then ‘j’ mp_tac) >> simp[] >> strip_tac >>
+  ‘ep_sn j (0, []) (evs ++ revs) ≼ hwritten (l1hdl lfd j) (texec (srelabel (server k)) (h ++ [sn]))’
+    by (gvs[oi_def] >> imp_res_tac isPREFIX_APPEND_L) >>
+  drule trans_texec >> strip_tac >>
+  ‘ALL_DISTINCT (haccepted (trans (srelabel (server k)) (h ++ [sn])))’
+    by (‘ALL_DISTINCT (GENLIST (λi. l1hdl lfd i) ps'.b.nxt)’
+          by (irule ALL_DISTINCT_hdl >> irule hdln_mono >>
+              qexists_tac ‘ps'.b.nxt + LENGTH ps'.acq’ >> fs[]) >>
+        qpat_assum ‘trans _ _ = _’ (fn th => REWRITE_TAC [th]) >>
+        qpat_assum ‘haccepted (texec _ _) = _’
+          (fn th => REWRITE_TAC [haccepted_APPEND, haccepted_NONE, th, APPEND_NIL]) >>
+        first_assum ACCEPT_TAC) >>
+  ‘hwritten (l1hdl lfd j) (trans (srelabel (server k)) (h ++ [sn])) = hread (l1hdl lfd j) (trans (srelabel (server k)) (h ++ [sn]))’
+    by (irule server_handle_echo >> first_assum ACCEPT_TAC) >>
+  (* the start of the round *)
+  qpat_x_assum ‘ri _ _ (h, _, _)’ (strip_assume_tac o REWRITE_RULE [ri_def]) >>
+  first_x_assum (qspec_then ‘j’ mp_tac) >> simp[] >> strip_tac >>
+  ‘hread (l1hdl lfd j) (ZIP (acts, MAP SOME sn.results)) ≼ inbp lfd ps j’
+    by (irule pround_hread >> gvs[hdl_room_def] >>
+        conj_tac >- (Cases_on ‘l0_ep_st (0,[]) evs’ >> gvs[] >> metis_tac[]) >>
+        qexistsl [‘revs’, ‘hs’, ‘hw’, ‘log’, ‘ps'’, ‘w’, ‘w'’] >> simp[]) >>
+  ‘hwritten (l1hdl lfd j) (texec (srelabel (server k)) (h ++ [sn])) ≼
+   hread (l1hdl lfd j) (texec (srelabel (server k)) (h ++ [sn]))’
+    by (qpat_x_assum ‘hwritten _ (trans _ _) = _’ mp_tac >>
+        qpat_assum ‘trans _ _ = _’ (fn th => REWRITE_TAC [th]) >>
+        simp[hwritten_APPEND, hread_APPEND] >> strip_tac >>
+        pop_assum (SUBST1_TAC o SYM) >> simp[]) >>
+  ‘hread (l1hdl lfd j) (texec (srelabel (server k)) (h ++ [sn])) ≼ ep_rd j (0, []) evs’
+    by (simp[texec_SNOC, hread_APPEND] >>
+        qpat_x_assum ‘ep_rd j (0,[]) evs = _’ (fn th => REWRITE_TAC [th]) >>
+        fs[Abbr ‘acts’]) >>
+  irule isPREFIX_TRANS >> qexists_tac ‘ep_sn j (0, []) (evs ++ revs)’ >>
+  conj_tac >- first_assum ACCEPT_TAC >>
+  irule isPREFIX_TRANS >>
+  qexists_tac ‘hwritten (l1hdl lfd j) (texec (srelabel (server k)) (h ++ [sn]))’ >>
+  conj_tac >- first_assum ACCEPT_TAC >>
+  irule isPREFIX_TRANS >>
+  qexists_tac ‘hread (l1hdl lfd j) (texec (srelabel (server k)) (h ++ [sn]))’ >>
+  conj_tac >- first_assum ACCEPT_TAC >>
+  irule isPREFIX_TRANS >> qexists_tac ‘ep_rd j (0, []) evs’ >>
+  conj_tac >> first_assum ACCEPT_TAC
+QED

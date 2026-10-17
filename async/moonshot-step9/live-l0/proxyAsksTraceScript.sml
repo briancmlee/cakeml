@@ -6,8 +6,7 @@
   (lflatten_inf_often).  The EP run's round events (honestL1EPAsksRun's
   erevs) are e1DriverLoop's eround_evs (erevs_eround_evs), so a front fd
   asked in infinitely many rounds (easked_at) is asked on the trace
-  infinitely often in proxyL0Stmts' asks_io sense (easked_inf_asks, to
-  come).
+  infinitely often in proxyL0Stmts' asks_io sense (easked_inf_asks).
 *)
 Theory proxyAsksTrace
 Ancestors
@@ -99,4 +98,27 @@ Proof
   simp[erevs_def, erhist_def, erworld_def, erstate_def, nrun_erun] >>
   Cases_on ‘SND (erun lfd pol_never ifds m (w0,einit) n)’ >> gvs[] >>
   rename1 ‘SND (erun _ _ _ _ _ _) = (ws, _)’ >> PairCases_on ‘ws’ >> gvs[]
+QED
+
+(* A front fd asked in infinitely many rounds is asked infinitely often on
+   the proxy's io (asks_io's body, in_ask's poll disjunct) *)
+Theorem easked_inf_asks:
+  erun_ok lfd ifds m w0 ∧ (∀N. ∃k. N ≤ k ∧ easked_at lfd ifds m w0 k f) ⇒
+  ∀i. ∃i' ev. i ≤ i' ∧
+              LNTH i' (LAPPEND (fromList pre)
+                         (LFLATTEN (LGENLIST (λi. fromList (eround_evs lfd pol_never ifds m (w0, einit) i))
+                                             NONE))) = SOME ev ∧
+              ∃conf bs. ev = IO_event (ExtCall «sys_poll») conf bs ∧
+                        ∃e. MEM (f, e) (MAP pe_fe (pollfd_entries (DROP 16 (MAP FST bs)))) ∧ ODD e
+Proof
+  strip_tac >>
+  ho_match_mp_tac lflatten_inf_often >>
+  gen_tac >>
+  qpat_x_assum ‘∀N. ∃k. N ≤ k ∧ _’ (qspec_then ‘N’ strip_assume_tac) >>
+  qpat_x_assum ‘easked_at _ _ _ _ _ _’ (strip_assume_tac o REWRITE_RULE [easked_at_def]) >>
+  qpat_x_assum ‘erun_ok _ _ _ _’ (fn th => RULE_ASSUM_TAC (REWRITE_RULE [MATCH_MP erevs_eround_evs th])) >>
+  qexistsl [‘k’, ‘IO_event (ExtCall «sys_poll») [0w] bs’] >>
+  ASM_REWRITE_TAC [] >>
+  qexistsl [‘[0w]’, ‘bs’] >> REWRITE_TAC [] >>
+  qexists_tac ‘e’ >> ASM_REWRITE_TAC []
 QED

@@ -3793,3 +3793,118 @@ Proof
   qpat_x_assum ‘∀k. R ≤ k ∧ _ ⇒ _’ (qspec_then ‘k’ mp_tac) >> impl_tac >- simp[] >>
   strip_tac >> qexists_tac ‘k'’ >> gvs[]
 QED
+
+(* ========================================================================
+   G8. R2′: psk is a delay of the kernel's schedule
+   ======================================================================== *)
+
+(* Copied from kernelStatements, as the vocabulary above *)
+Definition delays_def:
+  delays t g' g ⇔
+    (∀n. within (upto g' (SUC n)) (upto g (t n))) ∧
+    (∀n. ∃n'. within (upto g n) (upto g' n'))
+End
+
+Theorem within_prefix_left:
+  bs ≼ as' ∧ within as' as ⇒ within bs as
+Proof
+  rw[within_def]
+  >- (imp_res_tac conns_of_prefix >> simp[])
+  >- metis_tac[data_of_prefix, IS_PREFIX_TRANS]
+  >> fs[IS_PREFIX_APPEND] >> gvs[]
+QED
+
+Theorem fin_max:
+  ∀(nc:num). (∀(j:num). j < nc ⇒ ∃(k:num). P j k) ∧
+             (∀(j:num) (k:num) (k':num). P j k ∧ k ≤ k' ⇒ P j k') ⇒
+             ∃(N:num). ∀(j:num). j < nc ⇒ P j N
+Proof
+  rpt strip_tac >>
+  qexists_tac ‘MAX_SET (IMAGE (λj. @k. P j k) (count nc))’ >> rpt strip_tac >>
+  first_x_assum irule >> qexists_tac ‘@k. P j k’ >> conj_tac
+  >- (SELECT_ELIM_TAC >> metis_tac[])
+  >> irule in_max_set >> simp[] >> qexists_tac ‘j’ >> simp[]
+QED
+
+Theorem kernel_beyond:
+  simple_run p lfd sched hw ifds m w1 ⇒
+  ∀i j. conns_of (upto (kernel_steps p lfd sched w1) i) ≤ j ⇒
+        data_of j (upto (kernel_steps p lfd sched w1) i) = [] ∧
+        ¬MEM (Eof2 j) (upto (kernel_steps p lfd sched w1) i)
+Proof
+  strip_tac >> rpt gen_tac >> strip_tac >>
+  qpat_x_assum ‘simple_run _ _ _ _ _ _ _’ (strip_assume_tac o REWRITE_RULE [simple_run_def]) >>
+  ‘vinv lfd (kworld p lfd sched w1 i) (upto (kernel_steps p lfd sched w1) i)’
+    by metis_tac[kworld_vinv] >>
+  fs[vinv_def]
+QED
+
+(* MAIN (R2′, second half): psk misses nothing of the kernel's schedule *)
+Theorem l1pf_misses_nothing:
+  simple_run p lfd sched hw ifds m w1 ∧ fds_room lfd hw ifds m w1 ∧
+  S1 lfd hw ifds m w1 ∧ S2 lfd hw ifds m w1 ∧ S3 lfd hw ifds m w1 ∧
+  (∀f. S4 lfd hw ifds m w1 f) ⇒
+  ∀n. ∃n'. within (upto (kernel_steps p lfd sched w1) n) (upto (parr lfd hw ifds m w1) n')
+Proof
+  strip_tac >> gen_tac >>
+  ‘run_ok lfd hw ifds m w1’ by fs[simple_run_def] >>
+  qabbrev_tac ‘inst = npolls (rworld lfd hw ifds m w1 n).hist − npolls w1.hist’ >>
+  ‘n ≤ inst’ by (drule round_instant_ge >> simp[Abbr ‘inst’]) >>
+  qabbrev_tac ‘kst = kernel_steps p lfd sched w1’ >>
+  qabbrev_tac ‘nc = LENGTH (rworld lfd hw ifds m w1 n).chans’ >>
+  ‘nc = conns_of (upto kst inst)’ by (drule rinv_len >> simp[Abbr ‘nc’, Abbr ‘inst’, Abbr ‘kst’]) >>
+  ‘∃k0. nc ≤ SND (pcm lfd hw ifds m w1 k0)’
+    by (qpat_assum ‘simple_run _ _ _ _ _ _ _’
+          (strip_assume_tac o REWRITE_RULE [simple_run_def]) >>
+        drule_all conns_caught_up >> simp[Abbr ‘nc’]) >>
+  qabbrev_tac ‘P = λj k. k0 ≤ k ∧
+     (EL j (rworld lfd hw ifds m w1 n).chans).peer_sent ≼ data_of j (upto (parr lfd hw ifds m w1) k) ∧
+     ((EL j (rworld lfd hw ifds m w1 n).chans).peer_eof ⇒ MEM (Eof2 j) (upto (parr lfd hw ifds m w1) k))’ >>
+  ‘∃N. ∀j. j < nc ⇒ P j N’
+    by (irule fin_max >> simp[Abbr ‘P’] >> rpt strip_tac >>
+        TRY (irule IS_PREFIX_TRANS >> qexists_tac ‘data_of j (upto (parr lfd hw ifds m w1) k)’ >>
+             simp[] >> irule data_of_prefix >> irule upto_prefix >> simp[] >> NO_TAC) >>
+        TRY (irule upto_mem_mono >> qexists_tac ‘k’ >> simp[] >> NO_TAC) >>
+        drule chan_caught_up >> simp[] >> disch_then (qspecl_then [‘n’, ‘j’] mp_tac) >>
+        simp[Abbr ‘nc’] >> strip_tac >> qexists_tac ‘k + k0’ >> simp[] >>
+        conj_tac
+        >- (irule IS_PREFIX_TRANS >> qexists_tac ‘data_of j (upto (parr lfd hw ifds m w1) k)’ >>
+            simp[] >> irule data_of_prefix >> irule upto_prefix >> simp[])
+        >> strip_tac >> irule upto_mem_mono >> qexists_tac ‘k’ >> simp[]) >>
+  qexists_tac ‘N’ >>
+  irule within_prefix_left >> qexists_tac ‘upto kst inst’ >>
+  conj_tac >- (irule upto_prefix >> simp[]) >>
+  simp[within_def] >> conj_tac
+  >- (‘0 < nc ⇒ k0 ≤ N’ by (strip_tac >> first_x_assum (qspec_then ‘0’ mp_tac) >> simp[Abbr ‘P’]) >>
+      drule conns_of_upto_parr >> disch_then (qspec_then ‘N’ SUBST1_TAC) >>
+      Cases_on ‘nc = 0’ >- simp[] >>
+      ‘SND (pcm lfd hw ifds m w1 k0) ≤ SND (pcm lfd hw ifds m w1 N)’
+        by (irule pcm_mono >> simp[]) >> simp[]) >>
+  gen_tac >> Cases_on ‘j < nc’
+  >- (first_x_assum drule >> simp[Abbr ‘P’] >> strip_tac >>
+      qpat_assum ‘simple_run _ _ _ _ _ _ _’ (fn th => mp_tac (MATCH_MP rinv_chan th)) >>
+      disch_then (qspecl_then [‘n’, ‘j’] mp_tac) >> simp[Abbr ‘nc’, Abbr ‘inst’, Abbr ‘kst’] >>
+      strip_tac >> gvs[])
+  >> qpat_assum ‘simple_run _ _ _ _ _ _ _’ (fn th => mp_tac (MATCH_MP kernel_beyond th)) >>
+  disch_then (qspecl_then [‘inst’, ‘j’] mp_tac) >> simp[Abbr ‘kst’]
+QED
+
+(* MAIN (R2′, the headline, user decision Q-L3-2): in simple worlds, with
+   room for one more fd at each round's start, psk is a delay of the
+   kernel's schedule: never ahead of it at each round's instant, and missing
+   nothing *)
+Theorem l1pf_simple:
+  simple_v2 p lfd sched w1 ∧ sched_wf2 (sk_of p lfd sched w1) ∧
+  (∀h. ¬w1.ch.emfile_drops h) ∧ winv w1 ∧ w1.listeners = [(lfd, p, [])] ∧
+  w1.chans = [] ∧ w1.open_fds = [] ∧
+  run_ok lfd hw ifds m w1 ∧ (∀n. SND (pcm lfd hw ifds m w1 n) + 1 < dimword (:64)) ∧
+  fds_room lfd hw ifds m w1 ∧
+  S1 lfd hw ifds m w1 ∧ S2 lfd hw ifds m w1 ∧ S3 lfd hw ifds m w1 ∧
+  (∀f. S4 lfd hw ifds m w1 f) ⇒
+  delays (round_instant lfd hw ifds m w1) (parr lfd hw ifds m w1)
+         (kernel_steps p lfd sched w1)
+Proof
+  strip_tac >> simp[delays_def] >> conj_tac
+  >- (gen_tac >> irule l1pf_never_ahead >> simp[])
+  >> irule l1pf_misses_nothing >> simp[simple_run_def]
+QED

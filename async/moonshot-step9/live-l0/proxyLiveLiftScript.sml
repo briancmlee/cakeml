@@ -1106,7 +1106,12 @@ QED
 (* ------------------------------------------------------------------------
    G3 (moonshot-live's backend cap): the run's connect episodes are at most
    2^62, one per pair at most (a pair's backend is set once), and the pairs
-   are below cbound / 2
+   are below cbound / 2.
+   PRE-(A) ONLY: under (A) (a connect that fails at once with a socket is
+   closed and answers EConnected NONE, so the proxy retries it) the count
+   of Connected episodes is unbounded and this does NOT hold.  The R3/(A)
+   line has proxy_conn_kept_cap_run instead (orchestrator G3′ ruling (a),
+   2026-10-17): only connects that did not fail at once are counted.
    ------------------------------------------------------------------------ *)
 
 Theorem roles_conn_count:

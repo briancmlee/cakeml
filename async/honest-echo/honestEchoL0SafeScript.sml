@@ -79,8 +79,7 @@ Proof
   drule trans_texec >> strip_tac >>
   ‘ALL_DISTINCT (haccepted (trans (srelabel (server k)) h))’
     by (‘ALL_DISTINCT (GENLIST (λi. l1hdl lfd i) ps.b.nxt)’
-          by (irule ALL_DISTINCT_hdl >> irule hdln_mono >>
-              qexists_tac ‘ps.b.nxt + LENGTH ps.acq’ >> fs[]) >>
+          by (irule ALL_DISTINCT_hdl >> fs[]) >>
         qpat_assum ‘trans _ _ = _’ (fn th => REWRITE_TAC [th]) >>
         qpat_assum ‘haccepted (texec _ _) = _’
           (fn th => REWRITE_TAC [haccepted_APPEND, haccepted_NONE, th, APPEND_NIL]) >>
@@ -103,23 +102,11 @@ Proof
   fs[]
 QED
 
-(* An episode beyond the handle range is never opened *)
+(* An episode the prefix has not accepted has sent nothing *)
 Theorem fresh_safe:
-  ri lfd m (h, (w, ps), evs) ∧ pre ≼ evs ∧ ¬(hdln (w2n lfd) j < dimword (:64)) ⇒
-  ep_sn j (0, []) pre = []
+  LENGTH (l0_accepted pre) ≤ j ⇒ ep_sn j (0, []) pre = []
 Proof
-  strip_tac >> qpat_x_assum ‘ri _ _ _’ (strip_assume_tac o REWRITE_RULE [ri_def]) >>
-  ‘FST (l0_ep_st (0, []) evs) = ps.b.nxt + LENGTH ps.acq’
-    by (Cases_on ‘l0_ep_st (0, []) evs’ >> gvs[own_ok_def]) >>
-  ‘ps.b.nxt + LENGTH ps.acq < j’
-    by (CCONTR_TAC >> ‘j ≤ ps.b.nxt + LENGTH ps.acq’ by simp[] >>
-        ‘hdln (w2n lfd) j < dimword (:64)’
-          by (irule hdln_mono >> qexists_tac ‘ps.b.nxt + LENGTH ps.acq’ >> fs[]) >>
-        fs[]) >>
-  irule ep_fold_fresh >> simp[ep_ok_def, FST_l0_ep_st] >>
-  ‘LENGTH (l0_accepted pre) ≤ LENGTH (l0_accepted evs)’
-    by (gvs[rich_listTheory.IS_PREFIX_APPEND, l0_accepted_def]) >>
-  gvs[FST_l0_ep_st]
+  strip_tac >> irule ep_fold_fresh >> simp[ep_ok_def, FST_l0_ep_st]
 QED
 
 Theorem prun_FLAT:
@@ -148,6 +135,7 @@ QED
 Theorem echo_run_safe:
   ri lfd (srelabel (server k)) ([], ws0, []) ∧
   (∀n. prounds_t lfd hw ifds (srelabel (server k)) ws0 n ≠ NONE) ∧
+  LENGTH (l0_accepted evs) < 2 ** 64 − 1 ∧
   LPREFIX (fromList evs)
     (LFLATTEN (LGENLIST (λi. fromList (pround_evs lfd hw ifds (srelabel (server k)) ws0 i)) NONE)) ⇒
   ∀j. ep_sn j (0, []) evs ≼ ep_rd j (0, []) evs
@@ -171,11 +159,13 @@ Proof
       ‘evs = FST (SND (SND (R n)))’ by (irule isPREFIX_ANTISYM >> gvs[]) >>
       Cases_on ‘R n’ >> PairCases_on ‘r’ >> gvs[] >>
       irule boundary_safe >> qexistsl [‘q’, ‘k’, ‘lfd’, ‘r1’, ‘r0’] >> fs[]) >>
-  Cases_on ‘R (SUC n)’ >> PairCases_on ‘r’ >> gvs[] >>
-  ‘ep_sn j (0, []) evs = []’ by (qpat_x_assum ‘ri _ _ (q, _, _)’
-          (fn th => irule (MATCH_MP (REWRITE_RULE [GSYM AND_IMP_INTRO] fresh_safe) th)) >>
+  (* no valid handle: j is past every episode accepted (D25) *)
+  ‘LENGTH (l0_accepted evs) ≤ j’
+    by (CCONTR_TAC >>
+        ‘hdln (w2n lfd) j < 18446744073709551616’
+          by (irule hdln_bound >> qexists_tac ‘18446744073709551615’ >> fs[]) >>
         fs[]) >>
-  simp[]
+  simp[fresh_safe]
 QED
 
 (* The listener the program listens on is in use *)
@@ -243,6 +233,8 @@ Proof
   drule listen_event >> strip_tac >>
   ‘l0_ep_step (0, []) ev = (0, [])’ by simp[l0_ep_step_def] >>
   simp[ep_fold_def] >>
+  ‘LENGTH (l0_accepted t) < 2 ** 64 − 1’
+    by (qpat_x_assum ‘LENGTH (l0_accepted _) < _’ mp_tac >> simp[l0_accepted_def]) >>
   irule echo_run_safe >> simp[] >> metis_tac[]
 QED
 

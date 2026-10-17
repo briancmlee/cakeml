@@ -40,7 +40,7 @@ Definition close_ev_def:
       (ZIP (REPLICATE 13 0w, enc_res (Ok 0)))
 End
 
-Theorem LENGTH_fd_bytes[local,simp]:
+Theorem LENGTH_fd_bytes[simp]:
   LENGTH (fd_bytes f) = 8
 Proof
   simp[fd_bytes_def, LENGTH_n2w8]
@@ -96,7 +96,7 @@ Proof
 QED
 
 (* What the spec's event functions see *)
-Theorem l0_events_of[local,simp]:
+Theorem l0_events_of[simp]:
   l0_event_accepted (acc_ev l f) = SOME f ∧
   l0_event_accepted (recv_ev f bs) = NONE ∧
   l0_event_accepted (send_ev f bs k) = NONE ∧

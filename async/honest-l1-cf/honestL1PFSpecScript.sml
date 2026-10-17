@@ -331,10 +331,10 @@ Proof
   first_x_assum drule >> strip_tac >> xapp >> fs[]
 QED
 
-Theorem hup_step_pause[local,simp]:
-  (hup_step hfs ob log ps).pause = ps.pause
+Theorem stall_step_pause[local,simp]:
+  (stall_step hfs ob log ps).pause = ps.pause
 Proof
-  simp[hup_step_def]
+  simp[stall_step_def]
 QED
 
 Theorem pf_tail_spec:
@@ -367,16 +367,34 @@ Proof
   gvs[] >> xmatch >>
   rpt (xlet_auto >- xsimpl) >>
   xlet ‘POSTv v. &L1ST b4 v * L0_EV w0 w' (evs ++ pevs ++ fevs ++ gevs ++ cevs)’
-  >- (xapp_spec l1_reap_spec >> xsimpl >> gvs[l1p_b_def, closing_of_def, hup_step_b_def] >> metis_tac[]) >>
+  >- (xapp_spec l1_reap_spec >> xsimpl >> gvs[l1p_b_def, closing_of_def, stall_step_ob_def] >> metis_tac[]) >>
   rpt (xlet_auto >- xsimpl) >>
-  xcon >> xsimpl >> gvs[end_round_def, hup_step_b_def, l1p_b_def]
+  xcon >> xsimpl >> gvs[end_round_def, stall_step_ob_def, l1p_b_def]
 QED
 
-(* The round's guard: room in the handle counter for the round's actions *)
+(* The round's accepts (D25) *)
+Theorem naccepts_spec:
+  ∀acts actsv evs.
+    LIST_TYPE SACT acts actsv ⇒
+    app (p:'ffi ffi_proj) naccepts_v [actsv] (L0_EV w0 w evs)
+      (POSTv v. &NUM (naccepts acts) v * L0_EV w0 w evs)
+Proof
+  Induct >> rpt strip_tac >>
+  xcf_with_def (fetch "honestL1PFProg" "naccepts_v_def") >>
+  gvs[LIST_TYPE_def] >> xmatch
+  >- (xlit >> xsimpl >> simp[naccepts_def]) >>
+  Cases_on ‘h’ >> gvs[SACT_def] >> xmatch
+  >- (xlet ‘POSTv v. &NUM (naccepts acts) v * L0_EV w0 w evs’
+      >- (xapp >> xsimpl) >>
+      xapp >> xsimpl >> qexists_tac ‘&naccepts acts’ >>
+      fs[NUM_def, INT_def] >> simp[integerTheory.INT_ADD]) >>
+  xapp >> xsimpl
+QED
+
+(* The round's guard: room in the handle counter for the round's accepts *)
 val guard_tac =
-  xlet ‘POSTv v. &NUM (LENGTH (m []).actions) v * L0_EV w0 w evs’
-  >- (xapp_spec (INST_TYPE [alpha |-> “:sact”] (fetch "ListProg" "length_v_thm")) >>
-      xsimpl >> metis_tac[]) >>
+  xlet ‘POSTv v. &NUM (naccepts (m []).actions) v * L0_EV w0 w evs’
+  >- (xapp_spec naccepts_spec >> xsimpl >> metis_tac[]) >>
   rpt (xlet_auto >- xsimpl);
 
 (* One round of the loop: perform m's actions, then poll, flush, fetch and
@@ -384,7 +402,7 @@ val guard_tac =
 Theorem step_pf_spec:
   COMP p SACT A (SNAPSHOT SREADY SRESP) m cv ∧ WORD lfd lfdv ∧ NUM hw hwv ∧
   LIST_TYPE NUM (MAP w2n fds) fdsv ∧ L1P ps psv ∧
-  hdl_room lfd ps (LENGTH (m []).actions) ∧
+  hdl_room lfd ps (naccepts (m []).actions) ∧
   pround lfd (pol_self hw) fds (w, ps) (m []).actions = SOME (snap, (w', ps'), log, evs1) ⇒
   app (p:'ffi ffi_proj) step_pf_v [Conv NONE [lfdv; hwv; fdsv; psv; cv]]
     (L0_EV w0 w evs)
@@ -435,7 +453,7 @@ QED
 (* Without room the step does nothing *)
 Theorem step_pf_stop_spec:
   COMP p SACT A (SNAPSHOT SREADY SRESP) m cv ∧ WORD lfd lfdv ∧ L1P ps psv ∧
-  ¬hdl_room lfd ps (LENGTH (m []).actions) ⇒
+  ¬hdl_room lfd ps (naccepts (m []).actions) ⇒
   app (p:'ffi ffi_proj) step_pf_v [Conv NONE [lfdv; hwv; fdsv; psv; cv]]
     (L0_EV w0 w evs)
     (POSTv v. &(v = Conv NONE [lfdv; hwv; fdsv; psv; cv]) * L0_EV w0 w evs)
@@ -460,7 +478,7 @@ Definition prounds_t_def:
     case prounds_t lfd hw ifds m ws0 n of
     | NONE => NONE
     | SOME (h, ws, evs, logs) =>
-        if hdl_room lfd (SND ws) (LENGTH (new_actions (log_of m) h)) then
+        if hdl_room lfd (SND ws) (naccepts (new_actions (log_of m) h)) then
           case pround lfd (pol_self hw) (ifds h) ws (new_actions (log_of m) h) of
           | NONE => NONE
           | SOME (snap, ws', log, revs) =>
@@ -476,13 +494,12 @@ Definition pt_ok_def:
 End
 
 Theorem pround_ok_room[local]:
-  l0_rely w ∧ psmall lfd ps ∧ EVERY (pact_ok lfd) acts ∧ hdl_room lfd ps (LENGTH acts) ⇒
+  l0_rely w ∧ psmall lfd ps ∧ EVERY (pact_ok lfd) acts ∧ hdl_room lfd ps (naccepts acts) ⇒
   ∃snap w' ps' log evs. pround lfd (pol_self hw) hs (w, ps) acts = SOME (snap, (w', ps'), log, evs) ∧
                         l0_rely w' ∧ psmall lfd ps'
 Proof
   strip_tac >>
-  ‘l1hdln (w2n lfd) (ps.b.nxt + LENGTH acts) < dimword (:64)’
-    by (fs[hdl_room_def, l1hdln_def] >> rw[] >> fs[]) >>
+  ‘ps.b.nxt + naccepts acts < dimword (:64)’ by fs[hdl_room_def] >>
   drule_all pround_ok >> metis_tac[]
 QED
 
@@ -521,7 +538,7 @@ QED
 Theorem prun_SUC:
   (∀n. prounds_t lfd hw ifds m ws0 n ≠ NONE) ⇒
   if hdl_room lfd (SND (FST (SND (prun lfd hw ifds m ws0 n))))
-       (LENGTH (new_actions (log_of m) (FST (prun lfd hw ifds m ws0 n)))) then
+       (naccepts (new_actions (log_of m) (FST (prun lfd hw ifds m ws0 n)))) then
     ∃snap ws' log revs.
       pround lfd (pol_self hw) (ifds (FST (prun lfd hw ifds m ws0 n)))
         (FST (SND (prun lfd hw ifds m ws0 n)))
@@ -541,7 +558,7 @@ Proof
   simp[prun_def, pround_evs_def, prounds_t_def] >>
   Cases_on ‘prounds_t lfd hw ifds m ws0 n’ >> simp[] >>
   rename1 ‘SOME x’ >> PairCases_on ‘x’ >> simp[] >>
-  Cases_on ‘hdl_room lfd x2 (LENGTH (new_actions (log_of m) x0))’ >> simp[] >>
+  Cases_on ‘hdl_room lfd x2 (naccepts (new_actions (log_of m) x0))’ >> simp[] >>
   Cases_on ‘pround lfd (pol_self hw) (ifds x0) (x1,x2) (new_actions (log_of m) x0)’ >> simp[] >>
   rename1 ‘SOME y’ >> PairCases_on ‘y’ >> simp[rich_listTheory.DROP_LENGTH_APPEND]
 QED
@@ -550,7 +567,7 @@ QED
    (honestL1PFModel's prounds) *)
 Theorem prounds_t_prounds:
   ∀n. (∀i h ws evs logs. i < n ∧ prounds_t lfd hw ifds m ws0 i = SOME (h, ws, evs, logs) ⇒
-                         hdl_room lfd (SND ws) (LENGTH (new_actions (log_of m) h))) ⇒
+                         hdl_room lfd (SND ws) (naccepts (new_actions (log_of m) h))) ⇒
       prounds_t lfd hw ifds m ws0 n = prounds lfd (pol_self hw) ifds m ws0 n
 Proof
   Induct >> simp[prounds_t_def, prounds_def] >> strip_tac >>
@@ -603,7 +620,7 @@ Proof
       PairCases_on ‘r’ >> gvs[] >>
       ‘(suspended m r0 []).actions = new_actions (log_of m) r0’
         by simp[suspended_first_poll] >>
-      reverse (Cases_on ‘hdl_room lfd r2 (LENGTH (new_actions (log_of m) r0))’) >> gvs[]
+      reverse (Cases_on ‘hdl_room lfd r2 (naccepts (new_actions (log_of m) r0))’) >> gvs[]
       >- (sg ‘app p step_pf_v [Conv NONE [lfdv; hwv; fdsv'; psv'; cv']] (L0_EV w0 r1 [])
                 (POSTv v. &(v = Conv NONE [lfdv; hwv; fdsv'; psv'; cv']) * L0_EV w0 r1 [])’
           >- (irule step_pf_stop_spec >> simp[] >> metis_tac[]) >>

@@ -123,8 +123,8 @@ QED
 Theorem pround_acc:
   pround lfd hw hs (w, ps) acts = SOME (sn, (w', ps'), log, evs) ∧
   wown lfd w ps ∧ own_ok lfd (k, opn) ps ∧ LENGTH ps.acq ≤ 1 ∧
-  l1hdln (w2n lfd) (ps.b.nxt + LENGTH acts + 1) < dimword (:64) ⇒
-  ps.b.nxt ≤ ps'.b.nxt ∧ ps'.b.nxt + LENGTH ps'.acq ≤ ps.b.nxt + LENGTH acts + 1 ∧
+  ps.b.nxt + naccepts acts < dimword (:64) ⇒
+  ps.b.nxt ≤ ps'.b.nxt ∧ ps'.b.nxt ≤ ps.b.nxt + naccepts acts ∧
   haccepted (ZIP (acts, MAP SOME sn.results)) =
     GENLIST (λi. l1hdl lfd (ps.b.nxt + i)) (ps'.b.nxt − ps.b.nxt)
 Proof
@@ -134,16 +134,13 @@ Proof
   drule pacts_acc >> strip_tac >>
   ‘l0_rely w’ by gvs[wown_def] >>
   ‘k ≤ ps.b.nxt + 1’ by gvs[own_ok_def] >>
-  ‘l1hdln (w2n lfd) k < dimword (:64)’
-    by (fs[] >> irule hdln_mono >> qexists_tac ‘ps.b.nxt + (LENGTH acts + 1)’ >> simp[]) >>
   drule_all pacts_in >> strip_tac >>
   drule_all pacts_wown >> strip_tac >>
   drule pacts_nxt >> strip_tac >>
+  drule pacts_nxt_acc >> strip_tac >>
   Cases_on ‘l0_ep_st (k, opn) evs1’ >> gvs[] >>
-  ‘LENGTH ws11.acq ≤ 1 ∧ ws11.b.nxt ≤ ps.b.nxt + LENGTH acts’
-    by (Cases_on ‘acts’ >> gvs[own_ok_def]) >>
-  ‘l1hdln (w2n lfd) (ws11.b.nxt + 1) < dimword (:64)’
-    by (fs[] >> irule hdln_mono >> qexists_tac ‘ps.b.nxt + (LENGTH acts + 1)’ >> simp[]) >>
+  ‘LENGTH ws11.acq ≤ 1’ by (Cases_on ‘acts’ >> gvs[own_ok_def]) >>
+  ‘ws11.b.nxt < dimword (:64)’ by fs[] >>
   drule_all pf_tail_in >> strip_tac >> gvs[ssnap_def]
 QED
 
@@ -160,7 +157,7 @@ QED
    first nxt; and per episode j in range the input and output relations *)
 Definition ri_def:
   ri lfd m (h, (w, ps), evs) ⇔
-    hdln (w2n lfd) (ps.b.nxt + LENGTH ps.acq) < dimword (:64) ∧
+    ps.b.nxt < dimword (:64) ∧
     wown lfd w ps ∧ own_ok lfd (l0_ep_st (0, []) evs) ps ∧ LENGTH ps.acq ≤ 1 ∧ okb ps.b ∧
     (∀i. i < LENGTH h ⇒ LENGTH (EL i h).results = LENGTH (new_actions (log_of m) (TAKE i h))) ∧
     haccepted (texec m h) = GENLIST (λi. l1hdl lfd i) ps.b.nxt ∧
@@ -174,7 +171,7 @@ End
    only through handles it has been handed *)
 Theorem ri_step:
   ri lfd m (h, (w, ps), evs) ∧
-  hdl_room lfd ps (LENGTH (new_actions (log_of m) h)) ∧
+  hdl_room lfd ps (naccepts (new_actions (log_of m) h)) ∧
   pround lfd hw hs (w, ps) (new_actions (log_of m) h) = SOME (sn, (w', ps'), log, revs) ∧
   (∀hd bs. MEM (Write hd bs) (new_actions (log_of m) h) ⇒ MEM hd (haccepted (texec m h))) ⇒
   ri lfd m (h ++ [sn], (w', ps'), evs ++ revs)
@@ -182,9 +179,9 @@ Proof
   strip_tac >>
   qabbrev_tac ‘acts = new_actions (log_of m) h’ >>
   Cases_on ‘l0_ep_st (0, []) evs’ >> rename1 ‘l0_ep_st _ evs = (k, opn)’ >>
-  ‘l1hdln (w2n lfd) (ps.b.nxt + LENGTH acts + 1) < dimword (:64)’ by gvs[hdl_room_def] >>
+  ‘ps.b.nxt + naccepts acts < dimword (:64)’ by gvs[hdl_room_def] >>
   gvs[ri_def] >>
-  ‘l1hdln (w2n lfd) (ps.b.nxt + LENGTH acts + 1) < dimword (:64)’ by fs[] >>
+  ‘ps.b.nxt + naccepts acts < dimword (:64)’ by fs[] >>
   drule_all pround_in >> strip_tac >>
   drule_all pround_acc >> strip_tac >>
   ‘∀j. hdln (w2n lfd) j < dimword (:64) ∧ ps.b.nxt ≤ j ⇒
@@ -194,12 +191,11 @@ Proof
         qpat_x_assum ‘∀hd bs. MEM (Write hd bs) acts ⇒ _’ drule >> simp[MEM_GENLIST] >>
         rpt strip_tac >>
         ‘hdln (w2n lfd) i < dimword (:64)’
-          by (irule hdln_mono >> qexists_tac ‘ps.b.nxt + LENGTH acts + 1’ >> fs[]) >>
+          by (simp[] >> irule hdln_bound >> qexists_tac ‘ps.b.nxt’ >> fs[]) >>
         ‘hdl lfd j = hdl lfd i ⇔ j = i’ by (irule hdl_eq_iff >> fs[]) >> gvs[]) >>
   drule_all pround_out >> strip_tac >>
   gvs[ssnap_def, texec_SNOC] >>
   ‘MAP FST (ZIP (acts, MAP SOME rs)) = acts’ by simp[MAP_ZIP] >>
-  conj_tac >- (irule hdln_mono >> qexists_tac ‘ps.b.nxt + LENGTH acts + 1’ >> fs[]) >>
   rpt conj_tac
   >- (rpt strip_tac >> Cases_on ‘i < LENGTH h’ >> simp[EL_APPEND1, TAKE_APPEND1] >>
       ‘i = LENGTH h’ by simp[] >> gvs[EL_APPEND2, Abbr ‘acts’])
@@ -245,11 +241,11 @@ Proof
 QED
 
 Theorem ALL_DISTINCT_hdl:
-  hdln (w2n lfd) n < dimword (:64) ⇒ ALL_DISTINCT (GENLIST (λi. l1hdl lfd i) n)
+  n < dimword (:64) ⇒ ALL_DISTINCT (GENLIST (λi. l1hdl lfd i) n)
 Proof
   rw[ALL_DISTINCT_GENLIST] >> rename1 ‘hdl lfd a = hdl lfd b’ >>
   ‘hdln (w2n lfd) a < dimword (:64) ∧ hdln (w2n lfd) b < dimword (:64)’
-    by (conj_tac >> irule hdln_mono >> qexists_tac ‘n’ >> fs[]) >>
+    by (simp[] >> conj_tac >> irule hdln_bound >> qexists_tac ‘n’ >> fs[]) >>
   ‘hdl lfd a = hdl lfd b ⇔ a = b’ by (irule hdl_eq_iff >> fs[]) >> gvs[]
 QED
 
@@ -274,9 +270,7 @@ Proof
        haccepted (texec (srelabel (server k)) x0) = GENLIST (λi. l1hdl lfd i) x2.b.nxt’
         by gvs[ri_def] >>
       drule trans_texec >> strip_tac >>
-      ‘hdln (w2n lfd) x2.b.nxt < dimword (:64)’
-        by (gvs[hdl_room_def] >> irule hdln_mono >>
-            qexists_tac ‘x2.b.nxt + LENGTH (new_actions (log_of (srelabel (server k))) x0) + 1’ >> fs[]) >>
+      ‘x2.b.nxt < dimword (:64)’ by gvs[ri_def] >>
       ‘MEM hd (haccepted (trans (srelabel (server k)) x0))’
         by (irule server_writes_accepted >>
             qpat_assum ‘trans _ _ = _’ (fn th => REWRITE_TAC [th]) >>
@@ -323,7 +317,7 @@ QED
 Theorem pround_hread:
   pround lfd hw hs (w, ps) acts = SOME (sn, (w', ps'), log, evs) ∧
   wown lfd w ps ∧ own_ok lfd (k, opn) ps ∧ LENGTH ps.acq ≤ 1 ∧
-  l1hdln (w2n lfd) (ps.b.nxt + LENGTH acts + 1) < dimword (:64) ∧
+  ps.b.nxt + naccepts acts < dimword (:64) ∧
   hdln (w2n lfd) j < dimword (:64) ⇒
   hread (l1hdl lfd j) (ZIP (acts, MAP SOME sn.results)) ≼ inbp lfd ps j
 Proof
@@ -333,12 +327,11 @@ Proof
   gvs[ssnap_def] >>
   ‘l0_rely w’ by gvs[wown_def] >>
   ‘k ≤ ps.b.nxt + 1’ by gvs[own_ok_def] >>
-  ‘l1hdln (w2n lfd) k < dimword (:64)’
-    by (fs[] >> irule hdln_mono >> qexists_tac ‘ps.b.nxt + (LENGTH acts + 1)’ >> simp[]) >>
+  ‘ps.b.nxt + naccepts acts < dimword (:64)’ by fs[] >>
   Cases_on ‘j < k’
   >- (drule_all pacts_in >> strip_tac >>
       drule_all pacts_no_recv >> strip_tac >>
-      qpat_x_assum ‘∀j. j < k ⇒ _’ (qspec_then ‘j’ mp_tac) >> simp[] >>
+      qpat_x_assum ‘∀j. j < k ∧ _ ⇒ _’ (qspec_then ‘j’ mp_tac) >> simp[] >>
       qpat_x_assum ‘∀s. ep_rd j s evs1 = []’ (fn th => simp[th]) >> strip_tac >>
       simp[rich_listTheory.IS_PREFIX_APPEND] >> qexists_tac ‘inbp lfd ws11 j’ >> simp[]) >>
   ‘hread (l1hdl lfd j) (ZIP (acts, MAP SOME rs)) = []’
@@ -357,7 +350,7 @@ QED
 Theorem round_safe:
   ri lfd (srelabel (server k)) (h, (w, ps), evs) ∧
   ri lfd (srelabel (server k)) (h ++ [sn], (w', ps'), evs ++ revs) ∧
-  hdl_room lfd ps (LENGTH (new_actions (log_of (srelabel (server k))) h)) ∧
+  hdl_room lfd ps (naccepts (new_actions (log_of (srelabel (server k))) h)) ∧
   pround lfd hw hs (w, ps) (new_actions (log_of (srelabel (server k))) h) =
     SOME (sn, (w', ps'), log, revs) ∧
   evs ≼ pre ∧ pre ≼ evs ++ revs ∧ hdln (w2n lfd) j < dimword (:64) ⇒
@@ -375,8 +368,7 @@ Proof
   drule trans_texec >> strip_tac >>
   ‘ALL_DISTINCT (haccepted (trans (srelabel (server k)) (h ++ [sn])))’
     by (‘ALL_DISTINCT (GENLIST (λi. l1hdl lfd i) ps'.b.nxt)’
-          by (irule ALL_DISTINCT_hdl >> irule hdln_mono >>
-              qexists_tac ‘ps'.b.nxt + LENGTH ps'.acq’ >> fs[]) >>
+          by (irule ALL_DISTINCT_hdl >> fs[]) >>
         qpat_assum ‘trans _ _ = _’ (fn th => REWRITE_TAC [th]) >>
         qpat_assum ‘haccepted (texec _ _) = _’
           (fn th => REWRITE_TAC [haccepted_APPEND, haccepted_NONE, th, APPEND_NIL]) >>

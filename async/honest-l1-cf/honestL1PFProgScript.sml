@@ -339,8 +339,8 @@ Definition fetch_recv_log_def:
 End
 
 (* D19's hung-up step, with the outboxes of the state before the flush *)
-Definition hup_step_b_def:
-  hup_step_b hfs b0 log ps = hup_step hfs (outbox_of b0) log ps
+Definition stall_step_ob_def:
+  stall_step_ob hfs b0 log ps = stall_step hfs (outbox_of b0) log ps
 End
 
 (* An fd the flush skips, and the reap closes *)
@@ -356,17 +356,17 @@ Definition set_b_def:
   set_b ps b = ps with b := b
 End
 
-(* Room for n more handles, with one to spare (a pending accepted
-   connection): a round with at most n accepts cannot overflow the handle
-   counter.  Without room the loop stops (spins without I/O):
-   after 2^64 accepted connections, unreachable in practice; a deliberate
-   choice over wrapping the counter (which would reuse handles) *)
+(* D25: room for the handles of a round with n accepts (only an Accept
+   takes a handle): handles nxt .. nxt + n - 1 exist iff nxt + n < 2^64
+   (honestL1PFInv l1hdln_lt).  Without room the loop stops (spins without
+   I/O): after 2^64 - 1 handed-out connections, unreachable in practice; a
+   deliberate choice over wrapping the counter (which would reuse handles) *)
 Definition hdl_room_def:
-  hdl_room (lfd:word64) ps n ⇔ l1hdln (w2n lfd) (ps.b.nxt + n + 1) < dimword (:64)
+  hdl_room (lfd:word64) ps n ⇔ ps.b.nxt + n < dimword (:64)
 End
 
 Theorem hdl_room_num:
-  hdl_room (lfd:word64) ps n ⇔ l1hdln (w2n lfd) (ps.b.nxt + n + 1) < 18446744073709551616
+  hdl_room (lfd:word64) ps n ⇔ ps.b.nxt + n < 18446744073709551616
 Proof
   simp[hdl_room_def]
 QED
@@ -415,13 +415,13 @@ val r = tr fetch_acc_upd_def;
 val r = tr fetch_recv_upd_def;
 val r = tr fetch_acc_log_def;
 val r = tr fetch_recv_log_def;
-val r = tr pf_hupwait_def;
-val r = tr hup_fds_def;
+val r = tr pf_sendwait_def;
+val r = tr pf_held_def;
 val r = tr drop_out_def;
 val r = tr listTheory.nub_def;
 val r = tr listTheory.FOLDL;
-val r = tr hup_step_def;
-val r = tr hup_step_b_def;
+val r = tr stall_step_def;
+val r = tr stall_step_ob_def;
 val r = tr quiet_fd_def;
 val r = tr l1p_b_def;
 val r = tr set_b_def;
@@ -531,16 +531,25 @@ Quote add_cakeml:
     in
       case fl of (ps3a, log) =>
       let
-        val ps3 = hup_step_b (hup_fds rv) (l1p_b ps) log ps3a
+        val ps3 = stall_step_ob (pf_held ps3a) (l1p_b ps) log ps3a
         val b4 = l1_reap (closing_of ps3) (l1p_b ps3)
         val ps4 = end_round ps3 b4
       in (pf_ready lfd ps4 hs, ps4) end
     end;
 
+  fun naccepts acts =
+    case acts of
+      [] => 0
+    | a :: rest =>
+        (case a of
+           Accept l => naccepts rest + 1
+         | Read h n => naccepts rest
+         | Write h s => naccepts rest);
+
   fun step_pf st =
     case st of (lfd, hw, fds, ps, c) =>
     case c of (acts, s) =>
-    if not (hdl_room lfd ps (List.length acts)) then st else
+    if not (hdl_room lfd ps (naccepts acts)) then st else
     case pacts lfd ps acts of (ps1, rs) =>
     case pf_tail lfd hw (map_w64 fds) ps1 of (rdy, ps2) =>
       (lfd, hw, add_accepted fds rs, ps2, Async.poll c (map_num rdy, 0, rs));

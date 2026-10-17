@@ -53,6 +53,16 @@ Proof
   drule cacts_mem >> strip_tac >> gvs[cact1_def] >> every_case_tac >> gvs[]
 QED
 
+(* nor closes or shuts one (E1's noclose) *)
+Theorem cacts_noclose:
+  EVERY noclose (MAP SND (cacts a st R))
+Proof
+  simp[EVERY_MEM, MEM_cacts] >> rpt strip_tac >>
+  rename1 ‘MEM x (cact1 _ _ (EL i st.cs) _)’ >>
+  Cases_on ‘EL i st.cs’ >> gvs[cact1_def, AllCaseEqs(), noclose_def] >>
+  rpt (pop_assum mp_tac) >> rw[] >> simp[]
+QED
+
 Theorem nhdls_APPEND:
   nhdls (l1 ++ l2) = nhdls l1 + nhdls l2
 Proof
@@ -201,6 +211,8 @@ Proof
   Cases_on ‘EL ci st.cs’ >> gvs[cact1_def] >> every_case_tac >> gvs[eact_ok_def] >>
   rename1 ‘EL ci st.cs = CUp hd rest’ >>
   drule_all cinv_conn >> strip_tac >> first_x_assum drule >> strip_tac >> gvs[] >>
+  ‘EVERY noclose (TAKE i (MAP SND (cacts a st R)))’
+    by (irule EVERY_TAKE >> simp[cacts_noclose]) >>
   ‘ALOOKUP esi.ctbl (hdl lfd j) = NONE’ by metis_tac[eacts_ctbl_none] >>
   simp[]
 QED
@@ -229,6 +241,7 @@ Proof
     by (rpt strip_tac >> qpat_x_assum ‘cinv _ _ _ _ _’ (strip_assume_tac o REWRITE_RULE[cinv_def]) >>
         first_x_assum (qspecl_then [‘hd’, ‘f’] mp_tac) >> simp[]) >>
   conj_tac >> TRY (qexists_tac ‘j’ >> simp[] >> NO_TAC) >>
+  assume_tac (Q.GENL [‘a’, ‘st’, ‘R’] cacts_noclose) >>
   qspecl_then [‘MAP SND (cacts a st R)’, ‘w’, ‘es’, ‘rs’, ‘evs’, ‘w1’, ‘es1’, ‘k’, ‘hd’, ‘n’, ‘y’, ‘j’]
     mp_tac eacts_ctbl_gone >>
   ASM_SIMP_TAC (srw_ss()) [EL_MAP]
@@ -258,6 +271,7 @@ QED
 (* A handle without a connect entry keeps none through the round *)
 Theorem round_ctbl_none:
   ebund lfd w es ∧ eacts lfd pol (w, es) acts = SOME (rs, evs, (w1, es1)) ∧
+  EVERY noclose acts ∧
   etail lfd pol hs (w1, es1) = SOME (rdy, (w2, es2), log, tevs) ∧
   j < es.p.b.nxt ∧ ALOOKUP es.ctbl (hdl lfd j) = NONE ⇒
   ALOOKUP es2.ctbl (hdl lfd j) = NONE
@@ -274,7 +288,7 @@ Theorem client_round:
   ∃rs aevs w1 es1 rdy w2 es2 log tevs.
     eacts lfd (pol : l1p -> word64 -> bool) (w, es) (MAP SND (cacts a st R)) = SOME (rs, aevs, (w1, es1)) ∧
     etail lfd pol (FLAT (MAP chd st.cs)) (w1, es1) = SOME (rdy, (w2, es2), log, tevs) ∧
-    esmall lfd es2 ∧ es2.p.b.nxt = es.p.b.nxt + LENGTH (conn_hdls rs) ∧
+    esmall lfd es2 ∧ es2.shq = [] ∧ es2.p.b.nxt = es.p.b.nxt + LENGTH (conn_hdls rs) ∧
     es2.p.b.nxt < cbound + N ∧ (∀g. ¬MEM (FConn g) log) ∧
     cinv lfd N (cupd rqs st (cacts a st R) rs) es2 (set rdy)
 Proof
@@ -295,7 +309,11 @@ Proof
   qexistsl_tac [‘rs’, ‘aevs’, ‘w1’, ‘es1’, ‘rdy’, ‘w2’, ‘es2’, ‘log’, ‘tevs’] >>
   ‘EVERY (λx. ∀l. x ≠ EAccept l) (MAP SND (cacts a st R))’ by simp[cacts_no_accept] >>
   ‘es1.p.b.nxt = es.p.b.nxt + LENGTH (conn_hdls rs)’ by metis_tac[eacts_nxt] >>
+  ‘EVERY noclose (MAP SND (cacts a st R))’ by simp[cacts_noclose] >>
   ‘ebund lfd w1 es1’ by metis_tac[eacts_ebund] >>
+  ‘es2.shq = []’
+    by (qpat_x_assum ‘etail _ _ _ _ = _’ (mp_tac o MATCH_MP etail_shq) >>
+        qpat_x_assum ‘ebund lfd w1 es1’ mp_tac >> simp[ebund_def, eown_def]) >>
   ‘LENGTH rs = LENGTH (cacts a st R)’ by (drule eacts_length >> simp[]) >>
   simp[] >> conj_tac
   >- (* no connection accepted *)
@@ -366,6 +384,7 @@ QED
 (* L1's bundle at each round's start, from the refinement *)
 Theorem erounds_ebund:
   l0_rely w0 ∧ fds_lt w0 ∧ MEM lfd (l0_used w0) ∧
+  (∀hh. EVERY noclose (new_actions (log_of m) hh)) ∧
   (∀n'. n' ≤ n ⇒ SND (ecm lfd pol ifds m w0 n') + 1 < dimword (:64)) ∧
   erounds lfd pol ifds m (w0, einit) n = SOME (h, ws, evs, logs) ⇒
   ebund lfd (FST ws) (SND ws)
@@ -393,16 +412,21 @@ Proof
       >- simp[einit_def, honestL1PFModelTheory.pinit_def, honestL1ModelTheory.l1init_def]) >>
   pop_assum strip_assume_tac >> PairCases_on ‘ws’ >> gvs[] >>
   ‘ebund lfd ws0 ws1’
-    by (drule_at (Pos last) erounds_ebund >> simp[]) >>
+    by (drule_at (Pos last) erounds_ebund >> simp[cprog_noclose]) >>
   qspecl_then [‘cstate a N rqs h’, ‘ws1’, ‘ws0’, ‘cready h’] mp_tac client_round >>
   impl_tac >- simp[] >> strip_tac >>
+  ‘eshuts (w2, es2) = SOME ((w2, es2), [])’ by (irule eshuts_nil >> first_assum ACCEPT_TAC) >>
   ‘SND (ecm lfd pol (cifds a N rqs) (cprog a N rqs) w0 (SUC n)) = es2.p.b.nxt’
-    by (qpat_x_assum ‘erounds _ _ _ _ _ n = _’ assume_tac >>
-        drule ecm_step_conns >> simp[cprog_new_actions, cifds_def, cstate_last] >>
-        disch_then drule >> disch_then drule >> simp[]) >>
-  qexistsl_tac [‘h ++ [ssnap rdy rs]’, ‘(w2, es2)’, ‘evs ++ (aevs ++ tevs)’, ‘logs ++ [log]’] >>
+    by (qspecl_then [‘lfd’, ‘pol’, ‘cifds a N rqs’, ‘cprog a N rqs’, ‘w0’, ‘n’, ‘h’, ‘(ws0, ws1)’,
+                     ‘evs’, ‘logs’, ‘rs’, ‘aevs’, ‘(w1, es1)’, ‘rdy’, ‘(w2, es2)’, ‘log’, ‘tevs’,
+                     ‘(w2, es2)’, ‘[]’] mp_tac
+          (Q.GENL [‘lfd’, ‘pol’, ‘ifds’, ‘m’, ‘w0’, ‘n’, ‘h’, ‘ws’, ‘evs’, ‘logs’, ‘rs’, ‘aevs’,
+                   ‘ws1’, ‘rdy’, ‘ws2’, ‘log’, ‘tevs’, ‘ws3’, ‘shevs’] ecm_step_conns) >>
+        simp[cprog_new_actions, cifds_def, cstate_last]) >>
+  qexistsl_tac [‘h ++ [ssnap rdy rs]’, ‘(w2, es2)’, ‘evs ++ (aevs ++ tevs ++ [])’, ‘logs ++ [log]’] >>
   rpt conj_tac
-  >- simp[erounds_def, eround_def, cprog_new_actions, cifds_def, cstate_last]
+  >- (qpat_assum ‘eshuts _ = _’ (fn th =>
+        simp[erounds_def, eround_def, cprog_new_actions, cifds_def, cstate_last, th]))
   >- simp[cstate_SNOC, cstep_def, asyncM3WorldTheory.ssnap_def, cstate_last]
   >- simp[]
   >- simp[]

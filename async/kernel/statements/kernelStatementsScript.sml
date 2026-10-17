@@ -30,11 +30,11 @@
     K output polls; no [F3], design/36 §6, 2026-10-17).
   - quiet_on_kernel_claim: quiescence on the kernel, through a blocking
     variant of L1: with finitely many arrivals the program eventually
-    sleeps in a blocking poll, unless [F1] fails.  It relies on D19 (user
-    decision Q-L3-1, option 2): on POLLHUP, L1 reads what is left; a
-    broken fd's outbox is dropped and it is closed; a half-closed one keeps
-    flushing, is closed when drained, and is dropped after K rounds without
-    send progress.  hup_spin_bite (PROVED) is why: [P poll]
+    sleeps in a blocking poll, unless [F1] fails.  It relies on D23 (user
+    decision; the write timeout, generalising D19): a fd whose flush stalls
+    for K rounds has its outbox dropped, so every stalled flush ends, and
+    the blocking L1 blocks only when no fd it holds has output pending.
+    hup_spin_bite (PROVED) is why: [P poll]
     lets the kernel report POLLHUP on a hung-up socket on every poll,
     whatever events were asked for, so a blocking poll that lists such an
     fd returns at once, forever.
@@ -403,9 +403,12 @@ End
    with finitely many arrivals it sleeps, unless [F1] fails or accepts fail
    infinitely often (D18's excuse: under EMFILE/ENFILE a blocking L1 keeps
    retrying the accept, so a correct program may never sleep).  There is no
-   POLLHUP disjunct: under D19 (user decision Q-L3-1) L1 closes a hung-up
-   fd, so none stays in the blocking set; hup_spin_bite below is why the
-   policy is needed *)
+   POLLHUP disjunct: a blocking poll never lists a hung-up fd.  An fd at EOF
+   is not polled for input (the server is told and reads the EOF, which
+   closes it), and the blocking L1 blocks only when no fd it holds has
+   output pending; D23's write timeout ends every stalled flush, so this is
+   eventually the case.  hup_spin_bite below is why a fd that stays in the
+   blocking set would be fatal *)
 Definition quiet_on_kernel_claim_def:
   quiet_on_kernel_claim guar prog ⇔
     ∀w0. l0_server_world w0 ⇒

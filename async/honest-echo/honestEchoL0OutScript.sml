@@ -78,6 +78,12 @@ Definition oi_def:
     (ps.b.nxt ≤ j ⇒ snt = [] ∧ hwt = [] ∧ obp lfd ps opn j = [])
 End
 
+Theorem isPREFIX_APPEND_L:
+  a ++ b ≼ c ⇒ a ≼ c
+Proof
+  rw[] >> irule isPREFIX_TRANS >> qexists_tac ‘a ++ b’ >> simp[]
+QED
+
 Theorem oi_drop:
   oi lfd ps opn snt hwt j ∧ sn ++ obp lfd ps' opn' j ≼ obp lfd ps opn j ∧
   ¬live lfd ps' j ∧ ps.b.nxt ≤ ps'.b.nxt ∧
@@ -291,4 +297,149 @@ Proof
       ‘epfd opn ps.b.nxt = SOME f’ by metis_tac[epfd_iff] >> gvs[]) >>
   ‘hdl l j ≠ hdl l ps.b.nxt’ by simp[hdl_eq_iff] >>
   gvs[oi_def, obp_def, live_def, outbox_of_def]
+QED
+
+(* An operation that leaves episode j's fd, handle entry and that fd's
+   buffers leaves j's bytes and liveness *)
+Theorem obp_frame:
+  epfd opn' j = epfd opn j ∧
+  ALOOKUP ps'.b.tbl (l1hdl lfd j) = ALOOKUP ps.b.tbl (l1hdl lfd j) ∧
+  (∀g. epfd opn j = SOME g ∨ ALOOKUP ps.b.tbl (l1hdl lfd j) = SOME g ⇒
+       (MEM g ps'.b.closing ⇔ MEM g ps.b.closing) ∧
+       outbox_of ps'.b g = outbox_of ps.b g ∧ (MEM g ps'.b.gone ⇔ MEM g ps.b.gone)) ⇒
+  obp lfd ps' opn' j = obp lfd ps opn j ∧ (live lfd ps' j ⇔ live lfd ps j)
+Proof
+  rw[obp_def, live_def] >> every_case_tac >> gvs[] >> metis_tac[]
+QED
+
+Theorem MEM_SND_ADELKEY_other[local]:
+  (∀g. MEM (h, g) tbl ⇒ g = f) ∧ g ≠ f ⇒
+  (MEM g (MAP SND (ADELKEY h tbl)) ⇔ MEM g (MAP SND tbl))
+Proof
+  rw[ADELKEY_def, MEM_MAP, MEM_FILTER, EXISTS_PROD] >> metis_tac[]
+QED
+
+Theorem epfd_ADELKEY:
+  ep_ok (k, opn) ∧ epfd (ADELKEY f opn) j = SOME g ⇒ epfd opn j = SOME g ∧ g ≠ f
+Proof
+  strip_tac >> ‘ep_ok (k, ADELKEY f opn)’ by metis_tac[ep_ok_ADELKEY] >>
+  ‘ALOOKUP (ADELKEY f opn) g = SOME j’ by metis_tac[epfd_iff] >>
+  gvs[ALOOKUP_ADELKEY] >> metis_tac[epfd_iff]
+QED
+
+Theorem epfd_ADELKEY_other:
+  ep_ok (k, opn) ∧ ALOOKUP opn f = SOME i ∧ j ≠ i ⇒ epfd (ADELKEY f opn) j = epfd opn j
+Proof
+  strip_tac >> ‘ep_ok (k, ADELKEY f opn)’ by metis_tac[ep_ok_ADELKEY] >>
+  Cases_on ‘epfd opn j’
+  >- (Cases_on ‘epfd (ADELKEY f opn) j’ >> simp[] >> metis_tac[epfd_ADELKEY, NOT_SOME_NONE]) >>
+  ‘ALOOKUP opn x = SOME j’ by metis_tac[epfd_iff] >>
+  ‘x ≠ f’ by (strip_tac >> gvs[]) >>
+  ‘ALOOKUP (ADELKEY f opn) x = SOME j’ by simp[ALOOKUP_ADELKEY] >>
+  metis_tac[epfd_iff]
+QED
+
+Theorem okb_flushing:
+  okb b ∧ (∀g. MEM (h, g) b.tbl ⇒ g = f) ⇒
+  okb (b with <| tbl := ADELKEY h b.tbl; closing := f :: b.closing |>)
+Proof
+  simp[okb_def] >> rpt strip_tac >> Cases_on ‘f' = f’ >> simp[] >>
+  ‘MEM f' (MAP SND (ADELKEY h b.tbl)) ⇔ MEM f' (MAP SND b.tbl)’
+    by (irule MEM_SND_ADELKEY_other >> simp[] >> qexists_tac ‘f’ >> simp[]) >>
+  gvs[outbox_of_def] >> first_x_assum (qspec_then ‘f'’ mp_tac) >> simp[outbox_of_def]
+QED
+
+Theorem okb_closed:
+  okb b ∧ (∀g. MEM (h, g) b.tbl ⇒ g = f) ⇒
+  okb (forget f (b with tbl := ADELKEY h b.tbl))
+Proof
+  simp[okb_def, forget_def, MEM_FILTER] >> rpt strip_tac >> Cases_on ‘f' = f’ >>
+  gvs[outbox_of_def, set_outbox_def, ALOOKUP_ADELKEY] >>
+  ‘MEM f' (MAP SND (ADELKEY h b.tbl)) ⇔ MEM f' (MAP SND b.tbl)’
+    by (irule MEM_SND_ADELKEY_other >> simp[] >> qexists_tac ‘f’ >> simp[]) >>
+  first_x_assum (qspec_then ‘f'’ mp_tac) >> simp[outbox_of_def]
+QED
+
+(* A read: it moves no bytes out; at EOF it takes the handle away (the fd
+   still flushing, or closed) *)
+Theorem pdo_read_out:
+  pdo lfd (w, ps) (Read h n) = SOME (r, (w', ps'), evs) ∧ l0_rely w ∧
+  own_ok lfd (k, opn) ps ∧ hdln (w2n lfd) k < dimword (:64) ∧ okb ps.b ⇒
+  okb ps'.b ∧ ps'.b.nxt = ps.b.nxt ∧
+  ∀j snt hwt. hdln (w2n lfd) j < dimword (:64) ∧ oi lfd ps opn snt hwt j ⇒
+    oi lfd ps' (SND (l0_ep_st (k, opn) evs)) (snt ++ ep_sn j (k, opn) evs) hwt j
+Proof
+  strip_tac >> ‘ep_ok (k, opn)’ by gvs[own_ok_def] >>
+  qpat_x_assum ‘pdo _ _ _ = _’ mp_tac >> simp[pdo_def] >>
+  Cases_on ‘ALOOKUP ps.b.tbl h’ >> simp[]
+  >- (strip_tac >> gvs[ep_fold_def, set_inb_def] >> rpt strip_tac >>
+      qmatch_goalsub_abbrev_tac ‘oi lfd PS’ >> ‘PS.b = ps.b’ by gvs[Abbr ‘PS’] >>
+      drule oi_b >> disch_then (qspec_then ‘lfd’ SUBST1_TAC) >> simp[]) >>
+  rename1 ‘ALOOKUP ps.b.tbl h = SOME f’ >>
+  IF_CASES_TAC >> simp[]
+  >- (strip_tac >> gvs[ep_fold_def, set_inb_def] >> rpt strip_tac >>
+      qmatch_goalsub_abbrev_tac ‘oi lfd PS’ >> ‘PS.b = ps.b’ by gvs[Abbr ‘PS’] >>
+      drule oi_b >> disch_then (qspec_then ‘lfd’ SUBST1_TAC) >> simp[]) >>
+  reverse IF_CASES_TAC >> simp[]
+  >- (strip_tac >> gvs[ep_fold_def, set_inb_def] >> rpt strip_tac >>
+      qmatch_goalsub_abbrev_tac ‘oi lfd PS’ >> ‘PS.b = ps.b’ by gvs[Abbr ‘PS’] >>
+      drule oi_b >> disch_then (qspec_then ‘lfd’ SUBST1_TAC) >> simp[]) >>
+  (* EOF *)
+  drule_all own_tbl_lookup >> strip_tac >> rename1 ‘h = l1hdl lfd i’ >>
+  ‘i < k’ by gvs[own_ok_def] >>
+  ‘epfd opn i = SOME f’ by metis_tac[epfd_iff] >>
+  ‘hdln (w2n lfd) i < dimword (:64)’ by (irule hdln_mono >> qexists_tac ‘k’ >> simp[]) >>
+  ‘∀g. MEM (h, g) ps.b.tbl ⇒ g = f’ by metis_tac[own_tbl_entry_fd] >>
+  ‘∀j. hdln (w2n lfd) j < dimword (:64) ∧ j ≠ i ⇒
+       l1hdl lfd j ≠ l1hdl lfd i ∧ (∀g. epfd opn j = SOME g ⇒ g ≠ f) ∧
+       (∀g. ALOOKUP ps.b.tbl (l1hdl lfd j) = SOME g ⇒ g ≠ f)’
+    by (rpt gen_tac >> strip_tac >>
+        ‘l1hdl lfd j ≠ l1hdl lfd i’ by simp[hdl_eq_iff] >> simp[] >> conj_tac
+        >- (strip_tac >> ‘ALOOKUP opn f = SOME j’ by metis_tac[epfd_iff] >> gvs[]) >>
+        rpt strip_tac >> gvs[] >>
+        ‘ALOOKUP ps.b.tbl (l1hdl lfd j) = SOME f’ by simp[] >>
+        drule_all own_tbl_lookup >> strip_tac >> rename1 ‘l1hdl lfd j = l1hdl lfd i'’ >>
+        ‘i' = i’ by gvs[] >> gvs[] >>
+        ‘hdln (w2n lfd) j < dimword (:64) ∧ hdln (w2n lfd) i < dimword (:64)’ by simp[] >>
+        qpat_x_assum ‘l1hdl _ _ = _’ mp_tac >> simp[hdl_eq_iff]) >>
+  IF_CASES_TAC >> simp[]
+  >- ((* EOF and nothing to flush: the fd is closed *)
+      ‘outbox_of ps.b f = []’ by (gvs[okb_def] >> metis_tac[]) >>
+      simp[PULL_EXISTS] >> rpt gen_tac >> PairCases_on ‘z’ >> simp[] >> strip_tac >> gvs[] >>
+      drule l1_close_shape >> strip_tac >> gvs[] >>
+      drule_all sys_close_event >> strip_tac >>
+      conj_tac >- (irule okb_closed >> gvs[]) >>
+      simp[ep_fold_def, forget_def] >>
+      rpt strip_tac >>
+      qmatch_goalsub_abbrev_tac ‘oi lfd PS OPN’ >>
+      ‘OPN = opn ∨ OPN = ADELKEY f opn’
+        by (simp[Abbr ‘OPN’, l0_ep_step_def] >> every_case_tac >> gvs[]) >>
+      (Cases_on ‘j = i’
+       >- (qpat_x_assum ‘j = i’ SUBST_ALL_TAC >>
+           ‘¬live lfd PS i ∧ obp lfd PS OPN i = []’
+             by (simp[Abbr ‘PS’, obp_def, live_def, ALOOKUP_ADELKEY] >>
+                 every_case_tac >> gvs[MEM_FILTER] >>
+                 drule_all epfd_ADELKEY >> strip_tac >> gvs[]) >>
+           gvs[oi_def] >> conj_tac
+           >- (imp_res_tac isPREFIX_APPEND_L >> fs[]) >>
+           gvs[Abbr ‘PS’]) >>
+       first_x_assum drule_all >> strip_tac >>
+       ‘epfd OPN j = epfd opn j’ by (gvs[] >> metis_tac[epfd_ADELKEY_other]) >>
+       ‘obp lfd PS OPN j = obp lfd ps opn j ∧ (live lfd PS j ⇔ live lfd ps j)’
+         by (irule obp_frame >> simp[Abbr ‘PS’, ALOOKUP_ADELKEY, MEM_FILTER] >>
+             simp[outbox_of_def, set_outbox_def, ALOOKUP_ADELKEY] >> metis_tac[]) >>
+       gvs[oi_def, Abbr ‘PS’])) >>
+  (* EOF with bytes to flush: the fd closes later *)
+  strip_tac >> gvs[ep_fold_def] >>
+  conj_tac >- (irule okb_flushing >> gvs[]) >>
+  rpt strip_tac >> qmatch_goalsub_abbrev_tac ‘oi lfd PS’ >>
+  Cases_on ‘j = i’
+  >- (gvs[] >>
+      ‘¬live lfd PS i ∧ obp lfd PS opn i = obp lfd ps opn i’
+        by simp[Abbr ‘PS’, obp_def, live_def, ALOOKUP_ADELKEY, outbox_of_def] >>
+      gvs[oi_def, Abbr ‘PS’]) >>
+  first_x_assum drule_all >> strip_tac >>
+  ‘obp lfd PS opn j = obp lfd ps opn j ∧ (live lfd PS j ⇔ live lfd ps j)’
+    by (irule obp_frame >> simp[Abbr ‘PS’, ALOOKUP_ADELKEY, outbox_of_def] >> metis_tac[]) >>
+  gvs[oi_def, Abbr ‘PS’]
 QED

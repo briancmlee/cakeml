@@ -14,7 +14,7 @@ Ancestors
   asyncCore asyncLevel1 asyncTranscript honestL1PFProg honestL1PFSpec
   asyncServer asyncServerSafety asyncM4GTrans
   honestEchoL0Prog honestEchoL0Main honestEchoL0Sem honestL1PFInv honestL1Inv
-  honestL0Fdok honestL0Outcome honestL1PFRefine
+  honestL0Fdok honestL0Outcome honestL1PFRefine honestEchoL0Stdio honestL1PFRound
 Libs
   preamble
 
@@ -459,21 +459,30 @@ Proof
   simp[send_fd_def, recv_fd_def, l0_event_accepted_def, l0_event_closed_def]
 QED
 
+(* The loop's rounds never stop (D25's guard aside, the round is total) *)
+Theorem echo_prounds_total:
+  l0_rely w0 ∧ sys_listen_echo w0 = SOME (out, w1, ev) ∧ listen_fd out = SOME k ⇒
+  ∀n. prounds_t (n2w k) echo_hw (asyncM4LiveInterest$live [n2w k] (log_of (srelabel (server k))))
+        (srelabel (server k)) (w1, pinit) n ≠ NONE
+Proof
+  strip_tac >>
+  ‘k < 2147483648’ by metis_tac[listen_fd_small] >>
+  ‘l0_rely w1’ by (gvs[sys_listen_echo_def] >> metis_tac[l0_do_rely]) >>
+  ‘psmall (n2w k) pinit’
+    by simp[psmall_def, pinit_def, l1init_def, small_fds_def, small_def] >>
+  gen_tac >>
+  qspecl_then [‘w1’, ‘pinit’, ‘n2w k’, ‘echo_hw’, ‘asyncM4LiveInterest$live [n2w k] (log_of (srelabel (server k)))’, ‘srelabel (server k)’]
+    mp_tac (Q.GENL [‘w0’, ‘ps0’, ‘lfd’, ‘hw’, ‘ifds’, ‘m’] prounds_t_total) >>
+  simp[server_pt_ok] >> disch_then (qspec_then ‘n’ strip_assume_tac) >> simp[]
+QED
+
 (* MAIN: the program's trace when the listen succeeds is safe *)
 Theorem echo_l0_run_safe:
   l0_rely w0 ∧ fds_lt w0 ∧ sys_listen_echo w0 = SOME (out, w1, ev) ∧ listen_fd out = SOME k ⇒
   echo_safe_l0 (LCONS ev (echo_l0_run k w1))
 Proof
   strip_tac >> drule_all ri_echo_base >> strip_tac >>
-  ‘k < 2147483648’ by metis_tac[listen_fd_small] >>
-  ‘∀n. prounds_t (n2w k) echo_hw (asyncM4LiveInterest$live [n2w k] (log_of (srelabel (server k)))) (srelabel (server k)) (w1, pinit) n ≠ NONE’
-    by (‘l0_rely w1’ by (gvs[sys_listen_echo_def] >> metis_tac[l0_do_rely]) >>
-        ‘psmall (n2w k) pinit’
-          by simp[psmall_def, pinit_def, l1init_def, small_fds_def, small_def] >>
-        gen_tac >>
-        qspecl_then [‘w1’, ‘pinit’, ‘n2w k’, ‘echo_hw’, ‘asyncM4LiveInterest$live [n2w k] (log_of (srelabel (server k)))’, ‘srelabel (server k)’]
-          mp_tac (Q.GENL [‘w0’, ‘ps0’, ‘lfd’, ‘hw’, ‘ifds’, ‘m’] prounds_t_total) >>
-        simp[server_pt_ok] >> disch_then (qspec_then ‘n’ strip_assume_tac) >> simp[]) >>
+  drule_all echo_prounds_total >> strip_tac >>
   rw[echo_safe_l0_def, l0_sent_fold, l0_read_fold] >>
   gvs[LPREFIX_LCONS] >> TRY (simp[ep_fold_def] >> NO_TAC) >>
   Cases_on ‘evs’ >> gvs[] >>
@@ -518,11 +527,11 @@ QED
 (* The listen failed *)
 Theorem listen_failed_echo:
   l0_rely w ∧ sys_listen_echo w = SOME (out, w1, ev) ∧ listen_fd out = NONE ⇒
-  l0_listen_failed ev
+  l0_listen_failed_ev ev
 Proof
   rw[sys_listen_echo_def, l0_do_def, AllCaseEqs()] >>
   drule_all l0_ffi_fn_length >> strip_tac >>
-  simp[l0_listen_failed_def, l0_ev_res_def, MAP_ZIP] >>
+  simp[l0_listen_failed_ev_def, l0_ev_res_def, MAP_ZIP] >>
   gvs[l0_ffi_fn_def, l0_call_def, echo_port_conf_def, AllCaseEqs()]
   >- (‘dec_res (enc_res (Ok (w2n f)) ++ []) = SOME (Ok (w2n f))’
         by (irule dec_enc_res >> simp[l0_res_ok_def] >>
@@ -536,23 +545,94 @@ Proof
   gvs[enc_listen_fail_def, dec_res_def, l0_rely_def, MarshallingTheory.LENGTH_n2w8]
 QED
 
-(* The three fdok calls answered 1 *)
+(* The three fdok calls answered 1: the trace begins with them *)
 Theorem stdio_open_fdok:
   l0_do «sys_fdok» [0w] 1 w0 = SOME (o0, w1, e0) ∧
   l0_do «sys_fdok» [1w] 1 w1 = SOME (o1, w2, e1) ∧
   l0_do «sys_fdok» [2w] 1 w2 = SOME (o2, w3, e2) ∧ stdio_all o0 o1 o2 ⇒
-  stdio_open [e0; e1; e2]
+  ∀rest. stdio_open (e0 ::: e1 ::: e2 ::: rest)
 Proof
-  rw[fdok_do, stdio_all_def, stdio_open_def] >> gvs[]
+  rw[fdok_do, stdio_all_def, stdio_open_def] >> gvs[] >> metis_tac[]
+QED
+
+(* ------------------------------------------------------------------------
+   D37: no close call on fds 0-2
+   ------------------------------------------------------------------------ *)
+
+Theorem fdok_nostdio:
+  l0_do «sys_fdok» [f] 1 w = SOME (out, w', ev) ⇒ ev_nostdio ev
+Proof
+  rw[fdok_do] >> simp[ev_nostdio_def]
+QED
+
+Theorem listen_nostdio:
+  sys_listen_echo w = SOME (out, w1, ev) ⇒ ev_nostdio ev
+Proof
+  rw[sys_listen_echo_def] >> drule l0_do_cases >> rw[] >> simp[ev_nostdio_def]
+QED
+
+(* The listen is on the echo port *)
+Theorem listen_conf_echo:
+  sys_listen_echo w = SOME (out, w1, ev) ⇒
+  ∃bs. ev = IO_event (ExtCall «sys_listen») echo_port_conf bs
+Proof
+  rw[sys_listen_echo_def] >> drule l0_do_cases >> rw[]
+QED
+
+(* Listening keeps the fds in use *)
+Theorem listen_used_mono:
+  sys_listen_echo w = SOME (out, w1, ev) ⇒ ∀g. MEM g (l0_used w) ⇒ MEM g (l0_used w1)
+Proof
+  rw[sys_listen_echo_def, l0_do_def, l0_ffi_fn_def] >>
+  gvs[AllCaseEqs(), l0_call_def, echo_port_conf_def, l0_listen_def] >>
+  ‘MEM g (l0_used (l0_tick «sys_listen» w))’ by simp[] >>
+  pop_assum mp_tac >> PURE_REWRITE_TAC [l0_used_def] >> simp[] >> rw[] >> simp[]
+QED
+
+Theorem nostdio_LCONS:
+  ev_nostdio e ∧ (∀evs. LPREFIX (fromList evs) io ⇒ EVERY ev_nostdio evs) ⇒
+  ∀evs. LPREFIX (fromList evs) (LCONS e io) ⇒ EVERY ev_nostdio evs
+Proof
+  rpt strip_tac >> gvs[LPREFIX_LCONS] >> Cases_on ‘evs’ >> gvs[]
+QED
+
+(* The loop makes no close call on fds 0-2 if they are in use when it
+   listens *)
+Theorem echo_run_nostdio:
+  l0_rely w0 ∧ fds_lt w0 ∧ sys_listen_echo w0 = SOME (out, w1, ev) ∧ listen_fd out = SOME k ∧
+  (∀g. stdio_fd g ⇒ MEM g (l0_used w0)) ⇒
+  ∀evs. LPREFIX (fromList evs) (echo_l0_run k w1) ⇒ EVERY ev_nostdio evs
+Proof
+  strip_tac >> drule_all ri_echo_base >> strip_tac >>
+  drule_all echo_prounds_total >> strip_tac >>
+  ‘kept w1 pinit’
+    by (simp[kept_def, owned_def, pinit_def, l1init_def] >> metis_tac[listen_used_mono]) >>
+  rpt strip_tac >>
+  drule LPREFIX_rounds_any >> strip_tac >>
+  drule_all prun_FLAT >> strip_tac >> gvs[] >>
+  qpat_x_assum ‘∀n. prounds_t _ _ _ _ _ _ ≠ NONE’ (qspec_then ‘SUC n’ mp_tac) >>
+  simp[prun_def] >> strip_tac >>
+  Cases_on ‘prounds_t (n2w k) echo_hw (asyncM4LiveInterest$live [n2w k] (log_of (srelabel (server k))))
+              (srelabel (server k)) (w1, pinit) (SUC n)’ >> gvs[] >>
+  PairCases_on ‘x’ >> gvs[] >>
+  ‘evs ≼ x3’ by (qpat_x_assum ‘evs ≼ _’ mp_tac >> simp[prun_def]) >>
+  ‘EVERY ev_nostdio x3’
+    by (drule_all run_kept >> simp[]) >>
+  fs[IS_PREFIX_APPEND] >> gvs[EVERY_APPEND]
 QED
 
 (* MAIN: echo_l0_safe, the statement the user approved (D31: no accept
-   guard; D33: fds 0-2 checked by the program, not assumed) *)
+   guard; D33: fds 0-2 checked by the program, not assumed; D37: a run past
+   the checks begins with them and never closes fds 0-2; Q-6: a failed
+   listen is on the echo port) *)
 Theorem echo_l0_safe:
   l0_server_world w0 ⇒
   ∃io. (semantics_prog (init_state (l0_ffi w0)) init_env echo_l0_prog (Diverge io) ∧
-        echo_safe_l0 io) ∨
-       (∃pre ev. stdio_open pre ∧ l0_listen_failed ev ∧ io = fromList (pre ++ [ev]) ∧
+        echo_safe_l0 io ∧
+        stdio_open io ∧ (∀evs. LPREFIX (fromList evs) io ⇒ no_close_stdio evs)) ∨
+       (∃pre ev. stdio_open (fromList pre) ∧ LENGTH pre = 3 ∧ l0_listen_failed_ev ev ∧
+                 (∃bs. ev = IO_event (ExtCall «sys_listen») echo_port_conf bs) ∧
+                 io = fromList (pre ++ [ev]) ∧
                  semantics_prog (init_state (l0_ffi w0)) init_env echo_l0_prog
                    (Terminate Success (pre ++ [ev]))) ∨
        (∃evs. stdio_closed (Terminate Success evs) ∧ io = fromList evs ∧
@@ -570,14 +650,25 @@ Proof
     by (qpat_x_assum ‘w3 = _’ SUBST1_TAC >> conj_tac
         >- (irule l0_rely_ch >> qexists_tac ‘w0’ >> simp[]) >>
         qpat_x_assum ‘fds_lt w0’ mp_tac >> simp[fds_lt_def, l0_used_def]) >>
-  ‘stdio_open [e0; e1; e2]’ by metis_tac[stdio_open_fdok]
+  ‘∀rest. stdio_open (e0 ::: e1 ::: e2 ::: rest)’ by metis_tac[stdio_open_fdok]
   >- (qexists_tac ‘fromList [e0; e1; e2; ev]’ >> disj2_tac >> disj1_tac >>
-      qexistsl [‘[e0; e1; e2]’, ‘ev’] >> simp[] >> metis_tac[listen_failed_echo]) >>
+      qexistsl [‘[e0; e1; e2]’, ‘ev’] >> simp[] >> metis_tac[listen_failed_echo, listen_conf_echo]) >>
   qexists_tac ‘LAPPEND (fromList [e0; e1; e2; ev]) (echo_l0_run k w4)’ >>
   disj1_tac >> simp[] >>
   ‘echo_safe_l0 (LCONS ev (echo_l0_run k w4))’
     by (irule echo_l0_run_safe >> simp[] >> metis_tac[]) >>
   imp_res_tac fdok_inert >>
-  rpt (irule echo_safe_l0_inert >> ASM_REWRITE_TAC[])
+  conj_tac >- (rpt (irule echo_safe_l0_inert >> ASM_REWRITE_TAC[])) >>
+  simp[no_close_stdio_EVERY] >>
+  ‘∀g. stdio_fd g ⇒ MEM g (l0_used w3)’
+    by (qpat_x_assum ‘_ ⇔ _’ mp_tac >> fs[stdio_all_def] >>
+        qpat_x_assum ‘w3 = _’ SUBST1_TAC >> rw[stdio_fd_def, l0_used_def] >> simp[]) >>
+  ‘∀evs. LPREFIX (fromList evs) (echo_l0_run k w4) ⇒ EVERY ev_nostdio evs’
+    by (mp_tac (Q.INST [‘w0’ |-> ‘w3’, ‘w1’ |-> ‘w4’] echo_run_nostdio) >>
+        impl_tac >- (rpt conj_tac >> first_assum ACCEPT_TAC) >>
+        disch_then ACCEPT_TAC) >>
+  imp_res_tac fdok_nostdio >> imp_res_tac listen_nostdio >>
+  rpt (match_mp_tac nostdio_LCONS >> conj_tac >- first_assum ACCEPT_TAC) >>
+  first_assum ACCEPT_TAC
 QED
 

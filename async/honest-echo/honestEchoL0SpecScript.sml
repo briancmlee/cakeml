@@ -15,9 +15,9 @@
   user decision D31 dropped the 2^64 - 1 accept guard).
   D33 (design/50 (c2)): the startup world no longer assumes fds 0-2 open;
   a program checks them with sys_fdok first, and the claims allow its
-  stopping (honestL0Outcome's stdio_closed).  stdio_open and
-  l0_listen_failed describe the other early stop: fds 0-2 open, then a
-  failed listen.
+  stopping (honestL0Outcome's stdio_closed).  A run past the checks begins
+  with them (stdio_open) and never closes fds 0-2 (no_close_stdio); the
+  other early stop is a failed listen after them (l0_listen_failed_ev).
 *)
 Theory honestEchoL0Spec
 Ancestors
@@ -116,19 +116,12 @@ Definition l0_server_world_def:
     fds_lt w0 ∧ l0_rely w0
 End
 
-(* The program's first three events: sys_fdok found fds 0, 1 and 2 open *)
-Definition stdio_open_def:
-  stdio_open evs ⇔
-    ∃i0 i1 i2. evs = [IO_event (ExtCall «sys_fdok») [0w] [(i0, 1w)];
-                      IO_event (ExtCall «sys_fdok») [1w] [(i1, 1w)];
-                      IO_event (ExtCall «sys_fdok») [2w] [(i2, 1w)]]
-End
-
-(* A failed sys_listen *)
-Definition l0_listen_failed_def:
-  l0_listen_failed (IO_event (ExtCall n) conf bytes) =
+(* A failed sys_listen (an event; moonshotClientL0Stmts' l0_listen_failed
+   is the behaviour form) *)
+Definition l0_listen_failed_ev_def:
+  l0_listen_failed_ev (IO_event (ExtCall n) conf bytes) =
     (n = «sys_listen» ∧ ∃e v. l0_ev_res bytes = SOME (Fail e v)) ∧
-  l0_listen_failed _ = F
+  l0_listen_failed_ev _ = F
 End
 
 (* Safety *)

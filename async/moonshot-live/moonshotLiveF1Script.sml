@@ -224,7 +224,14 @@ Proof
 QED
 
 (* w82n is unspecified (one ARB) off 8-byte lists, so every connect has
-   the same F1_io key *)
+   the same F1_io key.  REVIEW NOTE: F1_io keys a connect by
+   bytes_fd (TAKE 8 conf), and a connect's conf has 2 bytes, so the key is
+   this one unspecified value for every connect.  That is harmless: it
+   collapses all of a process's connects into one key, so F1_io for
+   connects reads "connects infinitely often ⇒ unretried connects
+   infinitely often", which F1_connect_sys (keyed by port) gives through
+   io_pigeon.  F1_io's definition is not changed here (orchestrator's
+   reviewability item for F1_io's owner) *)
 Theorem w82n_short:
   w82n [x1; x2] = w82n [y1; y2]
 Proof
@@ -333,7 +340,8 @@ Proof
 QED
 
 (*---------------------------------------------------------------------------*)
-(* MAIN (PROVISIONAL Q-16(b)) *)
+(* MAIN (PROVISIONAL Q-16(b)).  Connects: see the REVIEW NOTE at w82n_short (F1_io's
+   connect key is one unspecified value, so it means "connects i.o. ⇒ unretried connects i.o.") *)
 
 Theorem F1_io_of_sys:
   l0sys_irun ps ss rs ∧ k < LENGTH ps ∧

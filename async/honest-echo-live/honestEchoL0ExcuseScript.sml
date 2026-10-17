@@ -173,3 +173,44 @@ Proof
   irule pftrace_sub >> qexistsl_tac [‘SUC k’, ‘ifds’, ‘lfd’, ‘m’, ‘pol’, ‘w0’] >>
   simp[] >> simp[IS_PREFIX_APPEND]
 QED
+
+(* ------------------------------------------------------------------------
+   The D23 window's events, read as ep_timed_out's stretch
+   ------------------------------------------------------------------------ *)
+
+Theorem pe_fe_bits:
+  SND (pe_fe e) < 4
+Proof
+  rw[pe_fe_def]
+QED
+
+(* An output poll on f (honest-ffi's form) is out_poll f (L3-00's) *)
+Theorem polls_out_out_poll:
+  ev_polls_out f ev ⇒ out_poll f ev ∧ poll_ev ev
+Proof
+  rw[ev_polls_out_def, out_poll_def, poll_ev_def] >>
+  qexists_tac ‘e’ >> simp[] >>
+  ‘e < 4’
+    by (gvs[MEM_MAP] >> rename1 ‘pe_fe y’ >>
+        qspec_then ‘y’ mp_tac (Q.GEN ‘e’ pe_fe_bits) >> simp[] >>
+        qpat_x_assum ‘(_, _) = pe_fe y’ (SUBST1_TAC o SYM) >> simp[]) >>
+  simp[]
+QED
+
+(* Events that are not polls add no polls *)
+Theorem nopoll_polls:
+  ∀xs. EVERY (λe. ev_name e ≠ ExtCall «sys_poll») xs ⇒
+       n_out_polls f xs = 0 ∧ EVERY (λe. poll_ev e ⇒ out_poll f e) xs
+Proof
+  Induct >> simp[n_out_polls_def] >> Cases >>
+  simp[honestL1PFRoundTheory.ev_name_def] >> strip_tac >>
+  fs[n_out_polls_def, honestL1BStmtsTheory.out_poll_def, honestL1BStmtsTheory.poll_ev_def]
+QED
+
+(* A send that took bytes is a send on f that was not retried *)
+Theorem send_took_ev:
+  send_took f ev ⇒ ev_on «sys_send» f ev ∧ ¬retried ev
+Proof
+  Cases_on ‘ev’ >> rw[send_took_def, ev_on_def, call_fds_def, retried_def] >>
+  gvs[l0_ev_res_def, l0_res_of_def]
+QED

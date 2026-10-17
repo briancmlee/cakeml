@@ -13,18 +13,18 @@ Libs
 
 Theorem l1_of_hl:
   (∀lv W. P W ∧ (∀n. eh_round_ok lfd lv ifds m W n) ⇒ G lv W) ∧
-  P (pew lfd a hw ifds m w0 calls) ∧
+  P (pew lfd a pol ifds m w0 calls) ∧
   l0_rely w0 ∧ fds_lt w0 ∧ MEM lfd (l0_used w0) ∧
-  (∀n. SND (ecm lfd hw ifds m w0 n) + 1 < dimword (:64)) ∧
-  (∀n. erounds lfd hw ifds m (w0, einit) n ≠ NONE) ⇒
-  G (elv lfd hw ifds m w0) (pew lfd a hw ifds m w0 calls) ∧
-  ∀n. ehhist lfd (elv lfd hw ifds m w0) ifds m (pew lfd a hw ifds m w0 calls) n =
-      FST (THE (erounds lfd hw ifds m (w0, einit) n))
+  (∀n. SND (ecm lfd pol ifds m w0 n) + 1 < dimword (:64)) ∧
+  (∀n. erounds lfd pol ifds m (w0, einit) n ≠ NONE) ⇒
+  G (elv lfd pol ifds m w0) (pew lfd a pol ifds m w0 calls) ∧
+  ∀n. ehhist lfd (elv lfd pol ifds m w0) ifds m (pew lfd a pol ifds m w0 calls) n =
+      FST (THE (erounds lfd pol ifds m (w0, einit) n))
 Proof
   strip_tac >>
-  ‘∀n. ∃h ws evs logs. erounds lfd hw ifds m (w0, einit) n = SOME (h, ws, evs, logs)’
+  ‘∀n. ∃h ws evs logs. erounds lfd pol ifds m (w0, einit) n = SOME (h, ws, evs, logs)’
     by (gen_tac >> first_x_assum (qspec_then ‘n’ mp_tac) >>
-        Cases_on ‘erounds lfd hw ifds m (w0, einit) n’ >> simp[] >>
+        Cases_on ‘erounds lfd pol ifds m (w0, einit) n’ >> simp[] >>
         PairCases_on ‘x’ >> simp[]) >>
   conj_tac
   >- (first_x_assum irule >> simp[] >> gen_tac >>

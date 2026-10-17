@@ -166,7 +166,7 @@ QED
 
 Theorem ev_accept:
   ev_rel lfd a cm es w ∧ eown lfd es ∧ ehs_rel hs es ∧
-  edo lfd hw (wl, es) (EAccept l) = SOME (r, (wl', es'), evs) ⇒
+  edo lfd pol (wl, es) (EAccept l) = SOME (r, (wl', es'), evs) ⇒
   ∃w' hs'. ehdo lfd v (w, hs) (EAccept l) = SOME (r, (w', hs')) ∧
            ev_rel lfd a cm es' w' ∧ eown lfd es' ∧ ehs_rel hs' es' ∧ wl' = wl ∧
            w'.chans = w.chans ∧ w'.alloc = w.alloc ∧ w'.env = w.env ∧ w'.clock = w.clock ∧
@@ -447,7 +447,7 @@ QED
    the fd closed in both) *)
 Theorem ev_read_conn:
   ev_rel lfd a cm es w ∧ eown lfd es ∧ ehs_rel hs es ∧ ALOOKUP es.ctbl h = SOME f ∧
-  edo lfd hw (wl, es) (ERead h n) = SOME (r, (wl', es'), evs) ⇒
+  edo lfd pol (wl, es) (ERead h n) = SOME (r, (wl', es'), evs) ⇒
   ∃w' hs'. ehdo lfd v (w, hs) (ERead h n) = SOME (r, (w', hs')) ∧
            ev_rel lfd a cm es' w' ∧ eown lfd es' ∧ ehs_rel hs' es' ∧
            w'.listening = w.listening ∧ w'.alloc = w.alloc ∧ w'.env = w.env ∧
@@ -495,7 +495,7 @@ QED
    yet, or EOF and the fd closed in both) *)
 Theorem ev_read_pf:
   ev_rel lfd a cm es w ∧ eown lfd es ∧ ehs_rel hs es ∧ ALOOKUP es.ctbl h = NONE ∧
-  edo lfd hw (wl, es) (ERead h n) = SOME (r, (wl', es'), evs) ⇒
+  edo lfd pol (wl, es) (ERead h n) = SOME (r, (wl', es'), evs) ⇒
   ∃w' hs'. ehdo lfd v (w, hs) (ERead h n) = SOME (r, (w', hs')) ∧
            ev_rel lfd a cm es' w' ∧ eown lfd es' ∧ ehs_rel hs' es' ∧
            w'.listening = w.listening ∧ w'.alloc = w.alloc ∧ w'.env = w.env ∧
@@ -554,7 +554,7 @@ QED
 
 Theorem ev_read:
   ev_rel lfd a cm es w ∧ eown lfd es ∧ ehs_rel hs es ∧
-  edo lfd hw (wl, es) (ERead h n) = SOME (r, (wl', es'), evs) ⇒
+  edo lfd pol (wl, es) (ERead h n) = SOME (r, (wl', es'), evs) ⇒
   ∃w' hs'. ehdo lfd v (w, hs) (ERead h n) = SOME (r, (w', hs')) ∧
            ev_rel lfd a cm es' w' ∧ eown lfd es' ∧ ehs_rel hs' es' ∧
            w'.listening = w.listening ∧ w'.alloc = w.alloc ∧ w'.env = w.env ∧
@@ -577,7 +577,7 @@ QED
    takes everything (the world's policy takes all) *)
 Theorem ev_write:
   ev_rel lfd a cm es w ∧ eown lfd es ∧ ehs_rel hs es ∧
-  edo lfd hw (wl, es) (EWrite h bs) = SOME (r, (wl', es'), evs) ⇒
+  edo lfd pol (wl, es) (EWrite h bs) = SOME (r, (wl', es'), evs) ⇒
   ∃w' hs'. ehdo lfd v (w, hs) (EWrite h bs) = SOME (r, (w', hs')) ∧
            ev_rel lfd a cm es' w' ∧ eown lfd es' ∧ ehs_rel hs' es' ∧
            w'.listening = w.listening ∧ w'.alloc = w.alloc ∧ w'.env = w.env ∧
@@ -654,7 +654,7 @@ QED
    allocation, is a new connecting channel (numbered next) *)
 Theorem ev_connect:
   ev_rel lfd a cm es w ∧ eown lfd es ∧ ehs_rel hs es ∧
-  edo lfd hw (wl, es) (EConnect p) = SOME (r, (wl', es'), evs) ∧ r ≠ EConnected NONE ∧
+  edo lfd pol (wl, es) (EConnect p) = SOME (r, (wl', es'), evs) ∧ r ≠ EConnected NONE ∧
   ¬w.nosock w.nconnects ⇒
   ∃f. es'.ctbl = (hdl lfd es.p.b.nxt, f) :: es.ctbl ∧
       (¬MEM f (lfd :: MAP SND es.p.b.tbl ++ es.p.b.closing ++ es.p.acq ++ MAP SND es.ctbl) ∧
@@ -751,7 +751,7 @@ QED
    for the world's connect count, if the world says no socket too *)
 Theorem ev_connect_none:
   ev_rel lfd a cm es w ∧
-  edo lfd hw (wl, es) (EConnect p) = SOME (EConnected NONE, (wl', es'), evs) ∧
+  edo lfd pol (wl, es) (EConnect p) = SOME (EConnected NONE, (wl', es'), evs) ∧
   w.nosock w.nconnects ⇒
   es' = es ∧
   ehdo lfd v (w, hs) (EConnect p) =
@@ -929,7 +929,7 @@ QED
 (* A fetch's accepted fds: queued, and new to L0 *)
 Theorem fetch_acq:
   ∀fs w ps w' ps' log evs.
-    pf_fetch lfd hw fs (w, ps) = SOME ((w', ps'), log, evs) ∧ l0_rely w ∧ fds_lt w ⇒
+    pf_fetch lfd pol fs (w, ps) = SOME ((w', ps'), log, evs) ∧ l0_rely w ∧ fds_lt w ⇒
     ps'.acq = ps.acq ++ fconns log ∧
     (∀f. MEM f (fconns log) ⇒ ¬MEM f (l0_used w)) ∧
     (∀g. MEM g (l0_used w) ⇒ MEM g (l0_used w'))
@@ -943,7 +943,7 @@ Proof
       Cases_on ‘sys_accept lfd w’ >> simp[] >> rename1 ‘_ = SOME x’ >>
       PairCases_on ‘x’ >> rename1 ‘sys_accept _ _ = SOME (out, w1, ev)’ >> simp[] >>
       pairarg_tac >> simp[] >> rename1 ‘_ = (ps1, fl)’ >>
-      Cases_on ‘pf_fetch lfd hw fs (w1, ps1)’ >> simp[] >> rename1 ‘_ = SOME y’ >>
+      Cases_on ‘pf_fetch lfd pol fs (w1, ps1)’ >> simp[] >> rename1 ‘_ = SOME y’ >>
       PairCases_on ‘y’ >> simp[] >> strip_tac >> gvs[] >>
       ‘l0_rely w1’
         by (qpat_assum ‘sys_accept _ _ = _’ (assume_tac o REWRITE_RULE [sys_accept_def]) >>
@@ -960,7 +960,7 @@ Proof
   Cases_on ‘sys_recv f pf_chunk w’ >> simp[] >> rename1 ‘_ = SOME x’ >>
   PairCases_on ‘x’ >> rename1 ‘sys_recv _ _ _ = SOME (out, w1, ev)’ >> simp[] >>
   pairarg_tac >> simp[] >> rename1 ‘_ = (ps1, fl)’ >>
-  Cases_on ‘pf_fetch lfd hw fs (w1, ps1)’ >> simp[] >> rename1 ‘_ = SOME y’ >>
+  Cases_on ‘pf_fetch lfd pol fs (w1, ps1)’ >> simp[] >> rename1 ‘_ = SOME y’ >>
   PairCases_on ‘y’ >> simp[] >> strip_tac >> gvs[] >>
   ‘l0_rely w1’
     by (qpat_assum ‘sys_recv _ _ _ = _’ (assume_tac o REWRITE_RULE [sys_recv_def]) >>
@@ -968,7 +968,7 @@ Proof
   ‘l0_used w1 = l0_used w ∧ w1.fd_limit = w.fd_limit’
     by (qpat_assum ‘sys_recv _ _ _ = _’ (assume_tac o REWRITE_RULE [sys_recv_def]) >>
         imp_res_tac l0_do_env >> drule l0_do_used >> simp[]) >>
-  ‘fds_lt w1’ by gvs[fds_lt_def] >>
+  ‘fds_lt w1’ by gvs[honestL0WorldPropsTheory.fds_lt_def] >>
   first_x_assum drule_all >> strip_tac >>
   ‘fconns fl = [] ∧ ps1.acq = ps.acq’
     by (Cases_on ‘l0_res_of out’ >> gvs[AllCaseEqs(), fconns_def] >> rw[] >> gvs[fconns_def]) >>
@@ -1073,7 +1073,7 @@ QED
 
 Theorem pf_fetch_fds:
   ∀fs w ps ws log evs.
-    pf_fetch lfd hw fs (w, ps) = SOME (ws, log, evs) ⇒
+    pf_fetch lfd pol fs (w, ps) = SOME (ws, log, evs) ⇒
     ∀f. MEM f (fdata log) ⇒ MEM f fs ∧ f ≠ lfd
 Proof
   Induct >> simp[pf_fetch_def, fdata_def] >> rpt gen_tac >>
@@ -1125,7 +1125,7 @@ QED
 
 Theorem ev_fetch:
   ev_rel lfd a cm es w ∧ eown lfd es ∧ l0owne lfd w0 es ∧ l0_rely w0 ∧ fds_lt w0 ∧
-  pf_fetch lfd hw fs (w0, es.p) = SOME ((w0', ps'), log, evs) ∧
+  pf_fetch lfd pol fs (w0, es.p) = SOME ((w0', ps'), log, evs) ∧
   arrs lfd (cm, LENGTH w.chans) log = (as, (cm', k')) ∧
   (∀f. MEM f fs ⇒ f = lfd ∨ MEM f (MAP SND es.p.b.tbl)) ∧
   (∀f j. MEM (f, j) cm' ∧ LENGTH w.chans ≤ j ⇒ ∀used. ¬MEM f used ⇒ w.alloc j used = f) ∧
@@ -1233,13 +1233,13 @@ Proof
   simp[sys_connect_def, l0_do_def, l0_ffi_fn_def, AllCaseEqs()] >> strip_tac >>
   qabbrev_tac ‘tw = l0_tick «sys_connect» w’ >>
   ‘l0_used tw = l0_used w ∧ tw.fd_limit = w.fd_limit’ by simp[Abbr ‘tw’] >>
-  ‘fds_lt tw’ by gvs[fds_lt_def] >>
+  ‘fds_lt tw’ by gvs[honestL0WorldPropsTheory.fds_lt_def] >>
   ‘w.fd_limit ≤ 2 ** 31’ by gvs[l0_rely_def] >>
   ‘¬MEM (lowest_fd tw) (l0_used tw)’ by (irule lowest_fd_fresh >> fs[]) >>
   ‘w2n (lowest_fd tw) < 2 ** 64’
     by (assume_tac (w2n_lt |> INST_TYPE [alpha |-> “:64”]) >> fs[]) >>
   gvs[l0_call_def, l0_connect_def, fail_def, l0_alloc_def, AllCaseEqs()] >>
-  gvs[res_val_enc, fds_lt_def, l0_used_cons] >> rw[] >> gvs[] >>
+  gvs[res_val_enc, honestL0WorldPropsTheory.fds_lt_def, l0_used_cons] >> rw[] >> gvs[] >>
   fs[upd_lchan_def, l0_used_cons]
 QED
 
@@ -1272,7 +1272,7 @@ QED
 
 (* Any action: L0's rely, the fd bound, and L1's fds open in L0 *)
 Theorem edo_l0:
-  edo lfd hw (wl, es) a = SOME (r, (wl', es'), evs) ∧
+  edo lfd pol (wl, es) a = SOME (r, (wl', es'), evs) ∧
   l0_rely wl ∧ fds_lt wl ∧ l0owne lfd wl es ∧ eown lfd es ⇒
   l0_rely wl' ∧ fds_lt wl' ∧ l0owne lfd wl' es'
 Proof
@@ -1288,7 +1288,7 @@ Proof
        ¬MEM f (MAP SND es.p.b.tbl) ∧ ¬MEM f es.p.b.closing ∧ ¬MEM f es.p.acq ∧ f ≠ lfd’
         by (imp_res_tac ALOOKUP_SOME_MEM_SND >> gvs[eown_def, ALL_DISTINCT_APPEND] >>
             metis_tac[]) >>
-      gvs[fds_lt_def, l0owne_def, l0own_def, ec_del_def, MEM_FILTER] >> rw[] >>
+      gvs[honestL0WorldPropsTheory.fds_lt_def, l0owne_def, l0own_def, ec_del_def, MEM_FILTER] >> rw[] >>
       TRY (first_x_assum irule >> metis_tac[] >> NO_TAC) >>
       first_x_assum irule >> metis_tac[MEM_SND_ADELKEY, MEM_SND_ADELKEY_sub],
     (* EWrite *)
@@ -1302,7 +1302,7 @@ QED
 
 (* A connect's fd is new to L1 *)
 Theorem edo_connect_fresh:
-  edo lfd hw (wl, es) (EConnect p) = SOME (r, (wl', es'), evs) ∧ r ≠ EConnected NONE ∧
+  edo lfd pol (wl, es) (EConnect p) = SOME (r, (wl', es'), evs) ∧ r ≠ EConnected NONE ∧
   l0_rely wl ∧ fds_lt wl ∧ l0owne lfd wl es ⇒
   ∀f. es'.ctbl = (hdl lfd es.p.b.nxt, f) :: es.ctbl ⇒
       ¬MEM f (lfd :: MAP SND es.p.b.tbl ++ es.p.b.closing ++ es.p.acq ++ MAP SND es.ctbl)
@@ -1317,7 +1317,7 @@ Definition ciss_def:
 End
 
 Theorem edo_ciss:
-  edo lfd hw (wl, es) a = SOME (r, (wl', es'), evs) ∧ ciss lfd es ⇒
+  edo lfd pol (wl, es) a = SOME (r, (wl', es'), evs) ∧ ciss lfd es ⇒
   ciss lfd es' ∧ es.p.b.nxt ≤ es'.p.b.nxt
 Proof
   strip_tac >> Cases_on ‘a’ >| [
@@ -1339,7 +1339,7 @@ QED
 
 (* A connect handle still pending stays, with its fd, through any action *)
 Theorem edo_keeps_pending:
-  edo lfd hw (wl, es) a = SOME (r, (wl', es'), evs) ∧ ciss lfd es ∧
+  edo lfd pol (wl, es) a = SOME (r, (wl', es'), evs) ∧ ciss lfd es ∧
   ALOOKUP es.ctbl h = SOME f ∧ cstat_of es f = CPending ⇒
   ALOOKUP es'.ctbl h = SOME f ∧ cstat_of es' f = CPending
 Proof
@@ -1393,7 +1393,7 @@ QED
 
 
 Theorem edo_conn_hdls:
-  edo lfd hw (wl, es) act = SOME (r, ws', evs) ∧ (∀p. act ≠ EConnect p) ⇒ conn_hdls [r] = []
+  edo lfd pol (wl, es) act = SOME (r, ws', evs) ∧ (∀p. act ≠ EConnect p) ⇒ conn_hdls [r] = []
 Proof
   Cases_on ‘act’ >> simp[edo_def] >> strip_tac >> gvs[AllCaseEqs()] >>
   TRY (PairCases_on ‘z’) >> gvs[] >> TRY (Cases_on ‘z0’) >> simp[conn_hdls_def] >>
@@ -1421,7 +1421,7 @@ Proof
 QED
 
 Theorem edo_conn_outs:
-  edo lfd hw (wl, es) act = SOME (r, ws', evs) ∧ (∀p. act ≠ EConnect p) ⇒ conn_outs [r] = []
+  edo lfd pol (wl, es) act = SOME (r, ws', evs) ∧ (∀p. act ≠ EConnect p) ⇒ conn_outs [r] = []
 Proof
   Cases_on ‘act’ >> simp[edo_def] >> strip_tac >> gvs[AllCaseEqs()] >>
   TRY (PairCases_on ‘z’) >> gvs[] >> TRY (Cases_on ‘z0’) >> simp[conn_outs_def]
@@ -1442,7 +1442,7 @@ QED
 Theorem ev_act:
   ev_rel lfd a cm es w ∧ eown lfd es ∧ ehs_rel hs es ∧
   l0owne lfd wl es ∧ l0_rely wl ∧ fds_lt wl ∧
-  edo lfd hw (wl, es) act = SOME (r, (wl', es'), evs) ∧
+  edo lfd pol (wl, es) act = SOME (r, (wl', es'), evs) ∧
   (∀x. r = EConnected x ⇒ (w.nosock w.nconnects ⇔ x = NONE)) ∧
   (∀f. MEM f (rfds es' [r]) ⇒ ∀used. ¬MEM f used ⇒ w.alloc (LENGTH w.chans) used = f) ∧
   (∀h. act = ELevel h ⇒ r = ELvl v) ⇒
@@ -1514,7 +1514,7 @@ QED
 
 Theorem eacts_keeps_pending:
   ∀acts wl es rs evs wl' es' h f.
-    eacts lfd hw (wl, es) acts = SOME (rs, evs, (wl', es')) ∧ ciss lfd es ∧
+    eacts lfd pol (wl, es) acts = SOME (rs, evs, (wl', es')) ∧ ciss lfd es ∧
     ALOOKUP es.ctbl h = SOME f ∧ cstat_of es f = CPending ⇒
     ALOOKUP es'.ctbl h = SOME f ∧ cstat_of es' f = CPending
 Proof
@@ -1546,7 +1546,7 @@ QED
 
 (* A connect's handle is pending, with its fd *)
 Theorem edo_conn_pending:
-  edo lfd hw (wl, es) act = SOME (r, (wl', es'), evs) ∧ MEM h (conn_hdls [r]) ⇒
+  edo lfd pol (wl, es) act = SOME (r, (wl', es'), evs) ∧ MEM h (conn_hdls [r]) ⇒
   ∃f. ALOOKUP es'.ctbl h = SOME f ∧ cstat_of es' f = CPending
 Proof
   strip_tac >> Cases_on ‘∃p. act = EConnect p’
@@ -1560,7 +1560,7 @@ Theorem ev_acts:
   ∀acts k cm es w hs wl rs evs wl' es'.
     ev_rel lfd a cm es w ∧ eown lfd es ∧ ehs_rel hs es ∧
     l0owne lfd wl es ∧ l0_rely wl ∧ fds_lt wl ∧
-    eacts lfd hw (wl, es) acts = SOME (rs, evs, (wl', es')) ∧
+    eacts lfd pol (wl, es) acts = SOME (rs, evs, (wl', es')) ∧
     (∀i h. i < LENGTH acts ∧ EL i acts = ELevel h ⇒ EL i rs = ELvl (lv n (k + i))) ∧
     (∀c. c < LENGTH (conn_outs rs) ⇒ (w.nosock (w.nconnects + c) ⇔ EL c (conn_outs rs))) ∧
     (∀f j. MEM (f, j) (cnew (LENGTH w.chans) (rfds es' rs)) ⇒
@@ -1575,9 +1575,9 @@ Proof
   Induct >- simp[eacts_def, ehacts_def, rfds_def, conn_hdls_def, conn_outs_def, cnew_thm] >>
   rpt gen_tac >> rename1 ‘eacts _ _ _ (act :: acts)’ >> strip_tac >>
   qpat_x_assum ‘eacts _ _ _ _ = _’ mp_tac >> simp[Once eacts_def] >>
-  Cases_on ‘edo lfd hw (wl, es) act’ >> simp[] >> rename1 ‘_ = SOME x’ >> PairCases_on ‘x’ >>
+  Cases_on ‘edo lfd pol (wl, es) act’ >> simp[] >> rename1 ‘_ = SOME x’ >> PairCases_on ‘x’ >>
   rename1 ‘edo _ _ _ _ = SOME (r1, (wl1, es1), evs1)’ >> simp[] >>
-  Cases_on ‘eacts lfd hw (wl1, es1) acts’ >> simp[] >> rename1 ‘_ = SOME y’ >>
+  Cases_on ‘eacts lfd pol (wl1, es1) acts’ >> simp[] >> rename1 ‘_ = SOME y’ >>
   PairCases_on ‘y’ >> simp[] >> strip_tac >> gvs[] >>
   rename1 ‘eacts _ _ _ acts = SOME (rs1, evs2, (wl', es'))’ >>
   ‘ciss lfd es1’ by metis_tac[edo_ciss, eown_ciss] >>
@@ -2038,8 +2038,9 @@ QED
 Theorem ev_pre_settle:
   l1_polls fess wl = SOME (rv, w1, pevs) ∧
   l1_flush fls (w1, es.p.b) = SOME ((w2, b2), fevs) ∧
-  pf_fetch lfd hw fs (w2, es.p with b := b2) = SOME ((w3, ps3), log, gevs) ∧
-  l1_reap ps3.b.closing (w3, ps3.b) = SOME ((w4, b4), cevs) ∧
+  pf_fetch lfd pol fs (w2, es.p with b := b2) = SOME ((w3, ps3f), log, gevs) ∧
+  ps3 = stall_step hfs ob log ps3f ∧
+  l1_reap ps3f.b.closing (w3, ps3.b) = SOME ((w4, b4), cevs) ∧
   (∀f. MEM f fs ⇒ f = lfd ∨ MEM f (MAP SND es.p.b.tbl)) ∧
   ev_rel lfd a cm es w ∧ eown lfd es ∧ l0owne lfd wl es ∧ l0_rely wl ∧ fds_lt wl ∧
   arrs lfd (cm, LENGTH w.chans) log = (as, (cm', k')) ∧
@@ -2066,14 +2067,27 @@ Proof
   ‘l0owne lfd w2 es2’
     by (qpat_x_assum ‘l0owne _ _ _’ mp_tac >> simp[Abbr ‘es2’, l0owne_def, l0own_def] >>
         disch_then (MATCH_ACCEPT_TAC o CONJUNCT1)) >>
-  ‘l0_rely w2 ∧ fds_lt w2’ by gvs[fds_lt_def] >>
-  ‘pf_fetch lfd hw fs (w2, es2.p) = SOME ((w3, ps3), log, gevs)’ by simp[Abbr ‘es2’] >>
+  ‘l0_rely w2 ∧ fds_lt w2’ by gvs[honestL0WorldPropsTheory.fds_lt_def] >>
+  ‘pf_fetch lfd pol fs (w2, es2.p) = SOME ((w3, ps3f), log, gevs)’ by simp[Abbr ‘es2’] >>
   ‘∀f. MEM f fs ⇒ f = lfd ∨ MEM f (MAP SND es2.p.b.tbl)’ by simp[Abbr ‘es2’] >>
   drule_all ev_fetch >> strip_tac >>
-  ‘es2 with p := ps3 = es with p := ps3’ by simp[Abbr ‘es2’] >>
-  qpat_x_assum ‘es2 with p := ps3 = _’ (fn th => RULE_ASSUM_TAC (REWRITE_RULE [th])) >>
+  ‘es2 with p := ps3f = es with p := ps3f’ by simp[Abbr ‘es2’] >>
+  qpat_x_assum ‘es2 with p := ps3f = _’ (fn th => RULE_ASSUM_TAC (REWRITE_RULE [th])) >>
+  (* the write timeout (D23) changes only outboxes and stall counts *)
+  ‘ps3.inb = ps3f.inb ∧ ps3.eof = ps3f.eof ∧ ps3.acq = ps3f.acq ∧ ps3.b.tbl = ps3f.b.tbl ∧
+   ps3.b.nxt = ps3f.b.nxt ∧ ps3.b.closing = ps3f.b.closing ∧ ps3.pause = ps3f.pause ∧
+   pown lfd ps3 = pown lfd ps3f ∧ (∀w. l0own lfd w ps3 = l0own lfd w ps3f)’
+    by (qpat_x_assum ‘ps3 = _’ SUBST1_TAC >> simp[]) >>
+  ‘ev_rel lfd a cm' (es with p := ps3) (FOLDL ep_deliver w (MAP (conv a) as))’
+    by (drule_at (Pos last) (iffRL ev_rel_pb) >> disch_then irule >> simp[]) >>
+  ‘eown lfd (es with p := ps3)’
+    by (‘es with p := ps3 = (es with p := ps3f) with p := ps3’ by simp[] >>
+        pop_assum SUBST1_TAC >> irule eown_p >> simp[] >> gvs[eown_def]) >>
+  ‘l0owne lfd w3 (es with p := ps3)’
+    by (qpat_x_assum ‘l0owne lfd w3 (es with p := ps3f)’ mp_tac >> simp[l0owne_def]) >>
   ‘ps3.b.tbl = es.p.b.tbl ∧ ps3.b.nxt = es.p.b.nxt ∧ ps3.b.closing = es.p.b.closing’
     by gvs[Abbr ‘es2’] >>
+  ‘l1_reap ps3.b.closing (w3, ps3.b) = SOME ((w4, b4), cevs)’ by gvs[] >>
   drule_all l1_reap_l0 >> strip_tac >>
   qabbrev_tac ‘ps4 = ps3 with <| b := b4; pause := ps3.pause − 1 |>’ >>
   ‘pown lfd ps4’
@@ -2101,12 +2115,12 @@ Proof
        TRY (qpat_x_assum ‘∀g. MEM g (l0_used w3) ∧ ¬MEM g ps3.b.closing ⇒ _’ irule >>
             simp[] >> NO_TAC) >>
        qpat_x_assum ‘∀g. MEM g b4.closing ⇒ _’ drule >> simp[] >> NO_TAC) >>
-  TRY (gvs[fds_lt_def] >> rpt strip_tac >> res_tac >> gvs[] >> NO_TAC) >>
+  TRY (gvs[honestL0WorldPropsTheory.fds_lt_def] >> rpt strip_tac >> res_tac >> gvs[] >> NO_TAC) >>
   TRY (simp[] >> NO_TAC) >>
   TRY (first_assum ACCEPT_TAC >> NO_TAC) >>
   drule arrs_new >> strip_tac >> qexists_tac ‘new’ >> simp[] >>
   qpat_x_assum ‘pf_fetch _ _ _ (w2, es2.p) = _’ assume_tac >>
-  drule_all fetch_acq >> strip_tac >>
+  drule_all fetch_acq >> strip_tac >> gvs[] >>
   rpt strip_tac >> gvs[] >>
   ‘MEM f (l0_used wl)’
     by (qpat_x_assum ‘l0owne _ wl _’ mp_tac >> simp[l0owne_def] >> strip_tac >>
@@ -2280,7 +2294,7 @@ QED
 (* The round's tail is the layer's poll: time passes in the world, whose
    arrivals are what L1 fetched and the connects that settled *)
 Theorem ev_tail:
-  etail lfd hw ifs (wl, es) = SOME (rdy, (wl', es'), log, tevs) ∧
+  etail lfd pol ifs (wl, es) = SOME (rdy, (wl', es'), log, tevs) ∧
   ev_rel lfd a cm es w ∧ eown lfd es ∧ ehs_rel hs es ∧
   l0owne lfd wl es ∧ l0_rely wl ∧ fds_lt wl ∧
   arrs lfd (cm, LENGTH w.chans) log = (as, (cm', k')) ∧
@@ -2296,19 +2310,24 @@ Theorem ev_tail:
     ep_step_ok (w with clock := w.clock + 1) (w.env w.clock w.hist)
 Proof
   simp[etail_def] >> strip_tac >>
-  qabbrev_tac ‘fes = pf_poll_set lfd hw es.p ifs ++ MAP (λf. (f, 2n)) (pend_fds es)’ >>
+  qabbrev_tac ‘fes = pf_poll_set lfd pol es.p ifs ++ MAP (λf. (f, 2n)) (pend_fds es)’ >>
   gvs[AllCaseEqs()] >>
   rename1 ‘l1_polls _ wl = SOME (rv, w1, pevs)’ >>
   rename1 ‘l1_flush _ _ = SOME ((w2, b2), fevs)’ >>
-  rename1 ‘pf_fetch _ _ _ _ = SOME ((w3, ps3), log, gevs)’ >>
+  rename1 ‘pf_fetch _ _ _ _ = SOME ((w3, ps3f), log, gevs)’ >>
   rename1 ‘l1_reap _ _ = SOME ((w4, b4), cevs)’ >>
   rename1 ‘settle_fds _ _ = SOME ((w5, es5), sevs)’ >>
   ‘∀f. MEM f (FILTER (λf. MEM f (in_fds fes)) (readable_fds rv)) ⇒
        f = lfd ∨ MEM f (MAP SND es.p.b.tbl)’
     by (rw[MEM_FILTER, Abbr ‘fes’, in_fds_pend] >> drule in_fds_poll_set >> simp[]) >>
   ‘k' + 1 < dimword (:64)’ by fs[] >>
+  ‘stall_step (pf_held ps3f) (outbox_of es.p.b) log ps3f =
+   stall_step (pf_held ps3f) (outbox_of es.p.b) log ps3f’ by REWRITE_TAC [] >>
   drule_all ev_pre_settle >> strip_tac >>
-  qabbrev_tac ‘es4 = es with p := ps3 with <|b := b4; pause := ps3.pause − 1|>’ >>
+  qabbrev_tac ‘ps3 = stall_step (pf_held ps3f) (outbox_of es.p.b) log ps3f’ >>
+  ‘ps3.pause = ps3f.pause’ by simp[Abbr ‘ps3’] >>
+  pop_assum (fn th => RULE_ASSUM_TAC (REWRITE_RULE [th])) >>
+  qabbrev_tac ‘es4 = es with p := ps3 with <|b := b4; pause := ps3f.pause − 1|>’ >>
   qabbrev_tac ‘wF = FOLDL ep_deliver w (MAP (conv a) as)’ >>
   drule_all settle_fds_props >> simp[] >> strip_tac >>
   ‘∀f. MEM f (MAP SND es4.ctbl) ∧ cstat_of es4 f ≠ CPending ⇒ cstat_of es5 f = cstat_of es4 f’
@@ -2367,7 +2386,7 @@ Proof
       rpt (pop_assum kall_tac) >> every_case_tac >> simp[] >> metis_tac[])
   >- (qpat_x_assum ‘l0owne _ w4 _’ assume_tac >>
       drule_at (Pos hd) l0owne_promote >> disch_then irule >> fs[])
-  >> rpt conj_tac >> TRY (fs[fds_lt_def, promote_fields, Abbr ‘wS’] >> NO_TAC) >>
+  >> rpt conj_tac >> TRY (fs[honestL0WorldPropsTheory.fds_lt_def, promote_fields, Abbr ‘wS’] >> NO_TAC) >>
   TRY (fs[Abbr ‘wS’, Abbr ‘wF’] >> NO_TAC) >>
   simp[ep_step_ok_clock, ep_step_ok_APPEND] >> fs[markerTheory.Abbrev_def] >>
   ‘∀sl. rsettles cm es (promote es5 with settling := sl) = settles (new ++ cm) es4 es5’
@@ -2384,23 +2403,23 @@ QED
 
 (* Round n's actions, from the state before it *)
 Definition eacts_of_def:
-  eacts_of lfd hw ifds m w0 n =
-    case erounds lfd hw ifds m (w0, einit) n of
-    | SOME (h, ws, evs, logs) => eacts lfd hw ws (new_actions (log_of m) h)
+  eacts_of lfd pol ifds m w0 n =
+    case erounds lfd pol ifds m (w0, einit) n of
+    | SOME (h, ws, evs, logs) => eacts lfd pol ws (new_actions (log_of m) h)
     | NONE => NONE
 End
 
 (* The Level oracle built from L1's run (design/45 §2.2): the answer L1
    gave to the k-th action of round n *)
 Definition elv_def:
-  elv lfd hw ifds m w0 n k =
-    case eacts_of lfd hw ifds m w0 n of
+  elv lfd pol ifds m w0 n k =
+    case eacts_of lfd pol ifds m w0 n of
     | SOME (rs, _) => (case oEL k rs of SOME (ELvl v) => v | _ => 0)
     | NONE => 0
 End
 
 Theorem eacts_length:
-  ∀acts ws rs evs ws'. eacts lfd hw ws acts = SOME (rs, evs, ws') ⇒ LENGTH rs = LENGTH acts
+  ∀acts ws rs evs ws'. eacts lfd pol ws acts = SOME (rs, evs, ws') ⇒ LENGTH rs = LENGTH acts
 Proof
   Induct >> simp[eacts_def] >> rw[AllCaseEqs()] >> gvs[] >> metis_tac[]
 QED
@@ -2408,11 +2427,11 @@ QED
 (* The i-th of a round's actions is done in the state the first i left *)
 Theorem eacts_split:
   ∀acts ws rs evs ws' i.
-    eacts lfd hw ws acts = SOME (rs, evs, ws') ∧ i < LENGTH acts ⇒
+    eacts lfd pol ws acts = SOME (rs, evs, ws') ∧ i < LENGTH acts ⇒
     LENGTH rs = LENGTH acts ∧
     ∃rs0 evs0 wsi evs1 wsj.
-      eacts lfd hw ws (TAKE i acts) = SOME (rs0, evs0, wsi) ∧
-      edo lfd hw wsi (EL i acts) = SOME (EL i rs, wsj, evs1)
+      eacts lfd pol ws (TAKE i acts) = SOME (rs0, evs0, wsi) ∧
+      edo lfd pol wsi (EL i acts) = SOME (EL i rs, wsj, evs1)
 Proof
   rpt strip_tac >- metis_tac[eacts_length] >>
   pop_assum mp_tac >> pop_assum mp_tac >>
@@ -2426,13 +2445,13 @@ QED
    i-th action of round n, an ELevel h, is the length of h's outbox in
    L1's state just before that action *)
 Theorem level_true:
-  erounds lfd hw ifds m (w0, einit) n = SOME (hh, ws, evs, logs) ∧
-  eacts lfd hw ws (new_actions (log_of m) hh) = SOME (rs, aevs, ws') ∧
+  erounds lfd pol ifds m (w0, einit) n = SOME (hh, ws, evs, logs) ∧
+  eacts lfd pol ws (new_actions (log_of m) hh) = SOME (rs, aevs, ws') ∧
   i < LENGTH (new_actions (log_of m) hh) ∧ EL i (new_actions (log_of m) hh) = ELevel h ⇒
   ∃rs0 evs0 wl es.
-    eacts lfd hw ws (TAKE i (new_actions (log_of m) hh)) = SOME (rs0, evs0, (wl, es)) ∧
+    eacts lfd pol ws (TAKE i (new_actions (log_of m) hh)) = SOME (rs0, evs0, (wl, es)) ∧
     EL i rs = ELvl (elevel es h) ∧
-    elv lfd hw ifds m w0 n i = elevel es h
+    elv lfd pol ifds m w0 n i = elevel es h
 Proof
   strip_tac >> drule_all eacts_split >> strip_tac >>
   PairCases_on ‘wsi’ >> gvs[edo_def] >>
@@ -2447,66 +2466,66 @@ QED
 
 (* Round n's connects' fds, in order *)
 Definition econ_def:
-  econ lfd hw ifds m w0 n =
-    case eacts_of lfd hw ifds m w0 n of
+  econ lfd pol ifds m w0 n =
+    case eacts_of lfd pol ifds m w0 n of
     | SOME (rs, evs, ws1) => rfds (SND ws1) rs
     | NONE => []
 End
 
 (* What round n fetched *)
 Definition elog_def:
-  elog lfd hw ifds m w0 n =
-    case erounds lfd hw ifds m (w0, einit) (SUC n) of
+  elog lfd pol ifds m w0 n =
+    case erounds lfd pol ifds m (w0, einit) (SUC n) of
     | SOME (_, _, _, logs) => EL n logs
     | NONE => []
 End
 
 (* The channel map and count before round n *)
 Definition ecm_def:
-  ecm lfd hw ifds m w0 0 = ([], 0) ∧
-  ecm lfd hw ifds m w0 (SUC n) =
-    let (cm, k) = ecm lfd hw ifds m w0 n;
-        fs = econ lfd hw ifds m w0 n in
-      SND (arrs lfd (cnew k fs ++ cm, k + LENGTH fs) (elog lfd hw ifds m w0 n))
+  ecm lfd pol ifds m w0 0 = ([], 0) ∧
+  ecm lfd pol ifds m w0 (SUC n) =
+    let (cm, k) = ecm lfd pol ifds m w0 n;
+        fs = econ lfd pol ifds m w0 n in
+      SND (arrs lfd (cnew k fs ++ cm, k + LENGTH fs) (elog lfd pol ifds m w0 n))
 End
 
 (* ... and after round n's connects *)
 Definition ecm1_def:
-  ecm1 lfd hw ifds m w0 n =
-    let (cm, k) = ecm lfd hw ifds m w0 n;
-        fs = econ lfd hw ifds m w0 n in
+  ecm1 lfd pol ifds m w0 n =
+    let (cm, k) = ecm lfd pol ifds m w0 n;
+        fs = econ lfd pol ifds m w0 n in
       (cnew k fs ++ cm, k + LENGTH fs)
 End
 
 Theorem ecm_SUC:
-  ecm lfd hw ifds m w0 (SUC n) =
-    SND (arrs lfd (ecm1 lfd hw ifds m w0 n) (elog lfd hw ifds m w0 n))
+  ecm lfd pol ifds m w0 (SUC n) =
+    SND (arrs lfd (ecm1 lfd pol ifds m w0 n) (elog lfd pol ifds m w0 n))
 Proof
   simp[ecm_def, ecm1_def] >> pairarg_tac >> simp[]
 QED
 
 (* The connects that settled in round n's tail *)
 Definition esett_def:
-  esett lfd hw ifds m w0 n =
-    case (eacts_of lfd hw ifds m w0 n, erounds lfd hw ifds m (w0, einit) (SUC n)) of
+  esett lfd pol ifds m w0 n =
+    case (eacts_of lfd pol ifds m w0 n, erounds lfd pol ifds m (w0, einit) (SUC n)) of
     | (SOME (rs, evs, ws1), SOME (h', ws', evs', logs)) =>
-        rsettles (FST (ecm1 lfd hw ifds m w0 n)) (SND ws1) (SND ws')
+        rsettles (FST (ecm1 lfd pol ifds m w0 n)) (SND ws1) (SND ws')
     | _ => []
 End
 
 (* The arrivals of tick n: what round n fetched (accepted connections to
    the listener's address a), then the connects that settled *)
 Definition earr_def:
-  earr lfd a hw ifds m w0 n =
-    MAP (conv a) (FST (arrs lfd (ecm1 lfd hw ifds m w0 n) (elog lfd hw ifds m w0 n))) ++
-    esett lfd hw ifds m w0 n
+  earr lfd a pol ifds m w0 n =
+    MAP (conv a) (FST (arrs lfd (ecm1 lfd pol ifds m w0 n) (elog lfd pol ifds m w0 n))) ++
+    esett lfd pol ifds m w0 n
 End
 
 (* The fd of channel j: the one L1 got (by accept or connect) *)
 Definition erun_alloc_def:
-  erun_alloc lfd hw ifds m w0 (j : num) (used : word64 list) =
-    if ∃n f. MEM (f, j) (FST (ecm lfd hw ifds m w0 n)) then
-      let f = @f. ∃n. MEM (f, j) (FST (ecm lfd hw ifds m w0 n)) in
+  erun_alloc lfd pol ifds m w0 (j : num) (used : word64 list) =
+    if ∃n f. MEM (f, j) (FST (ecm lfd pol ifds m w0 n)) then
+      let f = @f. ∃n. MEM (f, j) (FST (ecm lfd pol ifds m w0 n)) in
         if MEM f used then lowest_free used else f
     else lowest_free used
 End
@@ -2518,8 +2537,8 @@ End
 
 (* Connect i gets no socket: as the run's i-th connect *)
 Definition erun_nosock_def:
-  erun_nosock lfd hw ifds m w0 i ⇔
-    ∃n h ws evs logs. erounds lfd hw ifds m (w0, einit) n = SOME (h, ws, evs, logs) ∧
+  erun_nosock lfd pol ifds m w0 i ⇔
+    ∃n h ws evs logs. erounds lfd pol ifds m (w0, einit) n = SOME (h, ws, evs, logs) ∧
                       i < LENGTH (nosock_of h) ∧ EL i (nosock_of h)
 End
 
@@ -2527,18 +2546,18 @@ End
    write taken (no backpressure), the arrivals above, and a connect gets no
    socket when L1's did *)
 Definition pew_def:
-  pew lfd a hw ifds m w0 calls =
+  pew lfd a pol ifds m w0 calls =
     <| listening := [(lfd, a, [])]; chans := []; open_fds := []; reserved := [];
-       alloc := erun_alloc lfd hw ifds m w0; takes := (λj b n. n); calls := calls;
-       nosock := erun_nosock lfd hw ifds m w0; nconnects := 0;
-       env := (λn hist. earr lfd a hw ifds m w0 n); clock := 0; hist := [] |>
+       alloc := erun_alloc lfd pol ifds m w0; takes := (λj b n. n); calls := calls;
+       nosock := erun_nosock lfd pol ifds m w0; nconnects := 0;
+       env := (λn hist. earr lfd a pol ifds m w0 n); clock := 0; hist := [] |>
 End
 
 Theorem erounds_logs:
   ∀n h ws evs logs.
-    erounds lfd hw ifds m ws0 n = SOME (h, ws, evs, logs) ⇒
+    erounds lfd pol ifds m ws0 n = SOME (h, ws, evs, logs) ⇒
     LENGTH logs = n ∧
-    ∀k. k ≤ n ⇒ ∃h' ws' evs'. erounds lfd hw ifds m ws0 k = SOME (h', ws', evs', TAKE k logs)
+    ∀k. k ≤ n ⇒ ∃h' ws' evs'. erounds lfd pol ifds m ws0 k = SOME (h', ws', evs', TAKE k logs)
 Proof
   Induct >> simp[erounds_def] >> rpt gen_tac >> strip_tac >> gvs[AllCaseEqs()] >>
   rw[] >>
@@ -2550,8 +2569,8 @@ QED
 
 Theorem erounds_hist:
   ∀n h ws evs logs.
-    erounds lfd hw ifds m ws0 n = SOME (h, ws, evs, logs) ⇒
-    ∀k. k ≤ n ⇒ ∃h' ws' evs' logs'. erounds lfd hw ifds m ws0 k = SOME (h', ws', evs', logs') ∧
+    erounds lfd pol ifds m ws0 n = SOME (h, ws, evs, logs) ⇒
+    ∀k. k ≤ n ⇒ ∃h' ws' evs' logs'. erounds lfd pol ifds m ws0 k = SOME (h', ws', evs', logs') ∧
                                     h' ≼ h
 Proof
   Induct >> simp[erounds_def] >> rpt gen_tac >> strip_tac >> gvs[AllCaseEqs()] >>
@@ -2580,9 +2599,9 @@ QED
 
 (* The world's choice is the run's outcome, at every connect the run made *)
 Theorem erun_nosock_EL:
-  erounds lfd hw ifds m (w0, einit) n = SOME (h, ws, evs, logs) ⇒
+  erounds lfd pol ifds m (w0, einit) n = SOME (h, ws, evs, logs) ⇒
   ∀i. i < LENGTH (nosock_of h) ⇒
-      (erun_nosock lfd hw ifds m w0 i ⇔ EL i (nosock_of h))
+      (erun_nosock lfd pol ifds m w0 i ⇔ EL i (nosock_of h))
 Proof
   rpt strip_tac >> simp[erun_nosock_def] >> eq_tac
   >- (strip_tac >> rename1 ‘erounds _ _ _ _ _ n2 = SOME (h2, _, _, _)’ >>
@@ -2602,8 +2621,8 @@ Proof
 QED
 
 Theorem elog_EL:
-  erounds lfd hw ifds m (w0, einit) n = SOME (h, ws, evs, logs) ∧ k < n ⇒
-  elog lfd hw ifds m w0 k = EL k logs
+  erounds lfd pol ifds m (w0, einit) n = SOME (h, ws, evs, logs) ∧ k < n ⇒
+  elog lfd pol ifds m w0 k = EL k logs
 Proof
   rw[elog_def] >> drule erounds_logs >> strip_tac >>
   first_x_assum (qspec_then ‘SUC k’ mp_tac) >> simp[] >> strip_tac >>
@@ -2618,13 +2637,13 @@ Proof
 QED
 
 Theorem ecm_inv:
-  ∀n. ALL_DISTINCT (MAP SND (FST (ecm lfd hw ifds m w0 n))) ∧
-      EVERY (λj. j < SND (ecm lfd hw ifds m w0 n)) (MAP SND (FST (ecm lfd hw ifds m w0 n)))
+  ∀n. ALL_DISTINCT (MAP SND (FST (ecm lfd pol ifds m w0 n))) ∧
+      EVERY (λj. j < SND (ecm lfd pol ifds m w0 n)) (MAP SND (FST (ecm lfd pol ifds m w0 n)))
 Proof
   Induct >> simp[ecm_def] >>
-  Cases_on ‘ecm lfd hw ifds m w0 n’ >> rename1 ‘_ = (cm, k)’ >> gvs[] >>
-  qabbrev_tac ‘fs = econ lfd hw ifds m w0 n’ >>
-  Cases_on ‘arrs lfd (cnew k fs ++ cm, k + LENGTH fs) (elog lfd hw ifds m w0 n)’ >>
+  Cases_on ‘ecm lfd pol ifds m w0 n’ >> rename1 ‘_ = (cm, k)’ >> gvs[] >>
+  qabbrev_tac ‘fs = econ lfd pol ifds m w0 n’ >>
+  Cases_on ‘arrs lfd (cnew k fs ++ cm, k + LENGTH fs) (elog lfd pol ifds m w0 n)’ >>
   rename1 ‘_ = (as, ck)’ >> PairCases_on ‘ck’ >> simp[] >>
   drule arrs_inv >> impl_tac
   >- (simp[cnew_snd, ALL_DISTINCT_APPEND, ALL_DISTINCT_REVERSE, MEM_GENLIST, EVERY_MEM,
@@ -2635,20 +2654,20 @@ Proof
 QED
 
 Theorem ecm_step:
-  ∀n. ∃new'. FST (ecm lfd hw ifds m w0 (SUC n)) = new' ++ FST (ecm lfd hw ifds m w0 n) ∧
-             FST (ecm lfd hw ifds m w0 (SUC n)) =
-               (new' ++ FST (ecm lfd hw ifds m w0 n))
+  ∀n. ∃new'. FST (ecm lfd pol ifds m w0 (SUC n)) = new' ++ FST (ecm lfd pol ifds m w0 n) ∧
+             FST (ecm lfd pol ifds m w0 (SUC n)) =
+               (new' ++ FST (ecm lfd pol ifds m w0 n))
 Proof
   gen_tac >> simp[ecm_def] >>
-  Cases_on ‘ecm lfd hw ifds m w0 n’ >> simp[] >>
-  qabbrev_tac ‘fs = econ lfd hw ifds m w0 n’ >>
-  Cases_on ‘arrs lfd (cnew r fs ++ q, r + LENGTH fs) (elog lfd hw ifds m w0 n)’ >>
+  Cases_on ‘ecm lfd pol ifds m w0 n’ >> simp[] >>
+  qabbrev_tac ‘fs = econ lfd pol ifds m w0 n’ >>
+  Cases_on ‘arrs lfd (cnew r fs ++ q, r + LENGTH fs) (elog lfd pol ifds m w0 n)’ >>
   rename1 ‘_ = (as, ck)’ >> PairCases_on ‘ck’ >> simp[] >> drule arrs_suffix >> rw[] >>
   qexists_tac ‘new ++ cnew r fs’ >> simp[]
 QED
 
 Theorem ecm_mono:
-  ∀d n. ∃new. FST (ecm lfd hw ifds m w0 (n + d)) = new ++ FST (ecm lfd hw ifds m w0 n)
+  ∀d n. ∃new. FST (ecm lfd pol ifds m w0 (n + d)) = new ++ FST (ecm lfd pol ifds m w0 n)
 Proof
   Induct >> simp[] >> gen_tac >>
   first_x_assum (qspec_then ‘n’ strip_assume_tac) >>
@@ -2659,7 +2678,7 @@ Proof
 QED
 
 Theorem ecm_unique:
-  MEM (f, j) (FST (ecm lfd hw ifds m w0 n)) ∧ MEM (g, j) (FST (ecm lfd hw ifds m w0 n')) ⇒
+  MEM (f, j) (FST (ecm lfd pol ifds m w0 n)) ∧ MEM (g, j) (FST (ecm lfd pol ifds m w0 n')) ⇒
   f = g
 Proof
   strip_tac >>
@@ -2668,18 +2687,18 @@ Proof
   qspecl_then [‘n’, ‘n'’] strip_assume_tac ecm_mono >>
   rename1 ‘FST (ecm _ _ _ _ _ (n' + n)) = new2 ++ _’ >>
   ‘n' + n = n + n'’ by simp[] >>
-  ‘ALL_DISTINCT (MAP SND (FST (ecm lfd hw ifds m w0 (n + n'))))’ by simp[ecm_inv] >>
-  ‘MEM (f, j) (FST (ecm lfd hw ifds m w0 (n + n'))) ∧
-   MEM (g, j) (FST (ecm lfd hw ifds m w0 (n + n')))’ by metis_tac[MEM_APPEND] >>
-  qspecl_then [‘FST (ecm lfd hw ifds m w0 (n + n'))’, ‘f’, ‘g’, ‘j’] mp_tac snd_unique >> simp[]
+  ‘ALL_DISTINCT (MAP SND (FST (ecm lfd pol ifds m w0 (n + n'))))’ by simp[ecm_inv] >>
+  ‘MEM (f, j) (FST (ecm lfd pol ifds m w0 (n + n'))) ∧
+   MEM (g, j) (FST (ecm lfd pol ifds m w0 (n + n')))’ by metis_tac[MEM_APPEND] >>
+  qspecl_then [‘FST (ecm lfd pol ifds m w0 (n + n'))’, ‘f’, ‘g’, ‘j’] mp_tac snd_unique >> simp[]
 QED
 
 Theorem erun_alloc_eq:
-  MEM (f, j) (FST (ecm lfd hw ifds m w0 n)) ∧ ¬MEM f used ⇒
-  erun_alloc lfd hw ifds m w0 j used = f
+  MEM (f, j) (FST (ecm lfd pol ifds m w0 n)) ∧ ¬MEM f used ⇒
+  erun_alloc lfd pol ifds m w0 j used = f
 Proof
   strip_tac >>
-  ‘(@g. ∃n. MEM (g, j) (FST (ecm lfd hw ifds m w0 n))) = f’
+  ‘(@g. ∃n. MEM (g, j) (FST (ecm lfd pol ifds m w0 n))) = f’
     by (SELECT_ELIM_TAC >> metis_tac[ecm_unique]) >>
   rw[erun_alloc_def] >> metis_tac[]
 QED
@@ -2719,29 +2738,29 @@ End
    throughout *)
 Theorem l1ep_refines_ehl_upto:
   l0_rely w0 ∧ fds_lt w0 ∧ MEM lfd (l0_used w0) ∧
-  (∀n'. n' ≤ N ⇒ SND (ecm lfd hw ifds m w0 n') + 1 < dimword (:64)) ⇒
+  (∀n'. n' ≤ N ⇒ SND (ecm lfd pol ifds m w0 n') + 1 < dimword (:64)) ⇒
   ∀n h ws evs logs.
-    n ≤ N ∧ erounds lfd hw ifds m (w0, einit) n = SOME (h, ws, evs, logs) ⇒
-    ehhist lfd (elv lfd hw ifds m w0) ifds m (pew lfd a hw ifds m w0 calls) n = h ∧
-    ehs_rel (SND (ehst lfd (elv lfd hw ifds m w0) ifds m (pew lfd a hw ifds m w0 calls) n)) (SND ws) ∧
-    ev_rel lfd a (FST (ecm lfd hw ifds m w0 n)) (SND ws)
-      (FST (ehst lfd (elv lfd hw ifds m w0) ifds m (pew lfd a hw ifds m w0 calls) n)) ∧
-    LENGTH (FST (ehst lfd (elv lfd hw ifds m w0) ifds m (pew lfd a hw ifds m w0 calls) n)).chans =
-      SND (ecm lfd hw ifds m w0 n) ∧
-    (FST (ehst lfd (elv lfd hw ifds m w0) ifds m (pew lfd a hw ifds m w0 calls) n)).alloc =
-      erun_alloc lfd hw ifds m w0 ∧
-    (FST (ehst lfd (elv lfd hw ifds m w0) ifds m (pew lfd a hw ifds m w0 calls) n)).env =
-      (λn hist. earr lfd a hw ifds m w0 n) ∧
-    (FST (ehst lfd (elv lfd hw ifds m w0) ifds m (pew lfd a hw ifds m w0 calls) n)).clock = n ∧
-    (FST (ehst lfd (elv lfd hw ifds m w0) ifds m (pew lfd a hw ifds m w0 calls) n)).hist = [] ∧
-    (FST (ehst lfd (elv lfd hw ifds m w0) ifds m (pew lfd a hw ifds m w0 calls) n)).nosock =
-      erun_nosock lfd hw ifds m w0 ∧
-    (FST (ehst lfd (elv lfd hw ifds m w0) ifds m (pew lfd a hw ifds m w0 calls) n)).nconnects = LENGTH (nosock_of h) ∧
+    n ≤ N ∧ erounds lfd pol ifds m (w0, einit) n = SOME (h, ws, evs, logs) ⇒
+    ehhist lfd (elv lfd pol ifds m w0) ifds m (pew lfd a pol ifds m w0 calls) n = h ∧
+    ehs_rel (SND (ehst lfd (elv lfd pol ifds m w0) ifds m (pew lfd a pol ifds m w0 calls) n)) (SND ws) ∧
+    ev_rel lfd a (FST (ecm lfd pol ifds m w0 n)) (SND ws)
+      (FST (ehst lfd (elv lfd pol ifds m w0) ifds m (pew lfd a pol ifds m w0 calls) n)) ∧
+    LENGTH (FST (ehst lfd (elv lfd pol ifds m w0) ifds m (pew lfd a pol ifds m w0 calls) n)).chans =
+      SND (ecm lfd pol ifds m w0 n) ∧
+    (FST (ehst lfd (elv lfd pol ifds m w0) ifds m (pew lfd a pol ifds m w0 calls) n)).alloc =
+      erun_alloc lfd pol ifds m w0 ∧
+    (FST (ehst lfd (elv lfd pol ifds m w0) ifds m (pew lfd a pol ifds m w0 calls) n)).env =
+      (λn hist. earr lfd a pol ifds m w0 n) ∧
+    (FST (ehst lfd (elv lfd pol ifds m w0) ifds m (pew lfd a pol ifds m w0 calls) n)).clock = n ∧
+    (FST (ehst lfd (elv lfd pol ifds m w0) ifds m (pew lfd a pol ifds m w0 calls) n)).hist = [] ∧
+    (FST (ehst lfd (elv lfd pol ifds m w0) ifds m (pew lfd a pol ifds m w0 calls) n)).nosock =
+      erun_nosock lfd pol ifds m w0 ∧
+    (FST (ehst lfd (elv lfd pol ifds m w0) ifds m (pew lfd a pol ifds m w0 calls) n)).nconnects = LENGTH (nosock_of h) ∧
     eown lfd (SND ws) ∧ l0owne lfd (FST ws) (SND ws) ∧
     l0_rely (FST ws) ∧ fds_lt (FST ws) ∧
-    ∀n'. n' < n ⇒ eh_round_ok lfd (elv lfd hw ifds m w0) ifds m (pew lfd a hw ifds m w0 calls) n'
+    ∀n'. n' < n ⇒ eh_round_ok lfd (elv lfd pol ifds m w0) ifds m (pew lfd a pol ifds m w0 calls) n'
 Proof
-  strip_tac >> qabbrev_tac ‘lv = elv lfd hw ifds m w0’ >> Induct
+  strip_tac >> qabbrev_tac ‘lv = elv lfd pol ifds m w0’ >> Induct
   >- (simp[erounds_def, ehhist_def, ehst_def, ehrounds_def, ecm_def, pew_def, nosock_of_def] >>
       rw[] >> simp[einit_def, pinit_def, l1init_def, ehinit_def, ehs_rel_def, ev_rel_def,
                    eown_def, pown_def, l0owne_def, l0own_def, inb_of_def]) >>
@@ -2757,25 +2776,25 @@ Proof
   rpt BasicProvers.VAR_EQ_TAC >>
   rename1 ‘eacts _ _ ws' _ = SOME (rs, aevs, ws1)’ >>
   PairCases_on ‘ws'’ >> PairCases_on ‘ws1’ >> PairCases_on ‘ws’ >> fs[] >>
-  qabbrev_tac ‘W0 = pew lfd a hw ifds m w0 calls’ >>
+  qabbrev_tac ‘W0 = pew lfd a pol ifds m w0 calls’ >>
   Cases_on ‘ehst lfd lv ifds m W0 n’ >> rename1 ‘_ = (w, hs)’ >> fs[] >>
-  Cases_on ‘ecm lfd hw ifds m w0 n’ >> rename1 ‘ecm _ _ _ _ _ n = (cm, k)’ >> fs[] >>
-  ‘eacts_of lfd hw ifds m w0 n = SOME (rs, aevs, (ws10, ws11))’ by simp[eacts_of_def] >>
-  ‘econ lfd hw ifds m w0 n = rfds ws11 rs’ by simp[econ_def] >>
-  ‘elog lfd hw ifds m w0 n = log’
+  Cases_on ‘ecm lfd pol ifds m w0 n’ >> rename1 ‘ecm _ _ _ _ _ n = (cm, k)’ >> fs[] >>
+  ‘eacts_of lfd pol ifds m w0 n = SOME (rs, aevs, (ws10, ws11))’ by simp[eacts_of_def] >>
+  ‘econ lfd pol ifds m w0 n = rfds ws11 rs’ by simp[econ_def] >>
+  ‘elog lfd pol ifds m w0 n = log’
     by (‘LENGTH logs' = n’
           by (qpat_x_assum ‘erounds _ _ _ _ _ n = _’ assume_tac >>
               drule erounds_logs >> simp[]) >>
         qpat_x_assum ‘erounds _ _ _ _ _ (SUC n) = _’ assume_tac >>
         drule elog_EL >> disch_then (qspec_then ‘n’ mp_tac) >> simp[EL_APPEND2]) >>
-  ‘ecm1 lfd hw ifds m w0 n = (cnew k (rfds ws11 rs) ++ cm, k + LENGTH (rfds ws11 rs))’
+  ‘ecm1 lfd pol ifds m w0 n = (cnew k (rfds ws11 rs) ++ cm, k + LENGTH (rfds ws11 rs))’
     by simp[ecm1_def] >>
   qabbrev_tac ‘fs = rfds ws11 rs’ >>
   Cases_on ‘arrs lfd (cnew k fs ++ cm, k + LENGTH fs) log’ >> rename1 ‘_ = (as, ck)’ >>
   PairCases_on ‘ck’ >> rename1 ‘arrs _ _ _ = (as, cm', k')’ >>
-  ‘ecm lfd hw ifds m w0 (SUC n) = (cm', k')’ by simp[ecm_SUC] >>
+  ‘ecm lfd pol ifds m w0 (SUC n) = (cm', k')’ by simp[ecm_SUC] >>
   ‘∃new. cm' = new ++ (cnew k fs ++ cm)’ by (drule arrs_suffix >> simp[]) >>
-  ‘∀f j. MEM (f, j) cm' ⇒ ∀used. ¬MEM f used ⇒ erun_alloc lfd hw ifds m w0 j used = f’
+  ‘∀f j. MEM (f, j) cm' ⇒ ∀used. ¬MEM f used ⇒ erun_alloc lfd pol ifds m w0 j used = f’
     by (rpt strip_tac >> irule erun_alloc_eq >> simp[] >> qexists_tac ‘SUC n’ >>
         qpat_x_assum ‘ecm _ _ _ _ _ (SUC n) = _’ (fn th => REWRITE_TAC [th]) >>
         REWRITE_TAC [pairTheory.FST] >> first_assum ACCEPT_TAC) >>
@@ -2814,7 +2833,7 @@ Proof
         qpat_x_assum ‘∀f j. MEM (f, j) cm' ⇒ _’ irule >> simp[]) >>
   ‘k' + 1 < dimword (:64)’
     by (qpat_x_assum ‘∀n'. n' ≤ N ⇒ _’ (qspec_then ‘SUC n’ mp_tac) >> simp[]) >>
-  ‘esett lfd hw ifds m w0 n = rsettles (cnew k fs ++ cm) ws11 ws1’
+  ‘esett lfd pol ifds m w0 n = rsettles (cnew k fs ++ cm) ws11 ws1’
     by simp[esett_def] >>
   ‘w1.env w1.clock w1.hist = MAP (conv a) as ++ rsettles (cnew k fs ++ cm) ws11 ws1’
     by (simp[earr_def] >> fs[]) >>
@@ -2843,18 +2862,18 @@ QED
    of the run (eh_round_ok: the run-local rely) *)
 Theorem l1ep_refines_ehl:
   l0_rely w0 ∧ fds_lt w0 ∧ MEM lfd (l0_used w0) ∧
-  (∀n. SND (ecm lfd hw ifds m w0 n) + 1 < dimword (:64)) ⇒
+  (∀n. SND (ecm lfd pol ifds m w0 n) + 1 < dimword (:64)) ⇒
   ∀n h ws evs logs.
-    erounds lfd hw ifds m (w0, einit) n = SOME (h, ws, evs, logs) ⇒
-    ehhist lfd (elv lfd hw ifds m w0) ifds m (pew lfd a hw ifds m w0 calls) n = h ∧
-    ehs_rel (SND (ehst lfd (elv lfd hw ifds m w0) ifds m (pew lfd a hw ifds m w0 calls) n)) (SND ws) ∧
-    ev_rel lfd a (FST (ecm lfd hw ifds m w0 n)) (SND ws)
-      (FST (ehst lfd (elv lfd hw ifds m w0) ifds m (pew lfd a hw ifds m w0 calls) n)) ∧
-    LENGTH (FST (ehst lfd (elv lfd hw ifds m w0) ifds m (pew lfd a hw ifds m w0 calls) n)).chans =
-      SND (ecm lfd hw ifds m w0 n) ∧
+    erounds lfd pol ifds m (w0, einit) n = SOME (h, ws, evs, logs) ⇒
+    ehhist lfd (elv lfd pol ifds m w0) ifds m (pew lfd a pol ifds m w0 calls) n = h ∧
+    ehs_rel (SND (ehst lfd (elv lfd pol ifds m w0) ifds m (pew lfd a pol ifds m w0 calls) n)) (SND ws) ∧
+    ev_rel lfd a (FST (ecm lfd pol ifds m w0 n)) (SND ws)
+      (FST (ehst lfd (elv lfd pol ifds m w0) ifds m (pew lfd a pol ifds m w0 calls) n)) ∧
+    LENGTH (FST (ehst lfd (elv lfd pol ifds m w0) ifds m (pew lfd a pol ifds m w0 calls) n)).chans =
+      SND (ecm lfd pol ifds m w0 n) ∧
     eown lfd (SND ws) ∧ l0owne lfd (FST ws) (SND ws) ∧
     l0_rely (FST ws) ∧ fds_lt (FST ws) ∧
-    ∀n'. n' < n ⇒ eh_round_ok lfd (elv lfd hw ifds m w0) ifds m (pew lfd a hw ifds m w0 calls) n'
+    ∀n'. n' < n ⇒ eh_round_ok lfd (elv lfd pol ifds m w0) ifds m (pew lfd a pol ifds m w0 calls) n'
 Proof
   strip_tac >> rpt gen_tac >> strip_tac >>
   mp_tac (Q.SPEC ‘n’ (Q.GEN ‘N’ l1ep_refines_ehl_upto)) >>
@@ -2863,7 +2882,7 @@ Proof
 QED
 
 Theorem erun_alloc_ok:
-  alloc_ok (erun_alloc lfd hw ifds m w0)
+  alloc_ok (erun_alloc lfd pol ifds m w0)
 Proof
   rw[alloc_ok_def] >>
   ‘¬MEM (lowest_free used) used’
@@ -2874,11 +2893,11 @@ QED
 (* The world built from the run is a server world on lfd, open loop, with
    no backpressure and a sane allocator *)
 Theorem pew_props:
-  ep_server_world calls lfd a (pew lfd a hw ifds m w0 calls) ∧
-  no_backpressure (pew lfd a hw ifds m w0 calls) ∧
-  open_loop (pew lfd a hw ifds m w0 calls) ∧
-  alloc_ok (pew lfd a hw ifds m w0 calls).alloc ∧
-  takes_ok (pew lfd a hw ifds m w0 calls).takes
+  ep_server_world calls lfd a (pew lfd a pol ifds m w0 calls) ∧
+  no_backpressure (pew lfd a pol ifds m w0 calls) ∧
+  open_loop (pew lfd a pol ifds m w0 calls) ∧
+  alloc_ok (pew lfd a pol ifds m w0 calls).alloc ∧
+  takes_ok (pew lfd a pol ifds m w0 calls).takes
 Proof
   simp[pew_def, ep_server_world_def, no_backpressure_def, open_loop_def,
        takes_ok_def, erun_alloc_ok]

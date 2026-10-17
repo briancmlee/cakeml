@@ -195,13 +195,13 @@ End
    l1ep_refines_ehl) *)
 Definition client_l1_claim_def:
   client_l1_claim cprog cifds ⇔
-    ∀a N rqs lfd c hw w0 calls.
+    ∀a N rqs lfd c pol w0 calls.
       2 ≤ (N:num) ∧ N < cbound ∧ (∀i. EVERY valid_brequest (rqs i)) ∧
       l0_rely w0 ∧ fds_lt w0 ∧ MEM lfd (l0_used w0) ∧
-      (∀n. SND (ecm lfd hw (cifds a N rqs) (cprog a N rqs) w0 n) + 1 < dimword (:64)) ∧
+      (∀n. SND (ecm lfd pol (cifds a N rqs) (cprog a N rqs) w0 n) + 1 < dimword (:64)) ∧
       (* the client's L1 run never fails (no misuse, no handle overflow) *)
-      (∀n. erounds lfd hw (cifds a N rqs) (cprog a N rqs) (w0, einit) n ≠ NONE) ⇒
-      client_guar' a N rqs lfd (elv lfd hw (cifds a N rqs) (cprog a N rqs) w0)
+      (∀n. erounds lfd pol (cifds a N rqs) (cprog a N rqs) (w0, einit) n ≠ NONE) ⇒
+      client_guar' a N rqs lfd (elv lfd pol (cifds a N rqs) (cprog a N rqs) w0)
         (cifds a N rqs) (cprog a N rqs)
-        (pew lfd c hw (cifds a N rqs) (cprog a N rqs) w0 calls)
+        (pew lfd c pol (cifds a N rqs) (cprog a N rqs) w0 calls)
 End

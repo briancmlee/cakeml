@@ -2776,14 +2776,14 @@ Proof
   simp[client_l1_claim_def] >> rpt gen_tac >> strip_tac >>
   qspecl_then [‘client_world lfd c’,
                ‘λlv W. client_guar' a N rqs lfd lv (cifds a N rqs) (cprog a N rqs) W’,
-               ‘lfd’, ‘cifds a N rqs’, ‘cprog a N rqs’, ‘c’, ‘hw’, ‘w0’, ‘calls’] mp_tac
-    (Q.GENL [‘P’, ‘G’, ‘lfd’, ‘ifds’, ‘m’, ‘a’, ‘hw’, ‘w0’, ‘calls’] l1_of_hl) >>
+               ‘lfd’, ‘cifds a N rqs’, ‘cprog a N rqs’, ‘c’, ‘pol’, ‘w0’, ‘calls’] mp_tac
+    (Q.GENL [‘P’, ‘G’, ‘lfd’, ‘ifds’, ‘m’, ‘a’, ‘pol’, ‘w0’, ‘calls’] l1_of_hl) >>
   simp[] >> impl_tac >- (
     conj_tac
     >- (rpt strip_tac >> mp_tac client_hl_claim_holds >> simp[client_hl_claim_def] >>
         disch_then irule >> simp[run_rely_def] >> metis_tac[]) >>
-    qspecl_then [‘lfd’, ‘c’, ‘hw’, ‘cifds a N rqs’, ‘cprog a N rqs’, ‘w0’, ‘calls’] mp_tac
-      (Q.GENL [‘lfd’, ‘a’, ‘hw’, ‘ifds’, ‘m’, ‘w0’, ‘calls’] honestL1EPRefineTheory.pew_props) >>
+    qspecl_then [‘lfd’, ‘c’, ‘pol’, ‘cifds a N rqs’, ‘cprog a N rqs’, ‘w0’, ‘calls’] mp_tac
+      (Q.GENL [‘lfd’, ‘a’, ‘pol’, ‘ifds’, ‘m’, ‘w0’, ‘calls’] honestL1EPRefineTheory.pew_props) >>
     simp[client_world_def, endpointSpecFormsTheory.ep_server_world_def, honestL1EPRefineTheory.pew_def]) >>
   simp[]
 QED

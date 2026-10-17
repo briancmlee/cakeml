@@ -8,7 +8,7 @@
 *)
 Theory honestEchoL0Excuse
 Ancestors
-  honestEchoL0LiveOwn honestEchoL0Trace honestL1PFConnTrace honestL1BStmts honestEchoL0Spec
+  honestEchoL0Sent honestEchoL0LiveOwn honestEchoL0Trace honestL1PFConnTrace honestL1BStmts honestEchoL0Spec
   honestL1PFOutLive honestL1PFDead honestL1PFLive honestL1PFModel
   honestL1PFRound honestL1Steps honestL1Model honestL0Rely honestL0World honestL0 Marshalling
 Libs
@@ -424,4 +424,65 @@ Proof
       simp[IS_PREFIX_APPEND])
   >- fs[pf_sendwait_def]
   >> fs[]
+QED
+
+(* ------------------------------------------------------------------------
+   Episode identity through the fold's open map
+   ------------------------------------------------------------------------ *)
+
+(* f keeps its index through events that do not end its episode *)
+Theorem ep_st_keep:
+  ∀post s. ALOOKUP (SND s) f = SOME j ∧ ¬EXISTS (ep_ends f) post ⇒
+           ALOOKUP (SND (l0_ep_st s post)) f = SOME j
+Proof
+  Induct >> simp[] >> rpt gen_tac >> PairCases_on ‘s’ >> strip_tac >>
+  first_x_assum irule >> fs[ep_ends_def] >>
+  simp[l0_ep_step_def] >> every_case_tac >> simp[ALOOKUP_ADELKEY] >> gvs[]
+QED
+
+(* An open episode's fd maps to the episode in the open map *)
+Theorem ep_open_state:
+  ep_open j evs ∧ EL j (l0_accepted evs) = f ⇒
+  ALOOKUP (SND (l0_ep_st (0, []) evs)) f = SOME j
+Proof
+  simp[ep_open_def] >> strip_tac >> rename1 ‘l0_event_accepted ev = SOME g’ >>
+  qpat_x_assum ‘evs = _’ SUBST_ALL_TAC >>
+  ‘l0_accepted (pre ++ [ev] ++ post) = l0_accepted pre ++ [g] ++ l0_accepted post’
+    by fs[l0_accepted_def, FLAT_APPEND] >>
+  ‘g = f’
+    by (qpat_x_assum ‘EL _ _ = f’ mp_tac >>
+        qpat_x_assum ‘l0_accepted (pre ++ _ ++ _) = _’ SUBST1_TAC >>
+        rw[] >> simp[EL_APPEND1, EL_APPEND2]) >>
+  qpat_x_assum ‘g = f’ SUBST_ALL_TAC >>
+  ‘ALOOKUP (SND (l0_ep_st (0, []) (pre ++ [ev]))) f = SOME j’
+    by (Cases_on ‘l0_ep_st (0, []) pre’ >> rename1 ‘_ = (q, r)’ >>
+        ‘q = LENGTH (l0_accepted pre)’
+          by (qspecl_then [‘pre’, ‘0’, ‘[]’] mp_tac FST_l0_ep_st >> simp[]) >>
+        simp[l0_ep_step_def]) >>
+  ‘pre ++ [ev] ++ post = (pre ++ [ev]) ++ post’ by simp[] >>
+  pop_assum SUBST1_TAC >> REWRITE_TAC [l0_ep_st_simps] >>
+  irule ep_st_keep >> simp[EXISTS_MEM] >> fs[EVERY_MEM] >> metis_tac[]
+QED
+
+(* MAIN: f mapped to the same index at two points ⇒ its episode did not
+   end in between *)
+Theorem idx_stable:
+  ALOOKUP (SND (l0_ep_st (0, []) evs)) f = SOME j ∧
+  ALOOKUP (SND (l0_ep_st (0, []) (evs ++ mid))) f = SOME j ⇒
+  ¬EXISTS (ep_ends f) mid
+Proof
+  rpt strip_tac >>
+  Cases_on ‘l0_ep_st (0, []) evs’ >> rename1 ‘_ = (k, opn)’ >>
+  ‘ep_ok (k, opn)’
+    by (‘ep_ok (0, [])’ by simp[ep_ok_def] >>
+        metis_tac[honestEchoL0SentTheory.ep_ok_st]) >>
+  ‘j < k’
+    by (gvs[ep_ok_def, EVERY_MEM] >> first_x_assum irule >>
+        imp_res_tac ALOOKUP_MEM >> simp[MEM_MAP, EXISTS_PROD] >> metis_tac[]) >>
+  qpat_x_assum ‘ALOOKUP (SND (l0_ep_st _ (evs ++ mid))) _ = _’ mp_tac >>
+  REWRITE_TAC [l0_ep_st_simps] >> simp[] >> strip_tac >>
+  ‘k ≤ j’
+    by (qspecl_then [‘mid’, ‘(k, opn)’] mp_tac ep_end_reindex >>
+        fs[EXISTS_ep_ends]) >>
+  simp[]
 QED

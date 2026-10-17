@@ -1852,3 +1852,145 @@ Proof
         metis_tac[FST]) >>
   simp[eh_new_def, hstat_def, chan_status_def, ep_chan_of_def, EL_APPEND1]
 QED
+
+Theorem hstat_eq:
+  ALOOKUP hs.tbl hd = SOME f ∧ ALOOKUP w.open_fds f = SOME j ∧ j < LENGTH w.chans ⇒
+  hstat (w, hs) hd = SOME (EL j w.chans).status
+Proof
+  simp[hstat_def, chan_status_def, ep_chan_of_def]
+QED
+
+Theorem read_outcome:
+  ALOOKUP hs.tbl hd = SOME f ∧ ALOOKUP w.open_fds f = SOME j ∧ j < LENGTH w.chans ∧
+  ehdo lfd v (w, hs) (ERead hd cread) = SOME (r, st') ⇒
+  (r = ERefused ⇔ (EL j w.chans).status = Refused) ∧
+  (r = ERefused ∨ r = EGot (SOME []) ∨ r = EGot NONE ∨ ∃d. d ≠ [] ∧ r = EGot (SOME d))
+Proof
+  strip_tac >> ‘0 < cread ∧ cread < 256 ** 8’ by simp[] >>
+  qspecl_then [‘hs’, ‘hd’, ‘f’, ‘w’, ‘j’, ‘cread’] mp_tac
+    (Q.GENL [‘hs’, ‘hd’, ‘f’, ‘w’, ‘j’, ‘n’] ehdo_read) >> simp[] >>
+  strip_tac >> gvs[] >> simp[TAKE_EQ_NIL, cread_def]
+QED
+
+(* What one round does to one connection: c its state before, c' after; stat
+   the layer's channel status of a handle at the round's start; rd the
+   handles reported ready; qs the round's (action, result) pairs *)
+Definition ctr_def:
+  ctr (b : word8 list) c c' (stat : word64 -> cstatus option) (rd : word64 set) qs ⇔
+    case c of
+    | CIdle => c' = CIdle ∨ ∃hd. c' = CPend hd
+    | CPend hd =>
+        hl_sent hd qs = [] ∧
+        (hd ∉ rd ⇒ c' = c) ∧
+        (hd ∈ rd ⇒ c' = CIdle ∧ stat hd = SOME Refused ∨
+                   stat hd ≠ SOME Refused ∧ (c' = CDone ∧ hl_eof hd qs ∨ ∃r. c' = CUp hd r))
+    | CUp hd rest => ((∃r. c' = CUp hd r) ∨ c' = CDone ∧ hl_eof hd qs) ∧ hl_sent hd qs = rest
+    | CDone => c' = CDone
+End
+
+Theorem ehacts_one_eq:
+  ehacts lfd lv n ix st [x] = SOME (rs, st1) ⇔
+  ∃r. ehdo lfd (lv n ix) st x = SOME (r, st1) ∧ rs = [r]
+Proof
+  simp[ehacts_def] >> Cases_on ‘ehdo lfd (lv n ix) st x’ >> simp[] >>
+  rename1 ‘ehdo _ _ _ _ = SOME q’ >> PairCases_on ‘q’ >> simp[ehacts_def] >> metis_tac[]
+QED
+
+Theorem ehacts_two_eq:
+  ehacts lfd lv n ix st [x; y] = SOME (rs, st2) ⇔
+  ∃r r' st1. ehdo lfd (lv n ix) st x = SOME (r, st1) ∧
+             ehdo lfd (lv n (ix + 1)) st1 y = SOME (r', st2) ∧ rs = [r; r']
+Proof
+  simp[ehacts_def] >> Cases_on ‘ehdo lfd (lv n ix) st x’ >> simp[] >>
+  rename1 ‘ehdo _ _ _ x = SOME q’ >> PairCases_on ‘q’ >> simp[] >>
+  Cases_on ‘ehdo lfd (lv n (ix + 1)) (q1, q2) y’ >> simp[ehacts_def] >>
+  rename1 ‘ehdo _ _ _ y = SOME q'’ >> PairCases_on ‘q'’ >> simp[ehacts_def] >> metis_tac[]
+QED
+
+Theorem trans_pend_read:
+  crel a N rqs lfd st rdyf ps w hs ∧ k < N ∧ EL k st.cs = CPend hd ∧
+  ehdo lfd v (w, hs) (ERead hd cread) = SOME (r, st') ⇒
+  cres b (CPend hd) (ERead hd cread) r = CIdle ∧ hstat (w, hs) hd = SOME Refused ∨
+  hstat (w, hs) hd ≠ SOME Refused ∧
+  (cres b (CPend hd) (ERead hd cread) r = CDone ∧ r = EGot (SOME []) ∨
+   ∃x. cres b (CPend hd) (ERead hd cread) r = CUp hd x)
+Proof
+  strip_tac >> ‘MEM hd (chd (EL k st.cs))’ by simp[chd_def] >>
+  drule_all crel_handle >> strip_tac >> drule_all hstat_eq >> strip_tac >>
+  drule_all read_outcome >> strip_tac >> gvs[cres_def] >> Cases_on ‘d’ >> gvs[]
+QED
+
+Theorem trans_up_read:
+  crel a N rqs lfd st rdyf ps w hs ∧ k < N ∧ EL k st.cs = CUp hd rest ∧
+  ehdo lfd v (w, hs) (ERead hd cread) = SOME (r, st') ⇒
+  cres b (CUp hd rest) (ERead hd cread) r = CUp hd rest ∨
+  cres b (CUp hd rest) (ERead hd cread) r = CDone ∧ r = EGot (SOME [])
+Proof
+  strip_tac >> ‘MEM hd (chd (EL k st.cs))’ by simp[chd_def] >>
+  drule_all crel_handle >> strip_tac >>
+  ‘(EL j w.chans).status = Up’ by (qpat_x_assum ‘cok _ _ _ _ _ _’ mp_tac >> simp[cok_def]) >>
+  drule_all read_outcome >> strip_tac >> gvs[cres_def] >> Cases_on ‘d’ >> gvs[]
+QED
+
+Theorem write_result:
+  rest ≠ [] ∧ cres b (CUp hd rest) (EWrite hd rest) r = CUp hd [] ⇒
+  hl_sent hd [(EWrite hd rest, r)] = rest
+Proof
+  Cases_on ‘r’ >> simp[cres_def] >> rw[] >> gvs[DROP_NIL] >> simp[TAKE_LENGTH_TOO_LONG]
+QED
+
+Theorem conn_ctr:
+  crel a N rqs lfd st rdyf ps w hs ∧ k < N ∧ N < dimword (:64) ∧
+  (nh0 < cbound ⇒ st.nh + 2 < dimword (:64)) ∧
+  ehacts lfd lv n ix (w, hs) (cact1 a nh0 (EL k st.cs) (rdyf k)) = SOME (rs, (w1, hs1)) ⇒
+  ctr (brequests (rqs k)) (EL k st.cs)
+    (EL k (cupd rqs st (MAP (λx. (k, x)) (cact1 a nh0 (EL k st.cs) (rdyf k))) rs).cs)
+    (hstat (w, hs)) (rdyf k) (ZIP (cact1 a nh0 (EL k st.cs) (rdyf k), rs))
+Proof
+  strip_tac >> ‘LENGTH st.cs = N’ by fs[crel_def] >>
+  Cases_on ‘EL k st.cs’ >> fs[cact1_def] >> simp[ctr_def]
+  (* CIdle *)
+  >- (Cases_on ‘nh0 < cbound’ >> fs[ehacts_one_eq] >> fs[ehacts_def] >> gvs[cupd_def, EL_LUPDATE] >>
+      Cases_on ‘r’ >> simp[cres_def] >> rename1 ‘EConnected oh’ >> Cases_on ‘oh’ >> simp[])
+  (* CPend *)
+  >- (rename1 ‘EL k st.cs = CPend hd’ >>
+      Cases_on ‘hd ∈ rdyf k’ >> fs[ehacts_one_eq] >> fs[ehacts_def] >> gvs[cupd_def, EL_LUPDATE] >>
+      drule_all trans_pend_read >> disch_then (qspec_then ‘brequests (rqs k)’ strip_assume_tac) >>
+      Cases_on ‘r’ >> fs[] >> metis_tac[])
+  (* CUp *)
+  >- (rename1 ‘EL k st.cs = CUp hd rest’ >>
+  Cases_on ‘rest = []’ >> fs[]
+  >- (Cases_on ‘hd ∈ rdyf k’ >> fs[ehacts_one_eq] >> fs[ehacts_def] >> gvs[cupd_def, EL_LUPDATE] >>
+      drule_all trans_up_read >> disch_then (qspec_then ‘brequests (rqs k)’ strip_assume_tac) >>
+      Cases_on ‘r’ >> fs[] >> metis_tac[]) >>
+  drule_all crel_write >> disch_then (qspec_then ‘lv n ix’ strip_assume_tac) >>
+  Cases_on ‘hd ∈ rdyf k’ >> fs[ehacts_one_eq, ehacts_two_eq] >> gvs[]
+  >- (qabbrev_tac ‘st1 = cupd rqs st [(k, EWrite hd rest)] [r]’ >>
+      ‘crel a (LENGTH st.cs) rqs lfd st1 rdyf (ps ++ [(EWrite hd rest, r)]) w1' hs1' ∧
+       EL k st1.cs = CUp hd [] ∧ k < LENGTH st.cs’ by simp[Abbr ‘st1’] >>
+      qspecl_then [‘a’, ‘LENGTH st.cs’, ‘st1’, ‘ps ++ [(EWrite hd rest, r)]’, ‘w1'’, ‘hs1'’, ‘[]’,
+                   ‘lv n (ix + 1)’, ‘r''’, ‘(w1, hs1)’, ‘brequests (rqs k)’] mp_tac
+        (Q.GENL [‘a’, ‘N’, ‘st’, ‘ps’, ‘w’, ‘hs’, ‘rest’, ‘v’, ‘r’, ‘st'’, ‘b’] trans_up_read) >>
+      impl_tac >- simp[] >> strip_tac >>
+      ‘cupd rqs st [(k, EWrite hd rest); (k, ERead hd cread)] [r; r''] =
+       cupd rqs st1 [(k, ERead hd cread)] [r'']’
+        by (qunabbrev_tac ‘st1’ >> simp_tac (srw_ss()) [cupd_def]) >>
+      pop_assum (fn th => REWRITE_TAC [th]) >>
+      ‘hl_sent hd [(EWrite hd rest, r)] = rest’
+        by (irule write_result >> conj_tac >- simp[] >> qexists_tac ‘brequests (rqs k)’ >>
+            qpat_x_assum ‘EL k (LUPDATE _ _ _) = _’ mp_tac >> simp[EL_LUPDATE]) >>
+      ‘hl_sent hd [(EWrite hd rest, r); (ERead hd cread, r'')] = rest’
+        by (‘[(EWrite hd rest, r); (ERead hd cread, r'')] =
+             [(EWrite hd rest, r)] ++ [(ERead hd cread, r'')]’ by simp[] >>
+            pop_assum SUBST1_TAC >> simp_tac std_ss [hl_APPEND] >> simp[] >> Cases_on ‘r''’ >> simp[]) >>
+      ‘k < LENGTH st1.cs’ by simp[Abbr ‘st1’] >>
+      simp[EL_LUPDATE] >> fs[] >>
+      ‘hl_eof hd [(EWrite hd rest, r); (ERead hd cread, EGot (SOME []))]’
+        by simp[hl_eof_def] >> simp[Abbr ‘st1’]) >>
+  ‘hl_sent hd [(EWrite hd rest, r)] = rest’
+    by (irule write_result >> conj_tac >- simp[] >> qexists_tac ‘brequests (rqs k)’ >>
+            qpat_x_assum ‘EL k (LUPDATE _ _ _) = _’ mp_tac >> simp[EL_LUPDATE]) >>
+  fs[EL_LUPDATE])
+  (* CDone *)
+  >> gvs[ehacts_def, cupd_def]
+QED

@@ -141,6 +141,22 @@ interest. L1 gains one non-syscall query:
 Level f  ⟶  Lvl n        (* n = LENGTH (outbox_of st.b f); no syscall *)
 ```
 
+> **Level is an unconstrained oracle in the abstract layer (step 7, as built;
+> `spike/moonshot-level`).** The E1 handle layer (endpointHLModel) has no
+> outbox: its writes complete at once. So it answers `ELevel h` with
+> `ELvl (lv n k)`, where `lv` is an oracle keyed by (round n, index k of the
+> action in the round), and **every** `lv` is allowed. Consequences:
+> - **Any claim proved in the abstract layer holds for every answer
+>   sequence.** It cannot rely on the answers being true levels.
+> - **A claim that needs true levels** (the proxy's bounded buffering,
+>   `S4_relay`) is proved **at L1 level**, through `level_true`
+>   (honestL1EPRefine): on L1's run, E1 runs the layer with `lv = elv …`,
+>   L1's own answers, and the answer to round n's i-th action `ELevel h` is
+>   the length of h's outbox in L1's state just before that action.
+>   Otherwise it takes an explicit hypothesis on `lv`.
+> - endpointWorld is unchanged. L1 answers with no syscall (`elevel`: the
+>   outbox length; 0 for an unknown or still-connecting handle).
+
 The proxy's rule, at each round, for each pair (A, B):
 - A is in the read interest, and A is read, only if `Level B ≤ hw`;
 - B is in the read interest, and B is read, only if `Level A ≤ hw`.

@@ -57,6 +57,10 @@
           a case the moonshot never reaches.
      K-answers needs no such hypothesis: rqs are answered before any
      invalid bytes that follow them are reached.
+     Challenge round (orchestrator, on 80462395a): (a) accepted.  POST-[R3]
+     improvement, not now: a real KV server CLOSES a connection on invalid
+     input; once [R3]'s EClose exists, that program change replaces
+     peer_valid by the `ended` escape (ep_ended).
   4. Answers: count only (LENGTH ans = LENGTH rqs ∧ reply_bytes ans ≼
      l0_sent j evs′), exactly kv_answers' form, rather than the replies
      themselves.  Ruled out: restating kv_safe_l0's content (which replies),

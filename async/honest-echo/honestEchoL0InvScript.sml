@@ -16,7 +16,7 @@ Theory honestEchoL0Inv
 Ancestors
   alist ffi honestL0 honestL0World honestL0WorldProps honestL0Rely
   asyncHLModel honestL1Model honestL1Steps honestL1Inv honestL1PFModel honestL1PFInv
-  asyncM3World honestEchoL0Spec honestEchoL0Trace honestEchoL0Events
+  asyncM3World honestL1PFRefine honestL1PFRound honestEchoL0Spec honestEchoL0Trace honestEchoL0Events
   honestEchoL0Model
 Libs
   preamble
@@ -478,4 +478,118 @@ Proof
     impl_tac >- (simp[] >> metis_tac[]) >> simp[] >> NO_TAC) ORELSE
    (first_assum (qspecl_then [‘wsx0’, ‘forget h b’, ‘w'’, ‘b'’, ‘evs''’, ‘opn’] mp_tac) >>
     impl_tac >- (simp[] >> metis_tac[]) >> simp[]))
+QED
+
+(* ------------------------------------------------------------------------
+   The world's side: L1's fds are in use, within the limit
+   ------------------------------------------------------------------------ *)
+
+(* L1 owns fds f of the state ps *)
+Definition owned_def:
+  owned ps f ⇔ MEM f (MAP SND ps.b.tbl) ∨ MEM f ps.b.closing ∨ MEM f ps.acq
+End
+
+Definition wown_def:
+  wown lfd w ps ⇔
+    l0_rely w ∧ fds_lt w ∧ MEM lfd (l0_used w) ∧ ¬owned ps lfd ∧
+    ∀f. owned ps f ⇒ MEM f (l0_used w)
+End
+
+Theorem owned_set_inb[simp]:
+  owned (set_inb f bs ps) = owned ps
+Proof
+  simp[owned_def, FUN_EQ_THM]
+QED
+
+Theorem wown_l0own:
+  wown lfd w ps ⇒ l0own lfd w ps
+Proof
+  rw[wown_def, l0own_def, owned_def] >> metis_tac[]
+QED
+
+Theorem l0_do_fds_lt:
+  l0_do n conf alen w = SOME (out, w', ev) ∧ fds_lt w ∧ n ≠ «sys_connect» ⇒ fds_lt w'
+Proof
+  rw[l0_do_def, l0_ffi_fn_def, AllCaseEqs()] >>
+  ‘fds_lt (l0_tick n w)’ by simp[] >>
+  drule_all fds_lt_call >> simp[fds_lt_def, l0_used_def]
+QED
+
+Theorem l1_close_fds_lt:
+  l1_close f (w, b) = SOME ((w', b'), evs) ∧ fds_lt w ⇒ fds_lt w'
+Proof
+  rw[l1_close_def, AllCaseEqs()] >> gvs[sys_close_def] >>
+  drule l0_do_fds_lt >> simp[]
+QED
+
+Theorem owned_drop:
+  own_ok lfd (k, opn) ps ∧ hdln (w2n lfd) k < dimword (:64) ∧
+  ALOOKUP ps.b.tbl c = SOME f ⇒
+  (∀g. owned (ps with <| b := forget f (ps.b with tbl := ADELKEY c ps.b.tbl); eof := e |>) g ⇒
+       owned ps g ∧ g ≠ f) ∧
+  (∀g. owned (ps with <| b := ps.b with <| tbl := ADELKEY c ps.b.tbl;
+                                           closing := f :: ps.b.closing |>; eof := e |>) g ⇒
+       owned ps g)
+Proof
+  strip_tac >> drule_all own_tbl_lookup >> strip_tac >>
+  ‘∀h g. MEM (h, g) ps.b.tbl ∧ h ≠ c ⇒ g ≠ f’ by metis_tac[own_other_fd] >>
+  ‘¬MEM f ps.acq’
+    by (strip_tac >> gvs[own_ok_def, MEM_EL] >> res_tac >> gvs[]) >>
+  ‘MEM f (MAP SND ps.b.tbl)’ by (imp_res_tac ALOOKUP_MEM >> simp[MEM_MAP, EXISTS_PROD] >> metis_tac[]) >>
+  rw[owned_def, ADELKEY_def, MEM_FILTER, MEM_MAP, EXISTS_PROD] >>
+  gvs[MEM_MAP, EXISTS_PROD] >> metis_tac[]
+QED
+
+(* Read at EOF, closed: the world frees f only, which L1 no longer owns *)
+val wown_read_tac =
+  TRY (qmatch_asmsub_rename_tac ‘l1_close f _ = SOME zz’ >>
+       PairCases_on ‘zz’ >> gvs[] >> drule l1_close_shape >> strip_tac >> gvs[] >>
+       ‘l0_rely w’ by gvs[wown_def] >>
+       drule_all l1_close_l0 >> strip_tac >>
+       ‘fds_lt w'’ by (drule l1_close_fds_lt >> gvs[wown_def]) >>
+       simp[wown_def] >> rpt conj_tac
+       >- (qpat_x_assum ‘∀g. g ≠ f ∧ _ ⇒ _’ irule >> gvs[wown_def])
+       >- (strip_tac >>
+           qpat_x_assum ‘∀g. owned (ps with <|b := forget _ _; eof := _|>) g ⇒ _’
+             (drule_then strip_assume_tac) >> gvs[wown_def])
+       >> rpt strip_tac >>
+       qpat_x_assum ‘∀g. owned (ps with <|b := forget _ _; eof := _|>) g ⇒ _’
+         (drule_then strip_assume_tac) >>
+       qpat_x_assum ‘∀g. g ≠ f ∧ _ ⇒ _’ irule >> gvs[wown_def] >> NO_TAC);
+
+Theorem pdo_wown:
+  pdo lfd (w, ps) a = SOME (r, (w', ps'), evs) ∧ wown lfd w ps ∧
+  own_ok lfd (k, opn) ps ∧ l1hdln (w2n lfd) k < dimword (:64) ⇒
+  wown lfd w' ps'
+Proof
+  Cases_on ‘a’
+  >- ((* Accept: the pending fd becomes a handle's *)
+      strip_tac >> drule pdo_accept_in >> strip_tac >> gvs[wown_def, owned_def] >>
+      metis_tac[])
+  >- ((* Read *)
+      strip_tac >> qpat_x_assum ‘pdo _ _ _ = _’ mp_tac >> simp[pdo_def] >> strip_tac >>
+      gvs[AllCaseEqs()]
+      >~ [‘set_inb’] >- gvs[wown_def] >>
+      ‘hdln (w2n lfd) k < dimword (:64)’ by simp[] >>
+      drule_all owned_drop >>
+      disch_then (qspec_then ‘FILTER (λy. f ≠ y) ps.eof’ strip_assume_tac) >>
+      ‘owned ps f’ by (imp_res_tac ALOOKUP_MEM >> simp[owned_def, MEM_MAP, EXISTS_PROD] >> metis_tac[]) >>
+      ‘lfd ≠ f’ by (strip_tac >> gvs[wown_def]) >>
+      wown_read_tac >> wown_read_tac >>
+      (* still flushing: nothing new owned, same world *)
+      simp[wown_def] >> rpt conj_tac >> TRY (gvs[wown_def] >> NO_TAC) >>
+      TRY (strip_tac >>
+           qpat_x_assum ‘∀g. owned _ g ⇒ owned ps g’
+             (drule_then strip_assume_tac) >> gvs[wown_def] >> NO_TAC) >>
+      rpt strip_tac >>
+      qpat_x_assum ‘∀g. owned _ g ⇒ owned ps g’
+        (drule_then strip_assume_tac) >> gvs[wown_def])
+  >> (* Write: sends only; the fds in use and the limit stay *)
+  strip_tac >> ‘l0_rely w’ by gvs[wown_def] >>
+  drule_all pdo_write_in >> disch_then (qspec_then ‘(0, [])’ strip_assume_tac) >>
+  ‘owned ps' = owned ps’ by simp[owned_def, FUN_EQ_THM] >>
+  qpat_x_assum ‘pdo _ _ _ = _’ mp_tac >> simp[pdo_def] >> strip_tac >>
+  PairCases_on ‘z’ >> gvs[] >>
+  drule_all l1do_write_l0 >> strip_tac >>
+  gvs[wown_def, fds_lt_def]
 QED

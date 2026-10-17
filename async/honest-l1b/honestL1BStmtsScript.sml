@@ -1,6 +1,6 @@
 (*
   TEMPORARY VERBATIM COPY — remove at L3-09 fold.
-  Source: final/L3-00-statements (PR #153) at 2799d4f68 (D20 poll encoding;
+  Source: final/L3-00-statements (PR #153) at 3593187d9 (Q1 quiescence weakening; D20 poll encoding;
   first copied at 676781133, resynced for ep_polls, l0_close_call and
   ep_ends), async/kernel/statements/kernelStatementsCoreScript.sml and
   kernelStatementsScript.sml (split since 61e7733e9), the raw-trace
@@ -334,7 +334,7 @@ Definition quiet_on_kernel_claim_def:
            (∃io. asleep_l0 b io ∧ guar w0 (fromList io))) ∧
           (arrivals_finite_l0 w0 ⇒
            listen_failed b ∨ (∃io. asleep_l0 b io) ∨
-           ∃io. b = Diverge io ∧ ¬F1_io io)
+           ∃io. b = Diverge io ∧ (¬F1_io io ∨ accepts_fail_io io))
 End
 
 (* The echo's guarantee, for its quiet instance *)

@@ -1,0 +1,5 @@
+# Step 17: [F0]/[F4] statements (DRAFT, trusted, liveness only)
+INCLUDES = ../l0sys ../honest-l0 ../honest-ffi ../ffi-spike ../honest-l1
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

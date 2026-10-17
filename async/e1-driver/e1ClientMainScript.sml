@@ -17,7 +17,7 @@ Ancestors
   ml_translator cfHeapsBase cfApp cfDiv endpointHLModel asyncCore asyncLevel1 asyncM3World
   honestL0 honestL0World honestL1Model honestL1PFModel honestL1EPModel honestL0Part
   honestL0Prog honestL0Proof honestL0Fdok honestL1PFProg honestL1PFSpec e1TypesProg
-  e1DriverProg e1DriverSpec e1Fold e1DriverLoop e1DriverMain moonshotClient e1Lits e1ClientProg
+  e1DriverProg e1DriverSpec e1Fold e1DriverLoop e1DriverMain moonshotClient e1Lits e1ClientProg e1Lemmas
 Libs
   preamble ml_translatorLib ml_progLib cfLib cfDivLib basisFunctionsLib
 
@@ -123,27 +123,6 @@ Proof
   rw[CSTN_def] >> pop_assum (irule o MATCH_MP Arrow_refine_imp) >>
   rw[] >> pop_assum (irule o MATCH_MP Arrow_refine_imp) >>
   rw[CSTN_def, cstepl_rqf, cstepl_LENGTH] >> gvs[cstepl_rqf, cstep_eq, cstepl_LENGTH]
-QED
-
-(* Partial applications of translated functions *)
-Theorem Arrow_app1:
-  (a --> b) f fv ∧ a x xv ⇒
-  app (p:'ffi ffi_proj) fv [xv] emp (POSTv v. &b (f x) v)
-Proof
-  rw[app_def] >> metis_tac[Arrow_IMP_app_basic]
-QED
-
-Theorem Arrow_app2:
-  (a --> b --> c) f fv ∧ a x xv ∧ b y yv ⇒
-  app (p:'ffi ffi_proj) fv [xv; yv] emp (POSTv v. &c (f x y) v)
-Proof
-  rw[app_def] >> drule_all Arrow_IMP_app_basic >>
-  disch_then (qspec_then ‘p’ assume_tac) >>
-  irule app_basic_weaken >> first_assum (irule_at Any) >>
-  Cases >> simp[POSTv_def, cond_def, SEP_EXISTS_THM, STAR_def] >>
-  strip_tac >> qexistsl [‘emp’, ‘∅’] >> simp[emp_def, SPLIT_def] >>
-  drule_all Arrow_IMP_app_basic >> disch_then (qspec_then ‘p’ mp_tac) >>
-  simp[POSTv_def, cond_def, emp_def]
 QED
 
 (* ------------------------------------------------------------------------

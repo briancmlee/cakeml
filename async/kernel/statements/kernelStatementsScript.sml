@@ -247,20 +247,26 @@ Definition listen_failed_def:
               ∀k. l0_ev_res bs ≠ SOME (Ok k)
 End
 
-(* Episode j (the j-th accepted connection) is open after evs, or has been
-   closed (as echo_safe_l0's episodes) *)
+(* Episode j (the j-th accepted connection) is open after evs, or has
+   ended, as echo_safe_l0's episodes (l0_ep_events): an episode ends at a
+   successful close of its fd, or at a later accept that returns its fd
+   (after an interrupted close that freed it) *)
+Definition ep_ends_def:
+  ep_ends f e ⇔ l0_event_closed e = SOME f ∨ l0_event_accepted e = SOME f
+End
+
 Definition ep_open_def:
   ep_open j evs ⇔
     ∃pre ev post f.
       evs = pre ++ [ev] ++ post ∧ LENGTH (l0_accepted pre) = j ∧
-      l0_event_accepted ev = SOME f ∧ EVERY (λe. l0_event_closed e ≠ SOME f) post
+      l0_event_accepted ev = SOME f ∧ EVERY (λe. ¬ep_ends f e) post
 End
 
 Definition ep_closed_def:
   ep_closed j evs ⇔
     ∃pre ev post f.
       evs = pre ++ [ev] ++ post ∧ LENGTH (l0_accepted pre) = j ∧
-      l0_event_accepted ev = SOME f ∧ EXISTS (λe. l0_event_closed e = SOME f) post
+      l0_event_accepted ev = SOME f ∧ EXISTS (ep_ends f) post
 End
 
 (* A hard (not retried) error from a recv or send on fd f *)
@@ -495,7 +501,21 @@ Definition arrivals_finite_l0_def:
   arrivals_finite_l0 (w0 : l0world) ⇔ ∃N. ∀n h nm. N ≤ n ⇒ w0.env n h nm = []
 End
 
-(* quiet_on_kernel: guar holds whether the program runs forever or sleeps;
+(* D18's excuse for a sleeping program, observed on the final world: a
+   connection queued on a listener when the program fell asleep broke during
+   the sleeping poll's steps of time.  A listener is ready only while its
+   queue is not empty, so a queued connection that is dropped during the
+   poll (its peer aborts) leaves the queue without waking it, and no prefix
+   of the finite trace shows it broken *)
+Definition dropped_asleep_def:
+  dropped_asleep w0 (io : io_event list) ⇔
+    ∃w n l p q j0. world_at w0 io = SOME w ∧ MEM (l, p, q) w.listeners ∧ MEM j0 q ∧
+                   j0 < LENGTH (l0_ticks «sys_poll» n w).chans ∧
+                   (EL j0 (l0_ticks «sys_poll» n w).chans).broken
+End
+
+(* quiet_on_kernel: guar holds whether the program runs forever or sleeps
+   (unless a queued connection was dropped while it slept: dropped_asleep);
    with finitely many arrivals it sleeps, unless [F1] fails.  There is no
    POLLHUP disjunct: under D19 (user decision Q-L3-1) L1 closes a hung-up
    fd, so none stays in the blocking set; hup_spin_bite below is why the
@@ -506,11 +526,41 @@ Definition quiet_on_kernel_claim_def:
       ∃b. semantics_prog (init_state (l0_ffi w0)) init_env prog b ∧
           (listen_failed b ∨
            (∃io. b = Diverge io ∧ guar w0 io) ∨
+           (∃io. asleep_l0 b io ∧ (guar w0 (fromList io) ∨ dropped_asleep w0 io))) ∧
+          (arrivals_finite_l0 w0 ⇒
+           listen_failed b ∨ (∃io. asleep_l0 b io) ∨
+           ∃io. b = Diverge io ∧ ¬F1_io io)
+End
+
+(* The corollary's hypothesis (never trusted): no connection queued on a
+   listener is dropped during steps of time *)
+Definition no_queued_drop_def:
+  no_queued_drop (w0 : l0world) ⇔
+    ∀evs w n l p q j0. world_at w0 evs = SOME w ∧ MEM (l, p, q) w.listeners ∧ MEM j0 q ∧
+                       j0 < LENGTH (l0_ticks «sys_poll» n w).chans ⇒
+                       ¬(EL j0 (l0_ticks «sys_poll» n w).chans).broken
+End
+
+(* The corollary form: guar on a sleeping program's trace, unweakened *)
+Definition quiet_on_kernel_nodrop_claim_def:
+  quiet_on_kernel_nodrop_claim guar prog ⇔
+    ∀w0. l0_server_world w0 ∧ no_queued_drop w0 ⇒
+      ∃b. semantics_prog (init_state (l0_ffi w0)) init_env prog b ∧
+          (listen_failed b ∨
+           (∃io. b = Diverge io ∧ guar w0 io) ∨
            (∃io. asleep_l0 b io ∧ guar w0 (fromList io))) ∧
           (arrivals_finite_l0 w0 ⇒
            listen_failed b ∨ (∃io. asleep_l0 b io) ∨
            ∃io. b = Diverge io ∧ ¬F1_io io)
 End
+
+Theorem quiet_on_kernel_nodrop:
+  quiet_on_kernel_claim guar prog ⇒ quiet_on_kernel_nodrop_claim guar prog
+Proof
+  rw[quiet_on_kernel_claim_def, quiet_on_kernel_nodrop_claim_def] >>
+  first_x_assum drule >> strip_tac >> qexists_tac ‘b’ >> simp[] >>
+  gvs[dropped_asleep_def, no_queued_drop_def] >> metis_tac[]
+QED
 
 (* The echo's guarantee, for its quiet instance *)
 Definition echo2_guar_l0_def:

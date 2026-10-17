@@ -1,0 +1,1 @@
+# L3 live: R1-live (design/36 §6): the prefetching L1 fetches pending input (PFRound, PFLive), in order (PFStream), as the right client's data (PFClient), accepts pending connections (PFConn, PFConnRun), the D16 corollary (PFD16); and the output-side link (PFOut).

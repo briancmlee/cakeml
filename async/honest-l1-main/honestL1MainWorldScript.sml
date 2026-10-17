@@ -7,7 +7,7 @@
 Theory honestL1MainWorld
 Ancestors
   honestL0 honestL0World honestL0WorldProps honestL0Rely
-  honestL1PFRefine honestL1PFRound honestL1MainProg
+  honestL1Model honestL1PFRefine honestL1PFRound honestL1MainProg
 Libs
   preamble
 

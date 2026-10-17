@@ -48,6 +48,15 @@ Proof
   rw[sys_listen_at_def] >> drule l0_do_cases >> rw[] >> simp[ev_nostdio_def]
 QED
 
+(* The listen event belongs to no episode *)
+Theorem listen_inert_at:
+  sys_listen_at conf w = SOME (out, w1, ev) ⇒
+  l0_event_accepted ev = NONE ∧ l0_event_closed ev = NONE
+Proof
+  rw[sys_listen_at_def] >> drule l0_do_cases >> rw[] >>
+  simp[l0_event_accepted_def, l0_event_closed_def]
+QED
+
 (* The listen's success is on conf's port *)
 Theorem listen_topo_at:
   sys_listen_at conf w = SOME (out, w1, ev) ⇒ l0_topo_ev (w22n conf) ev

@@ -145,8 +145,9 @@ Theorem l1_main_fail_spec:
 Proof
   rpt strip_tac >> stdio_tac >>
   xlet ‘POSTv v. &LIST_TYPE WORD out v * L0_EV w0 w' [e0; e1; e2; ev]’
-  >- (xapp_spec l1_listen_spec >> qexistsl [‘emp’, ‘w'’, ‘w3’, ‘w0’, ‘out’, ‘[e0; e1; e2]’, ‘ev’] >>
-      xsimpl >> simp[]) >>
+  >- (xapp_spec l1_listen_spec >>
+      qexistsl [‘emp’, ‘w'’, ‘w3’, ‘w0’, ‘out’, ‘[e0; e1; e2]’, ‘ev’] >>
+      rpt conj_tac >- (qexists_tac ‘conf’ >> simp[]) >> xsimpl) >>
   rpt (xlet_auto >- xsimpl) >> gvs[OPTION_TYPE_def] >> xmatch >>
   xcon >> xsimpl
 QED
@@ -171,8 +172,9 @@ Proof
     by (gvs[sys_listen_at_def, l0_do_def, AllCaseEqs()] >> metis_tac[l0_reach_step]) >>
   stdio_tac >>
   xlet ‘POSTv v. &LIST_TYPE WORD out v * L0_EV w0 w4 [e0; e1; e2; ev]’
-  >- (xapp_spec l1_listen_spec >> qexistsl [‘emp’, ‘w4’, ‘w3’, ‘w0’, ‘out’, ‘[e0; e1; e2]’, ‘ev’] >>
-      xsimpl >> simp[]) >>
+  >- (xapp_spec l1_listen_spec >>
+      qexistsl [‘emp’, ‘w4’, ‘w3’, ‘w0’, ‘out’, ‘[e0; e1; e2]’, ‘ev’] >>
+      rpt conj_tac >- (qexists_tac ‘conf’ >> simp[]) >> xsimpl) >>
   rpt (xlet_auto >- xsimpl) >> gvs[OPTION_TYPE_def] >> xmatch >>
   assume_tac (fetch "honestL1MainProg" "pinit_v_thm") >>
   xlet ‘POSTv cv. &COMP p SACT UNIT_TYPE SSNAP m cv * L0_EV w0 w4 [e0; e1; e2; ev]’
@@ -181,5 +183,6 @@ Proof
   gvs[] >> xapp_spec (INST_TYPE [alpha |-> “:unit”] run_pf_spec) >>
   qexistsl [‘emp’, ‘w0’, ‘w4’, ‘pinit’, ‘m’, ‘n2w k’, ‘hw’, ‘[n2w k]’, ‘[e0; e1; e2; ev]’] >>
   simp[LIST_TYPE_def, psmall_def, pinit_def, l1init_def, small_fds_def, small_def] >>
+  rpt conj_tac >- (qexists_tac ‘UNIT_TYPE’ >> first_assum ACCEPT_TAC) >>
   xsimpl
 QED

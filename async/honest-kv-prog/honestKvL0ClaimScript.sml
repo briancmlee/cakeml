@@ -1,9 +1,10 @@
 (*
-  P4 step G's hand-off (design/46): kv_l0_claim of the KV program, from
-  the safety of its run past a successful listen (steps D/E, proved
-  separately).  Everything else in the claim (the three outcomes, the
-  stdio check, the topology, no close call on fds 0-2, the inert prefix)
-  is proved here.
+  P4 step G (design/46): kv_l0_claim of the KV program.  The safety of
+  its run past a successful listen (steps D/E) is honestKvL0Safe's
+  kv_run_safe_live; kv_l0_claim_of_run proves everything else in the
+  claim (the three outcomes, the stdio check, the topology, no close call
+  on fds 0-2, the inert prefix) from that safety, and kv_l0_safe glues
+  the two.
 *)
 Theory honestKvL0Claim
 Ancestors
@@ -11,7 +12,7 @@ Ancestors
   honestL0Outcome honestL0Fdok honestEchoL0Spec honestEchoL0Stdio honestEchoL0Safe
   honestHttpKvL0Spec honestKvL0Run asyncKvModel
   honestL1MainProg honestL1MainSpec honestL1MainWorld honestL1MainSafe
-  honestKvL0Prog honestKvL0Main honestKvL0Sem
+  honestKvL0Prog honestKvL0Main honestKvL0Sem honestKvL0Safe
 Libs
   preamble
 
@@ -73,4 +74,23 @@ Proof
   imp_res_tac fdok_nostdio >> imp_res_tac listen_nostdio_at >>
   rpt (match_mp_tac nostdio_LCONS >> conj_tac >- first_assum ACCEPT_TAC) >>
   first_assum ACCEPT_TAC
+QED
+
+(* MAIN (P4 G): the KV program meets kv_l0_claim on port 8081 *)
+Theorem kv_l0_safe:
+  kv_l0_claim 8081 kv_l0_prog
+Proof
+  irule kv_l0_claim_of_run >> rpt strip_tac >>
+  ‘k < 2147483648’ by (irule l1_listen_fd_small >> metis_tac[]) >>
+  imp_res_tac listen_inert_at >>
+  irule kv_safe_l0_inert >> ASM_REWRITE_TAC[] >>
+  irule kv_run_safe_live >> rpt conj_tac >>
+  FIRST [
+    simp[] >> NO_TAC,
+    irule ri_base_at >> metis_tac[] >> NO_TAC,
+    irule kv_prounds_total >> metis_tac[] >> NO_TAC,
+    metis_tac[listen_rely_at] >> NO_TAC,
+    metis_tac[listen_used_at] >> NO_TAC,
+    gvs[sys_listen_at_def] >>
+    metis_tac[l0_do_fds_lt, EVAL “«sys_listen» = «sys_connect»”] >> NO_TAC]
 QED

@@ -14,12 +14,13 @@ with holslot `Holmake -j1` and has no cheats.
 | (S1) never fails | `brounds_ok` | honest-l1b/honestL1BNoFailScript.sml |
 | Refinement blocking ⇒ PF | `l1b_refines_pf`, `b2p` | honest-l1b/honestL1BSimScript.sml, honestL1BCorrScript.sml |
 | (S3) guarantee transfer | `echo2_guar_transfer_full` | honest-l1b/honestL1BTimeoutScript.sml |
+| D37 fds 0-2 never closed, PF ⇒ blocking | `no_close_transfer` | honest-l1b/honestL1BTransferScript.sml |
 | (S4) PF run settles, given SQ | `l1pf_stable` (`SQ_def`) | honest-l1b/honestL1BStableScript.sml |
 | (S4′) blocking run sleeps | `l1b_sleeps` | honest-l1b/honestL1BSleepScript.sml |
 | CakeML step / loop | `step_pfb_spec`, `step_pfb_sleep_spec`, `run_pfb_div_spec`, `run_pfb_sleep_spec` | honest-l1b-cf/honestL1BSpecScript.sml |
 | CakeML trace = model trace | `div_btrace`, `sleep_btrace`, `bt_guard_ok`, `pf_trace_exists` | honest-l1b-cf/honestL1BTraceScript.sml |
 | Program semantics (stdio closed / listen fails / Diverge / FFI_diverged; D33 sys_fdok prefix) | `echo_l0b_semantics_prog` | honest-l1b-cf/honestEchoL0BSemScript.sml |
-| Across the setup events (three sys_fdok checks, the listen) | `echo2_guar_shift`, `sys_listen_echo_shift`, `fdok_shift_ev`; `echo2_guar_setup` (Quiet) | honest-l1b/honestL1BShiftScript.sml |
+| Across the setup events (three sys_fdok checks, the listen) | `echo2_guar_shift`, `sys_listen_echo_shift`, `fdok_shift_ev`; `echo2_guar_setup`, `stdio_kept_setup` (Quiet) | honest-l1b/honestL1BShiftScript.sml |
 | **Instance** | `echo_l0b_quiet` (L3-00's `quiet_on_kernel_claim`, with D29), `echo_l0b_quiet_a` (the same, kept as an alias) | honest-l1b-cf/honestEchoL0BQuietScript.sml |
 
 ## Premises of `echo_l0b_quiet`: `echo_pf_facts KK k w1`
@@ -31,9 +32,10 @@ runs in the world w3 after the three sys_fdok checks (`stdio_prefix w0 w3`).
 | Conjunct | Owner | Status |
 |---|---|---|
 | `run_ok`, `winv`, `linv`, `qfresh`, `MEM lfd (l0_used …)`, pcm bound | async-spike / honest-ffi (PF standing facts; design/47 for reindexing) | open |
+| `pl2_room` (D40: every PF round has nxt + naccepts + 2 < 2^64, so the loop's guard never fires) | async-spike (program link) | open; false in worlds with endless connects, as run_ok's room: goes with D25′ |
 | `S1`, `S2` | async-spike (`S1_interest`, `echo_S2`) | available for `interest`; needs re-pointing to `epfw` |
 | `SQ` | cf-actions | partial, see below |
-| `∀io_p. ptrace … io_p ⇒ echo2_guar_l0 KK (epfw k w1) io_p` | async-spike (liveness), KV worker (safety) | open |
+| `∀io_p. ptrace … io_p ⇒ (∀evs. LPREFIX (fromList evs) io_p ⇒ no_close_stdio evs) ∧ echo2_guar_l0 KK (epfw k w1) io_p` | async-spike (liveness), KV worker (safety, `echo_run_nostdio` for D37) | open |
 
 These are already discharged, so they are no longer premises:
 - `bquiet`: `echo_bquiet` (honest-l1b-cf/honestEchoL0BStutterScript.sml);

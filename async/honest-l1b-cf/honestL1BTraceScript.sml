@@ -7,8 +7,9 @@
    - the loop sleeps in round n: the events before the final poll are.
   For a server never busy (bz = K F).
 
-  Under the PF run's standing facts (run_ok, which includes D25's bound
-  on every PF round) the guard never fires in the CakeML loop
+  Under the PF run's standing facts (run_ok, and pl2_room: D40's bound,
+  nxt + naccepts + 2 < 2^64, on every PF round; run_ok's own D25 bound
+  lacks the two extra) the guard never fires in the CakeML loop
   (bt_guard_ok); and the PF model run has a trace (pf_trace_exists).
 
   MAIN: div_btrace, sleep_btrace, bt_guard_ok, pf_trace_exists.
@@ -189,16 +190,26 @@ QED
    Under the PF run's standing facts the guard never fires
    ------------------------------------------------------------------------ *)
 
+(* Every PF round has room for its accepts under the loop's guard (D40:
+   hdl_room, nxt + naccepts + 2 < 2^64), as pl2_ok's room fact with D40's
+   two extra *)
+Definition pl2_room_def:
+  pl2_room lfd pol ifds m ws0 ⇔
+    ∀n h ws evs logs. prounds lfd pol ifds m ws0 n = SOME (h, ws, evs, logs) ⇒
+      (SND ws).b.nxt + naccepts (new_actions (log_of m) h) + 2 < dimword (:64)
+End
+
 (* Every blocking round has well-formed actions and room for its accepts
    (honestL1BNoFail's brounds_ok, its room fact): the PF round matching it
    has the same state and actions *)
 Theorem brounds_room:
   ∀m ifds bz w0 lfd hw.
   bquiet m ifds bz ∧ l0_rely w0 ∧
-  run_ok lfd hw ifds m (reindex (btr lfd hw ifds bz m (w0, pinit)) w0) ⇒
+  run_ok lfd hw ifds m (reindex (btr lfd hw ifds bz m (w0, pinit)) w0) ∧
+  pl2_room lfd hw ifds m (reindex (btr lfd hw ifds bz m (w0, pinit)) w0, pinit) ⇒
   ∀n h w ps evs logs. brounds lfd hw ifds bz m (w0, pinit) n = SOME (BRun h (w, ps) evs logs) ⇒
     EVERY (pact_ok lfd) (new_actions (log_of m) h) ∧
-    ps.b.nxt + naccepts (new_actions (log_of m) h) < dimword (:64)
+    ps.b.nxt + naccepts (new_actions (log_of m) h) + 2 < dimword (:64)
 Proof
   rpt gen_tac >> strip_tac >> rpt gen_tac >> disch_tac >>
   ‘binv lfd hw ifds bz m w0 pinit h w ps evs’
@@ -207,6 +218,8 @@ Proof
   pop_assum (strip_assume_tac o REWRITE_RULE[binv_def, binv_at_def]) >>
   fs[run_ok_def] >>
   qpat_x_assum ‘pl2_ok _ _ _ _ _’ (mp_tac o REWRITE_RULE[pl2_ok_def]) >>
+  disch_then drule >> strip_tac >>
+  qpat_x_assum ‘pl2_room _ _ _ _ _’ (mp_tac o REWRITE_RULE[pl2_room_def]) >>
   disch_then drule >> strip_tac >>
   ‘new_actions (log_of m) full = new_actions (log_of m) h’
     by (fs[sfor_def] >> first_x_assum (qspec_then ‘[]’ mp_tac) >> simp[]) >>
@@ -217,7 +230,9 @@ QED
 Theorem bt_guard_ok:
   bquiet m ifds (K F) ∧ l0_rely w0 ∧
   run_ok lfd (pol_self hw) ifds m
-    (reindex (btr lfd (pol_self hw) ifds (K F) m (w0, pinit)) w0) ⇒
+    (reindex (btr lfd (pol_self hw) ifds (K F) m (w0, pinit)) w0) ∧
+  pl2_room lfd (pol_self hw) ifds m
+    (reindex (btr lfd (pol_self hw) ifds (K F) m (w0, pinit)) w0, pinit) ⇒
   bt_guard lfd hw ifds m (w0, pinit)
 Proof
   strip_tac >>

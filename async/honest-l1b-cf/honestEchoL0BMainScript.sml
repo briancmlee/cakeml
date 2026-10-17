@@ -21,6 +21,10 @@ Libs
 
 val _ = translation_extends "honestEchoL0BProg";
 
+(* honestL1BStmts's copy of echo_port_conf (L3-00, the same bytes) is loaded
+   too; the program's is honestEchoL0Prog's *)
+val _ = bring_to_front_overload "echo_port_conf" {Name = "echo_port_conf", Thy = "honestEchoL0Prog"};
+
 Theorem server_bt_ok:
   bt_ok (n2w k) hw ifds (srelabel (server k)) ws0
 Proof

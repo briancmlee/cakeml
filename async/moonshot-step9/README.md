@@ -11,6 +11,10 @@ Nothing here is proved.  Three parts, each typechecked against the base it needs
 The Holmakefiles of `hl/` and `l0/` are named `.draft` so that this branch's project-wide
 Holmake scan does not try to follow their INCLUDES (which exist only on their bases).
 
+Revision 8 (user ruling D39): the backend's settle read is ungated; the HL credit gate on reading a
+backend applies only once `hl_up c`. The L0 bound, `proxy_bnd`, and the L1 `credit_writes` are unchanged
+(the front has been written nothing before its backend's first answer).
+
 Revision 7 (user rulings): the exact bound `proxy_bnd hw = hw + pf_chunk + pread`, excused by
 the receiving side's D23 timeout (option (a); (b), unconditional, comes with [R3](a)); pairing
 liveness excused by infinitely many socketless connects (HL `hl_nosock`, L0 `l0_nosock`); D33's

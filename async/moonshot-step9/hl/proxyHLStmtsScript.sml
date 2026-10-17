@@ -24,6 +24,14 @@
    [R4] The rely is run_rely (eh_round_ok), as for the client: valid
         along the run's own rounds; nosock (option (b)) is the world's.
 
+  REVISION 8 (user ruling D39, Q-8 option (a)): the backend's settle read
+  is ungated.  The credit gate on reading backend c applies only once
+  hl_up c: until c has answered a read, the proxy reads c whenever it is
+  ready, whatever hd's Level, so a refused connect is observed (with an
+  adversarial Level oracle, rev 7's gate made pairing liveness
+  unprovable for every program).  Nothing has been written to hd before
+  c's first answer, so the raw-trace bound is unchanged.
+
   REVISION 7 (user rulings): pairing liveness has the observed excuse
   "connects return no socket infinitely often" (hl_nosock; [F4] is not
   assumed).  The raw-trace bound is now exact, hw + pf_chunk + pread,
@@ -145,7 +153,9 @@ Definition proxy_guar_hl_def:
       (∀n hd c k. pair hd = SOME c ∧ MEM (ERead hd k) (A n) ⇒
                   0 < n ∧ ∃l. MEM (ELevel c, ELvl l) (R (n − 1)) ∧
                               l + wreq c (A (n − 1)) + wreq c (A n) ≤ hw) ∧
-      (∀n hd c k. pair hd = SOME c ∧ MEM (ERead c k) (A n) ⇒
+      (* (rev 8, D39) the backend's gate applies once it has answered a
+         read: its settle read is ungated, so a refused backend is seen *)
+      (∀n hd c k. pair hd = SOME c ∧ MEM (ERead c k) (A n) ∧ hl_up c (ps n) ⇒
                   0 < n ∧ ∃l. MEM (ELevel hd, ELvl l) (R (n − 1)) ∧
                               l + wreq hd (A (n − 1)) + wreq hd (A n) ≤ hw) ∧
       (* the gate is evaluated every round, and is all that holds a read

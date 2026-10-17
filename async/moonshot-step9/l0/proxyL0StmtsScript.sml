@@ -131,6 +131,9 @@ End
        together ≤ hw + pread (pread = 4096, moonshotProxy).  The credit gate
        reads p in a round only if q's outbox after that round's writes is
        ≤ hw, and the read (≤ pread) is written in full the next round.
+       (Rev 8, D39: a backend's settle read, before it has answered, is
+       ungated; q, its front, has then been written nothing, so the read
+       is ≤ pread ≤ hw + pread.)
    Reached: q's kernel takes nothing, the last read brings q's outbox to
    exactly hw, and L1's fetch then refills p's inbox *)
 Definition proxy_bnd_def:

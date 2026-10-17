@@ -123,14 +123,6 @@ End
    3. B2, isolated (for m4-server)
    ------------------------------------------------------------------------ *)
 
-(* An episode on a or b that cn leaves unpaired reads nothing *)
-Definition b2_quiet_ab_def:
-  b2_quiet_ab a b rs cn ⇔
-    ∀k j t r. cn (k, j) = NONE ∧ l0_ep_role j (proc_events k rs) = SOME r ∧
-              MEM r [Connected a; Connected b; Accepted a; Accepted b] ⇒
-              l0_ep_recvd j (proc_events k (TAKE t rs)) = []
-End
-
 Definition b2_iso_stmt_def:
   b2_iso_stmt ⇔
     ∀S a b rs. l0sys_iso_run S a b rs ⇒
@@ -207,12 +199,6 @@ End
 (* ------------------------------------------------------------------------
    6. THE HEADLINE
    ------------------------------------------------------------------------ *)
-
-(* The client's view of episode j: only if j is a connect episode (its
-   connections to the proxy; any other episode shows nothing) *)
-Definition conn_only_def:
-  conn_only sel j evs = if (∃p. l0_ep_role j evs = SOME (Connected p)) then sel j evs else []
-End
 
 (* In every run with no outsider on a or b, the client observes one
    sequential store: its view of its connections to the proxy is

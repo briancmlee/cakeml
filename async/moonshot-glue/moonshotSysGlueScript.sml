@@ -16,21 +16,21 @@
 
   B2 → b2_conn (b2_wire): l0sys_causal's three facts are b2_conn's first
   three.  The fourth ("an episode conn leaves unpaired reads nothing") is
-  the hypothesis b2_quiet.  It is what `isolated` must give, together with
+  the hypothesis b2_quiet_ab (D37: on a and b).  It is what `isolated` must give, together with
   B2's own pairing: a B2 variant, m4-server's note (3).
 
   moonshot_sys_safe: in an l0sys run of the client cl, the proxy px and KV
   kv, the client's whole trace is linearizable against KV
   (kv_client_safe), from:
    - the three processes' claims, each in its safe form;
-   - B2 with b2_quiet;
+   - B2 with b2_quiet_ab;
    - the ports (topology);
    - W2 for the proxy.
 *)
 Theory moonshotSysGlue
 Ancestors
   moonshotSafeGlue moonshotPairGlue moonshotProxyGlue moonshotWorldFacts l0sysBridges
-  l0sysRun l0sys
+  l0sysRun l0sys l0sysEpisodes l0sysInv
 Libs
   preamble
 
@@ -100,12 +100,33 @@ Definition sys_tr_def:
   sys_tr rs k t = proc_events k (TAKE t rs)
 End
 
-(* What isolation must add to B2: an episode conn leaves unpaired reads
-   nothing, at every instant *)
-Definition b2_quiet_def:
-  b2_quiet rs cn ⇔
-    ∀k j t. cn (k, j) = NONE ⇒ l0_ep_recvd j (proc_events k (TAKE t rs)) = []
+(* What isolation (D37) must add to B2: an episode on a or b that cn
+   leaves unpaired reads nothing *)
+Definition b2_quiet_ab_def:
+  b2_quiet_ab a b rs cn ⇔
+    ∀k j t r. cn (k, j) = NONE ∧ l0_ep_role j (proc_events k rs) = SOME r ∧
+              MEM r [Connected a; Connected b; Accepted a; Accepted b] ⇒
+              l0_ep_recvd j (proc_events k (TAKE t rs)) = []
 End
+
+Theorem ep_roles_APPEND:
+  ∀xs lst. ep_roles lst (xs ++ ys) = ep_roles lst xs ++ ep_roles (FOLDL lsn_step lst xs) ys
+Proof
+  Induct >> simp[ep_roles_def] >> rpt gen_tac >>
+  ‘lsn_step lst h = case ev_listen h of SOME (l, p) => (l, p) :: lst | NONE => lst’
+    by (simp[lsn_step_def] >> Cases_on ‘ev_listen h’ >> simp[] >>
+        rename1 ‘SOME y’ >> Cases_on ‘y’ >> simp[]) >>
+  simp[]
+QED
+
+(* An instant's role is the whole run's *)
+Theorem role_prefix:
+  l0_ep_role j (proc_events k (TAKE t rs)) = SOME r ⇒ l0_ep_role j (proc_events k rs) = SOME r
+Proof
+  ‘proc_events k rs = proc_events k (TAKE t rs) ++ proc_events k (DROP t rs)’
+    by simp[GSYM proc_events_APPEND] >>
+  pop_assum SUBST1_TAC >> rw[l0_ep_role_def, ep_roles_APPEND, EL_APPEND1]
+QED
 
 Theorem b2_wire:
   (∀e e'. cn e = SOME e' ⇔ cn e' = SOME e) ∧
@@ -115,10 +136,19 @@ Theorem b2_wire:
           l0_ep_role j (proc_events k rs) = SOME (Accepted p) ∧
           l0_ep_role j' (proc_events k' rs) = SOME (Connected p)) ∧
      ∀t. l0_ep_recvd j' (proc_events k' (TAKE t rs)) ≼ l0_ep_sent j (proc_events k (TAKE t rs))) ∧
-  b2_quiet rs cn ⇒
-  b2_conn cn (sys_rl rs) (sys_tr rs)
+  b2_quiet_ab pa pb rs cn ⇒
+  b2_conn cn (sys_rl rs) (sys_tr rs) pa pb
 Proof
-  rw[b2_conn_def, sys_rl_def, sys_tr_def, b2_quiet_def] >> metis_tac[]
+  strip_tac >> REWRITE_TAC [b2_conn_def, sys_rl_def, sys_tr_def] >> rpt conj_tac
+  >- first_assum ACCEPT_TAC
+  >- (rpt strip_tac >> qpat_x_assum ‘∀k j k' j'. cn _ = SOME _ ⇒ _’ drule >> simp[])
+  >- (rpt strip_tac >> qpat_x_assum ‘∀k j k' j'. cn _ = SOME _ ⇒ _’ drule >> simp[]) >>
+  rpt gen_tac >> REWRITE_TAC [quiet_role_def, sys_rl_def] >> strip_tac
+  >- (Cases_on ‘l0_ep_role j (proc_events k (TAKE t rs))’
+      >- (drule role_none_unborn >> simp[]) >>
+      drule role_prefix >> simp[]) >>
+  qpat_x_assum ‘b2_quiet_ab _ _ _ _’ (mp_tac o REWRITE_RULE [b2_quiet_ab_def]) >>
+  disch_then irule >> conj_tac >- first_assum ACCEPT_TAC >> qexists_tac ‘r’ >> simp[]
 QED
 
 (*---------------------------------------------------------------------------*)
@@ -134,7 +164,7 @@ Theorem moonshot_sys_safe:
           l0_ep_role j (proc_events k rs) = SOME (Accepted p) ∧
           l0_ep_role j' (proc_events k' rs) = SOME (Connected p)) ∧
      ∀t. l0_ep_recvd j' (proc_events k' (TAKE t rs)) ≼ l0_ep_sent j (proc_events k (TAKE t rs))) ∧
-  b2_quiet rs cn ∧
+  b2_quiet_ab pa pb rs cn ∧
   (* the ports *)
   topology (sys_rl rs) cl px kv pa pb ∧ pa < 65536 ∧ pb < 65536 ∧
   (* the proxy's claim, safe form, and W2 *)
@@ -146,10 +176,10 @@ Theorem moonshot_sys_safe:
   (∀w0. l0_rely w0 ∧ l0_fresh w0 ∧ fds_lt w0 ⇒
         ∃b. semantics_prog (init_state (l0_ffi w0)) init_env (EL kv ps) b ∧ b ≠ Fail ∧
             kv_safe_g l0_ep_recvd l0_ep_sent (beh_io b)) ⇒
-  kv_client_safe l0_ep_sent l0_ep_recvd (fromList (proc_events cl rs))
+  kv_client_safe (conn_only l0_ep_sent) (conn_only l0_ep_recvd) (fromList (proc_events cl rs))
 Proof
   strip_tac >>
-  ‘b2_conn cn (sys_rl rs) (sys_tr rs)’
+  ‘b2_conn cn (sys_rl rs) (sys_tr rs) pa pb’
     by (irule b2_wire >> rpt conj_tac >> first_assum ACCEPT_TAC) >>
   (* the proxy: B1's world for px, and its claim's behaviour there *)
   qspecl_then [‘ps’, ‘rs’, ‘px’] mp_tac (Q.GENL [‘ps’, ‘rs’, ‘k’] l0sys_proj) >>
@@ -171,9 +201,11 @@ Proof
   irule moonshot_view_safe >>
   qexistsl_tac [‘cl’, ‘cn’, ‘proc_events px rs’, ‘hw’, ‘beh_io bk’, ‘beh_io bp’, ‘kt’, ‘kv’,
                 ‘pa’, ‘pb’, ‘pr’, ‘px’, ‘sys_rl rs’, ‘sys_tr rs’] >>
-  simp[sys_tr_def, sys_rl_def, proc_events_mono, proc_events_TAKE] >> rpt conj_tac
-  >- (rpt strip_tac >> irule proc_events_instant >> gvs[LPREFIX_fromList, from_toList])
-  >- (gen_tac >> irule LPREFIX_TRANS >> qexists_tac ‘fromList (proc_events kv rs)’ >>
-      simp[LPREFIX_fromList, from_toList, proc_events_TAKE]) >>
+  simp[sys_tr_def, sys_rl_def, proc_events_mono, proc_events_TAKE] >> rpt conj_tac >>
+  TRY (rpt strip_tac >> drule role_prefix >> simp[] >> NO_TAC) >>
+  TRY (rpt strip_tac >> irule proc_events_instant >> gvs[LPREFIX_fromList, from_toList] >>
+       NO_TAC) >>
+  TRY (gen_tac >> irule LPREFIX_TRANS >> qexists_tac ‘fromList (proc_events kv rs)’ >>
+       simp[LPREFIX_fromList, from_toList, proc_events_TAKE] >> NO_TAC) >>
   fs[sys_rl_def, sys_tr_def, ETA_THM]
 QED

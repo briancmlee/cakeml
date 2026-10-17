@@ -21,13 +21,27 @@
 *)
 Theory moonshotSafeGlue
 Ancestors
-  moonshotKvClient moonshotPairGlue moonshotProxyGlue
+  moonshotKvClient moonshotPairGlue moonshotProxyGlue l0sysInv l0sysEpisodes
 Libs
   preamble
 
+(* The client's view of episode j: only if j is a connect episode (its
+   connections to the proxy; any other episode shows nothing; D37) *)
+Definition conn_only_def:
+  conn_only sel j evs = if (∃p. l0_ep_role j evs = SOME (Connected p)) then sel j evs else []
+End
+
+(* An episode that has not begun has no bytes *)
+Theorem role_none_unborn:
+  l0_ep_role j evs = NONE ⇒ l0_ep_sent j evs = [] ∧ l0_ep_recvd j evs = []
+Proof
+  rw[l0_ep_role_def, ep_roles_LENGTH, l0_ep_sent_def, l0_ep_recvd_def] >>
+  irule ep_io_unborn >> simp[]
+QED
+
 Theorem moonshot_view_safe:
   (* [B2] *)
-  b2_conn cn rl tr ∧
+  b2_conn cn rl tr pa pb ∧
   (* [TOP] *)
   topology rl cl px kv pa pb ∧
   (* [PX] *)
@@ -38,14 +52,42 @@ Theorem moonshot_view_safe:
   (∀(t:num) t'. t ≤ t' ⇒ tr kv t ≼ tr kv t' ∧ tr cl t ≼ tr cl t') ∧
   (∀t. LPREFIX (fromList (tr kv t)) io_k) ∧
   (∀evs. LPREFIX (fromList evs) io_c ⇒ ∃t. tr cl t = evs) ∧
+  (* the client's roles: an instant's role is the whole run's *)
+  (∀j t r. l0_ep_role j (tr cl t) = SOME r ⇒ rl cl j = SOME r) ∧
   (* [KV] *)
   kv_safe_g l0_ep_recvd l0_ep_sent io_k ⇒
-  kv_client_safe l0_ep_sent l0_ep_recvd io_c
+  kv_client_safe (conn_only l0_ep_sent) (conn_only l0_ep_recvd) io_c
 Proof
   strip_tac >>
   ‘proxy_safe_ep (prx_of pr ft) rl tr px pa pb’ by metis_tac[proxy_safe_bridge] >>
   ‘topology rl cl px kv pa pb’ by simp[] >>
   drule_all moonshot_pairs >> strip_tac >>
+  ‘∀t j. comp_ep cn (prx_of pr ft) cl px kv j = NONE ⇒ conn_only l0_ep_recvd j (tr cl t) = []’
+    by (rpt strip_tac >> rw[conn_only_def] >>
+        rename1 ‘l0_ep_role j (tr cl t) = SOME (Connected p)’ >>
+        ‘rl cl j = SOME (Connected p)’
+          by (qpat_x_assum ‘∀j t r. l0_ep_role _ (tr cl _) = _ ⇒ _’ drule >> simp[]) >>
+        qpat_x_assum ‘∀t j q. rl cl j = _ ∧ _ ⇒ _’ (qspecl_then [‘t’, ‘j’, ‘p’] mp_tac) >>
+        simp[]) >>
+  ‘∀t j j'. comp_ep cn (prx_of pr ft) cl px kv j = SOME j' ⇒
+            l0_ep_recvd j' (tr kv t) ≼ conn_only l0_ep_sent j (tr cl t) ∧
+            conn_only l0_ep_recvd j (tr cl t) ≼ l0_ep_sent j' (tr kv t)’
+    by (rpt gen_tac >> strip_tac >>
+        qpat_assum ‘comp_ep _ _ _ _ _ _ = SOME _’ (strip_assume_tac o REWRITE_RULE [comp_ep_SOME]) >>
+        ‘rl cl j = SOME (Connected pa)’ by (drule_all b2_client >> simp[]) >>
+        ‘l0_ep_recvd j' (tr kv t) ≼ l0_ep_sent j (tr cl t) ∧
+         l0_ep_recvd j (tr cl t) ≼ l0_ep_sent j' (tr kv t)’
+          by (qpat_x_assum ‘∀t j j'. comp_ep _ _ _ _ _ j = SOME j' ⇒ _’ drule >> simp[]) >>
+        Cases_on ‘l0_ep_role j (tr cl t)’
+        >- (drule role_none_unborn >> strip_tac >>
+            ASM_REWRITE_TAC [conn_only_def] >> simp[] >>
+            qpat_x_assum ‘l0_ep_recvd j' _ ≼ l0_ep_sent j _’ mp_tac >> ASM_REWRITE_TAC [] >>
+            simp[]) >>
+        rename1 ‘l0_ep_role j (tr cl t) = SOME r’ >>
+        ‘r = Connected pa’
+          by (qpat_x_assum ‘∀j t r. l0_ep_role _ (tr cl _) = _ ⇒ _’ drule >> simp[]) >>
+        pop_assum SUBST_ALL_TAC >>
+        ASM_REWRITE_TAC [conn_only_def] >> simp[]) >>
   irule (INST_TYPE [alpha |-> “:io_event”] kv_client_view_safe) >>
   qexistsl_tac [‘tr cl’, ‘comp_ep cn (prx_of pr ft) cl px kv’, ‘io_k’, ‘l0_ep_recvd’,
                 ‘tr kv’, ‘l0_ep_sent’] >>

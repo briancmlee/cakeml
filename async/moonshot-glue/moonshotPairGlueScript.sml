@@ -34,16 +34,24 @@ Libs
 (*---------------------------------------------------------------------------*)
 (* The hypotheses *)
 
-(* B2 (l0sys_causal), and no outside peer *)
+(* An episode B2's quietness speaks of: not yet begun, or on pa or pb
+   (D37: no outsider on a and b) *)
+Definition quiet_role_def:
+  quiet_role rl pa pb k (j : num) ⇔
+    rl k j = NONE ∨
+    ∃r. rl k j = SOME r ∧ MEM r [Connected pa; Connected pb; Accepted pa; Accepted pb]
+End
+
+(* B2 (l0sys_causal), and no outside peer on pa, pb *)
 Definition b2_conn_def:
-  b2_conn (cn : num # num -> (num # num) option) rl tr ⇔
+  b2_conn (cn : num # num -> (num # num) option) rl tr pa pb ⇔
     (∀x y. cn x = SOME y ⇔ cn y = SOME x) ∧
     (∀k j k' j'. cn (k, j) = SOME (k', j') ⇒
        ∃p. rl k j = SOME (Connected p) ∧ rl k' j' = SOME (Accepted p) ∨
            rl k j = SOME (Accepted p) ∧ rl k' j' = SOME (Connected p)) ∧
     (∀k j k' j' t. cn (k, j) = SOME (k', j') ⇒
        l0_ep_recvd j' (tr k' t) ≼ l0_ep_sent j (tr k t)) ∧
-    (∀k j t. cn (k, j) = NONE ⇒ l0_ep_recvd j (tr k t) = [])
+    (∀k j t. cn (k, j) = NONE ∧ quiet_role rl pa pb k j ⇒ l0_ep_recvd j (tr k t) = [])
 End
 
 (* The proxy px listens on pa and connects to pb, where KV kv listens; the
@@ -102,26 +110,36 @@ QED
 
 (* Access to the hypotheses *)
 Theorem b2_sym:
-  b2_conn cn rl tr ∧ cn x = SOME y ⇒ cn y = SOME x
+  b2_conn cn rl tr pa pb ∧ cn x = SOME y ⇒ cn y = SOME x
 Proof
   rw[b2_conn_def] >> metis_tac[]
 QED
 
 Theorem b2_flow:
-  b2_conn cn rl tr ∧ cn (k, j) = SOME (k', j') ⇒
+  b2_conn cn rl tr pa pb ∧ cn (k, j) = SOME (k', j') ⇒
   l0_ep_recvd j' (tr k' t) ≼ l0_ep_sent j (tr k t)
 Proof
   rw[b2_conn_def]
 QED
 
 Theorem b2_quiet:
-  b2_conn cn rl tr ∧ cn (k, j) = NONE ⇒ l0_ep_recvd j (tr k t) = []
+  b2_conn cn rl tr pa pb ∧ cn (k, j) = NONE ∧ quiet_role rl pa pb k j ⇒
+  l0_ep_recvd j (tr k t) = []
 Proof
   rw[b2_conn_def]
 QED
 
+(* The proxy's and KV's episodes, and the client's connects, are on pa or pb *)
+Theorem top_quiet:
+  topology rl cl px kv pa pb ∧ (k = px ∨ k = kv ∨ ∃q. rl k j = SOME (Connected q)) ⇒
+  quiet_role rl pa pb k j
+Proof
+  rw[topology_def, quiet_role_def] >> Cases_on ‘rl k j’ >> simp[] >>
+  rename1 ‘rl _ _ = SOME r’ >> Cases_on ‘r’ >> res_tac >> gvs[]
+QED
+
 Theorem b2_role:
-  b2_conn cn rl tr ∧ cn (k, j) = SOME (k', j') ⇒
+  b2_conn cn rl tr pa pb ∧ cn (k, j) = SOME (k', j') ⇒
   ∃p. rl k j = SOME (Connected p) ∧ rl k' j' = SOME (Accepted p) ∨
       rl k j = SOME (Accepted p) ∧ rl k' j' = SOME (Connected p)
 Proof
@@ -130,14 +148,14 @@ QED
 
 (* The far end of a connect is an accept on the same port, and back *)
 Theorem b2_connected:
-  b2_conn cn rl tr ∧ cn (k, j) = SOME (k', j') ∧ rl k j = SOME (Connected p) ⇒
+  b2_conn cn rl tr pa pb ∧ cn (k, j) = SOME (k', j') ∧ rl k j = SOME (Connected p) ⇒
   rl k' j' = SOME (Accepted p)
 Proof
   strip_tac >> drule_all b2_role >> rw[] >> gvs[]
 QED
 
 Theorem b2_accepted:
-  b2_conn cn rl tr ∧ cn (k, j) = SOME (k', j') ∧ rl k j = SOME (Accepted p) ⇒
+  b2_conn cn rl tr pa pb ∧ cn (k, j) = SOME (k', j') ∧ rl k j = SOME (Accepted p) ⇒
   rl k' j' = SOME (Connected p)
 Proof
   strip_tac >> drule_all b2_role >> rw[] >> gvs[]
@@ -145,7 +163,7 @@ QED
 
 (* The client only connects, to pa; KV only accepts, on pb *)
 Theorem b2_client:
-  b2_conn cn rl tr ∧ topology rl cl px kv pa pb ∧ cn (cl, j) = SOME y ⇒
+  b2_conn cn rl tr pa pb ∧ topology rl cl px kv pa pb ∧ cn (cl, j) = SOME y ⇒
   rl cl j = SOME (Connected pa)
 Proof
   rw[] >> PairCases_on ‘y’ >> drule_all b2_role >> rw[] >>
@@ -153,7 +171,7 @@ Proof
 QED
 
 Theorem b2_kv:
-  b2_conn cn rl tr ∧ topology rl cl px kv pa pb ∧ cn (kv, j) = SOME y ⇒
+  b2_conn cn rl tr pa pb ∧ topology rl cl px kv pa pb ∧ cn (kv, j) = SOME y ⇒
   rl kv j = SOME (Accepted pb)
 Proof
   rw[] >> PairCases_on ‘y’ >> drule_all b2_role >> rw[] >>
@@ -173,7 +191,7 @@ QED
 (* G4 *)
 
 Theorem comp_ep_inj:
-  b2_conn cn rl tr ∧ proxy_safe_ep prx rl tr px pa pb ∧
+  b2_conn cn rl tr pa pb ∧ proxy_safe_ep prx rl tr px pa pb ∧
   comp_ep cn prx cl px kv j1 = SOME j' ∧ comp_ep cn prx cl px kv j2 = SOME j' ⇒
   j1 = j2
 Proof
@@ -185,12 +203,12 @@ QED
 
 (* An unpaired client episode reads nothing *)
 Theorem comp_ep_unpaired_client:
-  b2_conn cn rl tr ∧ topology rl cl px kv pa pb ∧ proxy_safe_ep prx rl tr px pa pb ∧
-  comp_ep cn prx cl px kv j = NONE ⇒
+  b2_conn cn rl tr pa pb ∧ topology rl cl px kv pa pb ∧ proxy_safe_ep prx rl tr px pa pb ∧
+  (∃q. rl cl j = SOME (Connected q)) ∧ comp_ep cn prx cl px kv j = NONE ⇒
   l0_ep_recvd j (tr cl t) = []
 Proof
   strip_tac >>
-  Cases_on ‘cn (cl, j)’ >- metis_tac[b2_quiet] >>
+  Cases_on ‘cn (cl, j)’ >- metis_tac[b2_quiet, top_quiet] >>
   rename1 ‘cn (cl, j) = SOME y’ >> PairCases_on ‘y’ >> rename1 ‘cn (cl, j) = SOME (k1, a)’ >>
   (* the client connects to pa, so k1 accepted on pa: k1 = px *)
   ‘rl k1 a = SOME (Accepted pa)’ by metis_tac[b2_client, b2_connected] >>
@@ -202,7 +220,7 @@ Proof
   ‘rl px b = SOME (Connected pb) ∧ l0_ep_sent a (tr px t) ≼ l0_ep_recvd b (tr px t)’
     by (fs[proxy_safe_ep_def] >> metis_tac[]) >>
   Cases_on ‘cn (px, b)’
-  >- (‘l0_ep_recvd b (tr px t) = []’ by metis_tac[b2_quiet] >>
+  >- (‘l0_ep_recvd b (tr px t) = []’ by metis_tac[b2_quiet, top_quiet] >>
       metis_tac[IS_PREFIX_TRANS, IS_PREFIX_NIL]) >>
   rename1 ‘cn (px, b) = SOME y’ >> PairCases_on ‘y’ >> rename1 ‘cn (px, b) = SOME (k2, j')’ >>
   (* px connected to pb, so k2 accepted on pb: k2 = kv *)
@@ -212,12 +230,12 @@ QED
 
 (* An episode of KV that no client episode maps to reads nothing *)
 Theorem comp_ep_unpaired_kv:
-  b2_conn cn rl tr ∧ topology rl cl px kv pa pb ∧ proxy_safe_ep prx rl tr px pa pb ∧
+  b2_conn cn rl tr pa pb ∧ topology rl cl px kv pa pb ∧ proxy_safe_ep prx rl tr px pa pb ∧
   (∀j. comp_ep cn prx cl px kv j ≠ SOME j') ⇒
   l0_ep_recvd j' (tr kv t) = []
 Proof
   rw[comp_ep_SOME] >>
-  Cases_on ‘cn (kv, j')’ >- metis_tac[b2_quiet] >>
+  Cases_on ‘cn (kv, j')’ >- metis_tac[b2_quiet, top_quiet] >>
   rename1 ‘cn (kv, j') = SOME y’ >> PairCases_on ‘y’ >> rename1 ‘cn (kv, j') = SOME (k1, b)’ >>
   (* KV accepts on pb, so k1 connected to pb: k1 = px *)
   ‘rl k1 b = SOME (Connected pb)’ by metis_tac[b2_kv, b2_accepted] >>
@@ -227,7 +245,7 @@ Proof
   ‘∃a. prx a = SOME b ∧ rl px a = SOME (Accepted pa)’ by (fs[proxy_safe_ep_def] >> metis_tac[]) >>
   ‘l0_ep_sent b (tr px t) ≼ l0_ep_recvd a (tr px t)’ by (fs[proxy_safe_ep_def] >> metis_tac[]) >>
   Cases_on ‘cn (px, a)’
-  >- (‘l0_ep_recvd a (tr px t) = []’ by metis_tac[b2_quiet] >>
+  >- (‘l0_ep_recvd a (tr px t) = []’ by metis_tac[b2_quiet, top_quiet] >>
       metis_tac[IS_PREFIX_TRANS, IS_PREFIX_NIL]) >>
   rename1 ‘cn (px, a) = SOME y’ >> PairCases_on ‘y’ >> rename1 ‘cn (px, a) = SOME (k2, j)’ >>
   (* px accepted on pa, so k2 connected to pa: k2 = cl, and j maps to j' *)
@@ -240,7 +258,7 @@ QED
 (* G5: the per-instant chain *)
 
 Theorem comp_ep_chain:
-  b2_conn cn rl tr ∧ proxy_safe_ep prx rl tr px pa pb ∧
+  b2_conn cn rl tr pa pb ∧ proxy_safe_ep prx rl tr px pa pb ∧
   comp_ep cn prx cl px kv j = SOME j' ⇒
   l0_ep_recvd j' (tr kv t) ≼ l0_ep_sent j (tr cl t) ∧
   l0_ep_recvd j (tr cl t) ≼ l0_ep_sent j' (tr kv t)
@@ -257,10 +275,11 @@ QED
    e = comp_ep cn prx cl px kv, kvs = tr kv, cls = tr cl, and
    snt = kwr = l0_ep_sent, crd = krd = l0_ep_recvd *)
 Theorem moonshot_pairs:
-  b2_conn cn rl tr ∧ topology rl cl px kv pa pb ∧ proxy_safe_ep prx rl tr px pa pb ⇒
+  b2_conn cn rl tr pa pb ∧ topology rl cl px kv pa pb ∧ proxy_safe_ep prx rl tr px pa pb ⇒
   (∀j1 j2 j'. comp_ep cn prx cl px kv j1 = SOME j' ∧ comp_ep cn prx cl px kv j2 = SOME j' ⇒
               j1 = j2) ∧
-  (∀t j. comp_ep cn prx cl px kv j = NONE ⇒ l0_ep_recvd j (tr cl t) = []) ∧
+  (∀t j q. rl cl j = SOME (Connected q) ∧ comp_ep cn prx cl px kv j = NONE ⇒
+           l0_ep_recvd j (tr cl t) = []) ∧
   (∀t j j'. comp_ep cn prx cl px kv j = SOME j' ⇒
      l0_ep_recvd j' (tr kv t) ≼ l0_ep_sent j (tr cl t) ∧
      l0_ep_recvd j (tr cl t) ≼ l0_ep_sent j' (tr kv t)) ∧

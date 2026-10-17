@@ -19,6 +19,16 @@ for every L0 world `w0` under hypotheses that reindexing keeps.
 Safety (`echo_l0_safe`) is the KV worker's (design/46), so nothing here
 re-proves its invariants.
 
+Base: spike/l3-quiet @7b91911f6, which has D20 + D21 + the moonshot pol
+model, cf-actions' honest-l1b, and its statement copy `honestL1BStmts`
+(synced to #153 3593187d9). The trace is cf-actions' plain-prounds one
+(`ptrace`/`ppre`), for an arbitrary start world:
+`LPREFIX (fromList evs) io ⇔ ∃N h ws evs' logs. prounds lfd pol ifds m (w, pinit) N = SOME (h, ws, evs', logs) ∧ evs ≼ evs'`.
+The CakeML loop's trace (`prounds_t`, guarded by `hdl_room`) is the
+whole-program step and is not proved here. Flagged to the coordinator:
+`accepts_below` does not imply `hdl_room`, because the loop reserves room
+for every action of a round.
+
 ## Pieces
 
 **A. The trace bridge (PF run ↔ io).** All model-level:

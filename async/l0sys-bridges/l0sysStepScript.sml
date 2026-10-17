@@ -238,3 +238,169 @@ Proof
         rpt strip_tac >> res_tac >> fs[]) >>
   gvs[sinv_def]
 QED
+
+(*---------------------------------------------------------------------------*)
+(* A new connection queued at k''s listener on port p *)
+
+(* The queue entries after it: the old ones, and the first listener of port
+   p with the new connection appended *)
+Theorem incoming_listeners:
+  FILTER (λ(l, p', q). p' = p) w.listeners ≠ [] ∧ ALL_DISTINCT (MAP FST w.listeners) ∧
+  MEM (l, p', q) (l0_deliver w (LIncoming p)).listeners ∧ MEM c q ⇒
+  (∃q0. MEM (l, p', q0) w.listeners ∧ MEM c q0) ∨ c = LENGTH w.chans ∧ p' = p
+Proof
+  rw[l0_deliver_def] >> every_case_tac >> gvs[] >>
+  rename1 ‘FILTER _ _ = (lh, rh) :: _’ >> PairCases_on ‘rh’ >> gvs[] >>
+  drule MEM_AFUPDKEY_imp >> rw[] >- metis_tac[] >>
+  PairCases_on ‘b0’ >> gvs[] >>
+  ‘MEM (l, rh0, rh1) (FILTER (λ(l, p', q). p' = p) w.listeners)’ by simp[] >>
+  gvs[MEM_FILTER] >> metis_tac[MEM_FST_unique, PAIR_EQ]
+QED
+
+Theorem pk_incoming:
+  kinv s ∧ pk rs s css k ∧ sys_room s k' p ⇒ pk rs (sys_deliver k' (LIncoming p) s) css k
+Proof
+  strip_tac >>
+  Cases_on ‘k = k'’
+  >- (rveq >>
+      qabbrev_tac ‘w = EL k s.procs’ >>
+      ‘k < LENGTH s.procs’ by gvs[sys_room_def] >>
+      ‘FILTER (λ(l, p', q). p' = p) w.listeners ≠ []’
+        by (gvs[sys_room_def, Abbr ‘w’] >> every_case_tac >> gvs[]) >>
+      ‘pinv (proc_events k rs) w (css k) ∧ l0_rely w ∧ small_ch w.ch’
+        by (qpat_x_assum ‘pk _ _ _ _’ mp_tac >> simp[pk_def, Abbr ‘w’]) >>
+      ‘ALL_DISTINCT (MAP FST w.listeners)’ by fs[pinv_def] >>
+      ‘s.peer (k, LENGTH w.chans) = NONE ∧ s.target (k, LENGTH w.chans) = NONE’
+        by (‘¬is_end s (k, LENGTH w.chans)’ by simp[is_end_def, Abbr ‘w’] >>
+            fs[kinv_def]) >>
+      ‘(l0_deliver w (LIncoming p)).ch = w.ch ∧
+       (l0_deliver w (LIncoming p)).fd_limit = w.fd_limit’
+        by (rw[l0_deliver_def] >> every_case_tac >> simp[]) >>
+      ‘l0_rely (l0_deliver w (LIncoming p))’
+        by (irule l0_rely_ch >> qexists_tac ‘w’ >> simp[]) >>
+      ‘pinv (proc_events k rs) (l0_deliver w (LIncoming p)) (css k)’ by simp[pinv_incoming] >>
+      qpat_x_assum ‘pk _ _ _ _’ mp_tac >>
+      simp[pk_def, sys_deliver_def, EL_LUPDATE, Abbr ‘w’] >> rpt strip_tac >>
+      TRY (res_tac >> fs[] >> NO_TAC) >>
+      drule_all incoming_listeners >> strip_tac >> res_tac >> fs[]) >>
+  ‘k' < LENGTH s.procs’ by gvs[sys_room_def] >>
+  gvs[pk_def, sys_deliver_def, EL_LUPDATE] >> rpt strip_tac >> res_tac >> fs[]
+QED
+
+(*---------------------------------------------------------------------------*)
+(* Pairing a connect end e with a new connection e' = (k', n) *)
+
+Theorem pk_pair_gen:
+  pk rs s css k ∧ s.target e = SOME p ∧ (k = k' ⇒ ¬MEM n (css k)) ∧
+  (k = k' ⇒ ∀l p'' q. MEM (l, p'', q) (EL k s.procs).listeners ∧ MEM n q ⇒ p'' = p) ⇒
+  pk rs (s with peer := (e =+ SOME (k', n)) (((k', n) =+ SOME e) s.peer)) css k
+Proof
+  strip_tac >> fs[pk_def] >> rpt conj_tac >> rpt gen_tac >> strip_tac
+  >- ((* accepted episodes *)
+      ‘(k, EL j (css k)) ≠ e’ by (strip_tac >> res_tac >> gvs[]) >>
+      ‘(k, EL j (css k)) ≠ (k', n)’
+        by (strip_tac >> ‘k = k' ∧ EL j (css k) = n’ by fs[] >>
+            qpat_x_assum ‘k = k' ⇒ ¬MEM n (css k')’ mp_tac >>
+            qpat_x_assum ‘k = k'’ (fn th => rewrite_tac[GSYM th]) >> simp[] >>
+            qpat_x_assum ‘EL j (css k) = n’ (SUBST1_TAC o SYM) >>
+            irule EL_MEM >> first_assum ACCEPT_TAC) >>
+      res_tac >> simp[APPLY_UPDATE_THM]) >>
+  (* queued connections *)
+  ‘(k, c) ≠ e’ by (strip_tac >> res_tac >> gvs[]) >>
+  Cases_on ‘(k, c) = (k', n)’
+  >- (gvs[] >> res_tac >> simp[APPLY_UPDATE_THM]) >>
+  res_tac >> simp[APPLY_UPDATE_THM]
+QED
+
+Theorem sinv_pair:
+  sinv rs s css ∧ is_end s e ∧ s.peer e = NONE ∧ ¬(sys_chan s e).connecting ∧
+  (sys_chan s e).peer_sent = [] ∧ s.target e = SOME p ∧ sys_room s k' p ⇒
+  sinv rs (sys_pair e k' p s) css
+Proof
+  strip_tac >> drule incoming_chans >> simp[] >> strip_tac >>
+  qabbrev_tac ‘n = LENGTH (EL k' s.procs).chans’ >>
+  qabbrev_tac ‘s1 = sys_deliver k' (LIncoming p) s’ >>
+  ‘sys_pair e k' p s = s1 with peer := (e =+ SOME (k', n)) (((k', n) =+ SOME e) s1.peer)’
+    by simp[sys_pair_def, Abbr ‘s1’, Abbr ‘n’] >>
+  pop_assum SUBST1_TAC >>
+  ‘k' < LENGTH s.procs’ by gvs[sys_room_def] >>
+  simp[sinv_def] >> conj_tac
+  >- (irule kinv_pair_gen >> conj_tac >- simp[] >> qexists_tac ‘s’ >>
+      fs[sinv_def] >> simp[Abbr ‘s1’]) >>
+  rpt strip_tac >>
+  ‘LENGTH s1.procs = LENGTH s.procs’ by simp[Abbr ‘s1’] >>
+  ‘pk rs s1 css k’ by (simp[Abbr ‘s1’] >> irule pk_incoming >> fs[sinv_def]) >>
+  irule pk_pair_gen >> rpt conj_tac >> TRY (qexists_tac ‘p’) >> rpt conj_tac >>
+  FIRST [
+    first_assum ACCEPT_TAC,
+    simp[Abbr ‘s1’] >> NO_TAC,
+    (strip_tac >> rveq >>
+     ‘pinv (proc_events k rs) (EL k s.procs) (css k)’ by fs[sinv_def, pk_def] >>
+     gvs[pinv_def, EVERY_MEM, Abbr ‘n’] >> strip_tac >> res_tac >> fs[] >> NO_TAC),
+    (strip_tac >> rveq >> rpt gen_tac >> strip_tac >>
+     ‘pinv (proc_events k rs) (EL k s.procs) (css k)’ by fs[sinv_def, pk_def] >>
+     ‘FILTER (λ(l, p', q). p' = p) (EL k s.procs).listeners ≠ []’
+       by (gvs[sys_room_def] >> every_case_tac >> gvs[]) >>
+     ‘ALL_DISTINCT (MAP FST (EL k s.procs).listeners)’ by fs[pinv_def] >>
+     ‘EL k s1.procs = l0_deliver (EL k s.procs) (LIncoming p)’
+       by simp[Abbr ‘s1’, sys_deliver_def, EL_LUPDATE] >>
+     gvs[] >> drule_all incoming_listeners >> strip_tac >> gvs[Abbr ‘n’] >>
+     fs[pinv_def] >> res_tac >> fs[])]
+QED
+
+(*---------------------------------------------------------------------------*)
+(* An outside connection; an exit *)
+
+Theorem sinv_incoming:
+  sinv rs s css ∧ sys_room s k p ∧ (∀k nm conf bytes out. r ≠ Call k nm conf bytes out) ⇒
+  sinv (rs ++ [r]) (sys_deliver k (LIncoming p) s) css
+Proof
+  strip_tac >> ‘k < LENGTH s.procs’ by gvs[sys_room_def] >>
+  simp[sinv_def] >> conj_tac
+  >- (irule kinv_deliver >> fs[sinv_def]) >>
+  rpt strip_tac >>
+  ‘pk rs (sys_deliver k (LIncoming p) s) css k'’ by (irule pk_incoming >> fs[sinv_def]) >>
+  ‘proc_events k' (rs ++ [r]) = proc_events k' rs’
+    by (irule proc_events_other >> first_x_assum ACCEPT_TAC) >>
+  qpat_x_assum ‘pk rs (sys_deliver _ _ _) _ _’ mp_tac >> simp[pk_def] >>
+  rpt strip_tac >> res_tac >> fs[]
+QED
+
+Theorem close_all_ch:
+  (close_all w).ch = w.ch ∧ (close_all w).fd_limit = w.fd_limit
+Proof
+  simp[close_all_def] >>
+  qspec_tac (‘MAP FST w.open_fds ++ MAP FST w.listeners’, ‘fs’) >>
+  qid_spec_tac ‘w’ >> Induct_on ‘fs’ >> simp[]
+QED
+
+Theorem sinv_exit:
+  sinv rs s css ∧ k < LENGTH s.procs ⇒
+  sinv (rs ++ [Exit k])
+       (s with <| alive := (k =+ F) s.alive;
+                  procs := LUPDATE (close_all (EL k s.procs)) k s.procs |>) css
+Proof
+  strip_tac >> simp[sinv_def] >> conj_tac
+  >- (‘kinv (s with procs := LUPDATE (close_all (EL k s.procs)) k s.procs)’
+        by (irule kinv_local >> fs[sinv_def, wmono_close_all]) >>
+      ‘s with <| alive := (k =+ F) s.alive; procs := LUPDATE (close_all (EL k s.procs)) k s.procs |> =
+       (s with procs := LUPDATE (close_all (EL k s.procs)) k s.procs) with alive := (k =+ F) s.alive’
+        by simp[sysstate_component_equality] >>
+      simp[]) >>
+  rpt strip_tac >>
+  ‘pk rs s css k'’ by fs[sinv_def] >>
+  ‘proc_events k' (rs ++ [Exit k]) = proc_events k' rs’ by simp[proc_events_other] >>
+  Cases_on ‘k' = k’
+  >- (rveq >>
+      ‘lsub (EL k s.procs) (close_all (EL k s.procs))’ by simp[lsub_close_all] >>
+      qpat_x_assum ‘pk _ _ _ _’ mp_tac >> simp[pk_def, EL_LUPDATE] >> rpt strip_tac >>
+      FIRST [
+        irule l0_rely_ch >> qexists_tac ‘EL k s.procs’ >> simp[close_all_ch] >> NO_TAC,
+        simp[close_all_ch] >> NO_TAC,
+        simp[pinv_close_all] >> NO_TAC,
+        res_tac >> fs[] >> NO_TAC,
+        qpat_x_assum ‘lsub _ _’ mp_tac >> simp[lsub_def] >> strip_tac >>
+        first_x_assum drule_all >> strip_tac >> res_tac >> fs[]]) >>
+  qpat_x_assum ‘pk _ _ _ _’ mp_tac >> simp[pk_def, EL_LUPDATE] >>
+  rpt strip_tac >> res_tac >> fs[]
+QED

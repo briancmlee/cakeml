@@ -587,7 +587,7 @@ QED
 Theorem settle_fds_quiet:
   ∀fs w es w' es' evs.
     settle_fds fs (w, es) = SOME ((w', es'), evs) ∧ l0_rely w ⇒
-    l0_rely w' ∧ es'.p = es.p ∧ ∀f. evs_sent f evs = []
+    l0_rely w' ∧ es'.p = es.p ∧ es'.ctbl = es.ctbl ∧ ∀f. evs_sent f evs = []
 Proof
   Induct >> simp[settle_fds_def] >> rpt gen_tac >> rw[AllCaseEqs()] >>
   ‘l0_rely w1’ by (gvs[sys_connerr_def] >> metis_tac[l0_do_rely]) >>
@@ -610,4 +610,111 @@ Theorem apply_early_p[simp]:
   (apply_early es).p = es.p ∧ (apply_early es).ctbl = es.ctbl
 Proof
   simp[apply_early_def]
+QED
+
+Theorem ostep_sent:
+  evs_sent f e1 = evs_sent f e2 ⇒
+  (ostep f b b' e1 a ⇔ ostep f b b' e2 a) ∧ (ostepc f b e1 a ⇔ ostepc f b e2 a)
+Proof
+  simp[ostep_def, ostepc_def]
+QED
+
+Theorem etail_live:
+  etail lfd pol hs (w, es) = SOME (rdy, (w', es'), log, tevs) ∧
+  oown lfd es ∧ okeys es.p.b ∧ l0_rely w ∧ pown lfd es'.p ⇒
+  l0_rely w' ∧ okeys es'.p.b ∧
+  ∀f. (live es f ⇒
+         ostepc f es.p.b tevs [] ∧
+         (live es' f ∧ ¬MEM (FConn f) log ⇒ ostep f es.p.b es'.p.b tevs [])) ∧
+      (¬live es f ⇒ evs_sent f tevs = []) ∧
+      (live es' f ∧ (¬live es f ∨ MEM (FConn f) log) ⇒
+         outbox_of es'.p.b f = [] ∧ ¬MEM f es'.p.b.gone)
+Proof
+  simp[etail_def, AllCaseEqs(), PULL_EXISTS] >> rpt gen_tac >> strip_tac >>
+  ‘es'.p = (promote es5).p’ by (qpat_x_assum ‘_ = es'’ (SUBST1_TAC o SYM) >> simp[]) >>
+  qpat_x_assum ‘FILTER _ hs = rdy’ kall_tac >> qpat_x_assum ‘_ = es'’ kall_tac >>
+  qpat_x_assum ‘_ = tevs’ (SUBST_ALL_TAC o SYM) >>
+  qabbrev_tac ‘ps3 = stall_step (pf_held ps3') (outbox_of es.p.b) log ps3'’ >>
+  ‘pown lfd es.p’ by fs[oown_def] >>
+  (* the stages *)
+  drule_all l1_polls_l0 >> strip_tac >> drule l1_polls_quiet >> strip_tac >>
+  drule_all l1_flush_l0 >> strip_tac >> drule_all l1_flush_keys >> strip_tac >>
+  drule_all pf_fetch_quiet >> simp[] >> strip_tac >>
+  ‘ps3.b.tbl = ps3'.b.tbl ∧ ps3.b.closing = ps3'.b.closing ∧ ps3.acq = ps3'.acq ∧
+   okeys ps3.b ∧ (∀f. ostep f ps3'.b ps3.b [] []) ∧
+   ∀f. ¬MEM f (MAP SND ps3'.b.tbl) ∧ ¬MEM f ps3'.b.closing ⇒
+       outbox_of ps3.b f = outbox_of ps3'.b f ∧ (MEM f ps3.b.gone ⇔ MEM f ps3'.b.gone)’
+    by simp[Abbr ‘ps3’, stall_out, stall_ostep, stall_other] >>
+  drule_all l1_reap_l0 >> strip_tac >> drule l1_reap_quiet >> strip_tac >>
+  ‘okeys b4’ by metis_tac[l1_reap_okeys] >>
+  drule_all settle_fds_quiet >> simp[] >> strip_tac >>
+  ‘es'.p.b.outbox = b4.outbox ∧ es'.p.b.gone = b4.gone ∧ es'.p.b.closing = b4.closing ∧
+   es'.p.acq = ps3'.acq ∧
+   (∀f. MEM f (MAP SND es'.p.b.tbl) ⇒ MEM f (MAP SND b4.tbl) ∨ MEM f (MAP SND es.ctbl)) ∧
+   (∀f. MEM f (MAP SND b4.tbl) ⇒ MEM f (MAP SND es'.p.b.tbl))’
+    by (qpat_x_assum ‘es'.p = _’ SUBST1_TAC >>
+        mp_tac (Q.INST [‘es’ |-> ‘es5’] promote_fields) >> simp[]) >>
+  ‘∀f. outbox_of es'.p.b f = outbox_of b4 f’ by simp[outbox_of_def] >>
+  ‘okeys es'.p.b’ by (gvs[okeys_def] >> metis_tac[]) >>
+  qpat_x_assum ‘es'.p = _’ (fn th => REWRITE_TAC [GSYM th]) >>
+  rpt (conj_tac >- first_assum ACCEPT_TAC) >> gen_tac >>
+  ‘evs_sent f (pevs ++ fevs ++ gevs ++ cevs ++ sevs) = evs_sent f fevs’ by simp[] >>
+  drule ostep_sent >> strip_tac >> pop_assum kall_tac >>
+  ‘∀b b'. ostep f b b' (pevs ++ fevs ++ gevs ++ cevs ++ sevs) [] ⇔ ostep f b b' fevs []’
+    by metis_tac[ostep_sent] >>
+  ‘∀b. ostepc f b (pevs ++ fevs ++ gevs ++ cevs ++ sevs) [] ⇔ ostepc f b fevs []’
+    by metis_tac[ostep_sent] >>
+  ntac 2 (pop_assum (fn th => REWRITE_TAC [th])) >>
+  pop_assum (fn th => REWRITE_TAC [th]) >>
+  (* an fd not held at the start keeps an empty account *)
+  ‘¬held es.p.b f ⇒ evs_sent f fevs = [] ∧ outbox_of es'.p.b f = [] ∧ ¬MEM f es'.p.b.gone’
+    by (strip_tac >>
+        ‘outbox_of es.p.b f = [] ∧ ¬MEM f es.p.b.gone’
+          by (fs[okeys_def, held_def] >> metis_tac[]) >>
+        ‘outbox_of b2 f = [] ∧ ¬MEM f b2.gone ∧ evs_sent f fevs = []’
+          by (drule_all l1_flush_other >> fs[]) >>
+        ‘¬MEM f (MAP SND ps3'.b.tbl) ∧ ¬MEM f ps3'.b.closing’ by fs[held_def] >>
+        ‘outbox_of ps3.b f = [] ∧ ¬MEM f ps3.b.gone’ by (res_tac >> fs[]) >>
+        ‘outbox_of b4 f = [] ∧ ¬MEM f b4.gone’
+          by (qpat_x_assum ‘l1_reap _ _ = _’ assume_tac >> drule_all l1_reap_other >> fs[]) >>
+        fs[]) >>
+  (* to the stall, any fd *)
+  ‘ostep f es.p.b ps3.b fevs []’
+    by (drule_all l1_flush_ostep >> strip_tac >>
+        pop_assum (qspec_then ‘f’ assume_tac) >>
+        ‘ostep f ps3'.b ps3.b [] []’ by fs[] >> rfs[] >>
+        metis_tac[ostep_trans, APPEND_NIL]) >>
+  (* the reap keeps an fd it does not close *)
+  ‘¬MEM f ps3'.b.closing ∨ MEM f b4.closing ⇒ ostep f es.p.b es'.p.b fevs []’
+    by (strip_tac >>
+        ‘outbox_of b4 f = outbox_of ps3.b f ∧ (MEM f b4.gone ⇔ MEM f ps3.b.gone)’
+          by (qpat_x_assum ‘l1_reap _ _ = _’ assume_tac >>
+              TRY (drule_all l1_reap_other >> simp[] >> NO_TAC) >>
+              drule_all l1_reap_closing >> strip_tac >> rfs[] >>
+              drule_all l1_reap_busy >> simp[]) >>
+        ‘ostep f ps3.b es'.p.b [] []’ by (irule ostep_quiet >> fs[]) >>
+        metis_tac[ostep_trans, APPEND_NIL]) >>
+  ‘MEM f ps3'.b.closing ⇔ MEM f es.p.b.closing’ by fs[] >>
+  ‘MEM f es.p.b.closing ⇒ ¬MEM f (MAP SND es.p.b.tbl) ∧ ¬MEM f es.p.acq ∧
+                          ¬MEM f (MAP SND es.ctbl)’
+    by (strip_tac >> ‘held es.p.b f’ by simp[held_def] >>
+        metis_tac[pown_disjoint, eown_ctbl_held]) >>
+  ‘MEM f (MAP SND es'.p.b.tbl) ⇒ MEM f (MAP SND es.p.b.tbl) ∨ MEM f (MAP SND es.ctbl)’
+    by (strip_tac >> res_tac >> rfs[]) >>
+  ‘MEM f es'.p.acq ⇒ ¬held es'.p.b f’ by metis_tac[pown_disjoint, held_def] >>
+  rpt conj_tac
+  >- (strip_tac >> conj_tac >- metis_tac[ostep_ostepc] >>
+      strip_tac >> first_x_assum irule >> CCONTR_TAC >> fs[live_def, held_def] >>
+      metis_tac[])
+  >- (simp[live_def])
+  >> strip_tac >> Cases_on ‘held es.p.b f’ >> fs[live_def]
+  >- metis_tac[]
+  >> ‘MEM f es'.p.acq’ by fs[] >>
+  ‘¬MEM f b4.closing ∧ ¬MEM f (MAP SND b4.tbl)’ by metis_tac[held_def] >>
+  ‘b4.tbl = es.p.b.tbl ∧ ps3.b.closing = es.p.b.closing’
+    by (qpat_x_assum ‘b4.tbl = _’ SUBST1_TAC >> qpat_x_assum ‘ps3.b.tbl = _’ SUBST1_TAC >>
+        qpat_x_assum ‘ps3.b.closing = _’ SUBST1_TAC >> qpat_x_assum ‘ps3'.b = _’ SUBST1_TAC >>
+        conj_tac >> first_assum ACCEPT_TAC) >>
+  ‘MEM f ps3.b.closing’ by (fs[held_def] >> metis_tac[]) >>
+  qpat_x_assum ‘l1_reap _ _ = _’ assume_tac >> drule_all l1_reap_closed >> fs[]
 QED

@@ -346,7 +346,9 @@ def check_recv(states, conf, out, alen):
                 s2 = copy.deepcopy(s); s2.chans[j].inbox = s2.chans[j].inbox[val:]; res.append(s2)
         elif code == 0:                                   # EOF: orderly shutdown, or broken
             def ok(s):
-                c = s.chans[j]; return not c.inbox and c.err is None and (c.peer_eof or c.broken)
+                c = s.chans[j]                    # after the peer's EOF a pending error may
+                return (not c.inbox and (c.err is None or c.peer_eof)   # wait (eof_first, D21)
+                        and (c.peer_eof or c.broken))
             res += with_deliveries([st], j, ok)
         elif code == E["EAGAIN"]:
             c = st.chans[j]
@@ -490,6 +492,14 @@ def check_connerr(states, conf, out):
             res.append(st)
         elif code and val == 1 and c.err == code:
             s = copy.deepcopy(st); s.chans[j].err = None; res.append(s)
+        elif code and val == 1 and c.err is None and not c.broken and not c.connecting:
+            # a break no client action logged (LBreak j code keep, then
+            # reported): the peer of a connect is not always the harness's
+            # client, e.g. Linux's shutdown of a pending connect ([X5], D22)
+            for keep in (True, False):
+                s = copy.deepcopy(st); c2 = s.chans[j]; c2.broken = True
+                if not keep: c2.inbox = c2.inbox[:0]
+                res.append(s)
     return res
 
 

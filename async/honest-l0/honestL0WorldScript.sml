@@ -131,6 +131,15 @@ Datatype:
      ; broken_send : lcall list -> errcode
           (* send's error on a broken channel otherwise: EPIPE "no longer
              connected" [P send], ECONNRESET, ENOTCONN, ... *)
+     ; eof_first : lcall list -> bool
+          (* recv after the peer's EOF, with a reset's error pending (D21):
+             0 at once, the error staying pending (T), or the error (F).
+             [P recv]: 0 "If no messages are available to be received and the
+             peer has performed an orderly shutdown"; [P 2.10.10] the pending
+             error "is returned in response to a subsequent send(), recv(), or
+             getsockopt()"; [P 2.10.11] "The receive queue is logically
+             terminated if an end-of-file indication has been received".  The
+             order is unspecified: either (Linux: 0, the error left for send) *)
      ; broken_recv : lcall list -> errcode option
           (* recv on a broken channel once its error was reported: 0 (EOF;
              macOS, Linux) or an error again.  [P] is silent: either *)
@@ -405,7 +414,8 @@ End
 
 (* recv of at most n bytes [P recv]: data; 0 "if no messages are available
    to be received and the peer has performed an orderly shutdown"; the
-   pending error; EAGAIN with nothing to read (MSG_DONTWAIT, [X4]) *)
+   pending error (after the peer's EOF possibly later: eof_first, D21);
+   EAGAIN with nothing to read (MSG_DONTWAIT, [X4]) *)
 Definition l0_recv_def:
   l0_recv f n w =
     case l0_chan_of w f of
@@ -422,7 +432,9 @@ Definition l0_recv_def:
                    upd_lchan j (λc. c with inbox := DROP k c.inbox) w)
               else
                 case c.err of
-                | SOME e => (fail w e, [], upd_lchan j (λc. c with err := NONE) w)
+                | SOME e =>
+                    if c.peer_eof ∧ w.ch.eof_first w.hist then (Ok 0, [], w)
+                    else (fail w e, [], upd_lchan j (λc. c with err := NONE) w)
                 | NONE =>
                     if c.broken then
                       (case w.ch.broken_recv w.hist of

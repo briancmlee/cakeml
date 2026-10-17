@@ -15,7 +15,7 @@ Ancestors
   alist ffi honestL0 honestL0World honestL0WorldProps honestL0Rely
   asyncHLModel honestL1Model honestL1Steps honestL1PFModel
   asyncM3World honestEchoL0Spec honestEchoL0Trace honestEchoL0Events
-  honestEchoL0Model honestEchoL0Inv honestEchoL0Round
+  honestEchoL0Model honestEchoL0Inv honestEchoL0Round honestL1PFRefine
 Libs
   preamble
 
@@ -776,4 +776,85 @@ Proof
       simp[]) >>
   strip_tac >> first_x_assum (qspecl_then [‘w’, ‘b’, ‘w'’, ‘b'’, ‘evs’, ‘opn’, ‘snt’] mp_tac) >>
   impl_tac >- (fs[] >> metis_tac[]) >> simp[]
+QED
+
+(* An accept of a fd L1 does not hold opens episode k with no bytes, and
+   ends any stale binding of that fd (which held no bytes either) *)
+Theorem obp_accept:
+  ep_ok (k, opn) ∧ ¬MEM g (MAP SND ps.b.tbl) ∧ ¬MEM g ps.b.closing ⇒
+  obp lfd ps ((g, k) :: ADELKEY g opn) j = obp lfd ps opn j
+Proof
+  strip_tac >>
+  ‘∀x. ALOOKUP ps.b.tbl x ≠ SOME g’
+    by (rpt strip_tac >> imp_res_tac ALOOKUP_MEM >> gvs[MEM_MAP, EXISTS_PROD] >> metis_tac[]) >>
+  Cases_on ‘j = k’
+  >- (‘epfd opn k = NONE’
+        by (Cases_on ‘epfd opn k’ >> simp[] >>
+            drule_then (qspecl_then [‘k’, ‘x’] mp_tac) epfd_iff >> simp[] >> strip_tac >>
+            gvs[ep_ok_def, EVERY_MEM] >> imp_res_tac ALOOKUP_MEM >>
+            gvs[MEM_MAP, EXISTS_PROD] >> res_tac >> fs[]) >>
+      simp[obp_def] >> simp[epfd_def] >> fs[]) >>
+  ‘epfd ((g, k) :: ADELKEY g opn) j = epfd (ADELKEY g opn) j’ by simp[epfd_def] >>
+  simp[obp_def] >>
+  Cases_on ‘epfd opn j = SOME g’
+  >- (‘epfd (ADELKEY g opn) j = NONE’
+        by (Cases_on ‘epfd (ADELKEY g opn) j’ >> simp[] >> drule_all epfd_ADELKEY >> simp[]) >>
+      simp[] >> fs[]) >>
+  drule_all epfd_ADELKEY_ne >> simp[]
+QED
+
+(* The fetch sends nothing and moves no output *)
+Theorem pf_fetch_obp:
+  ∀fs w ps k opn w' ps' log evs.
+    pf_fetch lfd hw fs (w, ps) = SOME ((w', ps'), log, evs) ∧ l0_rely w ∧ fds_lt w ∧
+    ep_ok (k, opn) ∧
+    (∀f. MEM f (MAP SND ps.b.tbl) ∨ MEM f ps.b.closing ⇒ MEM f (l0_used w)) ⇒
+    ps'.b = ps.b ∧ (∀j. ep_sn j (k, opn) evs = []) ∧
+    ∀j. obp lfd ps' (SND (l0_ep_st (k, opn) evs)) j = obp lfd ps opn j
+Proof
+  Induct >- (rw[pf_fetch_def] >> simp[ep_fold_def]) >>
+  rpt gen_tac >> strip_tac >>
+  qpat_x_assum ‘pf_fetch _ _ _ _ = _’ mp_tac >>
+  simp[Once pf_fetch_def] >> IF_CASES_TAC >> simp[]
+  >- (strip_tac >> first_x_assum drule_all >> simp[]) >>
+  IF_CASES_TAC >> simp[]
+  >- (Cases_on ‘sys_accept lfd w’ >> simp[] >> PairCases_on ‘x’ >> simp[] >>
+      rename1 ‘sys_accept lfd w = SOME (out, w1, ev)’ >>
+      pairarg_tac >> simp[AllCaseEqs(), PULL_EXISTS] >> rpt gen_tac >> strip_tac >>
+      drule_all sys_accept_event >> strip_tac >>
+      ‘l0_rely w1 ∧ fds_lt w1’
+        by (gvs[sys_accept_def] >>
+            metis_tac[l0_do_rely, l0_do_fds_lt, EVAL “«sys_accept» = «sys_connect»”]) >>
+      ‘∀g. MEM g (l0_used w) ⇒ MEM g (l0_used w1)’
+        by (gvs[sys_accept_def] >> drule l0_do_used >> simp[]) >>
+      ‘ps1.b = ps.b’ by (every_case_tac >> gvs[]) >>
+      ‘∃k1 opn1. l0_ep_step (k, opn) ev = (k1, opn1)’ by metis_tac[PAIR] >>
+      ‘ep_ok (k1, opn1)’ by metis_tac[ep_ok_step] >>
+      first_x_assum (qspecl_then [‘w1’, ‘ps1’, ‘k1’, ‘opn1’] mp_tac) >> simp[] >>
+      impl_tac >- metis_tac[] >> strip_tac >>
+      ‘∀j. ep_sn j (k, opn) (ev :: evs') =
+           ep_sn j (k, opn) [ev] ++ ep_sn j (l0_ep_step (k, opn) ev) evs'’
+        by rewrite_tac[ep_fold_def, APPEND_NIL] >>
+      ‘∀j. ep_sn j (k, opn) [ev] = []’ by simp[ep_fold_def] >>
+      ‘∀j. obp lfd ps1 opn1 j = obp lfd ps opn j’
+        by (gen_tac >>
+            ‘obp lfd ps1 opn1 j = obp lfd ps opn1 j’ by simp[obp_def] >> simp[] >>
+            Cases_on ‘l0_res_of out’ >> gvs[l0_ep_step_def] >>
+            rename1 ‘l0_res_of out = Ok kk’ >>
+            drule_all sys_accept_fresh >> strip_tac >>
+            irule obp_accept >> simp[] >> metis_tac[]) >>
+      gvs[]) >>
+  Cases_on ‘sys_recv h pf_chunk w’ >> simp[] >> PairCases_on ‘x’ >> simp[] >>
+  rename1 ‘sys_recv h pf_chunk w = SOME (out, w1, ev)’ >>
+  pairarg_tac >> simp[AllCaseEqs(), PULL_EXISTS] >> rpt gen_tac >> strip_tac >>
+  drule_all sys_recv_event >> strip_tac >>
+  ‘l0_rely w1 ∧ fds_lt w1 ∧ l0_used w1 = l0_used w’
+    by (gvs[sys_recv_def] >> imp_res_tac l0_do_used >> gvs[] >>
+        metis_tac[l0_do_rely, l0_do_fds_lt, EVAL “«sys_recv» = «sys_connect»”]) >>
+  ‘ps1.b = ps.b’ by (every_case_tac >> gvs[set_inb_def]) >>
+  ‘l0_ep_step (k, opn) ev = (k, opn)’ by simp[l0_ep_step_def] >>
+  first_x_assum (qspecl_then [‘w1’, ‘ps1’, ‘k’, ‘opn’] mp_tac) >> simp[] >>
+  (impl_tac >- first_assum ACCEPT_TAC) >> strip_tac >>
+  ‘∀j. obp lfd ps1 opn j = obp lfd ps opn j’ by simp[obp_def] >>
+  gvs[ep_fold_def]
 QED

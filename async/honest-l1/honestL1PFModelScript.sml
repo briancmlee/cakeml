@@ -31,7 +31,7 @@
      auto-close (deferred while the outbox flushes); otherwise would-block.
      No syscall;
    - Accept: the oldest queued fd, under a fresh handle; none if the queue
-     is empty or no handle is left (D25′: serve-on at the cut-off, where
+     is empty or there is no room (D25′: serve-on at the cut-off, where
      lfd is not polled and nothing is prefetched).  No syscall;
    - Write: as honestL1Model (buffered; one send if the outbox was empty).
   These are the version-2 world's semantics exactly (socketV2FFI), with the
@@ -105,11 +105,22 @@ End
    One action
    ------------------------------------------------------------------------ *)
 
+(* D25′ with D40's bound: room for one more connection from the kernel.
+   L1 takes a connection (prefetch into acq) only when acq is empty and
+   there is room, and hands it out under handle nxt, so the connections
+   taken from the kernel, nxt + LENGTH acq, stay below 2^64 - 1: within
+   the 2^64 - 2 clients of the version-2 world (socketV2Fair arrival_ok2),
+   which R1 (honestL1PFRefine) needs.  Past it, at most 2^64 - 2 handles
+   handed out, Accept answers "no connection yet" and lfd is not polled *)
+Definition pf_room_def:
+  pf_room ps ⇔ ps.b.nxt + 2 < dimword (:64)
+End
+
 Definition pdo_def:
   pdo lfd (w, ps) (Accept l) =
     (if l ≠ lfd then NONE
-     (* D25′: past the last handle, "no connection yet" (no sys_accept) *)
-     else if ¬(l1hdln (w2n lfd) ps.b.nxt < dimword (:64)) then
+     (* D25′: past the cut-off, "no connection yet" (no sys_accept) *)
+     else if ¬pf_room ps then
        SOME (Accepted NONE, (w, ps), [])
      else
        case ps.acq of
@@ -202,13 +213,13 @@ Proof
 QED
 
 (* May L1 fetch on f now?  The listener: when no connection awaits a
-   handle, accepting is not paused (D17) and a handle is left (D25′: past
+   handle, accepting is not paused (D17) and there is room (D25′: past
    the cut-off lfd leaves the poll set and nothing is prefetched, so acq
    is empty there); a connection: when L1 holds
    none of its input, it is not at EOF, and the policy does not pause it *)
 Definition wants_input_def:
   wants_input lfd pol ps f ⇔
-    if f = lfd then ps.acq = [] ∧ ps.pause = 0 ∧ l1hdln (w2n lfd) ps.b.nxt < dimword (:64)
+    if f = lfd then ps.acq = [] ∧ ps.pause = 0 ∧ pf_room ps
     else inb_of ps f = [] ∧ ¬MEM f ps.eof ∧ ¬pol ps f
 End
 

@@ -53,15 +53,16 @@ Definition pv_rel_def:
 End
 
 (* L1's own invariant: its fds are distinct, its handles distinct and
-   issued, only open handles' fds have input, and (D25′) every accepted
-   fd it holds can still get a handle *)
+   issued, only open handles' fds have input, and (D25′, D40's bound) the
+   connections taken from the kernel stay below 2^64 − 1 (honestL1PFInv
+   proom), so every accepted fd it holds can still get a handle *)
 Definition pown_def:
   pown lfd ps ⇔
     ALL_DISTINCT (lfd :: MAP SND ps.b.tbl ++ ps.b.closing ++ ps.acq) ∧
     ALL_DISTINCT (MAP FST ps.b.tbl) ∧
     (∀h f. ALOOKUP ps.b.tbl h = SOME f ⇒ ∃i. i < ps.b.nxt ∧ h = l1hdl lfd i) ∧
     (∀f. inb_of ps f ≠ [] ∨ MEM f ps.eof ⇒ MEM f (MAP SND ps.b.tbl)) ∧
-    ps.b.nxt + LENGTH ps.acq < dimword (:64)
+    ps.b.nxt + LENGTH ps.acq + 1 < dimword (:64)
 End
 
 (* The handle layer's state is L1's tables *)
@@ -199,15 +200,17 @@ Theorem pdo_accept:
 Proof
   rw[pdo_def] >>
   (* D25′: an fd L1 holds can get a handle, so without room there is none *)
-  ‘ps.acq ≠ [] ⇒ l1hdln (w2n l) ps.b.nxt < dimword (:64)’
-    by (Cases_on ‘ps.acq’ >> gvs[pown_def, l1hdln_lt]) >>
+  ‘ps.acq ≠ [] ⇒ pf_room ps’
+    by (Cases_on ‘ps.acq’ >> gvs[pown_def, pf_room_def]) >>
   Cases_on ‘ps.acq’ >> gvs[] >>
   TRY (‘ALOOKUP s.listening l = SOME []’ by gvs[pv_rel_def] >>
        simp[hdo_def, sock_accept2_def] >> NO_TAC) >>
   rename1 ‘ps.acq = f :: q’ >>
   ‘LENGTH ps.b.tbl ≤ ps.b.nxt’
     by (irule tbl_length_le >> gvs[pown_def] >> metis_tac[]) >>
-  ‘ps.b.nxt + 1 < dimword (:64)’ by (irule hdln_suc_lt >> qexists_tac ‘l’ >> simp[]) >>
+  ‘ps.b.nxt + 1 < dimword (:64)’ by gvs[pf_room_def] >>
+  ‘hdln (w2n l) ps.b.nxt < dimword (:64)’
+    by (drule_then (qspec_then ‘l’ mp_tac) pf_room_hdln >> simp[]) >>
   drule_all open_fds_length >> strip_tac >>
   ‘f ≠ l ∧ ¬MEM f (MAP SND ps.b.tbl) ∧ ¬MEM f q ∧ ¬MEM f ps.b.closing’
     by (gvs[pown_def, ALL_DISTINCT_APPEND] >> metis_tac[]) >>
@@ -218,13 +221,13 @@ Proof
   simp[hdo_def, sock_accept2_def] >>
   ‘ALOOKUP s.listening l = SOME (cl cm f :: MAP (cl cm) q)’ by gvs[pv_rel_def] >>
   simp[hs_of_def] >>
+  conj_tac >- (qpat_x_assum ‘hdln _ _ < _’ mp_tac >> simp[]) >>
   conj_tac
   >- (qpat_x_assum ‘pv_rel _ _ _ _’ mp_tac >>
       simp[pv_rel_def, AFUPDKEY_def, inb_of_def] >> strip_tac >>
       gvs[inb_of_def] >> rw[] >> metis_tac[ALOOKUP_SOME_MEM_SND]) >>
   qpat_x_assum ‘pown _ _’ mp_tac >>
   simp[pown_def, inb_of_def] >> strip_tac >> gvs[inb_of_def] >>
-  ‘hdln (w2n l) ps.b.nxt < dimword (:64)’ by simp[] >>
   rpt conj_tac
   >- (gvs[ALL_DISTINCT_APPEND] >> metis_tac[])
   >- (strip_tac >>
@@ -613,8 +616,8 @@ Theorem fetch_accept_rel:
   ps1.inb = ps.inb ∧ ps1.eof = ps.eof
 Proof
   strip_tac >>
-  ‘ps.acq = [] ∧ ps.pause = 0 ∧ ps.b.nxt + 1 < dimword (:64)’
-    by gvs[wants_input_def, l1hdln_lt] >>
+  ‘ps.acq = [] ∧ ps.pause = 0 ∧ ps.b.nxt + 2 < dimword (:64)’
+    by gvs[wants_input_def, pf_room_def] >>
   ‘∀g. MEM g (l0_used w) ⇒ MEM g (l0_used w1)’
     by (gvs[sys_accept_def] >> drule l0_do_used >> simp[]) >>
   Cases_on ‘l0_res_of out’ >> gvs[arrs_def]

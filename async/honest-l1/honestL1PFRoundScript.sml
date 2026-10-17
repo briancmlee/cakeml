@@ -588,7 +588,7 @@ Theorem pdo_f:
 Proof
   Cases_on ‘a’ >> simp[pdo_def] >> strip_tac
   >- ((* Accept *)
-      gvs[AllCaseEqs()] >> gvs[fkeep_def, outbox_of_def, inb_of_def] >>
+      gvs[AllCaseEqs()] >> imp_res_tac pf_room_hdln >> gvs[fkeep_def, outbox_of_def, inb_of_def] >>
       rw[] >> gvs[] >>
       TRY (qexists_tac ‘ps.b.nxt’ >> simp[] >> NO_TAC) >>
       first_x_assum drule >> rw[] >> TRY (qexists_tac ‘i’ >> simp[] >> NO_TAC) >>

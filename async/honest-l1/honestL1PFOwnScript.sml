@@ -215,7 +215,7 @@ Theorem pdo_ostep:
 Proof
   Cases_on ‘a’ >> simp[pdo_def] >> strip_tac
   >- ((* Accept *)
-      gvs[AllCaseEqs()] >> simp[ostep_def, owned_def] >> rpt strip_tac >> gvs[] >>
+      gvs[AllCaseEqs()] >> imp_res_tac pf_room_hdln >> fs[pf_room_def] >> simp[ostep_def, owned_def] >> rpt strip_tac >> gvs[] >>
       fs[hdist_def] >> TRY (metis_tac[]) >>
       rpt strip_tac >>
       TRY (qexists_tac ‘ps.b.nxt’ >> simp[] >> NO_TAC) >>

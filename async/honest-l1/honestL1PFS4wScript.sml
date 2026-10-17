@@ -166,7 +166,7 @@ Theorem pdo_keep:
   hclean lfd ps' h f
 Proof
   simp[hclean_def] >> strip_tac >> gvs[] >>
-  Cases_on ‘a’ >> gvs[pdo_def, AllCaseEqs()] >>
+  Cases_on ‘a’ >> gvs[pdo_def, AllCaseEqs(), pf_room_def] >>
   TRY (PairCases_on ‘z’) >> gvs[] >>
   gvs[l1_close_def, l1do_def, AllCaseEqs(), forget_def, set_outbox_def, after_send_def,
       ALOOKUP_ADELKEY, MEM_FILTER, inb_of_set_inb, SIMP_RULE (srw_ss()) [] l1hdln_lt] >>

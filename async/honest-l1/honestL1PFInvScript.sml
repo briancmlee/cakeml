@@ -234,12 +234,13 @@ Proof
   PairCases_on ‘ws1’ >> metis_tac[pdo_psmall]
 QED
 
-(* D25′: L1 takes a handle only while one is left, and prefetches a
-   connection only when it can give it a handle, so the next handle plus
-   the queue of accepted fds stays within the 2^64 − 1 handles: the next
-   handle is a word64, and a queued fd always gets one *)
+(* D25′ (with D40's bound): L1 prefetches a connection only when acq is
+   empty and there is room (pf_room), and Accept hands a queued fd out under
+   handle nxt, so the connections taken from the kernel, the next handle
+   plus the queue of accepted fds, stay below 2^64 − 1: a queued fd always
+   gets a handle, and the version-2 world's client bound holds *)
 Definition proom_def:
-  proom ps ⇔ ps.b.nxt + LENGTH ps.acq < dimword (:64)
+  proom ps ⇔ ps.b.nxt + LENGTH ps.acq + 1 < dimword (:64)
 End
 
 Theorem proom_init:
@@ -249,9 +250,15 @@ Proof
 QED
 
 Theorem proom_room:
-  proom ps ∧ ps.acq ≠ [] ⇒ l1hdln (w2n (lfd : word64)) ps.b.nxt < dimword (:64)
+  proom ps ∧ ps.acq ≠ [] ⇒ pf_room ps
 Proof
-  rw[proom_def, l1hdln_lt] >> Cases_on ‘ps.acq’ >> gvs[]
+  rw[proom_def, pf_room_def] >> Cases_on ‘ps.acq’ >> gvs[]
+QED
+
+Theorem pf_room_hdln:
+  pf_room ps ⇒ l1hdln (w2n (lfd : word64)) ps.b.nxt < dimword (:64)
+Proof
+  rw[pf_room_def, l1hdln_lt]
 QED
 
 Theorem pdo_proom:
@@ -283,7 +290,7 @@ Proof
   IF_CASES_TAC
   >- (simp[AllCaseEqs()] >> strip_tac >> pairarg_tac >> gvs[AllCaseEqs()] >>
       first_x_assum drule >> disch_then irule >>
-      gvs[wants_input_def, l1hdln_lt] >>
+      gvs[wants_input_def, pf_room_def] >>
       Cases_on ‘l0_res_of out’ >> gvs[proom_def] >> rw[] >> gvs[proom_def]) >>
   simp[AllCaseEqs()] >> strip_tac >> pairarg_tac >> gvs[AllCaseEqs()] >>
   first_x_assum drule >> disch_then irule >>

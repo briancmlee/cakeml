@@ -338,7 +338,7 @@ Theorem run_lfd:
       (∀ev. MEM ev (rrev lfd pol ifds m w0 k) ∧ ev_on «sys_accept» lfd ev ∧ ¬failed ev ⇒
             log_conns (rlog lfd pol ifds m w0 k) ≠ []) ∧
       ((rstate lfd pol ifds m w0 k).pause = 0 ∧ (rstate lfd pol ifds m w0 k).acq = [] ∧
-       (rstate lfd pol ifds m w0 k).b.nxt + 1 < dimword (:64) ∧
+       pf_room (rstate lfd pol ifds m w0 k) ∧
        MEM lfd (ifds (rhist lfd pol ifds m w0 k)) ∧ qof (rworld lfd pol ifds m w0 k) lfd ≠ [] ⇒
        EXISTS (ev_on «sys_poll» lfd) (rrev lfd pol ifds m w0 k) ∧
        ∀ev. MEM ev (rrev lfd pol ifds m w0 k) ∧ ev_on «sys_poll» lfd ev ∧ ¬retried ev ⇒
@@ -496,11 +496,12 @@ QED
    R1-live, the connection half (D18, main form; no new trust, no [F3])
    ------------------------------------------------------------------------ *)
 
-(* D25′: the excuse for a connection never accepted: L1 ran out of handles
-   (past the cut-off it neither polls nor accepts on the listener, and
-   keeps serving the connections it has) *)
+(* D25′: the excuse for a connection never accepted: L1 reached the
+   cut-off (no pf_room: at most 2^64 − 2 handles handed out; past it L1
+   neither polls nor accepts on the listener, and keeps serving the
+   connections it has) *)
 Definition handles_out_def:
-  handles_out lfd pol ifds m w0 ⇔ ∃k. dimword (:64) ≤ (rstate lfd pol ifds m w0 k).b.nxt + 1
+  handles_out lfd pol ifds m w0 ⇔ ∃k. ¬pf_room (rstate lfd pol ifds m w0 k)
 End
 
 Theorem live_conn:
@@ -513,7 +514,7 @@ Theorem live_conn:
 Proof
   strip_tac >>
   Cases_on ‘handles_out lfd pol ifds m w0’ >- simp[] >>
-  ‘∀k. (rstate lfd pol ifds m w0 k).b.nxt + 1 < dimword (:64)’
+  ‘∀k. pf_room (rstate lfd pol ifds m w0 k)’
     by (gen_tac >> CCONTR_TAC >> qpat_x_assum ‘¬handles_out _ _ _ _ _’ mp_tac >>
         simp[handles_out_def] >> qexists_tac ‘k’ >> fs[]) >>
   Cases_on ‘∃k. n0 ≤ k ∧ resolved (rworld lfd pol ifds m w0 (SUC k)) (rlog lfd pol ifds m w0 k) j0’
@@ -542,7 +543,7 @@ Proof
     by (rpt strip_tac >>
         ‘n0 ≤ k’ by fs[] >>
         ‘(rstate lfd pol ifds m w0 k).acq = [] ∧ qof (rworld lfd pol ifds m w0 k) lfd ≠ [] ∧
-         (rstate lfd pol ifds m w0 k).b.nxt + 1 < dimword (:64)’ by fs[] >>
+         pf_room (rstate lfd pol ifds m w0 k)’ by fs[] >>
         qpat_assum ‘∀k. (∃d. _) ∧ _’ (qspec_then ‘k’ strip_assume_tac) >>
         qpat_x_assum ‘_ ∧ _ ∧ _ ∧ _ ⇒ EXISTS _ _ ∧ _’ mp_tac >> simp[]) >>
   (* a poll on it from N1 on that is not retried is followed by a failed
@@ -559,7 +560,7 @@ Proof
               metis_tac[]) >>
         ‘n0 ≤ k’ by fs[] >>
         ‘(rstate lfd pol ifds m w0 k).acq = [] ∧ qof (rworld lfd pol ifds m w0 k) lfd ≠ [] ∧
-         (rstate lfd pol ifds m w0 k).b.nxt + 1 < dimword (:64)’ by fs[] >>
+         pf_room (rstate lfd pol ifds m w0 k)’ by fs[] >>
         qpat_assum ‘∀k. (∃d. _) ∧ _’ (qspec_then ‘k’ strip_assume_tac) >>
         ‘EXISTS (ev_on «sys_accept» lfd) (rrev lfd pol ifds m w0 k)’
           by (qpat_x_assum ‘_ ∧ _ ∧ _ ∧ _ ⇒ EXISTS _ _ ∧ _’ mp_tac >> simp[] >>
@@ -576,7 +577,7 @@ Proof
         ‘N1 ≤ n'’ by (qpat_x_assum ‘N1 + i ≤ n'’ mp_tac >> simp[]) >>
         ‘n0 ≤ n'’ by metis_tac[LESS_EQ_TRANS] >>
         ‘(rstate lfd pol ifds m w0 n').acq = [] ∧ qof (rworld lfd pol ifds m w0 n') lfd ≠ [] ∧
-         (rstate lfd pol ifds m w0 n').b.nxt + 1 < dimword (:64)’
+         pf_room (rstate lfd pol ifds m w0 n')’
           by fs[] >>
         qpat_assum ‘∀k. (∃d. _) ∧ _’ (qspec_then ‘n'’ strip_assume_tac) >>
         ‘EXISTS (ev_on «sys_poll» lfd) (rrev lfd pol ifds m w0 n')’
@@ -712,7 +713,7 @@ Theorem live_conn_cor:
 Proof
   strip_tac >>
   Cases_on ‘handles_out lfd pol ifds m w0’ >- simp[] >>
-  ‘∀k. (rstate lfd pol ifds m w0 k).b.nxt + 1 < dimword (:64)’
+  ‘∀k. pf_room (rstate lfd pol ifds m w0 k)’
     by (gen_tac >> CCONTR_TAC >> qpat_x_assum ‘¬handles_out _ _ _ _ _’ mp_tac >>
         simp[handles_out_def] >> qexists_tac ‘k’ >> fs[]) >>
   disj1_tac >> CCONTR_TAC >>

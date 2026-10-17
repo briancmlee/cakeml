@@ -689,7 +689,7 @@ Proof
   qpat_x_assum ‘pf_fetch _ _ _ _ = _’ mp_tac >> simp[Once pf_fetch_def] >>
   IF_CASES_TAC
   >- (strip_tac >> first_x_assum drule_all >> strip_tac >> simp[] >>
-      rpt strip_tac >> gvs[] >> gvs[wants_input_def] >> metis_tac[]) >>
+      rpt strip_tac >> gvs[] >> gvs[wants_input_def, pf_room_def] >> metis_tac[]) >>
   IF_CASES_TAC
   >- (gvs[] >> simp[AllCaseEqs(), PULL_EXISTS] >> rpt gen_tac >> strip_tac >>
       pairarg_tac >> gvs[AllCaseEqs()] >>
@@ -709,7 +709,7 @@ Proof
   qpat_assum ‘sys_recv _ _ _ = _’ (strip_assume_tac o REWRITE_RULE [sys_recv_def]) >>
   drule_all ev_do >> strip_tac >>
   ‘¬ev_on «sys_accept» lfd ev’ by simp[] >>
-  first_x_assum drule_all >> strip_tac >> gvs[log_conns_def, wants_input_def] >>
+  first_x_assum drule_all >> strip_tac >> gvs[log_conns_def, wants_input_def, pf_room_def] >>
   rpt strip_tac >> gvs[] >> metis_tac[]
 QED
 
@@ -979,7 +979,7 @@ Proof
   TRY (PairCases_on ‘z’) >> gvs[set_inb_def] >> gvs[l1do_def, AllCaseEqs()] >>
   TRY (qexists_tac ‘0’ >> simp[] >> NO_TAC) >>
   TRY (qexists_tac ‘1’ >> simp[] >> NO_TAC) >>
-  qexists_tac ‘0’ >> rw[] >> Cases_on ‘ps.acq’ >> gvs[proom_def, SIMP_RULE (srw_ss()) [] hdln_lt_room]
+  qexists_tac ‘0’ >> rw[] >> Cases_on ‘ps.acq’ >> gvs[proom_def, pf_room_def]
 QED
 
 Theorem pacts_lfd:
@@ -1111,7 +1111,7 @@ QED
    are handed out from the front (one at least, on an Accept) and the
    round's FConn fds join them; while paused, the pause counts down and
    nothing is accepted; an accept that does not fail logs an FConn; and
-   unpaused, with no accepted fd held, a handle left (D25′), the listener in the interest and its
+   unpaused, with no accepted fd held, room (D25′, pf_room), the listener in the interest and its
    queue not empty: the round polls the listener, and a poll on it that is
    not retried leads to an accept on it *)
 Theorem pround_lfd:
@@ -1122,7 +1122,7 @@ Theorem pround_lfd:
        (MEM (Accept lfd) acts ∧ ps.acq ≠ [] ⇒ 0 < d)) ∧
   (0 < ps.pause ⇒ ps'.pause = ps.pause − 1 ∧ ¬EXISTS (ev_on «sys_accept» lfd) evs) ∧
   (∀ev. MEM ev evs ∧ ev_on «sys_accept» lfd ev ∧ ¬failed ev ⇒ log_conns log ≠ []) ∧
-  (ps.pause = 0 ∧ ps.acq = [] ∧ ps.b.nxt + 1 < dimword (:64) ∧ MEM lfd hs ∧ qof w lfd ≠ [] ⇒
+  (ps.pause = 0 ∧ ps.acq = [] ∧ pf_room ps ∧ MEM lfd hs ∧ qof w lfd ≠ [] ⇒
    EXISTS (ev_on «sys_poll» lfd) evs ∧
    ∀ev. MEM ev evs ∧ ev_on «sys_poll» lfd ev ∧ ¬retried ev ⇒
         EXISTS (ev_on «sys_accept» lfd) evs)
@@ -1176,7 +1176,7 @@ Proof
       qpat_x_assum ‘∀ev. MEM ev gevs ∧ _ ⇒ _’ (qspec_then ‘ev’ mp_tac) >> metis_tac[])
   >> strip_tac >> gvs[] >>
   qabbrev_tac ‘fes = pf_poll_set lfd pol pa hs’ >>
-  ‘wants_input lfd pol pa lfd’ by gvs[wants_input_def, SIMP_RULE (srw_ss()) [] hdln_lt_room] >>
+  ‘wants_input lfd pol pa lfd’ by gvs[wants_input_def, pf_room_def] >>
   ‘(∃e. MEM (lfd, e) fes) ∧ (∀e. MEM (lfd, e) fes ⇒ ODD e) ∧ EVERY (λ(g, e). e < 4) fes’
     by (qunabbrev_tac ‘fes’ >> match_mp_tac pf_poll_set_lfd >> simp[]) >>
   ‘EVERY (λ(g, e). small g ∧ e < 4) fes’
@@ -1190,7 +1190,7 @@ Proof
         simp[MEM_MAP] >> qexists_tac ‘(lfd, e)’ >> simp[]) >>
   ‘MEM lfd (in_fds fes)’
     by (simp[in_fds_def, MEM_MAP, MEM_FILTER, EXISTS_PROD] >> metis_tac[]) >>
-  ‘wants_input lfd pol (pa with b := b2) lfd’ by gvs[wants_input_def] >>
+  ‘wants_input lfd pol (pa with b := b2) lfd’ by gvs[wants_input_def, pf_room_def] >>
   conj_tac >- metis_tac[] >>
   rpt strip_tac >> gvs[] >>
   TRY (imp_res_tac ev_on_name >> gvs[EVERY_MEM] >> res_tac >> gvs[] >> NO_TAC) >>

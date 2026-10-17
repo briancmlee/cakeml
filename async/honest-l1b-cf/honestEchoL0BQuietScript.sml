@@ -21,6 +21,7 @@ Ancestors
   honestL1BModel honestL1BSim honestL1BRefine honestL1BTransfer honestL1BConn honestL1BStable
   honestL1BStmts honestL1BQuiet honestL1BShift
   honestL1BSpec honestL1BTrace honestEchoL0BProg honestEchoL0BMain honestEchoL0BSem
+  honestEchoL0BStutter
 Libs
   preamble
 
@@ -47,11 +48,10 @@ Overload esrv = “λk. srelabel (server k)”
 Overload epfw = “λk w1. reindex (btr (elfd k) epol (eifds k) (K F) (esrv k) (w1, pinit)) w1”
 
 (* The PF run's standing facts and the PF echo's guarantee there, and the
-   server facts the blocking refinement uses (bquiet, SQ); the world facts
-   after the listen (l0wf, lone) are derived (listen_l0wf, listen_lone) *)
+   server's SQ; bquiet (echo_bquiet) and the world facts after the listen
+   (listen_l0wf, listen_lone) are proved *)
 Definition echo_pf_facts_def:
   echo_pf_facts KK k w1 ⇔
-    bquiet (esrv k) (eifds k) (K F) ∧
     run_ok (elfd k) epol (eifds k) (esrv k) (epfw k w1) ∧
     winv (epfw k w1) ∧ linv (elfd k) (epfw k w1) ∧ qfresh (epfw k w1) ∧
     MEM (elfd k) (l0_used (epfw k w1)) ∧
@@ -222,6 +222,7 @@ Proof
   (* the listen succeeds: the loop's facts, in the PF world *)
   first_x_assum drule_all >> simp[echo_pf_facts_def] >> strip_tac >>
   ‘l0wf w1 ∧ lone (elfd k) w1’ by metis_tac[listen_l0wf, listen_lone] >>
+  ‘bquiet (esrv k) (eifds k) (K F)’ by simp[echo_bquiet] >>
   drule_all sys_listen_echo_shift >> strip_tac >>
   ‘l0_reach w0 w1’
     by (‘l0_reach w0 w0’ by simp[l0_reach_init] >>

@@ -11,9 +11,11 @@
      episode of its process (tinv), unless that process closed fd 0 (then a
      connect can get fd 0 and report "no socket": zinv);
    - peers are injective (kinv), so accepted episodes inject into cl's
-     Connected p episodes.
+     Connected p episodes;
+   - an end broken right after its connect is never paired (irun_bb), so
+     only those not broken then count (conns_ok, close-v2's D43 fact 1).
   accepts_lt_lift: then every prefix of k's trace has fewer than M accepts
-  when cl's connect episodes are ≤ N < M (proxyL0Stmts' accepts_lt M io).
+  when cl's counted connect episodes are ≤ N < M (proxyL0Stmts' accepts_lt M io).
 *)
 Theory moonshotLiveAccepts
 Ancestors
@@ -725,6 +727,109 @@ Proof
 QED
 
 (* ------------------------------------------------------------------------
+   A connect end broken right after its connect never gets a peer
+   ------------------------------------------------------------------------ *)
+
+(* Step t is process k's connect that appended channel c, and c is broken
+   right after it (an immediate failure that returned a socket) *)
+Definition born_broken_def:
+  born_broken ss rs t k c ⇔
+    (∃conf bts out. rs t = Call k «sys_connect» conf bts out) ∧
+    k < LENGTH (ss t).procs ∧ c = LENGTH (EL k (ss t).procs).chans ∧
+    c < LENGTH (EL k (ss (SUC t)).procs).chans ∧
+    (EL c (EL k (ss (SUC t)).procs).chans).broken
+End
+
+(* The client's connect episodes to p whose channel was not broken right
+   after the connect (close-v2's narrow count, D43 fact 1) *)
+Definition conns_ok_def:
+  conns_ok p ss rs cl n =
+    LENGTH (FILTER (λ(r, c). r = Connected p ∧ ∀t. t < n ⇒ ¬born_broken ss rs t cl c)
+                   (ZIP (ep_roles [] (ptr rs cl n), run_css ss rs n cl)))
+End
+
+Theorem connect_broken:
+  l0_call «sys_connect» conf bts w = SOME (FFIreturn out w1) ∧
+  LENGTH w1.chans = LENGTH w.chans + 1 ∧ (EL (LENGTH w.chans) w1.chans).broken ⇒
+  ¬(EL (LENGTH w.chans) w1.chans).connecting
+Proof
+  simp[l0_call_def, AllCaseEqs()] >> strip_tac >> gvs[] >>
+  drule l0_connect_cases >> simp[LET_THM] >> strip_tac >>
+  gvs[upd_lchan_def, EL_LUPDATE, EL_APPEND2, fresh_lchan_def]
+QED
+
+Theorem connect_len:
+  l0_call «sys_connect» conf bts w = SOME (FFIreturn out w1) ⇒ LENGTH w1.chans ≤ LENGTH w.chans + 1
+Proof
+  simp[l0_call_def, AllCaseEqs()] >> strip_tac >> gvs[] >>
+  drule l0_connect_cases >> simp[LET_THM] >> strip_tac >> gvs[upd_lchan_def]
+QED
+
+Theorem irun_end_mono:
+  l0sys_irun ps ss rs ⇒ ∀t2 t1 e. t1 ≤ t2 ∧ is_end (ss t1) e ⇒ is_end (ss t2) e
+Proof
+  strip_tac >> drule irun_ext >> strip_tac >> Induct >- simp[] >>
+  rpt strip_tac >> Cases_on ‘t1 = SUC t2’ >- fs[] >>
+  irule is_end_ext >> qexists_tac ‘ss t2’ >> simp[] >>
+  first_x_assum irule >> qexists_tac ‘t1’ >> simp[]
+QED
+
+(* The step that makes the end: no pairing, and not connecting *)
+Theorem born_broken_step:
+  kinv s ∧ sys_step s (Call k nm conf bts out) s' ∧ nm = «sys_connect» ∧
+  k < LENGTH s.procs ∧ LENGTH (EL k s.procs).chans < LENGTH (EL k s'.procs).chans ∧
+  (EL (LENGTH (EL k s.procs).chans) (EL k s'.procs).chans).broken ⇒
+  ¬(sys_chan s' (k, LENGTH (EL k s.procs).chans)).connecting ∧
+  s'.peer (k, LENGTH (EL k s.procs).chans) = NONE
+Proof
+  strip_tac >> qpat_x_assum ‘nm = _’ SUBST_ALL_TAC >>
+  qpat_x_assum ‘sys_step _ _ _’ mp_tac >> simp[sys_step_def, LET_THM, unblock_other] >>
+  qabbrev_tac ‘w = EL k s.procs’ >> strip_tac >>
+  ‘s.peer (k, LENGTH w.chans) = NONE’
+    by (‘¬is_end s (k, LENGTH w.chans)’ by simp[is_end_def, Abbr ‘w’] >>
+        fs[kinv_def]) >>
+  Cases_on ‘LENGTH w1.chans = LENGTH w.chans + 1’ >> fs[EL_LUPDATE] >>
+  Cases_on ‘¬(EL (LENGTH w.chans) w1.chans).connecting ∧ ¬(EL (LENGTH w.chans) w1.chans).broken’
+  >- (fs[] >> gvs[EL_LUPDATE]
+      >- (gvs[sys_pair_def, sys_deliver_def, EL_LUPDATE] >> rw[] >>
+          gvs[l0_deliver_def, AllCaseEqs()] >> every_case_tac >> gvs[EL_APPEND1])) >>
+  gvs[EL_LUPDATE, sys_chan_def] >> imp_res_tac connect_len >> imp_res_tac connect_broken >> fs[]
+QED
+
+Theorem irun_bb:
+  l0sys_irun ps ss rs ⇒
+  ∀n t k c. t < n ∧ born_broken ss rs t k c ⇒
+            ¬(sys_chan (ss n) (k, c)).connecting ∧ (ss n).peer (k, c) = NONE
+Proof
+  strip_tac >> drule irun_ext >> strip_tac >> drule irun_sinv_css >> strip_tac >>
+  Induct >- simp[] >>
+  qx_genl_tac [‘t’, ‘k’, ‘c’] >> strip_tac >>
+  Cases_on ‘t = n’
+  >- (qpat_x_assum ‘t = n’ SUBST_ALL_TAC >>
+      qpat_x_assum ‘born_broken _ _ _ _ _’ mp_tac >> rewrite_tac[born_broken_def] >>
+      strip_tac >> qpat_x_assum ‘c = _’ SUBST_ALL_TAC >>
+      irule born_broken_step >> simp[] >>
+      conj_tac >- metis_tac[sinv_def] >>
+      qexistsl_tac [‘bts’, ‘conf’, ‘out’] >>
+      ‘sys_step (ss n) (rs n) (ss (SUC n))’ by fs[l0sys_irun_def] >> rfs[]) >>
+  ‘t < n’ by decide_tac >>
+  ‘¬(sys_chan (ss n) (k, c)).connecting ∧ (ss n).peer (k, c) = NONE’ by metis_tac[] >>
+  ‘is_end (ss (SUC t)) (k, c)’
+    by (qpat_x_assum ‘born_broken _ _ _ _ _’ mp_tac >> rewrite_tac[born_broken_def] >>
+        strip_tac >> simp[is_end_def] >>
+        ‘LENGTH (ss (SUC t)).procs = LENGTH (ss t).procs’ by metis_tac[sys_ext_def] >>
+        simp[]) >>
+  ‘is_end (ss n) (k, c)’
+    by (drule irun_end_mono >> disch_then (qspecl_then [‘n’, ‘SUC t’, ‘(k, c)’] mp_tac) >> simp[]) >>
+  ‘sys_ext (ss n) (ss (SUC n))’ by metis_tac[] >>
+  conj_tac
+  >- (strip_tac >> drule_all connecting_ext >> simp[]) >>
+  Cases_on ‘(ss (SUC n)).peer (k, c)’ >> simp[] >>
+  qpat_x_assum ‘sys_ext (ss n) (ss (SUC n))’ mp_tac >> rewrite_tac[sys_ext_def] >>
+  strip_tac >> first_x_assum (drule_then mp_tac) >> simp[new_pair_def]
+QED
+
+(* ------------------------------------------------------------------------
    Counting: each accepted episode on p is paired with its own Connected-p
    episode of the client
    ------------------------------------------------------------------------ *)
@@ -792,12 +897,14 @@ Proof
 QED
 
 Theorem accepts_le_state:
-  sinv rs s css ∧ tinv rs s css ∧ acc_inv ports rs s css ∧ MEM p ports ∧
+  ∀G. sinv rs s css ∧ tinv rs s css ∧ acc_inv ports rs s css ∧ MEM p ports ∧
   k < LENGTH s.procs ∧ cl < LENGTH s.procs ∧ ¬close0 (proc_events cl rs) ∧
-  (∀k0. k0 < LENGTH s.procs ∧ k0 ≠ cl ⇒ ¬conn_to p (proc_events k0 rs)) ⇒
-  LENGTH (FILTER ($= (Accepted p)) (ep_roles [] (proc_events k rs))) ≤ conns p (proc_events cl rs)
+  (∀k0. k0 < LENGTH s.procs ∧ k0 ≠ cl ⇒ ¬conn_to p (proc_events k0 rs)) ∧
+  (∀c. s.peer (cl, c) ≠ NONE ⇒ G c) ⇒
+  LENGTH (FILTER ($= (Accepted p)) (ep_roles [] (proc_events k rs))) ≤
+  LENGTH (FILTER (λ(r, c). r = Connected p ∧ G c) (ZIP (ep_roles [] (proc_events cl rs), css cl)))
 Proof
-  strip_tac >> rewrite_tac[conns_def] >>
+  rpt strip_tac >>
   ‘pk rs s css k ∧ pk rs s css cl ∧ kinv s’ by fs[sinv_def] >>
   ‘LENGTH (ep_roles [] (proc_events k rs)) = LENGTH (css k) ∧ ALL_DISTINCT (css k)’
     by (qpat_x_assum ‘pk _ _ _ k’ mp_tac >> simp[pk_def, LET_THM, pinv_def, LENGTH_ep_roles]) >>
@@ -815,7 +922,10 @@ Proof
     by (irule acc_peer >>
         rpt conj_tac >>
         FIRST [first_assum ACCEPT_TAC, qexists_tac ‘ports’ >> simp[] >> NO_TAC, fs[]]) >>
-  qexists_tac ‘i’ >> simp[]
+  ‘EL i (ZIP (ep_roles [] (proc_events cl rs), css cl)) =
+   (EL i (ep_roles [] (proc_events cl rs)), EL i (css cl))’ by (irule EL_ZIP >> simp[]) >>
+  qexists_tac ‘i’ >> simp[LENGTH_ZIP] >>
+  first_x_assum irule >> drule_all kinv_peer_end >> simp[]
 QED
 
 (* ------------------------------------------------------------------------
@@ -863,35 +973,37 @@ Theorem irun_accepts_le:
   l0sys_irun ps ss rs ∧ isolated ports ss rs ∧ MEM p ports ∧ k < LENGTH ps ∧ cl < LENGTH ps ∧
   (∀q. MEM (Accepted q) (ep_roles [] (ptr rs k n)) ⇒ q = p) ∧ ¬close0 (ptr rs cl n) ∧
   (∀k0. k0 < LENGTH ps ∧ k0 ≠ cl ⇒ ¬conn_to p (ptr rs k0 n)) ⇒
-  LENGTH (l0_accepted (ptr rs k n)) ≤ conns p (ptr rs cl n)
+  LENGTH (l0_accepted (ptr rs k n)) ≤ conns_ok p ss rs cl n
 Proof
-  strip_tac >> fs[ptr_def] >>
+  strip_tac >> fs[ptr_def, conns_ok_def] >>
   ‘LENGTH (ss n).procs = LENGTH ps’ by metis_tac[irun_procs_length] >>
   ‘sinv (GENLIST rs n) (ss n) (run_css ss rs n)’ by metis_tac[irun_sinv_css] >>
   ‘tinv (GENLIST rs n) (ss n) (run_css ss rs n)’ by metis_tac[irun_tinv] >>
   ‘acc_inv ports (GENLIST rs n) (ss n) (run_css ss rs n)’ by metis_tac[irun_acc_inv] >>
   qspecl_then [‘proc_events k (GENLIST rs n)’, ‘[]’] SUBST1_TAC l0_accepted_roles >>
   drule acc_filter >> disch_then SUBST1_TAC >>
-  irule accepts_le_state >> simp[] >>
-  qexistsl_tac [‘run_css ss rs n’, ‘ports’, ‘ss n’] >> simp[]
+  qspec_then ‘λc. ∀t. t < n ⇒ ¬born_broken ss rs t cl c’ (irule o BETA_RULE) accepts_le_state >>
+  simp[] >>
+  qexistsl_tac [‘ports’, ‘ss n’] >> simp[] >>
+  rpt strip_tac >> drule irun_bb >> disch_then drule_all >> simp[]
 QED
 
 Theorem accepts_lt_lift:
   l0sys_irun ps ss rs ∧ isolated ports ss rs ∧ MEM p ports ∧ k < LENGTH ps ∧ cl < LENGTH ps ∧
   (∀n q. MEM (Accepted q) (ep_roles [] (ptr rs k n)) ⇒ q = p) ∧ (∀n. ¬close0 (ptr rs cl n)) ∧
   (∀n k0. k0 < LENGTH ps ∧ k0 ≠ cl ⇒ ¬conn_to p (ptr rs k0 n)) ∧
-  (∀n. conns p (ptr rs cl n) ≤ N) ∧ N < M ∧
+  (∀n. conns_ok p ss rs cl n ≤ N) ∧ N < M ∧
   (∀evs. LPREFIX (fromList evs) tr ⇒ ∃n. evs ≼ ptr rs k n) ⇒
   ∀evs. LPREFIX (fromList evs) tr ⇒ LENGTH (l0_accepted evs) < M
 Proof
   rpt strip_tac >>
   ‘∃n. evs ≼ ptr rs k n’ by metis_tac[] >>
-  ‘LENGTH (l0_accepted (ptr rs k n)) ≤ conns p (ptr rs cl n)’
+  ‘LENGTH (l0_accepted (ptr rs k n)) ≤ conns_ok p ss rs cl n’
     by (irule irun_accepts_le >> simp[] >> metis_tac[]) >>
   ‘∃l. ptr rs k n = evs ++ l’ by metis_tac[IS_PREFIX_APPEND] >>
   ‘LENGTH (l0_accepted evs) ≤ LENGTH (l0_accepted (ptr rs k n))’
     by simp[l0_accepted_append] >>
-  ‘conns p (ptr rs cl n) ≤ N’ by metis_tac[] >>
+  ‘conns_ok p ss rs cl n ≤ N’ by metis_tac[] >>
   decide_tac
 QED
 
@@ -902,7 +1014,7 @@ Theorem accepts_lt_irun:
   l0sys_irun ps ss rs ∧ isolated ports ss rs ∧ MEM p ports ∧ k < LENGTH ps ∧ cl < LENGTH ps ∧
   (∀n q. MEM (Accepted q) (ep_roles [] (ptr rs k n)) ⇒ q = p) ∧ (∀n. ¬close0 (ptr rs cl n)) ∧
   (∀n k0. k0 < LENGTH ps ∧ k0 ≠ cl ⇒ ¬conn_to p (ptr rs k0 n)) ∧
-  (∀n. conns p (ptr rs cl n) ≤ N) ∧ N < M ∧
+  (∀n. conns_ok p ss rs cl n ≤ N) ∧ N < M ∧
   (∀t. ∃t'. t ≤ t' ∧ is_kcall k (rs t')) ∧ (∀t. LPREFIX (fromList (ptr rs k t)) tr) ⇒
   ∀evs. LPREFIX (fromList evs) tr ⇒ LENGTH (l0_accepted evs) < M
 Proof

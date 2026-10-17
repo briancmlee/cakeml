@@ -133,7 +133,7 @@ End
 Definition kv_answers_def:
   kv_answers m X (ss : num -> sysstate) e ⇔
     ∀n rqs. m ≤ n ∧ EVERY valid_brequest rqs ∧ brequests rqs ≼ dlv_at ss e n ⇒
-            X ∨ ∃n' ans. LENGTH ans = LENGTH rqs ∧ reply_bytes ans ≼ sent_at ss e n'
+            X ∨ ∃n' ans. n ≤ n' ∧ LENGTH ans = LENGTH rqs ∧ reply_bytes ans ≼ sent_at ss e n'
 End
 
 (* The client has read complete replies to rq on its episode jep by n *)

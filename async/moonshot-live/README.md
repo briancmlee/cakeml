@@ -142,3 +142,56 @@ could deadlock.
   EMFILE on its connects is possible: that shows up as an excuse (hard connect failure).
 - **R7: [R3] close/shutdown** is owed at HL and L1; termination and the KV-closes-after-EOF step depend on it.
 - **R8: N9 non-vacuity with real programs** is expensive; the model-level prototype (stage 3) is the cheap check.
+
+## 6. Obligations per program (what each owner must transfer to)
+
+The system-level glue is proved: `moonshotLiveChain.moonshot_chain_drains` (rank chain),
+`moonshotLiveDeliver.sys_delivers` (N5b, kernel delivery), `moonshotLiveServed.chain_served`
+(the data chain). `chain_served` takes, for one logical connection, the clauses below as hypotheses.
+They are stated over an infinite l0sys run (`ss`, `rs`), for the connection's ends: the client's
+`(cl, jc)` paired with the proxy's front `(px, ja)`, the proxy's backend `(px, jb)` paired with KV's
+`(kv, jk)`, all paired from instant `m`. Each clause may be weakened by the run's excuse `X` (in the
+headline, `sys_excuse`: a break, a hard connect/listen failure, a crash, a D23 window, accepts failing
+infinitely often). `sys_drains ss e` is the system form of each process's own `drains` premise.
+
+Each owner proves the per-process form on the process's own L0 trace (as `echo_live_l0`, with
+`drains w0 io c` premises). The lift to the system forms below is shared work (N1 + N2: B1 for
+infinite runs, and the world ↔ system correspondence for `drains`, `peer_sent`, `sent`).
+
+**Client** (close-v2):
+- C-asks: `X ∨ io (asks_in ss rs cl jc)`. The client asks for input on its connection (a recv, or a
+  poll listing the fd for input) infinitely often, unconditionally, while the episode is open.
+- C-sends: `sys_drains ss (cl, jc) ⇒ X ∨ ∃n. m ≤ n ∧ brequests rq ≼ sent_at ss (cl, jc) n`. Under
+  drains, all of the connection's requests are eventually taken by the kernel.
+- C-reads: `X ∨ ev_ext m (dlv_at ss (cl, jc)) (λn. l0_ep_recvd jep (ptr rs cl n))`. Everything that
+  has arrived at the client's end is eventually returned by its recvs on the episode `jep`.
+
+**Proxy** (honest-ffi; `proxy_live_l0` rev 6 has the forwarding part already):
+- P-asks-B: `sys_drains ss (px, ja) ⇒ X ∨ io (asks_in ss rs px jb)`. Once the front drains, the proxy
+  asks on its backend infinitely often (the credit gate on the front's Level opens infinitely often,
+  and a non-empty inbox stays until read).
+- P-asks-A: `sys_drains ss (px, jb) ⇒ X ∨ io (asks_in ss rs px ja)`. The same, mirrored.
+- P-fwd-CK: `sys_drains ss (px, jb) ⇒ X ∨ ev_ext m (dlv_at ss (px, ja)) (sent_at ss (px, jb))`.
+  Everything that has arrived on the front is eventually taken by the kernel on the backend.
+- P-fwd-KC: `sys_drains ss (px, ja) ⇒ X ∨ ev_ext m (dlv_at ss (px, jb)) (sent_at ss (px, ja))`.
+
+**KV** (KV worker / async-spike, on `echo_live_l0`'s template):
+- K-asks: `sys_drains ss (kv, jk) ⇒ X ∨ io (asks_in ss rs kv jk)`. Once its own outbox drains, KV
+  asks infinitely often (`pol_self`: below hw infinitely often; with an empty inbox it writes nothing
+  new, so it stays there until the next fetch).
+- K-answers: `sys_drains ss (kv, jk) ⇒ kv_answers m X ss (kv, jk)`. For every complete request list
+  that has arrived, eventually that many replies are taken by the kernel (count only; which replies
+  is `kv_safe`'s).
+
+**All three** ([R3], with close/shutdown): no end of the chain is closed before the client is served.
+- The client closes only after reading the EOF.
+- The proxy closes the front only after relaying the backend's EOF.
+- KV closes only after reading the EOF and replying.
+
+Breaks are already in `sys_excuse`. In `chain_served` this is the hypothesis
+`∀n e. MEM e [chain ends] ∧ lost ss e n ∧ ¬served_by … n ⇒ X`.
+
+**Mine (system level), still to do:** N1/N2 lifts; the setup chain (the client's connect is paired
+with an accepted front, and the front with a backend accepted by KV, from `conn_live_l0` /
+`proxy_pairs_l0` / F-obs (C)); the excuse transfer (per-process excuses ⇒ `sys_excuse`); termination
+from F-obs (F) once [R3] lands; and `moonshot_live` from `chain_served` for each i < N.

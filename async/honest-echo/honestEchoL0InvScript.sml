@@ -644,3 +644,41 @@ Proof
   ‘fds_lt w'’ by (gvs[wown_def, fds_lt_def] >> metis_tac[]) >>
   gvs[wown_def, owned_def] >> rw[] >> metis_tac[]
 QED
+
+(* The fetch's accept (only with no pending fd): a new episode on a fresh fd *)
+Theorem fetch_acc_step:
+  sys_accept lfd w = SOME (out, w1, ev) ∧ wown lfd w ps ∧ own_ok lfd (k, opn) ps ∧
+  ps.acq = [] ∧
+  ps1 = (case l0_res_of out of
+         | Ok k' => ps with acq := ps.acq ++ [n2w k']
+         | Fail e _ => if e = E_MFILE then ps with pause := pf_backoff else ps) ⇒
+  wown lfd w1 ps1 ∧ own_ok lfd (l0_ep_step (k, opn) ev) ps1 ∧
+  (∀j. ep_rd j (k, opn) [ev] = []) ∧ inbp lfd ps1 = inbp lfd ps ∧
+  ps1.b = ps.b ∧ ps1.inb = ps.inb
+Proof
+  strip_tac >> ‘l0_rely w ∧ fds_lt w’ by gvs[wown_def] >>
+  drule_all sys_accept_event >> strip_tac >>
+  ‘l0_rely w1 ∧ fds_lt w1’
+    by (gvs[sys_accept_def] >> metis_tac[l0_do_rely, l0_do_fds_lt, EVAL “«sys_accept» = «sys_connect»”]) >>
+  ‘∀g. MEM g (l0_used w) ⇒ MEM g (l0_used w1)’
+    by (gvs[sys_accept_def] >> drule l0_do_used >> simp[]) >>
+  simp[ep_fold_def] >>
+  Cases_on ‘l0_res_of out’ >> gvs[l0_ep_step_def]
+  >- (rename1 ‘l0_res_of out = Ok kk’ >>
+      drule_all sys_accept_fresh >> strip_tac >>
+      drule_all sys_accept_adds >> strip_tac >>
+      ‘¬owned ps (n2w kk)’ by (strip_tac >> gvs[wown_def] >> metis_tac[]) >>
+      ‘n2w kk ≠ lfd’ by (strip_tac >> gvs[wown_def]) >>
+      ‘ep_ok (k, opn)’ by gvs[own_ok_def] >>
+      ‘ep_ok (k + 1, (n2w kk, k)::ADELKEY (n2w kk) opn)’
+        by (‘ep_ok (l0_ep_step (k,opn) ev)’ by simp[ep_ok_step] >> gvs[l0_ep_step_def]) >>
+      rpt conj_tac
+      >- (gvs[wown_def, owned_def] >> rw[] >> gvs[] >> metis_tac[])
+      >- (qpat_x_assum ‘own_ok _ _ _’ mp_tac >> simp[own_ok_def] >> strip_tac >>
+          gvs[] >> rpt conj_tac >> rpt strip_tac >> gvs[ALOOKUP_ADELKEY] >>
+          ‘n2w kk ≠ f’ by (strip_tac >> gvs[owned_def, MEM_MAP, EXISTS_PROD] >> metis_tac[]) >>
+          simp[] >> metis_tac[])
+      >> simp[inbp_def, inb_of_def, FUN_EQ_THM]) >>
+  rw[] >> gvs[wown_def, own_ok_def, owned_def, inbp_def, inb_of_def, FUN_EQ_THM] >>
+  metis_tac[]
+QED

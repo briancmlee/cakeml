@@ -7,12 +7,12 @@
 *)
 Theory proxyProg
 Ancestors
-  ml_translator mllist e1TypesProg honestL1PFProg proxyStepL moonshotProxy proxyHLStmts
+  ml_translator mllist e1TypesProg e1DriverProg honestL1PFProg proxyStepL moonshotProxy proxyHLStmts
   moonshotClientSpec
 Libs
   preamble ml_translatorLib ml_progLib
 
-val _ = translation_extends "e1TypesProg";
+val _ = translation_extends "e1DriverProg";
 
 (* As honestL1PFProg: TAKE / DROP as the basis's mllist take / drop, MEM
    as lmem *)

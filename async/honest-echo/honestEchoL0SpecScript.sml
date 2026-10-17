@@ -13,10 +13,16 @@
   echo_safe_l0: at every point, in every episode, the bytes sent are a
   prefix of the bytes received (no bound on the number of connections:
   user decision D31 dropped the 2^64 - 1 accept guard).
+  D33 (design/50 (c2)): the startup world no longer assumes fds 0-2 open;
+  a program checks them with sys_fdok first, and the claims allow its
+  stopping (honestL0Outcome's stdio_closed).  stdio_open and
+  l0_listen_failed describe the other early stop: fds 0-2 open, then a
+  failed listen.
 *)
 Theory honestEchoL0Spec
 Ancestors
   llist ffi honestL0 honestL0World honestL0Rely honestL0WorldProps ffiSpikeSocketFFI
+  honestL0Outcome
 Libs
   preamble
 
@@ -101,12 +107,28 @@ Definition l0_sent_def:
 End
 
 (* The startup contract: no listener, no connections, only the process's
-   own fds (0-2 among them), within the fd limit, and the world's rely *)
+   own fds, within the fd limit, and the world's rely.  D33: fds 0-2 are
+   not assumed open; the programs ask (sys_fdok) and stop if one is
+   closed (stdio_closed) *)
 Definition l0_server_world_def:
   l0_server_world w0 ⇔
     w0.listeners = [] ∧ w0.chans = [] ∧ w0.open_fds = [] ∧ w0.hist = [] ∧
-    MEM 0w w0.reserved ∧ MEM 1w w0.reserved ∧ MEM 2w w0.reserved ∧
     fds_lt w0 ∧ l0_rely w0
+End
+
+(* The program's first three events: sys_fdok found fds 0, 1 and 2 open *)
+Definition stdio_open_def:
+  stdio_open evs ⇔
+    ∃i0 i1 i2. evs = [IO_event (ExtCall «sys_fdok») [0w] [(i0, 1w)];
+                      IO_event (ExtCall «sys_fdok») [1w] [(i1, 1w)];
+                      IO_event (ExtCall «sys_fdok») [2w] [(i2, 1w)]]
+End
+
+(* A failed sys_listen *)
+Definition l0_listen_failed_def:
+  l0_listen_failed (IO_event (ExtCall n) conf bytes) =
+    (n = «sys_listen» ∧ ∃e v. l0_ev_res bytes = SOME (Fail e v)) ∧
+  l0_listen_failed _ = F
 End
 
 (* Safety *)

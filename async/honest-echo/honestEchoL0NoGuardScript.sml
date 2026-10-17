@@ -34,19 +34,9 @@ Proof
   strip_tac >> drule_all echo_l0_run_safe >> simp[echo_safe_l0_def]
 QED
 
-(* MAIN: echo_l0_safe with no guard on the number of connections (the
-   approved statement, with `LENGTH (l0_accepted evs) < 2^64 − 1` dropped) *)
-Theorem echo_l0_safe_ng:
-  l0_server_world w0 ⇒
-  ∃io. (semantics_prog (init_state (l0_ffi w0)) init_env echo_l0_prog (Diverge io) ∧
-        ∀evs j. LPREFIX (fromList evs) io ⇒ l0_sent j evs ≼ l0_read j evs) ∨
-       (∃out w1 ev. sys_listen_echo w0 = SOME (out, w1, ev) ∧ listen_fd out = NONE ∧
-                    io = [|ev|] ∧
-                    semantics_prog (init_state (l0_ffi w0)) init_env echo_l0_prog
-                      (Terminate Success [ev]))
-Proof
-  strip_tac >> drule echo_l0_safe >> simp[echo_safe_l0_def]
-QED
+(* echo_l0_safe has no guard on the number of connections since D31 (and
+   its D33 outcomes); this name is kept for the earlier references *)
+Theorem echo_l0_safe_ng = echo_l0_safe;
 
 (* ------------------------------------------------------------------------
    Handles and accepts (for the D25 stop on the trace)

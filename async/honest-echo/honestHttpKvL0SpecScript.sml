@@ -21,8 +21,10 @@
    - as for echo, there is no bound on the number of connections (user
      decision D31 dropped the 2^64 - 1 accept guard; the loop stops when
      the handles run out, D25, and nothing is sent after that);
-   - the program listens on its port first; if the listen fails it stops
-     after that one event;
+   - the program first calls sys_fdok on fds 0, 1 and 2 and stops after
+     those three events if one is closed (D33: stdio_closed); then it
+     listens on its port, and if the listen fails it stops after four
+     events (stdio_open, then l0_listen_failed);
    - topology (for the moonshot's composition, step 12 T7/T8): every
      successful sys_listen is on the configured port, and the program makes
      no sys_connect.
@@ -110,21 +112,17 @@ Definition l0_topology_def:
   l0_topology port io ⇔ ∀n ev. LNTH n io = SOME ev ⇒ l0_topo_ev port ev
 End
 
-(* The program's first event: a failed sys_listen *)
-Definition l0_listen_failed_def:
-  l0_listen_failed (IO_event (ExtCall n) conf bytes) =
-    (n = «sys_listen» ∧ ∃e v. l0_ev_res bytes = SOME (Fail e v)) ∧
-  l0_listen_failed _ = F
-End
-
 Definition http_l0_claim_def:
   http_l0_claim port files (prog : dec list) ⇔
     ∀w0. l0_server_world w0 ⇒
       ∃io. (semantics_prog (init_state (l0_ffi w0)) init_env prog (Diverge io) ∧
             http_safe_l0 files io ∧ l0_topology port io) ∨
-           (∃ev. l0_listen_failed ev ∧ io = [|ev|] ∧
-                 semantics_prog (init_state (l0_ffi w0)) init_env prog
-                   (Terminate Success [ev]))
+           (∃pre ev. stdio_open pre ∧ l0_listen_failed ev ∧ io = fromList (pre ++ [ev]) ∧
+                     semantics_prog (init_state (l0_ffi w0)) init_env prog
+                       (Terminate Success (pre ++ [ev]))) ∨
+           (∃evs. stdio_closed (Terminate Success evs) ∧ io = fromList evs ∧
+                  semantics_prog (init_state (l0_ffi w0)) init_env prog
+                    (Terminate Success evs))
 End
 
 Definition kv_l0_claim_def:
@@ -132,7 +130,10 @@ Definition kv_l0_claim_def:
     ∀w0. l0_server_world w0 ⇒
       ∃io. (semantics_prog (init_state (l0_ffi w0)) init_env prog (Diverge io) ∧
             kv_safe_l0 io ∧ l0_topology port io) ∨
-           (∃ev. l0_listen_failed ev ∧ io = [|ev|] ∧
-                 semantics_prog (init_state (l0_ffi w0)) init_env prog
-                   (Terminate Success [ev]))
+           (∃pre ev. stdio_open pre ∧ l0_listen_failed ev ∧ io = fromList (pre ++ [ev]) ∧
+                     semantics_prog (init_state (l0_ffi w0)) init_env prog
+                       (Terminate Success (pre ++ [ev]))) ∨
+           (∃evs. stdio_closed (Terminate Success evs) ∧ io = fromList evs ∧
+                  semantics_prog (init_state (l0_ffi w0)) init_env prog
+                    (Terminate Success evs))
 End

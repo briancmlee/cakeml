@@ -14,6 +14,7 @@ Ancestors
   asyncCore asyncLevel1 asyncTranscript honestL1PFProg honestL1PFSpec
   asyncServer asyncServerSafety asyncM4GTrans
   honestEchoL0Prog honestEchoL0Main honestEchoL0Sem honestL1PFInv honestL1Inv
+  honestL0Fdok honestL0Outcome honestL1PFRefine
 Libs
   preamble
 
@@ -482,20 +483,101 @@ Proof
   irule echo_run_safe >> simp[] >> metis_tac[]
 QED
 
-(* MAIN: echo_l0_safe, the statement the user approved *)
+(* ------------------------------------------------------------------------
+   D33: the three sys_fdok events first
+   ------------------------------------------------------------------------ *)
+
+(* An event that is neither a successful accept nor a successful close
+   leaves every episode's view as it was *)
+Theorem l0_views_inert:
+  l0_event_accepted e = NONE ∧ l0_event_closed e = NONE ⇒
+  l0_sent j (e :: evs) = l0_sent j evs ∧ l0_read j (e :: evs) = l0_read j evs
+Proof
+  rw[l0_sent_def, l0_read_def, l0_accepted_def, l0_ep_events_def]
+QED
+
+Theorem echo_safe_l0_inert:
+  l0_event_accepted e = NONE ∧ l0_event_closed e = NONE ∧ echo_safe_l0 io ⇒
+  echo_safe_l0 (LCONS e io)
+Proof
+  rw[echo_safe_l0_def] >> gvs[LPREFIX_LCONS] >> Cases_on ‘evs’ >> gvs[] >>
+  TRY (simp[l0_sent_def, l0_accepted_def] >> NO_TAC) >>
+  rename1 ‘l0_sent j (e :: t)’ >>
+  ‘l0_sent j (e :: t) = l0_sent j t ∧ l0_read j (e :: t) = l0_read j t’
+    by (irule l0_views_inert >> simp[]) >>
+  simp[]
+QED
+
+Theorem fdok_inert:
+  l0_do «sys_fdok» [f] 1 w = SOME (out, w', ev) ⇒
+  l0_event_accepted ev = NONE ∧ l0_event_closed ev = NONE
+Proof
+  rw[fdok_do] >> simp[l0_event_accepted_def, l0_event_closed_def]
+QED
+
+(* The listen failed *)
+Theorem listen_failed_echo:
+  l0_rely w ∧ sys_listen_echo w = SOME (out, w1, ev) ∧ listen_fd out = NONE ⇒
+  l0_listen_failed ev
+Proof
+  rw[sys_listen_echo_def, l0_do_def, AllCaseEqs()] >>
+  drule_all l0_ffi_fn_length >> strip_tac >>
+  simp[l0_listen_failed_def, l0_ev_res_def, MAP_ZIP] >>
+  gvs[l0_ffi_fn_def, l0_call_def, echo_port_conf_def, AllCaseEqs()]
+  >- (‘dec_res (enc_res (Ok (w2n f)) ++ []) = SOME (Ok (w2n f))’
+        by (irule dec_enc_res >> simp[l0_res_ok_def] >>
+            assume_tac (INST_TYPE [alpha |-> “:64”] wordsTheory.w2n_lt) >> fs[]) >>
+      gvs[listen_fd_def, l0_res_of_def]) >>
+  PairCases_on ‘ke’ >>
+  ‘n2w (err_code ke1) ≠ (0w:word8)’
+    by (mp_tac (Q.INST [‘e’ |-> ‘ke1’] err_code_range) >> simp[wordsTheory.n2w_11]) >>
+  ‘w2n (n2w (err_code ke1) : word8) = err_code ke1’
+    by (mp_tac (Q.INST [‘e’ |-> ‘ke1’] err_code_range) >> simp[]) >>
+  gvs[enc_listen_fail_def, dec_res_def, l0_rely_def, MarshallingTheory.LENGTH_n2w8]
+QED
+
+(* The three fdok calls answered 1 *)
+Theorem stdio_open_fdok:
+  l0_do «sys_fdok» [0w] 1 w0 = SOME (o0, w1, e0) ∧
+  l0_do «sys_fdok» [1w] 1 w1 = SOME (o1, w2, e1) ∧
+  l0_do «sys_fdok» [2w] 1 w2 = SOME (o2, w3, e2) ∧ stdio_all o0 o1 o2 ⇒
+  stdio_open [e0; e1; e2]
+Proof
+  rw[fdok_do, stdio_all_def, stdio_open_def] >> gvs[]
+QED
+
+(* MAIN: echo_l0_safe, the statement the user approved (D31: no accept
+   guard; D33: fds 0-2 checked by the program, not assumed) *)
 Theorem echo_l0_safe:
   l0_server_world w0 ⇒
   ∃io. (semantics_prog (init_state (l0_ffi w0)) init_env echo_l0_prog (Diverge io) ∧
         echo_safe_l0 io) ∨
-       (∃out w1 ev. sys_listen_echo w0 = SOME (out, w1, ev) ∧ listen_fd out = NONE ∧
-                    io = [|ev|] ∧
-                    semantics_prog (init_state (l0_ffi w0)) init_env echo_l0_prog
-                      (Terminate Success [ev]))
+       (∃pre ev. stdio_open pre ∧ l0_listen_failed ev ∧ io = fromList (pre ++ [ev]) ∧
+                 semantics_prog (init_state (l0_ffi w0)) init_env echo_l0_prog
+                   (Terminate Success (pre ++ [ev]))) ∨
+       (∃evs. stdio_closed (Terminate Success evs) ∧ io = fromList evs ∧
+              semantics_prog (init_state (l0_ffi w0)) init_env echo_l0_prog
+                (Terminate Success evs))
 Proof
   rw[l0_server_world_def] >>
   drule_all echo_l0_semantics_prog >> strip_tac
-  >- (qexists_tac ‘[|ev|]’ >> disj2_tac >> simp[]) >>
-  qexists_tac ‘LCONS ev (echo_l0_run k w1)’ >> disj1_tac >> simp[] >>
-  irule echo_l0_run_safe >> simp[] >> metis_tac[]
+  >- (qexists_tac ‘fromList [e0; e1; e2]’ >> disj2_tac >> disj2_tac >>
+      qexists_tac ‘[e0; e1; e2]’ >> simp[] >>
+      irule fdok_closed >> fs[stdio_all_def] >> metis_tac[]) >>
+  ‘l0_fresh_world w0’ by simp[l0_fresh_world_def] >>
+  drule_all fdok_shift >> strip_tac >>
+  ‘l0_rely w3 ∧ fds_lt w3’
+    by (qpat_x_assum ‘w3 = _’ SUBST1_TAC >> conj_tac
+        >- (irule l0_rely_ch >> qexists_tac ‘w0’ >> simp[]) >>
+        qpat_x_assum ‘fds_lt w0’ mp_tac >> simp[fds_lt_def, l0_used_def]) >>
+  ‘stdio_open [e0; e1; e2]’ by metis_tac[stdio_open_fdok]
+  >- (qexists_tac ‘fromList [e0; e1; e2; ev]’ >> disj2_tac >> disj1_tac >>
+      qexistsl [‘[e0; e1; e2]’, ‘ev’] >> simp[] >> metis_tac[listen_failed_echo]) >>
+  qexists_tac ‘LAPPEND (fromList [e0; e1; e2; ev]) (echo_l0_run k w4)’ >>
+  disj1_tac >> simp[] >>
+  ‘echo_safe_l0 (LCONS ev (echo_l0_run k w4))’
+    by (irule echo_l0_run_safe >> simp[] >> metis_tac[]) >>
+  imp_res_tac fdok_inert >>
+  rpt (irule echo_safe_l0_inert >> ASM_REWRITE_TAC[])
 QED
 

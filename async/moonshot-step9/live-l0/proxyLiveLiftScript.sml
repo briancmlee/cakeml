@@ -306,6 +306,139 @@ Proof
   simp[]
 QED
 
+(* ------------------------------------------------------------------------
+   The socketless connects: each HL connect that got no socket is an L0
+   sys_connect event whose value field is 0 (l0_nosock)
+   ------------------------------------------------------------------------ *)
+
+Theorem edo_ch:
+  edo lfd pol (w, es) x = SOME (r, (w', es'), evs) ⇒ w'.ch = w.ch
+Proof
+  Cases_on ‘x’ >> simp[honestL1EPModelTheory.edo_def, AllCaseEqs()] >> rw[] >> gvs[] >>
+  TRY (PairCases_on ‘z’) >> gvs[] >>
+  metis_tac[honestL1PFFlushTheory.pdo_ch, honestL1PFFlushTheory.l1_close_ch,
+            honestL1StepsTheory.l0_do_env, honestL1EPModelTheory.sys_connect_def]
+QED
+
+Theorem connect_out_nosock:
+  LENGTH out = 13 ∧ honestL1EPModel$res_val out = 0 ⇒
+  proxyL0Stmts$l0_nosock (IO_event (ExtCall «sys_connect») conf (ZIP (REPLICATE 13 0w, out)))
+Proof
+  Cases_on ‘out’ >>
+  simp[proxyL0StmtsTheory.l0_nosock_def, proxyL0StmtsTheory.l0_event_connected_def,
+       proxyL0StmtsTheory.connect_port_def, honestL1EPModelTheory.res_val_def, MAP_ZIP]
+QED
+
+Theorem edo_nosock:
+  edo lfd pol (w, es) x = SOME (EConnected NONE, ws', evs) ∧ (∀h. LENGTH (w.ch.errno_of h) = 4) ⇒
+  ∃ev. evs = [ev] ∧ proxyL0Stmts$l0_nosock ev
+Proof
+  Cases_on ‘x’ >> simp[honestL1EPModelTheory.edo_def, AllCaseEqs()] >> rw[] >>
+  TRY (PairCases_on ‘z’ >> gvs[] >> every_case_tac >> gvs[] >> NO_TAC) >>
+  TRY (every_case_tac >> gvs[] >> NO_TAC) >>
+  qpat_x_assum ‘sys_connect _ _ = _’ mp_tac >>
+  simp[honestL1EPModelTheory.sys_connect_def, honestL1ModelTheory.l0_do_def,
+       honestL0WorldTheory.l0_ffi_fn_def, AllCaseEqs()] >>
+  strip_tac >> gvs[] >>
+  qpat_x_assum ‘l0_call _ _ _ _ = _’ mp_tac >>
+  simp[honestL0WorldTheory.l0_call_def, honestL0WorldTheory.l0_hdr_def, AllCaseEqs()] >>
+  strip_tac >> gvs[] >> irule connect_out_nosock >>
+  simp[honestL0Theory.enc_res_def, honestL0WorldTheory.enc_err_val_def, MarshallingTheory.LENGTH_n2w8]
+QED
+
+Theorem eacts_nosock:
+  ∀acts w es rs evs ws'.
+    eacts lfd pol (w, es) acts = SOME (rs, evs, ws') ∧ (∀h. LENGTH (w.ch.errno_of h) = 4) ⇒
+    hl_nosock (ZIP (acts, rs)) ≤ LENGTH (FILTER proxyL0Stmts$l0_nosock evs)
+Proof
+  Induct >> simp[honestL1EPModelTheory.eacts_def, hl_nosock_def] >> rpt gen_tac >>
+  simp[AllCaseEqs()] >> strip_tac >> rpt BasicProvers.VAR_EQ_TAC >>
+  PairCases_on ‘ws1’ >>
+  ‘ws10.ch = w.ch’ by (drule edo_ch >> simp[]) >>
+  first_x_assum (qspecl_then [‘ws10’, ‘ws11’, ‘rs'’, ‘evs'’, ‘ws'’] mp_tac) >>
+  impl_tac >- simp[] >> simp[hl_nosock_def, FILTER_APPEND] >>
+  Cases_on ‘r = EConnected NONE’ >> simp[] >>
+  qpat_x_assum ‘r = _’ SUBST_ALL_TAC >>
+  drule_all edo_nosock >> strip_tac >> simp[]
+QED
+
+Theorem erounds_nosock:
+  (∀n h ws evs logs. erounds lfd pol ifds m ws0 n = SOME (h, ws, evs, logs) ⇒
+                     ∀hh. LENGTH ((FST ws).ch.errno_of hh) = 4) ⇒
+  ∀n h ws evs logs.
+    erounds lfd pol ifds m ws0 n = SOME (h, ws, evs, logs) ⇒
+    hl_nosock (hl_pairs m h) ≤ LENGTH (FILTER proxyL0Stmts$l0_nosock evs)
+Proof
+  strip_tac >> Induct
+  >- simp[honestL1EPModelTheory.erounds_def, hl_pairs_def, hl_nosock_def] >>
+  rpt gen_tac >> strip_tac >> drule erounds_SUC_SOME >> strip_tac >>
+  rpt BasicProvers.VAR_EQ_TAC >>
+  rename1 ‘erounds _ _ _ _ _ n = SOME (h0, ws1, evs0, logs0)’ >>
+  first_x_assum (qspecl_then [‘h0’, ‘ws1’, ‘evs0’, ‘logs0’] mp_tac) >>
+  impl_tac >- first_assum ACCEPT_TAC >> strip_tac >>
+  ‘∀hh. LENGTH ((FST ws1).ch.errno_of hh) = 4’
+    by (first_x_assum (qspecl_then [‘n’, ‘h0’, ‘ws1’, ‘evs0’, ‘logs0’] mp_tac) >> simp[]) >>
+  qpat_x_assum ‘eround _ _ _ _ _ = _’ mp_tac >>
+  simp[honestL1EPModelTheory.eround_def, AllCaseEqs()] >> strip_tac >>
+  rpt BasicProvers.VAR_EQ_TAC >> PairCases_on ‘ws1’ >>
+  drule eacts_nosock >> impl_tac >- fs[] >> strip_tac >>
+  qpat_x_assum ‘(h, ws, evs, logs) = _’
+    (strip_assume_tac o REWRITE_RULE [pairTheory.PAIR_EQ]) >>
+  rpt BasicProvers.VAR_EQ_TAC >>
+  simp[moonshotClientTheory.hl_pairs_SNOC, asyncM3WorldTheory.ssnap_def, FILTER_APPEND] >>
+  fs[hl_nosock_def, FILTER_APPEND]
+QED
+
+(* On the handle layer's history: E1's history is L1's (l1ep_refines_ehl) *)
+Theorem ehl_nosock_l0:
+  l0_rely w0 ∧ honestL0WorldProps$fds_lt w0 ∧ MEM lfd (l0_used w0) ∧
+  (∀n. SND (ecm lfd pol ifds m w0 n) + 1 < dimword (:64)) ∧
+  erounds lfd pol ifds m (w0, einit) n = SOME (h, ws, evs, logs) ⇒
+  hl_nosock (hl_pairs m (ehhist lfd (elv lfd pol ifds m w0) ifds m (pew lfd a pol ifds m w0 calls) n)) ≤
+  LENGTH (FILTER proxyL0Stmts$l0_nosock evs)
+Proof
+  strip_tac >>
+  mp_tac (Q.INST [‘a’ |-> ‘a’, ‘calls’ |-> ‘calls’] honestL1EPRefineTheory.l1ep_refines_ehl) >>
+  impl_tac >- (rpt conj_tac >> first_assum ACCEPT_TAC) >> strip_tac >>
+  first_assum (qspecl_then [‘n’, ‘h’, ‘ws’, ‘evs’, ‘logs’] mp_tac) >>
+  impl_tac >- first_assum ACCEPT_TAC >> strip_tac >>
+  qpat_x_assum ‘ehhist _ _ _ _ _ _ = _’ SUBST1_TAC >>
+  mp_tac (Q.INST [‘ws0’ |-> ‘(w0, einit)’] erounds_nosock) >>
+  impl_tac
+  >- (rpt strip_tac >>
+      first_x_assum (qspecl_then [‘n'’, ‘h'’, ‘ws'’, ‘evs'’, ‘logs'’] mp_tac) >>
+      impl_tac >- first_assum ACCEPT_TAC >> strip_tac >>
+      qpat_x_assum ‘l0_rely (FST ws')’ mp_tac >> simp[honestL0RelyTheory.l0_rely_def]) >>
+  disch_then irule >> metis_tac[]
+QED
+
+(* ------------------------------------------------------------------------
+   The run's trace: round n's events are the first n rounds' chunks
+   ------------------------------------------------------------------------ *)
+
+Theorem erounds_evs_genlist:
+  (∀i. erounds lfd pol ifds m ws0 i ≠ NONE) ⇒
+  ∀n h ws evs logs. erounds lfd pol ifds m ws0 n = SOME (h, ws, evs, logs) ⇒
+    evs = FLAT (GENLIST (eround_evs lfd pol ifds m ws0) n)
+Proof
+  strip_tac >> Induct
+  >- simp[honestL1EPModelTheory.erounds_def] >>
+  rpt gen_tac >> strip_tac >>
+  ‘erounds lfd pol ifds m ws0 (SUC n) ≠ NONE’ by simp[] >>
+  drule erun_SUC >> strip_tac >>
+  ‘erun lfd pol ifds m ws0 (SUC n) = (h, ws, evs, logs)’
+    by (REWRITE_TAC[e1DriverLoopTheory.erun_def] >>
+        qpat_x_assum ‘erounds _ _ _ _ _ (SUC n) = _’ SUBST1_TAC >> simp[]) >>
+  Cases_on ‘erounds lfd pol ifds m ws0 n’
+  >- (qpat_x_assum ‘∀i. _ ≠ NONE’ (qspec_then ‘n’ mp_tac) >> simp[]) >>
+  rename1 ‘erounds _ _ _ _ _ n = SOME r0’ >> PairCases_on ‘r0’ >>
+  first_x_assum (qspecl_then [‘r00’, ‘(r01, r02)’, ‘r03’, ‘r04’] mp_tac) >> simp[] >> strip_tac >>
+  ‘erun lfd pol ifds m ws0 n = (r00, (r01, r02), r03, r04)’
+    by (REWRITE_TAC[e1DriverLoopTheory.erun_def] >>
+        qpat_x_assum ‘erounds _ _ _ _ _ n = _’ SUBST1_TAC >> simp[]) >>
+  gvs[GENLIST, SNOC_APPEND, FLAT_APPEND]
+QED
+
 (* The run and the live block's hypotheses *)
 Definition proxy_live_hyps_def:
   proxy_live_hyps a b hw w0 pre w4 k ⇔

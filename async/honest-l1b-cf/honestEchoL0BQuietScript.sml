@@ -59,7 +59,6 @@ Definition echo_pf_facts_def:
     S1 (elfd k) epol (eifds k) (esrv k) (epfw k w1) ∧
     S2 (elfd k) epol (eifds k) (esrv k) (epfw k w1) ∧
     SQ (elfd k) epol (eifds k) (K F) (esrv k) (epfw k w1) ∧
-    flush_ok (elfd k) epol (eifds k) (K F) (esrv k) w1 pinit ∧
     ∀io_p. ptrace (elfd k) epol (eifds k) (K F) (esrv k) w1 pinit io_p ⇒
            echo2_guar_l0 KK (epfw k w1) io_p
 End
@@ -235,7 +234,8 @@ Proof
   ‘ptrace (elfd k) epol (eifds k) (K F) (esrv k) w1 pinit io’ by simp[ptrace_def] >>
   ‘echo2_guar_l0 KK (epfw k w1) io’ by metis_tac[] >>
   ‘∀n. SND (pcm (elfd k) epol (eifds k) (esrv k) (epfw k w1) n) + 1 < dimword (:64)’
-    by fs[]
+    by fs[] >>
+  ‘∀ps f. outbox_of ps.b f = [] ⇒ ¬epol ps f’ by simp[pol_self_def]
   >- ((* the loop never sleeps: the program diverges *)
       qexists_tac ‘Diverge (LCONS ev (echo_l0b_run k w1))’ >> simp[] >>
       drule_all div_btrace >> strip_tac >>

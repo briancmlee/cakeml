@@ -1084,3 +1084,24 @@ Proof
   qpat_x_assum ‘∀c. olive _ _ _ ∧ _ ⇒ _’ (qspec_then ‘c’ mp_tac) >>
   fs[acct_def, olive_def]
 QED
+
+(* Every fd L1 holds or has pre-accepted, and every fd with an outbox or
+   gone, has a channel at every round *)
+Theorem run_held_chan:
+  oassm lfd pol ifds m w0 ⇒
+  ∀n f. MEM f (MAP SND (rstate lfd pol ifds m w0 n).b.tbl) ∨
+        MEM f (rstate lfd pol ifds m w0 n).b.closing ∨
+        MEM f (rstate lfd pol ifds m w0 n).acq ∨
+        outbox_of (rstate lfd pol ifds m w0 n).b f ≠ [] ∨
+        MEM f (rstate lfd pol ifds m w0 n).b.gone ⇒
+        ∃j. l0_chan_of (rworld lfd pol ifds m w0 n) f = SOME j
+Proof
+  rpt strip_tac >> drule run_rel >> disch_then (qspec_then ‘n’ strip_assume_tac) >>
+  gvs[out_rel_def, okeys_def] >>
+  ‘MEM f (MAP SND (rstate lfd pol ifds m w0 n).b.tbl) ∨
+   MEM f (rstate lfd pol ifds m w0 n).b.closing ∨ MEM f (rstate lfd pol ifds m w0 n).acq’
+    by metis_tac[] >>
+  TRY (qpat_x_assum ‘∀f. MEM f _.acq ⇒ _’ drule >> strip_tac >> metis_tac[] >> NO_TAC) >>
+  qpat_x_assum ‘∀f. MEM f (MAP SND _) ∨ _ ⇒ _’ (qspec_then ‘f’ mp_tac) >>
+  simp[] >> strip_tac >> gvs[acct_def] >> metis_tac[]
+QED

@@ -1,0 +1,6 @@
+# l0sys-bridges: B1 (l0sys_proj) and B2 (l0sys_causal), design/45 §3.2.
+# honestEchoL0SpecCopy is a temporary verbatim copy (see its header).
+INCLUDES = ../l0sys ../honest-l0 ../honest-ffi ../ffi-spike $(CAKEMLDIR)/semantics/alt_semantics/proofs
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

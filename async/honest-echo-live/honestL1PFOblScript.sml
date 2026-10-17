@@ -306,3 +306,122 @@ Proof
   drule pacts_tbl_keep >> disch_then (qspecl_then [‘h’, ‘f’] mp_tac) >> simp[] >>
   impl_tac >- fs[] >> simp[]
 QED
+
+(* ------------------------------------------------------------------------
+   Along the run
+   ------------------------------------------------------------------------ *)
+
+Theorem l1hdl_fresh:
+  i < i' ∧ l1hdln (w2n lfd) i' < dimword (:64) ⇒ l1hdl lfd i ≠ l1hdl lfd i'
+Proof
+  rw[l1hdl_def, l1hdln_def] >> rw[] >> fs[]
+QED
+
+(* The run hypotheses R1-safe needs *)
+Definition run_hyp_def:
+  run_hyp lfd pol ifds m w0 ⇔
+    run_ok lfd pol ifds m w0 ∧ fds_lt w0 ∧ MEM lfd (l0_used w0) ∧
+    (∀n. SND (pcm lfd pol ifds m w0 n) + 1 < dimword (:64))
+End
+
+Theorem run_pown:
+  run_hyp lfd pol ifds m w0 ⇒ pown lfd (rstate lfd pol ifds m w0 n)
+Proof
+  PURE_REWRITE_TAC[run_hyp_def] >> strip_tac >>
+  ‘l0_rely w0’ by fs[run_ok_def] >>
+  drule_then (qspec_then ‘n’ assume_tac) prun_some >>
+  Cases_on ‘prun lfd pol ifds m w0 n’ >> rename1 ‘_ = (hh, x)’ >> PairCases_on ‘x’ >>
+  drule_all l1pf_refines_hl >> simp[rstate_def]
+QED
+
+(* A handle L1 holds is not any fresh handle *)
+Theorem run_fresh:
+  run_hyp lfd pol ifds m w0 ∧ ALOOKUP (rstate lfd pol ifds m w0 n).b.tbl h = SOME f ⇒
+  ∀i. (rstate lfd pol ifds m w0 n).b.nxt ≤ i ∧ l1hdln (w2n lfd) i < dimword (:64) ⇒
+      h ≠ l1hdl lfd i
+Proof
+  rpt strip_tac >> drule_then (qspec_then ‘n’ assume_tac) run_pown >>
+  fs[pown_def] >> first_x_assum drule >> strip_tac >> gvs[] >>
+  qspecl_then [‘i'’, ‘i’, ‘lfd’] mp_tac (Q.GENL [‘i’, ‘i'’, ‘lfd’] l1hdl_fresh) >> simp[]
+QED
+
+(* An fd with input is held *)
+Theorem run_held:
+  run_hyp lfd pol ifds m w0 ∧ inb_of (rstate lfd pol ifds m w0 n) f ≠ [] ⇒
+  ∃h. ALOOKUP (rstate lfd pol ifds m w0 n).b.tbl h = SOME f
+Proof
+  rpt strip_tac >> drule_then (qspec_then ‘n’ assume_tac) run_pown >>
+  fs[pown_def, MEM_MAP, EXISTS_PROD] >>
+  first_x_assum (qspec_then ‘f’ mp_tac) >> simp[] >> strip_tac >>
+  qexists_tac ‘p_1’ >> irule ALOOKUP_ALL_DISTINCT_MEM >> simp[]
+QED
+
+(* Round k, when it does not fetch on f *)
+Theorem run_round_nofetch:
+  run_ok lfd pol ifds m w0 ∧ ¬fetched_at lfd pol ifds m w0 k f ⇒
+  ∃snap log rv.
+    pround lfd pol (ifds (rhist lfd pol ifds m w0 k))
+      (rworld lfd pol ifds m w0 k, rstate lfd pol ifds m w0 k)
+      (new_actions (log_of m) (rhist lfd pol ifds m w0 k)) =
+      SOME (snap, (rworld lfd pol ifds m w0 (SUC k), rstate lfd pol ifds m w0 (SUC k)),
+            log, rv) ∧
+    ¬fetched f log
+Proof
+  strip_tac >> drule_then (qspec_then ‘k’ strip_assume_tac) prun_step >>
+  fs[fetched_at_def] >> metis_tac[]
+QED
+
+Theorem run_inb_drop:
+  run_ok lfd pol ifds m w0 ⇒
+  ∀t. (∀k. n ≤ k ∧ k < n + t ⇒ ¬fetched_at lfd pol ifds m w0 k f) ⇒
+      ∃d. inb_of (rstate lfd pol ifds m w0 (n + t)) f =
+          DROP d (inb_of (rstate lfd pol ifds m w0 n) f)
+Proof
+  strip_tac >> Induct >- (rw[] >> qexists_tac ‘0’ >> simp[]) >>
+  rpt strip_tac >> fs[] >>
+  ‘¬fetched_at lfd pol ifds m w0 (n + t) f’ by simp[] >>
+  drule_all run_round_nofetch >> strip_tac >>
+  drule_all pround_inb >> strip_tac >>
+  ‘n + SUC t = SUC (n + t)’ by simp[] >> simp[] >> metis_tac[DROP_DROP_T]
+QED
+
+(* f's handle stays bound to f while f's inbox is not empty *)
+Theorem run_tbl_keep:
+  run_hyp lfd pol ifds m w0 ∧ ALOOKUP (rstate lfd pol ifds m w0 n).b.tbl h = SOME f ⇒
+  ∀t. (∀k. n ≤ k ∧ k < n + t ⇒ ¬fetched_at lfd pol ifds m w0 k f) ∧
+      inb_of (rstate lfd pol ifds m w0 (n + t)) f ≠ [] ⇒
+      ALOOKUP (rstate lfd pol ifds m w0 (n + t)).b.tbl h = SOME f
+Proof
+  strip_tac >> ‘run_ok lfd pol ifds m w0’ by fs[run_hyp_def] >>
+  Induct >- simp[] >> simp[ADD_CLAUSES] >> rpt strip_tac >>
+  ‘¬fetched_at lfd pol ifds m w0 (n + t) f’ by simp[] >>
+  drule_all run_round_nofetch >> strip_tac >>
+  ‘inb_of (rstate lfd pol ifds m w0 (n + t)) f ≠ []’
+    by (strip_tac >>
+        qpat_assum ‘pround _ _ _ _ _ = _’ (fn th => qpat_assum ‘¬fetched _ _’ (fn th2 =>
+          strip_assume_tac (MATCH_MP pround_inb (CONJ th th2)))) >>
+        fs[]) >>
+  ‘ALOOKUP (rstate lfd pol ifds m w0 (n + t)).b.tbl h = SOME f’
+    by (first_x_assum irule >> simp[]) >>
+  ‘∀i. (rstate lfd pol ifds m w0 (n + t)).b.nxt ≤ i ∧ l1hdln (w2n lfd) i < dimword (:64) ⇒
+       h ≠ l1hdl lfd i’ by metis_tac[run_fresh] >>
+  drule pround_tbl_keep >> disch_then (qspecl_then [‘h’, ‘f’] mp_tac) >> fs[]
+QED
+
+(* A read on f's handle, in a round without a fetch on f, shortens f's
+   inbox *)
+Theorem run_read_shrinks:
+  run_hyp lfd pol ifds m w0 ∧ ¬fetched_at lfd pol ifds m w0 k f ∧
+  ALOOKUP (rstate lfd pol ifds m w0 k).b.tbl h = SOME f ∧
+  inb_of (rstate lfd pol ifds m w0 k) f ≠ [] ∧
+  MEM (Read h kk) (new_actions (log_of m) (rhist lfd pol ifds m w0 k)) ⇒
+  LENGTH (inb_of (rstate lfd pol ifds m w0 (SUC k)) f) <
+  LENGTH (inb_of (rstate lfd pol ifds m w0 k) f)
+Proof
+  strip_tac >> ‘run_ok lfd pol ifds m w0’ by fs[run_hyp_def] >>
+  drule_all run_round_nofetch >> strip_tac >>
+  ‘∀i. (rstate lfd pol ifds m w0 k).b.nxt ≤ i ∧ l1hdln (w2n lfd) i < dimword (:64) ⇒
+       h ≠ l1hdl lfd i’ by metis_tac[run_fresh] >>
+  drule_all pround_inb >> disch_then (qspecl_then [‘kk’, ‘h’] strip_assume_tac) >>
+  qpat_x_assum ‘_ ⇒ LENGTH _ < LENGTH _’ irule >> fs[]
+QED

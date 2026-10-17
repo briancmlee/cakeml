@@ -119,3 +119,26 @@ no connect.
 
 **Then** re-derive echo through the same transfer (echo2_safe + kv_server_view_safe's per-episode
 form) and delete honestEchoL0Out / Inv's output half.
+
+### P4 gap 2 detail: the bound for rounds ≤ N (2026-10-17)
+R1's `_upto` theorems need `SND (pcm n') + 1 < dimword (:64)` for every n' ≤ N,
+including SUC n for a raw prefix that lies in round n.
+
+L1 facts (honestL1PFModel):
+- `wants_input lfd` requires acq = [], so pf_fetch adds at most one fd to acq, and only to an empty acq.
+- Only `pdo Accept` removes from acq, and it increments nxt.
+- So `pcm n = nxt_n + |acq_n|` with |acq_n| ≤ 1. This still needs proving: FConn is the only
+  client-creating log entry, and it is only ever added to acq.
+
+A round that runs under the current guard has `nxt + naccepts < 2^64`, so `pcm (SUC n) ≤ nxt + naccepts + 1 ≤ 2^64`.
+That is 2 short of `pcm (SUC n) + 1 < 2^64`.
+
+The exact guard is `hdl_room ps n ⇔ ps.b.nxt + n + 2 < dimword (:64)`.
+- The two extra are the pending pre-accepted connection and R1's +1.
+- It changes the CakeML loop (decision (A) / D25). Echo's proofs only use `nxt + naccepts < dimword`,
+  and the new guard implies that.
+
+Alternatives considered:
+- Keep the current guard and treat the last 1–2 rounds separately. The bound would be loose and
+  the extra case split is not worth it.
+- Ask honest-ffi to weaken R1 to `pcm < dimword`. That reopens R1's proofs.

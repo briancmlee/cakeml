@@ -678,7 +678,7 @@ Theorem ev_connect:
                 es'.p.b.nxt = es.p.b.nxt + 1 ∧ es'.p.acq = es.p.acq)
 Proof
   strip_tac >> qpat_x_assum ‘edo _ _ _ _ = _’ mp_tac >>
-  simp[edo_def, AllCaseEqs()] >> strip_tac >> gvs[] >>
+  simp[edo_def, AllCaseEqs()] >> strip_tac >> gvs[] >> TRY (PairCases_on ‘z’ >> gvs[] >> NO_TAC) >>
   qmatch_goalsub_abbrev_tac ‘(hn, f) :: es.ctbl’ >> simp[] >> strip_tac >>
   qmatch_goalsub_abbrev_tac ‘_ with <| p := _; ctbl := _; cst := _; settling := _; early := ely |>’ >>
   ‘EVERY (λ(f, c). c ≠ CPending) ely ∧ ALL_DISTINCT (MAP FST ely) ∧
@@ -768,7 +768,7 @@ Theorem ev_connect_none:
   ev_rel lfd a cm es (w with nconnects := w.nconnects + 1)
 Proof
   strip_tac >> qpat_x_assum ‘edo _ _ _ _ = _’ mp_tac >>
-  simp[edo_def, AllCaseEqs()] >> strip_tac >> gvs[] >>
+  simp[edo_def, AllCaseEqs()] >> strip_tac >> gvs[] >> TRY (PairCases_on ‘z’ >> gvs[]) >>
   qpat_x_assum ‘w.nosock _’ (fn th => simp[th, ehdo_def, ep_connect_def]) >>
   simp[ev_rel_nconnects]
 QED
@@ -1258,6 +1258,18 @@ Proof
   fs[upd_lchan_def, l0_used_cons]
 QED
 
+(* A raw close (of a connect's socket that failed at once) *)
+Theorem sys_close_l0:
+  sys_close f w = SOME (out, w', ev) ∧ l0_rely w ⇒
+  (∀g. g ≠ f ∧ MEM g (l0_used w) ⇒ MEM g (l0_used w')) ∧
+  (∀g. MEM g (l0_used w') ⇒ MEM g (l0_used w)) ∧
+  w'.fd_limit = w.fd_limit ∧ l0_rely w'
+Proof
+  strip_tac >>
+  ‘l1_close f (w, ARB) = SOME ((w', forget f ARB), [ev])’ by simp[l1_close_def] >>
+  drule_all l1_close_l0 >> simp[]
+QED
+
 (* The prefetching part's actions close only its own fds *)
 Theorem pdo_keep:
   pdo lfd (w, ps) a = SOME (r, (w', ps'), evs) ∧ l0_rely w ⇒
@@ -1310,6 +1322,14 @@ Proof
     gvs[edo_def, AllCaseEqs()] >> PairCases_on ‘z’ >> gvs[] >> drule_all pdo_l0owne >> simp[],
     (* EConnect *)
     gvs[edo_def, AllCaseEqs()] >> drule_all sys_connect_l0 >> strip_tac >> simp[] >>
+    (* a transient failure: its socket is closed again *)
+    TRY (PairCases_on ‘z’ >> gvs[] >>
+         rename1 ‘sys_close (n2w (res_val out)) wc = SOME (_, wl', _)’ >>
+         qpat_x_assum ‘sys_close _ _ = _’ assume_tac >> drule_all sys_close_l0 >> strip_tac >>
+         ‘∀g. MEM g (l0_used wl) ⇒ MEM g (l0_used wl')’
+           by (rpt strip_tac >> qpat_x_assum ‘∀g. g ≠ _ ∧ MEM g (l0_used wc) ⇒ _’ irule >>
+               metis_tac[]) >>
+         gvs[honestL0WorldPropsTheory.fds_lt_def, l0owne_def, l0own_def] >> metis_tac[] >> NO_TAC) >>
     gvs[l0owne_def, l0own_def, l1hdl_hdl] >> metis_tac[],
     (* ELevel *)
     gvs[edo_def],
@@ -1324,7 +1344,7 @@ Theorem edo_connect_fresh:
   ∀f. es'.ctbl = (hdl lfd es.p.b.nxt, f) :: es.ctbl ⇒
       ¬MEM f (lfd :: MAP SND es.p.b.tbl ++ es.p.b.closing ++ es.p.acq ++ MAP SND es.ctbl)
 Proof
-  strip_tac >> gvs[edo_def, AllCaseEqs()] >> drule_all sys_connect_l0 >> strip_tac >>
+  strip_tac >> gvs[edo_def, AllCaseEqs()] >> TRY (PairCases_on ‘z’ >> gvs[] >> NO_TAC) >> drule_all sys_connect_l0 >> strip_tac >>
   gvs[l0owne_def, l0own_def] >> metis_tac[]
 QED
 
@@ -1347,7 +1367,7 @@ Proof
     rw[] >> res_tac >> metis_tac[],
     gvs[edo_def, AllCaseEqs()] >> TRY (PairCases_on ‘z’) >> gvs[pdo_def] >>
     TRY (pairarg_tac >> gvs[] >> imp_res_tac l1do_write_tbl) >> gvs[ciss_def],
-    gvs[edo_def, AllCaseEqs(), ciss_def, l1hdl_hdl] >> rw[]
+    gvs[edo_def, AllCaseEqs(), ciss_def, l1hdl_hdl] >> TRY (PairCases_on ‘z’ >> gvs[] >> NO_TAC) >> rw[]
     >- (qexists_tac ‘es.p.b.nxt’ >> simp[])
     >> res_tac >> qexists_tac ‘i’ >> simp[],
     (* ELevel *)
@@ -1371,7 +1391,7 @@ Proof
     ‘c ≠ h’ by (strip_tac >> gvs[]) >>
     simp[ec_del_def, ALOOKUP_ADELKEY, cstat_of_def] >> gvs[cstat_of_def],
     gvs[edo_def, AllCaseEqs()] >> PairCases_on ‘z’ >> gvs[cstat_of_def],
-    gvs[edo_def, AllCaseEqs()] >>
+    gvs[edo_def, AllCaseEqs()] >> TRY (PairCases_on ‘z’ >> gvs[] >> NO_TAC) >>
     ‘h ≠ l1hdl lfd es.p.b.nxt’
       by (gvs[ciss_def, l1hdl_hdl] >> res_tac >> gvs[] >>
           irule hdl_fresh >> simp[]) >>
@@ -1507,14 +1527,15 @@ Proof
         drule_all ev_connect_none >> disch_then (strip_assume_tac o SPEC_ALL) >>
         gvs[rfds_def, conn_hdls_def, conn_outs_def, cnew_thm]) >>
     ‘r = EConnected (SOME (hdl lfd es.p.b.nxt))’
-      by gvs[edo_def, AllCaseEqs(), l1hdl_hdl] >>
+      by (gvs[edo_def, AllCaseEqs(), l1hdl_hdl] >> TRY (PairCases_on ‘z’) >> gvs[]) >>
     ‘¬w.nosock w.nconnects’ by (qpat_x_assum ‘∀x. _ ⇒ (_ ⇔ _)’ (qspec_then ‘SOME (hdl lfd es.p.b.nxt)’ mp_tac) >>
                                 simp[]) >>
     imp_res_tac edo_connect_fresh >>
     qpat_x_assum ‘edo _ _ _ _ = _’ assume_tac >>
     drule_all ev_connect >> disch_then (strip_assume_tac o SPEC_ALL) >>
     ‘rfds es' [r] = [f]’ by simp[rfds_def, conn_hdls_def] >>
-    ‘cstat_of es' f = CPending’ by gvs[edo_def, AllCaseEqs(), cstat_of_def] >>
+    ‘cstat_of es' f = CPending’
+      by (gvs[edo_def, AllCaseEqs(), cstat_of_def] >> TRY (PairCases_on ‘z’) >> gvs[]) >>
     ‘¬MEM f (lfd :: MAP SND es.p.b.tbl ++ es.p.b.closing ++ es.p.acq ++ MAP SND es.ctbl)’
       by metis_tac[] >>
     ‘ep_used w = lfd :: MAP FST w.open_fds’ by metis_tac[ev_used_len] >>
@@ -1576,7 +1597,8 @@ Theorem edo_conn_pending:
   ∃f. ALOOKUP es'.ctbl h = SOME f ∧ cstat_of es' f = CPending
 Proof
   strip_tac >> Cases_on ‘∃p. act = EConnect p’
-  >- (gvs[edo_def, AllCaseEqs(), conn_hdls_def, cstat_of_def]) >>
+  >- (gvs[edo_def, AllCaseEqs(), conn_hdls_def, cstat_of_def] >>
+      PairCases_on ‘z’ >> gvs[conn_hdls_def]) >>
   ‘conn_hdls [r] = []’ by (drule edo_conn_hdls >> metis_tac[]) >> gvs[]
 QED
 

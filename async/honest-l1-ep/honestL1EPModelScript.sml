@@ -9,6 +9,8 @@
   whose connect is pending or refused.
    - EConnect a (a < 2^16; a larger address is a misuse: L0 connects only
      to loopback ports): sys_connect.  No socket: EConnected NONE.  A socket
+     with a transient error (l1_transient): it is closed, EConnected NONE,
+     no handle taken (events [connect; close]).  Otherwise a socket
      f: a fresh handle in ctbl, pending.  An outcome known at once (connected
      or failed at once) is kept in `early` and takes effect at the round's
      tail, as the layer's Settle arrives at the next tick (so within the round
@@ -99,6 +101,11 @@ Definition egone_def:
   egone es h ⇔ case ALOOKUP es.p.b.tbl h of SOME f => MEM f es.p.b.gone | NONE => F
 End
 
+(* sys_connect gave a socket but failed at once, transiently *)
+Definition conn_transient_def:
+  conn_transient out ⇔ case l0_res_of out of Fail e _ => l1_transient e | _ => F
+End
+
 Definition edo_def:
   edo lfd pol (w, es) (EAccept l) =
     (OPTION_MAP (λ(r, (w', ps'), evs).
@@ -113,6 +120,12 @@ Definition edo_def:
        | SOME (out, w', ev) =>
            let v = res_val out in
              if v = 0 then SOME (EConnected NONE, (w', es), [ev])
+             else if conn_transient out then
+               (* an immediate transient failure: close the new socket; no
+                  handle is taken and L1's state is unchanged (the fd was
+                  never L1's, so there is nothing to forget) *)
+               OPTION_MAP (λ(_, w'', ev'). (EConnected NONE, (w'', es), [ev; ev']))
+                 (sys_close (n2w v) w')
              else if l1hdln (w2n lfd) es.p.b.nxt < dimword (:64) then
                let h = l1hdl lfd es.p.b.nxt;
                    f : word64 = n2w v;

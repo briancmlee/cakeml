@@ -1,6 +1,7 @@
 (*
   TEMPORARY VERBATIM COPY — remove at L3-09 fold.
-  Source: final/L3-00-statements (PR #153) at ad23dafc5 (D32 flushed_open, also in the strong claim; ddcee21b2 D32; c2b12a300 D27 close call, D28 flushed_ch excuse, D29 handle cut-off; before: 2333844ae D23 comments; 5113fff27 D23: ep_timed_out,
+  Source: final/L3-00-statements (PR #153) at 907c32fdc (D33 stdio_closed and the sys_fdok prefix of
+  listen_failed; D34 broken_open; D36 in stall_drains); before: ad23dafc5 (D32 flushed_open, also in the strong claim; ddcee21b2 D32; c2b12a300 D27 close call, D28 flushed_ch excuse, D29 handle cut-off; before: 2333844ae D23 comments; 5113fff27 D23: ep_timed_out,
   stall_drains, poll_ev/out_poll/send_took; hup_drains and poll_hup removed;
   earlier: drains on sends/inflight 821835ed2; Q1 quiescence weakening; D20
   poll encoding; first copied at 676781133, resynced for ep_polls,
@@ -20,6 +21,10 @@ Ancestors
   honestEchoL0Spec
 Libs
   preamble
+
+(* ========================================================================
+   The raw trace: what the run did, and the world it was in
+   ======================================================================== *)
 
 (* An IO event as the call the L0 world recorded *)
 Definition ev_lcall_def:
@@ -66,11 +71,30 @@ Definition drains_def:
                       c < LENGTH w'.chans ∧ (EL c w'.chans).inflight = 0
 End
 
-(* The listen failed and the program stopped *)
+(* D33 (user decision, design/50 (c2)): the program's first three calls ask
+   sys_fdok whether fds 0, 1 and 2 are open (always all three).  It stops
+   if one is closed: stdio_closed, an outcome every claim allows, instead of
+   the world assumption that they are open.  As honestL0Outcome's
+   stdio_closed (spike/stdio-c2 e083021aa) *)
+Definition stdio_closed_def:
+  stdio_closed b ⇔
+    ∃i0 i1 i2 r0 r1 r2.
+      b = Terminate Success [IO_event (ExtCall «sys_fdok») [0w] [(i0, r0)];
+                             IO_event (ExtCall «sys_fdok») [1w] [(i1, r1)];
+                             IO_event (ExtCall «sys_fdok») [2w] [(i2, r2)]] ∧
+      MEM 0w [r0; r1; r2]
+End
+
+(* The listen failed and the program stopped (after the three sys_fdok
+   calls found fds 0, 1 and 2 open, D33) *)
 Definition listen_failed_def:
   listen_failed b ⇔
-    ∃conf bs. b = Terminate Success [IO_event (ExtCall «sys_listen») conf bs] ∧
-              ∀k. l0_ev_res bs ≠ SOME (Ok k)
+    ∃i0 i1 i2 conf bs.
+      b = Terminate Success [IO_event (ExtCall «sys_fdok») [0w] [(i0, 1w)];
+                             IO_event (ExtCall «sys_fdok») [1w] [(i1, 1w)];
+                             IO_event (ExtCall «sys_fdok») [2w] [(i2, 1w)];
+                             IO_event (ExtCall «sys_listen») conf bs] ∧
+      ∀k. l0_ev_res bs ≠ SOME (Ok k)
 End
 
 (* Episode j (the j-th accepted connection) is open after evs, or has
@@ -202,10 +226,15 @@ End
    finding #1): within the same window, the first send on episode j's fd
    after its bytes in flight reach 0 does not fail transiently (observed,
    while episode j is open) -- otherwise a transient failure there could
-   use up the window with nothing in flight *)
+   use up the window with nothing in flight.  D36 (user decision, from
+   honest-ffi's (3b) analysis): whenever nothing is in flight on c while
+   episode j is open (at a window's start or later), the first output poll
+   on its fd after that point and the first send on its fd after it do not
+   fail transiently, within the window -- otherwise transiently failing
+   polls (no revents, so no send) could use up the window *)
 Definition stall_drains_def:
   stall_drains K w0 io j c ⇔
-    ∀evs mid w.
+    (∀evs mid w.
       LPREFIX (fromList (evs ++ mid)) io ∧ ep_open j evs ∧
       world_at w0 (evs ++ mid) = SOME w ∧ c < LENGTH w.chans ∧
       0 < (EL c w.chans).inflight ⇒
@@ -221,7 +250,15 @@ Definition stall_drains_def:
                     (ep_polls (EL j (l0_accepted evs)) mid (more ++ more2)) < K ∧
                   ¬EXISTS (ev_on «sys_send» (EL j (l0_accepted evs))) more2 ∧
                   ev_on «sys_send» (EL j (l0_accepted evs)) ev ⇒
-                  ¬retried ev
+                  ¬retried ev) ∧
+    ∀evs w mid ev.
+      LPREFIX (fromList (evs ++ mid ++ [ev])) io ∧ ep_open j (evs ++ mid) ∧
+      world_at w0 evs = SOME w ∧ c < LENGTH w.chans ∧ (EL c w.chans).inflight = 0 ∧
+      n_out_polls (EL j (l0_accepted evs)) (ep_polls (EL j (l0_accepted evs)) evs mid) < K ∧
+      ((¬EXISTS (out_poll (EL j (l0_accepted evs))) mid ∧ out_poll (EL j (l0_accepted evs)) ev) ∨
+       (¬EXISTS (ev_on «sys_send» (EL j (l0_accepted evs))) mid ∧
+        ev_on «sys_send» (EL j (l0_accepted evs)) ev)) ⇒
+      ¬retried ev
 End
 
 (* Raw liveness of the echo, per episode, unless X: if episode j is open on
@@ -306,6 +343,26 @@ Definition flushed_open_def:
       c < LENGTH w.chans ∧ (EL c w.chans).broken ∧ (EL c w.chans).inbox = []
 End
 
+(* D34 (user decision): the strong form's excuse.  Channel c broke while
+   episode j was open, before any close call on the episode's fd (its
+   unread input may remain: a peer that resets while the server has paused
+   input and has nothing in flight may never see its echo, POLLOUT being
+   the kernel's choice on a broken channel) *)
+Definition broken_open_def:
+  broken_open w0 io j c ⇔
+    ∃pre ev post f w.
+      LPREFIX (fromList (pre ++ [ev] ++ post)) io ∧ LENGTH (l0_accepted pre) = j ∧
+      l0_event_accepted ev = SOME f ∧ ¬EXISTS (l0_close_call f) post ∧
+      world_at w0 (pre ++ [ev] ++ post) = SOME w ∧
+      c < LENGTH w.chans ∧ (EL c w.chans).broken
+End
+
+Theorem flushed_broken_open:
+  flushed_open w0 io j c ⇒ broken_open w0 io j c
+Proof
+  rw[flushed_open_def, broken_open_def] >> metis_tac[]
+QED
+
 (* D32 is strictly stronger than D28's excuse *)
 Theorem flushed_open_ch:
   flushed_open w0 io j c ⇒ flushed_ch w0 io c
@@ -371,7 +428,7 @@ Definition l0_echo2_claim_def:
   l0_echo2_claim K prog ⇔
     ∀w0. l0_server_world w0 ⇒
       ∃b. semantics_prog (init_state (l0_ffi w0)) init_env prog b ∧
-          (listen_failed b ∨
+          (stdio_closed b ∨ listen_failed b ∨
            ∃io. b = Diverge io ∧ echo_safe_l0 io ∧
                 (F1_io io ∧ F2 w0 ∧ accepts_below io ⇒ echo_live_l0 K w0 io ∧ conn_live_l0 w0 io))
 End
@@ -423,10 +480,10 @@ Definition l0_echo2_strong_claim_def:
   l0_echo2_strong_claim K prog ⇔
     ∀w0. l0_server_world w0 ⇒
       ∃b. semantics_prog (init_state (l0_ffi w0)) init_env prog b ∧
-          (listen_failed b ∨
+          (stdio_closed b ∨ listen_failed b ∨
            ∃io. b = Diverge io ∧
                 (F1_io io ∧ F2 w0 ∧ accepts_below io ∧ HD16_io w0 io ⇒
-                 echo_live_unless (λj c. stall_drains K w0 io j c) (λj c. flushed_open w0 io j c)
+                 echo_live_unless (λj c. stall_drains K w0 io j c) (λj c. broken_open w0 io j c)
                    w0 io) ∧
                 (F1_io io ∧ accepts_below io ∧ H1_io w0 io ∧ H3_io io ⇒
                  conn_live_unless F w0 io))
@@ -465,11 +522,11 @@ Definition quiet_on_kernel_claim_def:
   quiet_on_kernel_claim guar prog ⇔
     ∀w0. l0_server_world w0 ⇒
       ∃b. semantics_prog (init_state (l0_ffi w0)) init_env prog b ∧
-          (listen_failed b ∨
+          (stdio_closed b ∨ listen_failed b ∨
            (∃io. b = Diverge io ∧ guar w0 io) ∨
            (∃io. asleep_l0 b io ∧ guar w0 (fromList io))) ∧
           (arrivals_finite_l0 w0 ⇒
-           listen_failed b ∨ (∃io. asleep_l0 b io) ∨
+           stdio_closed b ∨ listen_failed b ∨ (∃io. asleep_l0 b io) ∨
            ∃io. b = Diverge io ∧ (¬F1_io io ∨ accepts_fail_io io ∨ ¬accepts_below io))
 End
 
@@ -482,11 +539,11 @@ Definition quiet_on_kernel_strong_claim_def:
   quiet_on_kernel_strong_claim guar prog ⇔
     ∀w0. l0_server_world w0 ⇒
       ∃b. semantics_prog (init_state (l0_ffi w0)) init_env prog b ∧
-          (listen_failed b ∨
+          (stdio_closed b ∨ listen_failed b ∨
            (∃io. b = Diverge io ∧ guar w0 io) ∨
            (∃io. asleep_l0 b io ∧ guar w0 (fromList io))) ∧
           (arrivals_finite_l0 w0 ⇒
-           listen_failed b ∨ (∃io. asleep_l0 b io) ∨
+           stdio_closed b ∨ listen_failed b ∨ (∃io. asleep_l0 b io) ∨
            ∃io. b = Diverge io ∧ (H1_io w0 io ∧ H3_io io ⇒ ¬F1_io io ∨ ¬accepts_below io))
 End
 

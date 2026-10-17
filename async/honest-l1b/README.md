@@ -18,21 +18,21 @@ with holslot `Holmake -j1` and has no cheats.
 | (S4′) blocking run sleeps | `l1b_sleeps` | honest-l1b/honestL1BSleepScript.sml |
 | CakeML step / loop | `step_pfb_spec`, `step_pfb_sleep_spec`, `run_pfb_div_spec`, `run_pfb_sleep_spec` | honest-l1b-cf/honestL1BSpecScript.sml |
 | CakeML trace = model trace | `div_btrace`, `sleep_btrace`, `bt_guard_ok`, `pf_trace_exists` | honest-l1b-cf/honestL1BTraceScript.sml |
-| Program semantics (fail / Diverge / FFI_diverged) | `echo_l0b_semantics_prog` | honest-l1b-cf/honestEchoL0BSemScript.sml |
-| Across the leading listen | `echo2_guar_shift`, `sys_listen_echo_shift` | honest-l1b/honestL1BShiftScript.sml |
+| Program semantics (stdio closed / listen fails / Diverge / FFI_diverged; D33 sys_fdok prefix) | `echo_l0b_semantics_prog` | honest-l1b-cf/honestEchoL0BSemScript.sml |
+| Across the setup events (three sys_fdok checks, the listen) | `echo2_guar_shift`, `sys_listen_echo_shift`, `fdok_shift_ev`; `echo2_guar_setup` (Quiet) | honest-l1b/honestL1BShiftScript.sml |
 | **Instance** | `echo_l0b_quiet` (L3-00's `quiet_on_kernel_claim`, with D29), `echo_l0b_quiet_a` (the same, kept as an alias) | honest-l1b-cf/honestEchoL0BQuietScript.sml |
 
 ## Premises of `echo_l0b_quiet`: `echo_pf_facts KK k w1`
 
 These are stated in the PF world `epfw k w1 = reindex (btr …) w1`, for
-listener k.
+listener k, where w1 is the world after the listen; since D33 the listen
+runs in the world w3 after the three sys_fdok checks (`stdio_prefix w0 w3`).
 
 | Conjunct | Owner | Status |
 |---|---|---|
 | `run_ok`, `winv`, `linv`, `qfresh`, `MEM lfd (l0_used …)`, pcm bound | async-spike / honest-ffi (PF standing facts; design/47 for reindexing) | open |
 | `S1`, `S2` | async-spike (`S1_interest`, `echo_S2`) | available for `interest`; needs re-pointing to `epfw` |
 | `SQ` | cf-actions | partial, see below |
-| `flush_ok` (D32's excuse, PF ⇒ blocking) | cf-actions; needs the PF invariant "L1 owns every open fd it opened" (honest-ffi, queued) | open, see below |
 | `∀io_p. ptrace … io_p ⇒ echo2_guar_l0 KK (epfw k w1) io_p` | async-spike (liveness), KV worker (safety) | open |
 
 These are already discharged, so they are no longer premises:

@@ -1,18 +1,19 @@
 (*
-  The echo's guarantee across the program's leading listen.  The L1
-  loops' guarantees (the PF run's, async-spike's; the blocking run's,
+  The echo's guarantee across the program's setup events: the three
+  sys_fdok calls on fds 0, 1 and 2 (D33), then the listen.  The L1 loops'
+  guarantees (the PF run's, async-spike's; the blocking run's,
   honestL1BQuiet) are on the loop's trace from the world after the listen;
   the program's (l0_echo2_claim, quiet_on_kernel_claim) is on the whole
-  trace from the start world.  A listen event is no accept, close, send,
-  recv or poll, and replaying it from the start world gives the world
+  trace from the start world.  A setup event is no accept, close, send,
+  recv or poll, and replaying it from the world before it gives the world
   after it, so the guarantee moves across it:
 
      echo2_guar_l0 KK w1 io  ⇒  echo2_guar_l0 KK W0 (LCONS ev io)
 
-  for the listen ev from W0 to w1 (W0 with no listeners yet).  One copy,
-  for both programs.
+  for a setup event ev from W0 to w1 (W0 with no listeners yet).  One
+  copy, for both programs.
 
-  MAIN: echo2_guar_shift, sys_listen_echo_shift.
+  MAIN: echo2_guar_shift, sys_listen_echo_shift, fdok_shift_ev.
 *)
 Theory honestL1BShift
 Ancestors
@@ -21,66 +22,67 @@ Ancestors
 Libs
   preamble
 
-(* A listen event *)
-Definition listen_ev_def:
-  listen_ev ev ⇔ ∃conf bs. ev = IO_event (ExtCall «sys_listen») conf bs
+(* A setup event: a listen, or a sys_fdok check (D33) *)
+Definition setup_ev_def:
+  setup_ev ev ⇔
+    ∃nm conf bs. ev = IO_event (ExtCall nm) conf bs ∧ (nm = «sys_listen» ∨ nm = «sys_fdok»)
 End
 
 (* ------------------------------------------------------------------------
-   A listen event is none of the events the guarantee reads
+   A setup event is none of the events the guarantee reads
    ------------------------------------------------------------------------ *)
 
-Theorem listen_ev_not[simp]:
-  listen_ev ev ⇒
+Theorem setup_ev_not[simp]:
+  setup_ev ev ⇒
   l0_event_accepted ev = NONE ∧ l0_event_closed ev = NONE ∧
   (∀f. l0_event_sent f ev = []) ∧ (∀f. l0_event_recv f ev = []) ∧
   (∀f. ¬hard_err_on f ev) ∧ (∀f. ¬ep_ends f ev)
 Proof
-  rw[listen_ev_def] >>
+  rw[setup_ev_def] >>
   simp[l0_event_accepted_def, l0_event_closed_def, l0_event_sent_def, l0_event_recv_def,
        hard_err_on_def, ep_ends_def]
 QED
 
-Theorem l0_accepted_listen:
-  listen_ev ev ⇒ l0_accepted (ev :: evs) = l0_accepted evs
+Theorem l0_accepted_setup:
+  setup_ev ev ⇒ l0_accepted (ev :: evs) = l0_accepted evs
 Proof
   rw[l0_accepted_def]
 QED
 
-Theorem l0_ep_events_listen:
-  listen_ev ev ⇒ l0_ep_events j 0 [] (ev :: evs) = l0_ep_events j 0 [] evs
+Theorem l0_ep_events_setup:
+  setup_ev ev ⇒ l0_ep_events j 0 [] (ev :: evs) = l0_ep_events j 0 [] evs
 Proof
   rw[l0_ep_events_def]
 QED
 
-Theorem l0_sent_listen:
-  listen_ev ev ⇒ l0_sent j (ev :: evs) = l0_sent j evs
+Theorem l0_sent_setup:
+  setup_ev ev ⇒ l0_sent j (ev :: evs) = l0_sent j evs
 Proof
-  rw[l0_sent_def, l0_accepted_listen, l0_ep_events_listen]
+  rw[l0_sent_def, l0_accepted_setup, l0_ep_events_setup]
 QED
 
-Theorem l0_read_listen:
-  listen_ev ev ⇒ l0_read j (ev :: evs) = l0_read j evs
+Theorem l0_read_setup:
+  setup_ev ev ⇒ l0_read j (ev :: evs) = l0_read j evs
 Proof
-  rw[l0_read_def, l0_accepted_listen, l0_ep_events_listen]
+  rw[l0_read_def, l0_accepted_setup, l0_ep_events_setup]
 QED
 
-Theorem ep_open_listen:
-  listen_ev ev ⇒ (ep_open j (ev :: evs) ⇔ ep_open j evs)
+Theorem ep_open_setup:
+  setup_ev ev ⇒ (ep_open j (ev :: evs) ⇔ ep_open j evs)
 Proof
   rw[ep_open_def] >> eq_tac >> rw[]
   >- (Cases_on ‘pre’ >> gvs[] >>
-      qexistsl [‘t’, ‘ev'’, ‘post’, ‘f’] >> gvs[l0_accepted_listen])
-  >> qexistsl [‘ev :: pre’, ‘ev'’, ‘post’, ‘f’] >> simp[l0_accepted_listen]
+      qexistsl [‘t’, ‘ev'’, ‘post’, ‘f’] >> gvs[l0_accepted_setup])
+  >> qexistsl [‘ev :: pre’, ‘ev'’, ‘post’, ‘f’] >> simp[l0_accepted_setup]
 QED
 
-Theorem ep_closed_listen:
-  listen_ev ev ⇒ (ep_closed j (ev :: evs) ⇔ ep_closed j evs)
+Theorem ep_closed_setup:
+  setup_ev ev ⇒ (ep_closed j (ev :: evs) ⇔ ep_closed j evs)
 Proof
   rw[ep_closed_def] >> eq_tac >> rw[]
   >- (Cases_on ‘pre’ >> gvs[] >>
-      qexistsl [‘t’, ‘ev'’, ‘post’, ‘f’] >> gvs[l0_accepted_listen])
-  >> qexistsl [‘ev :: pre’, ‘ev'’, ‘post’, ‘f’] >> simp[l0_accepted_listen]
+      qexistsl [‘t’, ‘ev'’, ‘post’, ‘f’] >> gvs[l0_accepted_setup])
+  >> qexistsl [‘ev :: pre’, ‘ev'’, ‘post’, ‘f’] >> simp[l0_accepted_setup]
 QED
 
 (* ------------------------------------------------------------------------
@@ -135,11 +137,11 @@ Proof
 QED
 
 Theorem echo_safe_shift:
-  listen_ev ev ∧ echo_safe_l0 io ⇒ echo_safe_l0 (LCONS ev io)
+  setup_ev ev ∧ echo_safe_l0 io ⇒ echo_safe_l0 (LCONS ev io)
 Proof
   rw[echo_safe_l0_def, LPREFIX_fromList_LCONS]
   >- simp[l0_sent_def, l0_accepted_def]
-  >> gvs[l0_sent_listen, l0_read_listen, l0_accepted_listen]
+  >> gvs[l0_sent_setup, l0_read_setup, l0_accepted_setup]
 QED
 
 Theorem F1_shift:
@@ -154,10 +156,10 @@ Proof
 QED
 
 Theorem accepts_below_shift:
-  listen_ev ev ∧ accepts_below (LCONS ev io) ⇒ accepts_below io
+  setup_ev ev ∧ accepts_below (LCONS ev io) ⇒ accepts_below io
 Proof
   rw[accepts_below_def] >>
-  first_x_assum (qspec_then ‘ev :: evs’ mp_tac) >> fs[LPREFIX_LCONS, l0_accepted_listen]
+  first_x_assum (qspec_then ‘ev :: evs’ mp_tac) >> fs[LPREFIX_LCONS, l0_accepted_setup]
 QED
 
 Theorem accepts_fail_shift:
@@ -201,38 +203,38 @@ Proof
 QED
 
 Theorem ep_hard_err_shift:
-  listen_ev ev ∧ ep_hard_err j io ⇒ ep_hard_err j (LCONS ev io)
+  setup_ev ev ∧ ep_hard_err j io ⇒ ep_hard_err j (LCONS ev io)
 Proof
   rw[ep_hard_err_def] >> qexistsl [‘ev :: evs’, ‘ev'’] >>
-  fs[LPREFIX_LCONS, ep_open_listen, l0_accepted_listen]
+  fs[LPREFIX_LCONS, ep_open_setup, l0_accepted_setup]
 QED
 
 Theorem ep_timed_out_shift:
-  listen_ev ev ∧ ep_timed_out KK j io ⇒ ep_timed_out KK j (LCONS ev io)
+  setup_ev ev ∧ ep_timed_out KK j io ⇒ ep_timed_out KK j (LCONS ev io)
 Proof
   rw[ep_timed_out_def] >> qexistsl [‘ev :: evs’, ‘span’] >>
-  fs[LPREFIX_LCONS, ep_open_listen, l0_accepted_listen]
+  fs[LPREFIX_LCONS, ep_open_setup, l0_accepted_setup]
 QED
 
 (* D32 *)
 Theorem flushed_open_shift:
-  listen_ev ev ∧ l0_step (SOME W0) (ev_lcall ev) = SOME w1 ∧ flushed_open w1 io j c ⇒
+  setup_ev ev ∧ l0_step (SOME W0) (ev_lcall ev) = SOME w1 ∧ flushed_open w1 io j c ⇒
   flushed_open W0 (LCONS ev io) j c
 Proof
   rw[flushed_open_def] >> drule world_at_cons >> strip_tac >>
   qexistsl_tac [‘ev :: pre’, ‘ev'’, ‘post’, ‘f’, ‘w’] >>
-  fs[LPREFIX_LCONS, l0_accepted_listen]
+  fs[LPREFIX_LCONS, l0_accepted_setup]
 QED
 
 Theorem echo_live_shift:
-  listen_ev ev ∧ l0_step (SOME W0) (ev_lcall ev) = SOME w1 ∧ echo_live_l0 KK w1 io ⇒
+  setup_ev ev ∧ l0_step (SOME W0) (ev_lcall ev) = SOME w1 ∧ echo_live_l0 KK w1 io ⇒
   echo_live_l0 KK W0 (LCONS ev io)
 Proof
   rw[echo_live_l0_def, echo_live_unless_def] >>
   gvs[LPREFIX_fromList_LCONS]
   >- fs[ep_open_def] >>
   drule world_at_cons >> strip_tac >> gvs[] >>
-  gvs[ep_open_listen, l0_accepted_listen] >>
+  gvs[ep_open_setup, l0_accepted_setup] >>
   first_x_assum (qspecl_then [‘evs'’, ‘j’, ‘c’, ‘w’] mp_tac) >>
   impl_tac >- (simp[] >> irule drains_shift >> metis_tac[]) >>
   rw[]
@@ -240,14 +242,14 @@ Proof
   >- (disj1_tac >> disj2_tac >> disj1_tac >> irule ep_timed_out_shift >> simp[])
   >- (disj1_tac >> disj2_tac >> disj2_tac >> irule flushed_open_shift >> metis_tac[])
   >> disj2_tac >> conj_tac
-  >- (qexists_tac ‘ev :: evs''’ >> fs[LPREFIX_LCONS, l0_sent_listen])
+  >- (qexists_tac ‘ev :: evs''’ >> fs[LPREFIX_LCONS, l0_sent_setup])
   >> strip_tac >> gvs[] >>
   qexistsl_tac [‘ev :: evs'³'’, ‘ev'’] >>
-  fs[LPREFIX_LCONS, ep_open_listen, l0_accepted_listen]
+  fs[LPREFIX_LCONS, ep_open_setup, l0_accepted_setup]
 QED
 
 Theorem conn_live_shift:
-  listen_ev ev ∧ l0_step (SOME W0) (ev_lcall ev) = SOME w1 ∧ W0.listeners = [] ∧
+  setup_ev ev ∧ l0_step (SOME W0) (ev_lcall ev) = SOME w1 ∧ W0.listeners = [] ∧
   conn_live_l0 w1 io ⇒
   conn_live_l0 W0 (LCONS ev io)
 Proof
@@ -258,13 +260,13 @@ Proof
   rw[]
   >- (disj1_tac >> irule accepts_fail_shift >> simp[])
   >- (disj2_tac >> disj1_tac >> qexistsl [‘ev :: evs''’, ‘w'’, ‘f’] >>
-      fs[LPREFIX_LCONS, l0_accepted_listen])
+      fs[LPREFIX_LCONS, l0_accepted_setup])
   >> disj2_tac >> disj2_tac >> irule broke_shift >> metis_tac[]
 QED
 
-(* MAIN: the guarantee across the listen *)
+(* MAIN: the guarantee across a setup event *)
 Theorem echo2_guar_shift:
-  listen_ev ev ∧ l0_step (SOME W0) (ev_lcall ev) = SOME w1 ∧ W0.listeners = [] ∧
+  setup_ev ev ∧ l0_step (SOME W0) (ev_lcall ev) = SOME w1 ∧ W0.listeners = [] ∧
   echo2_guar_l0 KK w1 io ⇒
   echo2_guar_l0 KK W0 (LCONS ev io)
 Proof
@@ -278,9 +280,19 @@ QED
 (* The echo programs' listen is such an event *)
 Theorem sys_listen_echo_shift:
   l0_rely W0 ∧ sys_listen_echo W0 = SOME (out, w1, ev) ⇒
-  listen_ev ev ∧ l0_step (SOME W0) (ev_lcall ev) = SOME w1
+  setup_ev ev ∧ l0_step (SOME W0) (ev_lcall ev) = SOME w1
 Proof
-  rw[sys_listen_echo_def, l0_do_def, AllCaseEqs()] >> simp[listen_ev_def] >>
+  rw[sys_listen_echo_def, l0_do_def, AllCaseEqs()] >> simp[setup_ev_def] >>
+  drule_all l0_ffi_fn_length >> strip_tac >>
+  simp[ev_lcall_def, l0_step_def, MAP_ZIP]
+QED
+
+(* The sys_fdok checks are such events *)
+Theorem fdok_shift_ev:
+  l0_rely W0 ∧ l0_do «sys_fdok» conf alen W0 = SOME (out, w1, ev) ⇒
+  setup_ev ev ∧ l0_step (SOME W0) (ev_lcall ev) = SOME w1
+Proof
+  rw[l0_do_def, AllCaseEqs()] >> simp[setup_ev_def] >>
   drule_all l0_ffi_fn_length >> strip_tac >>
   simp[ev_lcall_def, l0_step_def, MAP_ZIP]
 QED

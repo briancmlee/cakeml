@@ -339,8 +339,8 @@ Definition fetch_recv_log_def:
 End
 
 (* D19's hung-up step, with the outboxes of the state before the flush *)
-Definition hup_step_b_def:
-  hup_step_b hfs b0 log ps = hup_step hfs (outbox_of b0) log ps
+Definition stall_step_ob_def:
+  stall_step_ob hfs b0 log ps = stall_step hfs (outbox_of b0) log ps
 End
 
 (* An fd the flush skips, and the reap closes *)
@@ -415,13 +415,13 @@ val r = tr fetch_acc_upd_def;
 val r = tr fetch_recv_upd_def;
 val r = tr fetch_acc_log_def;
 val r = tr fetch_recv_log_def;
-val r = tr pf_hupwait_def;
-val r = tr hup_fds_def;
+val r = tr pf_sendwait_def;
+val r = tr pf_held_def;
 val r = tr drop_out_def;
 val r = tr listTheory.nub_def;
 val r = tr listTheory.FOLDL;
-val r = tr hup_step_def;
-val r = tr hup_step_b_def;
+val r = tr stall_step_def;
+val r = tr stall_step_ob_def;
 val r = tr quiet_fd_def;
 val r = tr l1p_b_def;
 val r = tr set_b_def;
@@ -531,7 +531,7 @@ Quote add_cakeml:
     in
       case fl of (ps3a, log) =>
       let
-        val ps3 = hup_step_b (hup_fds rv) (l1p_b ps) log ps3a
+        val ps3 = stall_step_ob (pf_held ps3a) (l1p_b ps) log ps3a
         val b4 = l1_reap (closing_of ps3) (l1p_b ps3)
         val ps4 = end_round ps3 b4
       in (pf_ready lfd ps4 hs, ps4) end

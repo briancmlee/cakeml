@@ -331,10 +331,10 @@ Proof
   first_x_assum drule >> strip_tac >> xapp >> fs[]
 QED
 
-Theorem hup_step_pause[local,simp]:
-  (hup_step hfs ob log ps).pause = ps.pause
+Theorem stall_step_pause[local,simp]:
+  (stall_step hfs ob log ps).pause = ps.pause
 Proof
-  simp[hup_step_def]
+  simp[stall_step_def]
 QED
 
 Theorem pf_tail_spec:
@@ -367,9 +367,9 @@ Proof
   gvs[] >> xmatch >>
   rpt (xlet_auto >- xsimpl) >>
   xlet ‘POSTv v. &L1ST b4 v * L0_EV w0 w' (evs ++ pevs ++ fevs ++ gevs ++ cevs)’
-  >- (xapp_spec l1_reap_spec >> xsimpl >> gvs[l1p_b_def, closing_of_def, hup_step_b_def] >> metis_tac[]) >>
+  >- (xapp_spec l1_reap_spec >> xsimpl >> gvs[l1p_b_def, closing_of_def, stall_step_ob_def] >> metis_tac[]) >>
   rpt (xlet_auto >- xsimpl) >>
-  xcon >> xsimpl >> gvs[end_round_def, hup_step_b_def, l1p_b_def]
+  xcon >> xsimpl >> gvs[end_round_def, stall_step_ob_def, l1p_b_def]
 QED
 
 (* The round's guard: room in the handle counter for the round's actions *)

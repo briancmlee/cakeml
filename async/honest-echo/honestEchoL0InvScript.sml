@@ -426,14 +426,14 @@ Proof
 QED
 
 (* D19's hung-up step drops outboxes only *)
-Theorem hup_step_in:
-  own_ok lfd es (hup_step hfs ob log ps) = own_ok lfd es ps ∧
-  inbp lfd (hup_step hfs ob log ps) = inbp lfd ps
+Theorem stall_step_in:
+  own_ok lfd es (stall_step hfs ob log ps) = own_ok lfd es ps ∧
+  inbp lfd (stall_step hfs ob log ps) = inbp lfd ps
 Proof
-  ‘(hup_step hfs ob log ps).b.tbl = ps.b.tbl ∧ (hup_step hfs ob log ps).b.nxt = ps.b.nxt ∧
-   (hup_step hfs ob log ps).b.closing = ps.b.closing ∧
-   (hup_step hfs ob log ps).acq = ps.acq ∧ (hup_step hfs ob log ps).inb = ps.inb’
-    by simp[hup_step_def, FOLDL_drop_out] >>
+  ‘(stall_step hfs ob log ps).b.tbl = ps.b.tbl ∧ (stall_step hfs ob log ps).b.nxt = ps.b.nxt ∧
+   (stall_step hfs ob log ps).b.closing = ps.b.closing ∧
+   (stall_step hfs ob log ps).acq = ps.acq ∧ (stall_step hfs ob log ps).inb = ps.inb’
+    by simp[stall_step_def, FOLDL_drop_out] >>
   drule own_ok_cong >> simp[]
 QED
 

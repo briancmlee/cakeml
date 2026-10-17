@@ -640,15 +640,15 @@ Proof
 QED
 
 (* The hung-up policy only drops outboxes *)
-Theorem hup_out:
+Theorem stall_out:
   okb ps.b ∧ own_ok lfd (k, opn) ps ∧ hdln (w2n lfd) k < dimword (:64) ∧
   hdln (w2n lfd) j < dimword (:64) ∧ oi lfd ps opn snt hwt j ⇒
-  okb (hup_step hfs ob log ps).b ∧ oi lfd (hup_step hfs ob log ps) opn snt hwt j
+  okb (stall_step hfs ob log ps).b ∧ oi lfd (stall_step hfs ob log ps) opn snt hwt j
 Proof
   strip_tac >>
   qspecl_then [‘hfs’, ‘ob’, ‘log’, ‘ps’] strip_assume_tac
-    (Q.GENL [‘hfs’, ‘ob’, ‘log’, ‘ps’] hup_step_b) >>
-  qabbrev_tac ‘ps' = hup_step hfs ob log ps’ >>
+    (Q.GENL [‘hfs’, ‘ob’, ‘log’, ‘ps’] stall_step_b) >>
+  qabbrev_tac ‘ps' = stall_step hfs ob log ps’ >>
   conj_tac
   >- (gvs[okb_def, FOLDL_drop_out] >> rw[] >> gvs[] >> metis_tac[]) >>
   ‘snt = snt ++ []’ by simp[] >> pop_assum SUBST1_TAC >>
@@ -933,11 +933,11 @@ Proof
   ‘hdln (w2n lfd) k3 < dimword (:64)’
     by (irule hdln_mono >> qexists_tac ‘ps.b.nxt + 1’ >> fs[]) >>
   ‘okb ps3'.b’ by gvs[] >>
-  qabbrev_tac ‘ps3 = hup_step (hup_fds rv) (outbox_of ps.b) log ps3'’ >>
+  qabbrev_tac ‘ps3 = stall_step (pf_held ps3') (outbox_of ps.b) log ps3'’ >>
   ‘okb ps3.b ∧ oi lfd ps3 opn3 (snt ++ ep_sn j (k, opn) fevs) hwt j’
-    by (simp[Abbr ‘ps3’] >> irule hup_out >> simp[] >> qexists_tac ‘k3’ >> fs[]) >>
+    by (simp[Abbr ‘ps3’] >> irule stall_out >> simp[] >> qexists_tac ‘k3’ >> fs[]) >>
   ‘own_ok lfd (k3, opn3) ps3 ∧ wown lfd w3 ps3’
-    by (simp[Abbr ‘ps3’, hup_step_in] >> qpat_x_assum ‘wown _ w3 _’ mp_tac >>
+    by (simp[Abbr ‘ps3’, stall_step_in] >> qpat_x_assum ‘wown _ w3 _’ mp_tac >>
         simp[wown_def, owned_def] >> metis_tac[]) >>
   (* reap *)
   ‘∀f. MEM f ps3.b.closing ⇒ ¬MEM f (MAP SND ps3.b.tbl) ∧ ¬MEM f ps3.acq’

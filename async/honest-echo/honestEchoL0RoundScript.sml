@@ -114,8 +114,8 @@ Proof
   ‘ALOOKUP opn (EL n ps.acq) = SOME (n + ps.b.nxt)’ by metis_tac[] >> gvs[]
 QED
 
-Theorem wown_hup[local]:
-  wown lfd w (hup_step hfs ob log ps) ⇔ wown lfd w ps
+Theorem wown_stall[local]:
+  wown lfd w (stall_step hfs ob log ps) ⇔ wown lfd w ps
 Proof
   simp[wown_def, owned_def]
 QED
@@ -174,11 +174,11 @@ Proof
   impl_tac
   >- (rw[MEM_FILTER] >> TRY (drule in_fds_poll_set >> simp[] >> NO_TAC) >> fs[]) >>
   strip_tac >>
-  qabbrev_tac ‘ps3 = hup_step (hup_fds rv) (outbox_of ps.b) log ps3'’ >>
+  qabbrev_tac ‘ps3 = stall_step (pf_held ps3') (outbox_of ps.b) log ps3'’ >>
   ‘wown lfd w3 ps3 ∧ own_ok lfd (l0_ep_st (k, opn) gevs) ps3 ∧ inbp lfd ps3 = inbp lfd ps3' ∧
    ps3.b.tbl = ps.b.tbl ∧ ps3.b.nxt = ps.b.nxt ∧ ps3.acq = ps3'.acq ∧
    ps3.b.closing = ps3'.b.closing’
-    by simp[Abbr ‘ps3’, wown_hup, hup_step_in] >>
+    by simp[Abbr ‘ps3’, wown_stall, stall_step_in] >>
   (* reap *)
   Cases_on ‘l0_ep_st (k, opn) gevs’ >> rename1 ‘l0_ep_st _ gevs = (k3, opn3)’ >>
   ‘∀f. MEM f ps3.b.closing ⇒ ¬MEM f (MAP SND ps3.b.tbl) ∧ ¬MEM f ps3.acq ∧ f ≠ lfd’

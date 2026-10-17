@@ -318,7 +318,9 @@ End
 (* D19 (user decision, option 2: the bounded flush), per episode: once
    POLLHUP has been reported on episode j's fd, whenever channel c has bytes
    in flight its peer reads them all within K − 1 polls that list the fd
-   for output (user-approved form b″).  K is L1's
+   for output while episode j holds it (user-approved form b″; only polls
+   before j's close count, since the fd number may be reused after it).
+   K is L1's
    pf_hupwait (honest-ffi's hup_step): L1 keeps flushing a half-closed fd
    and closes it when drained, but drops its outbox after pf_hupwait
    consecutive rounds whose flush takes nothing while the outbox is not
@@ -327,6 +329,14 @@ End
    in flight: a send takes a byte), and since a hung-up fd is flushed every
    round its poll reports POLLHUP, this gives send progress within K rounds
    of a non-empty outbox *)
+(* The events of more before fd f's close, after pre (none if pre closes
+   f): the part of more in which the episode holding f is still open *)
+Definition ep_polls_def:
+  ep_polls f (pre : io_event list) (more : io_event list) =
+    if EXISTS (λe. l0_event_closed e = SOME f) pre then []
+    else FST (SPLITP (λe. l0_event_closed e = SOME f) more)
+End
+
 Definition hup_drains_def:
   hup_drains K w0 io j c ⇔
     ∀evs ev mid w.
@@ -335,7 +345,8 @@ Definition hup_drains_def:
       world_at w0 (evs ++ [ev] ++ mid) = SOME w ∧ c < LENGTH w.chans ∧
       0 < (EL c w.chans).inflight ⇒
       ∃more w'. LPREFIX (fromList (evs ++ [ev] ++ mid ++ more)) io ∧
-                n_out_polls (EL j (l0_accepted evs)) more < K ∧
+                n_out_polls (EL j (l0_accepted evs))
+                  (ep_polls (EL j (l0_accepted evs)) mid more) < K ∧
                 world_at w0 (evs ++ [ev] ++ mid ++ more) = SOME w' ∧ c < LENGTH w'.chans ∧
                 (EL c w'.chans).inflight = 0
 End

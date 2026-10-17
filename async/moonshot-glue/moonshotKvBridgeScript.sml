@@ -132,3 +132,31 @@ Proof
   >- (strip_tac >> first_x_assum drule >> simp[l0_topo_ev_def])
   >> strip_tac >> gvs[] >> first_x_assum drule >> simp[l0_topo_ev_def]
 QED
+
+(*---------------------------------------------------------------------------*)
+(* The main branch: KV's raw-trace facts on a lone run from a fresh world give
+   kv_claim_safe's main branch *)
+
+Theorem kv_main_bridge:
+  l0_fresh w0 ∧ fds_lt w0 ∧ l0_rely w0 ∧
+  semantics_prog (init_state (l0_ffi w0)) init_env prog beh ∧
+  stdio_open (beh_io beh) ∧ kv_safe_l0 (beh_io beh) ∧ l0_topology b (beh_io beh) ∧
+  (∀evs. LPREFIX (fromList evs) (beh_io beh) ⇒ no_close_stdio evs) ⇒
+  stdio_open (beh_io beh) ∧ kv_safe_g l0_ep_recvd l0_ep_sent (beh_io beh) ∧
+  ∀evs. LPREFIX (fromList evs) (beh_io beh) ⇒
+        listens_only b evs ∧ no_connects evs ∧ no_close_stdio evs
+Proof
+  strip_tac >> fs[l0_fresh_def] >>
+  ‘∀evs. LPREFIX (fromList evs) (beh_io beh) ⇒
+         listens_only b evs ∧ no_connects evs ∧ EVERY no_connect evs’
+    by (rpt gen_tac >> strip_tac >> irule kv_topology_prefix >>
+        conj_tac >- metis_tac[lone_listen_conf] >>
+        qexists_tac ‘beh_io beh’ >> simp[]) >>
+  simp[] >> irule kv_safe_bridge >> simp[] >> rpt gen_tac >> strip_tac >>
+  ‘ops_live evs’ by metis_tac[lone_ops_live] >>
+  ‘fd0_checked evs’
+    by (qpat_x_assum ‘stdio_open _’ (strip_assume_tac o REWRITE_RULE [honestL0OutcomeTheory.stdio_open_def]) >>
+        metis_tac[fd0_checked_stdio]) >>
+  ‘no_close0 evs’ by metis_tac[no_close0_stdio, honestL0OutcomeTheory.no_close_stdio_def] >>
+  drule_all lone_no_fd0 >> simp[]
+QED

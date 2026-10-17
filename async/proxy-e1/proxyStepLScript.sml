@@ -20,7 +20,8 @@ Definition preadsl_def:
         if p.fo ∧ p.bo then
           (if p.bup ∧ EXISTS (λx. x = p.fh) rdy ∧ pgate hw lvs lw nw c then [ERead p.fh pread]
            else []) ++
-          (if EXISTS (λx. x = c) rdy ∧ pgate hw lvs lw nw p.fh then [ERead c pread] else [])
+          (if EXISTS (λx. x = c) rdy ∧ (¬p.bup ∨ pgate hw lvs lw nw p.fh) then [ERead c pread]
+           else [])
         else []
 End
 

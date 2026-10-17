@@ -353,3 +353,200 @@ Proof
   simp[] >> strip_tac >>
   drule_all ehpoll_kinv >> simp[]
 QED
+
+(* ------------------------------------------------------------------------
+   With the role link: a bound handle's kind is its raw episode's kind
+   ------------------------------------------------------------------------ *)
+
+Theorem e1_kinds:
+  l0_rely w0 ∧ fds_lt w0 ∧ MEM lfd (l0_used w0) ∧ MEM 0w (l0_used w0) ∧
+  (∀n. SND (ecm lfd pol ifds m w0 n) + 1 < dimword (:64)) ∧
+  W0 = pew lfd a pol ifds m w0 calls ∧ lv = elv lfd pol ifds m w0 ∧
+  alloc_ok W0.alloc ∧
+  (∀n. ehacts lfd lv n 0 (ehst lfd lv ifds m W0 n)
+         (new_actions (log_of m) (ehhist lfd lv ifds m W0 n)) ≠ NONE) ∧
+  erounds lfd pol ifds m (w0, einit) n = SOME (h, ws, evs, logs) ∧
+  MEM (j, hd) (ehbinds lfd lv ifds m W0 n) ⇒
+  j < LENGTH (ep_conn evs) ∧
+  (MEM hd (hl_conn_handles (hl_pairs m (ehhist lfd lv ifds m W0 n))) ⇔ EL j (ep_conn evs)) ∧
+  (MEM hd (acc_hdls (hl_pairs m (ehhist lfd lv ifds m W0 n))) ⇔ ¬EL j (ep_conn evs))
+Proof
+  strip_tac >>
+  ‘W0.chans = [] ∧ W0.open_fds = [] ∧ LENGTH W0.listening ≤ 1 ∧
+   EVERY (λ(l, a, q). q = []) W0.listening’ by simp[pew_def] >>
+  drule_all ehrounds_gchinv >> disch_then (qspec_then ‘n’ assume_tac) >>
+  drule_all ehrounds_kinv >> disch_then (qspec_then ‘n’ assume_tac) >>
+  qspecl_then [‘w0’, ‘lfd’, ‘pol’, ‘ifds’, ‘m’, ‘a’, ‘calls’] mp_tac
+    (Q.GENL [‘w0’, ‘lfd’, ‘pol’, ‘ifds’, ‘m’, ‘a’, ‘calls’] e1_roles) >>
+  impl_tac >- simp[] >>
+  disch_then drule >> strip_tac >>
+  qpat_x_assum ‘W0 = _’ SUBST_ALL_TAC >> qpat_x_assum ‘lv = _’ SUBST_ALL_TAC >>
+  qabbrev_tac ‘st = ehst lfd (elv lfd pol ifds m w0) ifds m (pew lfd a pol ifds m w0 calls) n’ >>
+  PairCases_on ‘st’ >> fs[] >>
+  ‘j < LENGTH st0.chans’
+    by (qpat_x_assum ‘gchinv _ _ _ _’ mp_tac >> rewrite_tac[gchinv_def] >> strip_tac >>
+        qpat_x_assum ‘∀j hd. MEM (j, hd) _ ⇒ j < _ ∧ _’ drule >> simp[]) >>
+  ‘LENGTH (ep_conn evs) = LENGTH st0.chans ∧ EL j (ep_conn evs) = cpa (EL j st0.chans)’
+    by (qpat_x_assum ‘MAP cpa _ = _’ (SUBST1_TAC o SYM) >> simp[EL_MAP]) >>
+  simp[] >>
+  qpat_x_assum ‘kinv _ _ _’ mp_tac >> rewrite_tac[kinv_def] >> strip_tac >>
+  qpat_x_assum ‘∀j hd. MEM (j, hd) _ ⇒ (_ ⇔ _) ∧ _’ drule >> simp[]
+QED
+
+(* ------------------------------------------------------------------------
+   Order within a round: with L the channel count at the round's start,
+   an accept binds a queued channel (index < L: queues grow only at the
+   tick), a connect a new one (index ≥ L)
+   ------------------------------------------------------------------------ *)
+
+Definition qlt_def:
+  qlt L (w : eworld) ⇔
+    L ≤ LENGTH w.chans ∧ LENGTH w.listening ≤ 1 ∧
+    EVERY (λ(l, a, q). EVERY (λj. j < L) q) w.listening
+End
+
+Definition bord_def:
+  bord L ps (b : num # word64) ⇔
+    L ≤ FST b ∧ MEM (SND b) (hl_conn_handles ps) ∨ FST b < L ∧ MEM (SND b) (acc_hdls ps)
+End
+
+Theorem ehdo_order:
+  ehdo lfd v (w, hs) x = SOME (r, (w', hs')) ∧ qlt L w ⇒
+  qlt L w' ∧ EVERY (bord L [(x, r)]) (ebind w x r)
+Proof
+  strip_tac >>
+  ‘LENGTH w.chans ≤ LENGTH w'.chans’
+    by (drule ehdo_cpa >> disch_then (mp_tac o AP_TERM “LENGTH : bool list -> num”) >> simp[]) >>
+  Cases_on ‘∃l. x = EAccept l’
+  >- (pop_assum strip_assume_tac >> qpat_x_assum ‘x = _’ SUBST_ALL_TAC >>
+      qpat_x_assum ‘ehdo _ _ _ _ = _’ mp_tac >> simp[ehdo_def, ep_accept_def] >>
+      qpat_x_assum ‘qlt _ _’ mp_tac >> rewrite_tac[qlt_def] >> strip_tac >>
+      Cases_on ‘w.listening’ >> simp[] >>
+      rename1 ‘w.listening = y :: ys’ >> PairCases_on ‘y’ >>
+      ‘ys = []’ by (Cases_on ‘ys’ >> gvs[]) >>
+      rw[] >> gvs[AllCaseEqs(), ebind_def, ep_alloc_def, AFUPDKEY_def, qlt_def, bord_def]) >>
+  ‘w'.listening = w.listening’ by (irule ehdo_listening >> metis_tac[]) >>
+  conj_tac >- gvs[qlt_def] >>
+  Cases_on ‘x’ >> gvs[ebind_def] >> Cases_on ‘r’ >> gvs[] >>
+  rename1 ‘EConnected oh’ >> Cases_on ‘oh’ >> gvs[bord_def] >>
+  qpat_x_assum ‘ehdo _ _ _ _ = _’ mp_tac >> simp[ehdo_def] >>
+  Cases_on ‘ep_connect s w’ >> rename1 ‘ep_connect _ _ = (fo, w1)’ >>
+  Cases_on ‘fo’ >> simp[] >> gvs[qlt_def]
+QED
+
+Theorem bord_APPEND:
+  (bord L ps b ⇒ bord L (ps ++ ps') b) ∧ (bord L ps' b ⇒ bord L (ps ++ ps') b)
+Proof
+  rw[bord_def] >> simp[]
+QED
+
+Theorem ehacts_order:
+  ∀acts k (st : eworld # ehstate) rs st'.
+    ehacts lfd lv n k st acts = SOME (rs, st') ∧ qlt L (FST st) ⇒
+    qlt L (FST st') ∧ EVERY (bord L (ZIP (acts, rs))) (ehbacts lfd lv n k st acts)
+Proof
+  Induct >> simp[ehacts_def, ehbacts_def] >> rpt gen_tac >>
+  PairCases_on ‘st’ >> simp[AllCaseEqs()] >> strip_tac >> gvs[] >>
+  PairCases_on ‘st1'’ >>
+  drule_all ehdo_order >> strip_tac >>
+  first_x_assum drule >> simp[] >> strip_tac >>
+  ‘(h, r) :: ZIP (acts, rs') = [(h, r)] ++ ZIP (acts, rs')’ by simp[] >>
+  pop_assum SUBST1_TAC >>
+  qpat_x_assum ‘EVERY _ (ebind _ _ _)’ mp_tac >> qpat_x_assum ‘EVERY _ (ehbacts _ _ _ _ _ _)’ mp_tac >>
+  rewrite_tac[EVERY_MEM] >> rpt strip_tac >> res_tac
+  >- (irule (CONJUNCT1 bord_APPEND) >> first_assum ACCEPT_TAC) >>
+  irule (CONJUNCT2 bord_APPEND) >> first_assum ACCEPT_TAC
+QED
+
+Theorem ehround_step:
+  ehacts lfd lv n 0 (ehst lfd lv ifds m W0 n)
+    (new_actions (log_of m) (ehhist lfd lv ifds m W0 n)) = SOME (rs, st') ⇒
+  ehbinds lfd lv ifds m W0 (SUC n) =
+    ehbinds lfd lv ifds m W0 n ++
+    ehbacts lfd lv n 0 (ehst lfd lv ifds m W0 n) (new_actions (log_of m) (ehhist lfd lv ifds m W0 n)) ∧
+  hl_pairs m (ehhist lfd lv ifds m W0 (SUC n)) =
+    hl_pairs m (ehhist lfd lv ifds m W0 n) ++
+    ZIP (new_actions (log_of m) (ehhist lfd lv ifds m W0 n), rs)
+Proof
+  strip_tac >> simp[ehbinds_def] >>
+  qpat_x_assum ‘ehacts _ _ _ _ _ _ = _’ mp_tac >>
+  simp[ehst_def, ehhist_def, ehrounds_def] >>
+  Cases_on ‘ehrounds lfd lv ifds m W0 n’ >> rename1 ‘(h, st)’ >> PairCases_on ‘st’ >>
+  simp[ehacts_tot_def] >> strip_tac >> simp[] >> PairCases_on ‘st'’ >>
+  Cases_on ‘ehpoll lfd st'1 (ifds h) st'0’ >> rename1 ‘ehpoll _ _ _ _ = (rdy, ws)’ >>
+  PairCases_on ‘ws’ >> simp[] >>
+  simp[hl_pairs_SNOC, asyncM3WorldTheory.ssnap_def]
+QED
+
+Theorem kinv_both_F:
+  kinv B ps w ∧ MEM (j, h) B ∧ MEM h (hl_conn_handles ps) ∧ MEM h (acc_hdls ps) ⇒ F
+Proof
+  rewrite_tac[kinv_def] >> strip_tac >>
+  qpat_x_assum ‘∀j hd. MEM (j, hd) B ⇒ _’ drule >> simp[]
+QED
+
+(* The order behind proxy_safe_l0's front p < q: in the first round where c
+   is a connect handle, an accept handle hd of that round's history is
+   bound to an earlier channel *)
+Theorem ehrounds_order:
+  W0.chans = [] ∧ W0.open_fds = [] ∧ alloc_ok W0.alloc ∧ LENGTH W0.listening ≤ 1 ∧
+  EVERY (λ(l, a, q). q = []) W0.listening ∧
+  (∀n. ehacts lfd lv n 0 (ehst lfd lv ifds m W0 n)
+         (new_actions (log_of m) (ehhist lfd lv ifds m W0 n)) ≠ NONE) ∧
+  MEM (j, hd) (ehbinds lfd lv ifds m W0 (SUC r)) ∧
+  MEM hd (acc_hdls (hl_pairs m (ehhist lfd lv ifds m W0 (SUC r)))) ∧
+  MEM (j', c) (ehbinds lfd lv ifds m W0 (SUC r)) ∧
+  MEM c (hl_conn_handles (hl_pairs m (ehhist lfd lv ifds m W0 (SUC r)))) ∧
+  ¬MEM c (hl_conn_handles (hl_pairs m (ehhist lfd lv ifds m W0 r))) ⇒
+  j < j'
+Proof
+  strip_tac >>
+  drule_all ehrounds_gchinv >> strip_tac >>
+  drule_all ehrounds_kinv >> strip_tac >>
+  qpat_assum ‘∀n. kinv _ _ _’ (qspec_then ‘SUC r’ assume_tac) >>
+  qpat_x_assum ‘∀n. kinv _ _ _’ (qspec_then ‘r’ assume_tac) >>
+  qpat_x_assum ‘∀n. gchinv _ _ _ _’ (qspec_then ‘r’ assume_tac) >>
+  qpat_x_assum ‘∀n. ehacts _ _ _ _ _ _ ≠ NONE’ (qspec_then ‘r’ mp_tac) >>
+  Cases_on ‘ehacts lfd lv r 0 (ehst lfd lv ifds m W0 r)
+              (new_actions (log_of m) (ehhist lfd lv ifds m W0 r))’ >> simp[] >>
+  rename1 ‘SOME x’ >> PairCases_on ‘x’ >>
+  drule ehround_step >> strip_tac >>
+  qpat_x_assum ‘ehbinds _ _ _ _ _ (SUC _) = _’ (fn th => RULE_ASSUM_TAC (REWRITE_RULE [th])) >>
+  qpat_x_assum ‘hl_pairs _ _ = _’ (fn th => RULE_ASSUM_TAC (REWRITE_RULE [th])) >>
+  qabbrev_tac ‘B = ehbinds lfd lv ifds m W0 r’ >>
+  qabbrev_tac ‘ps = hl_pairs m (ehhist lfd lv ifds m W0 r)’ >>
+  qabbrev_tac ‘acts = new_actions (log_of m) (ehhist lfd lv ifds m W0 r)’ >>
+  Cases_on ‘ehst lfd lv ifds m W0 r’ >> rename1 ‘ehst _ _ _ _ _ _ = (w, hs)’ >>
+  qpat_x_assum ‘kinv B ps _’ (assume_tac o SIMP_RULE std_ss []) >>
+  ‘qlt (LENGTH w.chans) w ∧ ∀j h. MEM (j, h) B ⇒ j < LENGTH w.chans’
+    by (qpat_x_assum ‘gchinv _ _ _ _’ mp_tac >> rewrite_tac[gchinv_def, qlt_def] >>
+        strip_tac >> simp[] >>
+        qpat_x_assum ‘EVERY _ w.listening’ mp_tac >> simp[EVERY_MEM, FORALL_PROD] >>
+        rpt strip_tac >> res_tac) >>
+  drule ehacts_order >> disch_then (qspec_then ‘LENGTH w.chans’ mp_tac) >>
+  REWRITE_TAC[pairTheory.FST] >>
+  disch_then (fn th => qpat_assum ‘qlt _ w’ (strip_assume_tac o MATCH_MP th)) >>
+  qabbrev_tac ‘bs = ehbacts lfd lv r 0 (w, hs) acts’ >>
+  ‘LENGTH w.chans ≤ j'’
+    by (qpat_x_assum ‘MEM (j', c) (B ++ bs)’ mp_tac >> simp[] >> strip_tac
+        >- (qpat_x_assum ‘kinv B ps w’ mp_tac >> rewrite_tac[kinv_def] >> strip_tac >>
+            qpat_x_assum ‘∀j hd. MEM (j, hd) B ⇒ _’ drule >> strip_tac >>
+            ‘MEM c (acc_hdls ps)’
+              by (qpat_x_assum ‘MEM c (acc_hdls ps) ⇔ _’ (fn th => REWRITE_TAC [th]) >>
+                  qpat_x_assum ‘MEM c (hl_conn_handles ps) ⇔ _’ (fn th =>
+                    qpat_x_assum ‘¬MEM c (hl_conn_handles ps)’ (ACCEPT_TAC o REWRITE_RULE [th]))) >>
+            ‘F’ suffices_by REWRITE_TAC [] >> irule kinv_both_F >> qpat_assum ‘kinv (B ++ bs) _ _’ (irule_at Any) >>
+            qexistsl_tac [‘j'’, ‘c’] >> simp[]) >>
+        qpat_x_assum ‘EVERY (bord _ _) bs’ mp_tac >> simp[EVERY_MEM] >>
+        disch_then drule >> simp[bord_def] >> strip_tac >>
+        ‘F’ suffices_by REWRITE_TAC [] >> irule kinv_both_F >> qpat_assum ‘kinv (B ++ bs) _ _’ (irule_at Any) >>
+        qexistsl_tac [‘j'’, ‘c’] >> simp[]) >>
+  ‘j < LENGTH w.chans’
+    by (qpat_x_assum ‘MEM (j, hd) (B ++ bs)’ mp_tac >> simp[] >> strip_tac
+        >- (first_x_assum drule >> simp[]) >>
+        qpat_x_assum ‘EVERY (bord _ _) bs’ mp_tac >> simp[EVERY_MEM] >>
+        disch_then drule >> simp[bord_def] >> strip_tac >>
+        ‘F’ suffices_by REWRITE_TAC [] >> irule kinv_both_F >> qpat_assum ‘kinv (B ++ bs) _ _’ (irule_at Any) >>
+        qexistsl_tac [‘j’, ‘hd’] >> simp[]) >>
+  decide_tac
+QED

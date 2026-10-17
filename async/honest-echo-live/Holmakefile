@@ -1,0 +1,6 @@
+# The echo on the kernel, liveness (design/47): S1-S3 for the PF echo, the
+# trace bridge, conn_live_l0 and echo_live_l0 on the PF trace.
+INCLUDES = ../honest-l1b ../honest-l1 ../honest-echo ../honest-l0-cf ../honest-l0 ../honest-ffi ../ffi-spike ../model ../cf-actions ../m3-assembly ../m4-common ../m4-liveness ../socket-v2 ../close-v2-loop ../close-v2-sim ../spec
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

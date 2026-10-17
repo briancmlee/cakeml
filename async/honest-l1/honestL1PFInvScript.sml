@@ -75,7 +75,7 @@ QED
 Theorem pf_fetch_ok:
   ∀fs w ps.
     l0_rely w ∧ psmall lfd ps ∧ EVERY small fs ⇒
-    ∃w' ps' log evs. pf_fetch lfd hw fs (w, ps) = SOME ((w', ps'), log, evs) ∧
+    ∃w' ps' log evs. pf_fetch lfd pol fs (w, ps) = SOME ((w', ps'), log, evs) ∧
                      l0_rely w' ∧ psmall lfd ps' ∧ ps'.b.nxt = ps.b.nxt
 Proof
   Induct >- simp[pf_fetch_def] >>
@@ -100,7 +100,7 @@ Proof
 QED
 
 Theorem pf_poll_set_small:
-  psmall lfd ps ⇒ EVERY (λ(f, e). small f ∧ e < 4) (pf_poll_set lfd hw ps hs)
+  psmall lfd ps ⇒ EVERY (λ(f, e). small f ∧ e < 4) (pf_poll_set lfd pol ps hs)
 Proof
   rw[pf_poll_set_def, EVERY_MEM, MEM_FLAT, MEM_MAP, MEM_FILTER, EXISTS_PROD,
      FORALL_PROD] >>
@@ -120,11 +120,11 @@ QED
 
 Theorem pf_tail_ok:
   l0_rely w ∧ psmall lfd ps ⇒
-  ∃rdy w' ps' log evs. pf_tail lfd hw hs (w, ps) = SOME (rdy, (w', ps'), log, evs) ∧
+  ∃rdy w' ps' log evs. pf_tail lfd pol hs (w, ps) = SOME (rdy, (w', ps'), log, evs) ∧
                        l0_rely w' ∧ psmall lfd ps' ∧ ps'.b.nxt = ps.b.nxt
 Proof
   strip_tac >> simp[pf_tail_def] >>
-  qabbrev_tac ‘fes = pf_poll_set lfd hw ps hs’ >>
+  qabbrev_tac ‘fes = pf_poll_set lfd pol ps hs’ >>
   ‘EVERY (EVERY (λ(f, e). small f ∧ e < 4)) [fes]’
     by (simp[Abbr ‘fes’] >> irule pf_poll_set_small >> simp[]) >>
   drule_all l1_polls_ok >> strip_tac >> simp[] >>
@@ -136,7 +136,7 @@ Proof
   ‘psmall lfd (ps with b := b2)’ by gvs[psmall_def] >>
   ‘EVERY small (FILTER (λf. MEM f (in_fds fes)) (readable_fds rv))’
     by gvs[EVERY_MEM, MEM_FILTER] >>
-  drule_all pf_fetch_ok >> disch_then (qspec_then ‘hw’ strip_assume_tac) >> simp[] >>
+  drule_all pf_fetch_ok >> disch_then (qspec_then ‘pol’ strip_assume_tac) >> simp[] >>
   rename1 ‘pf_fetch _ _ _ _ = SOME ((w3, ps3'), log, gevs)’ >>
   qabbrev_tac ‘ps3 = hup_step (hup_fds rv) (outbox_of ps.b) log ps3'’ >>
   ‘psmall lfd ps3 ∧ ps3.b.nxt = ps3'.b.nxt ∧ ps3'.b.closing = ps3.b.closing ∧
@@ -150,25 +150,25 @@ QED
 Theorem pround_ok:
   l0_rely w ∧ psmall lfd ps ∧ EVERY (pact_ok lfd) acts ∧
   l1hdln (w2n lfd) (ps.b.nxt + LENGTH acts) < dimword (:64) ⇒
-  ∃snap w' ps' log evs. pround lfd hw hs (w, ps) acts = SOME (snap, (w', ps'), log, evs) ∧
+  ∃snap w' ps' log evs. pround lfd pol hs (w, ps) acts = SOME (snap, (w', ps'), log, evs) ∧
                         l0_rely w' ∧ psmall lfd ps' ∧ ps'.b.nxt ≤ ps.b.nxt + LENGTH acts
 Proof
   strip_tac >> simp[pround_def] >>
   drule_all pacts_ok >> strip_tac >> simp[] >>
-  drule_all pf_tail_ok >> disch_then (qspecl_then [‘hw’, ‘hs’] strip_assume_tac) >> simp[]
+  drule_all pf_tail_ok >> disch_then (qspecl_then [‘pol’, ‘hs’] strip_assume_tac) >> simp[]
 QED
 
 (* What R1-live assumes of the server, as the handle layer's hrun_ok *)
 Definition pl2_ok_def:
-  pl2_ok lfd hw ifds m ws0 ⇔
-    ∀n h ws evs logs. prounds lfd hw ifds m ws0 n = SOME (h, ws, evs, logs) ⇒
+  pl2_ok lfd pol ifds m ws0 ⇔
+    ∀n h ws evs logs. prounds lfd pol ifds m ws0 n = SOME (h, ws, evs, logs) ⇒
       EVERY (pact_ok lfd) (new_actions (log_of m) h) ∧
       l1hdln (w2n lfd) ((SND ws).b.nxt + LENGTH (new_actions (log_of m) h)) < dimword (:64)
 End
 
 Theorem prounds_ok:
-  l0_rely w0 ∧ psmall lfd ps0 ∧ pl2_ok lfd hw ifds m (w0, ps0) ⇒
-  ∀n. ∃h w ps evs logs. prounds lfd hw ifds m (w0, ps0) n = SOME (h, (w, ps), evs, logs) ∧
+  l0_rely w0 ∧ psmall lfd ps0 ∧ pl2_ok lfd pol ifds m (w0, ps0) ⇒
+  ∀n. ∃h w ps evs logs. prounds lfd pol ifds m (w0, ps0) n = SOME (h, (w, ps), evs, logs) ∧
                         l0_rely w ∧ psmall lfd ps
 Proof
   strip_tac >> Induct >- simp[prounds_def] >>
@@ -178,13 +178,13 @@ Proof
   ‘l1hdln (w2n lfd) (ps.b.nxt + LENGTH (new_actions (log_of m) h)) < dimword (:64)’
     by gvs[] >>
   drule_all pround_ok >>
-  disch_then (qspecl_then [‘hw’, ‘ifds h’] strip_assume_tac) >> simp[]
+  disch_then (qspecl_then [‘pol’, ‘ifds h’] strip_assume_tac) >> simp[]
 QED
 
 (* The prefetching L1's run never fails *)
 Theorem prun_total:
-  l0_rely w0 ∧ psmall lfd ps0 ∧ pl2_ok lfd hw ifds m (w0, ps0) ⇒
-  ∀n. prounds lfd hw ifds m (w0, ps0) n ≠ NONE
+  l0_rely w0 ∧ psmall lfd ps0 ∧ pl2_ok lfd pol ifds m (w0, ps0) ⇒
+  ∀n. prounds lfd pol ifds m (w0, ps0) n ≠ NONE
 Proof
   rpt strip_tac >> drule_all prounds_ok >> disch_then (qspec_then ‘n’ strip_assume_tac) >>
   gvs[]

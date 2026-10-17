@@ -17,7 +17,7 @@
 *)
 Theory moonshotLiveAccepts
 Ancestors
-  moonshotLiveCompose moonshotLiveDrains moonshotLiveDeliver moonshotLiveProjInf moonshotLiveObs
+  moonshotLiveWorldDrains moonshotLiveCompose moonshotLiveDrains moonshotLiveDeliver moonshotLiveProjInf moonshotLiveObs
   moonshotLiveStmts l0sysFair l0sys l0sysRun l0sysStep l0sysInv l0sysInvCall l0sysMono
   l0sysCausal l0sysEpisodes honestEchoL0SpecCopy honestL0World honestL0Rely
   honestL0
@@ -893,4 +893,23 @@ Proof
     by simp[l0_accepted_append] >>
   ‘conns p (ptr rs cl n) ≤ N’ by metis_tac[] >>
   decide_tac
+QED
+
+(* The form honest-ffi's conn_live_l0 takes (accepts_lt M tr), for the
+   process's trace tr of l0sys_proj_inf, when k calls infinitely often (as
+   for l0sys_proj_drains) *)
+Theorem accepts_lt_irun:
+  l0sys_irun ps ss rs ∧ isolated ports ss rs ∧ MEM p ports ∧ k < LENGTH ps ∧ cl < LENGTH ps ∧
+  (∀n q. MEM (Accepted q) (ep_roles [] (ptr rs k n)) ⇒ q = p) ∧ (∀n. ¬close0 (ptr rs cl n)) ∧
+  (∀n k0. k0 < LENGTH ps ∧ k0 ≠ cl ⇒ ¬conn_to p (ptr rs k0 n)) ∧
+  (∀n. conns p (ptr rs cl n) ≤ N) ∧ N < M ∧
+  (∀t. ∃t'. t ≤ t' ∧ is_kcall k (rs t')) ∧ (∀t. LPREFIX (fromList (ptr rs k t)) tr) ⇒
+  ∀evs. LPREFIX (fromList evs) tr ⇒ LENGTH (l0_accepted evs) < M
+Proof
+  strip_tac >>
+  ‘∀evs. LPREFIX (fromList evs) tr ⇒ ∃n. evs ≼ ptr rs k n’
+    by (rpt strip_tac >> drule_all ptr_of_prefix >> strip_tac >>
+        qexists_tac ‘t’ >> simp[]) >>
+  qpat_x_assum ‘∀t. ∃t'. _’ kall_tac >> qpat_x_assum ‘∀t. LPREFIX _ _’ kall_tac >>
+  metis_tac[accepts_lt_lift]
 QED

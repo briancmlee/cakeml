@@ -215,8 +215,9 @@ given that no other process connects to p and cl never closes fd 0. `accepts_lt_
 `accepts_lt M tr` from `∀n. conns p (ptr rs cl n) ≤ N`, `N < M` and "every prefix of tr is a prefix of
 some ptr rs k n". Remaining obligations: the proxy accepts only on a (honest-ffi); only the client
 connects to a (system topology: KV and the proxy connect only to b); the client never calls close on fd
-0 and makes at most N connect episodes to a (close-v2); io-prefix ⊆ ptr-prefix (mine, from the
-projection). The fd 0 clause is needed because closing a reserved fd 0 lets a later connect return fd 0
+0 and makes at most N connect episodes to a (close-v2). io-prefix ⊆ ptr-prefix is PROVED for a proxy
+calling infinitely often (`accepts_lt_irun`, via `ptr_of_prefix`, the same premise as
+`l0sys_proj_drains`). The fd 0 clause is needed because closing a reserved fd 0 lets a later connect return fd 0
 with no episode (`zinv`, `tinv`'s `close0` disjunct). Whether N < 2^62 is exact: D43, sent to the
 orchestrator. KV's claim needs F1_io, F2 and accepts_below; the proxy's asks clauses need
 `proxy_asks_l0` (honest-ffi rev 9, drafting).

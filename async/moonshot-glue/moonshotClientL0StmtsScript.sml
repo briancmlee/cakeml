@@ -29,7 +29,9 @@
    - nothing is sent on an accepted episode;
    - each connect episode serves a logical connection lc j < N and sends a
      prefix of its requests brequests (rqs (lc j));
-   - it never closes fds 0–2 (no_close_stdio, approved 2026-10-17);
+   - it never closes fds 0–2 (no_close_stdio, honestL0Outcome; D37), and
+     its trace begins with the three fdok checks answering open
+     (stdio_open, honestL0Outcome; D37 amendment);
    - at most one episode sends anything per logical connection (a refused
      or broken connection's retry sends nothing on the old one; design/45
      §2.5, client_guar' at the handle layer).
@@ -58,14 +60,6 @@ Definition l0_listen_failed_def:
                              IO_event (ExtCall «sys_fdok») [2w] [(i2, 1w)];
                              IO_event (ExtCall «sys_listen») conf bs] ∧
       ∀k. l0_ev_res bs ≠ SOME (Ok k)
-End
-
-(* It never closes its stdio fds (approved 2026-10-17; with D33's fdok
-   check this gives W2: no open returns fd 0) *)
-Definition no_close_stdio_def:
-  no_close_stdio evs ⇔
-    ∀conf bs. MEM (IO_event (ExtCall «sys_close») conf bs) evs ∧ LENGTH conf = 8 ⇒
-              bytes_fd conf ≠ 0w ∧ bytes_fd conf ≠ 1w ∧ bytes_fd conf ≠ 2w
 End
 
 (* Safety, at every prefix (no fairness) *)
@@ -100,5 +94,5 @@ Definition l0_client_claim_def:
       ∃beh. semantics_prog (init_state (l0_ffi w0)) init_env (cprog a c N rqs) beh ∧
             beh ≠ Fail ∧
             (stdio_closed beh ∨ l0_listen_failed beh ∨
-             ∃lc. client_safe_l0 a c N rqs lc (beh_io beh))
+             stdio_open (beh_io beh) ∧ ∃lc. client_safe_l0 a c N rqs lc (beh_io beh))
 End

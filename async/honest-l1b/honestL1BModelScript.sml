@@ -147,7 +147,7 @@ End
    An idle round whose poll reports nothing changes nothing
    ------------------------------------------------------------------------ *)
 
-Theorem stall_step_idle[local]:
+Theorem stall_step_idle:
   EVERY (λf. outbox_of ps.b f = [] ∧ MEM f (MAP FST ps.stalls)) (pf_held ps) ∧
   EVERY (λ(f, n). n = 0 ∧ MEM f (pf_held ps)) ps.stalls ⇒
   stall_step (pf_held ps) ob [] ps = ps

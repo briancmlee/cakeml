@@ -406,3 +406,128 @@ Proof
       gvs[olen_def])
   >> first_x_assum irule >> qexistsl [‘h’, ‘n''’] >> fs[racts_def]
 QED
+
+(* ------------------------------------------------------------------------
+   S4 over feeds (design/45 §2.3, as revised): two L2 obligations per
+   program give S4g (the proxy's route) or, with S3w and feeds = identity,
+   S4w (the servers' route)
+   ------------------------------------------------------------------------ *)
+
+(* Round k reads g: g's inbox is not empty at the round's start, and an
+   action of the round reads a handle of g *)
+Definition read_at_def:
+  read_at lfd pol ifds m w0 k g ⇔
+    inb_of (rstate lfd pol ifds m w0 k) g ≠ [] ∧
+    ∃h n. MEM (Read h n) (racts lfd pol ifds m w0 k) ∧
+          ALOOKUP (rstate lfd pol ifds m w0 k).b.tbl h = SOME g
+End
+
+(* L2 obligation: once f's feeders are no longer read, f's writes
+   eventually carry no bytes (the "eventually" absorbs a reply lag) *)
+Definition writes_follow_feeds_def:
+  writes_follow_feeds lfd pol ifds m w0 (feeds : num -> word64 -> word64 -> bool) ⇔
+    ∀n f. (∀k g. n ≤ k ∧ feeds k g f ⇒ ¬read_at lfd pol ifds m w0 k g) ⇒
+          ∃n0. n ≤ n0 ∧ ∀k. n0 ≤ k ⇒ wclean lfd pol ifds m w0 f k
+End
+
+(* L2 obligation: a feeder of an outbox over hw at a round's start is not
+   read in that round *)
+Definition pauses_feeders_def:
+  pauses_feeders lfd pol hw ifds m w0 (feeds : num -> word64 -> word64 -> bool) ⇔
+    ∀k g f. feeds k g f ∧ hw < LENGTH (outbox_of (rstate lfd pol ifds m w0 k).b f) ⇒
+            ¬read_at lfd pol ifds m w0 k g
+End
+
+(* S4g: f's outbox is ≤ hw infinitely often (no hypothesis on the peer:
+   the write timeout drops an outbox that does not shrink) *)
+Definition S4g_def:
+  S4g lfd pol hw ifds m w0 f ⇔
+    ∀n. ∃n'. n ≤ n' ∧ LENGTH (outbox_of (rstate lfd pol ifds m w0 n').b f) ≤ hw
+End
+
+(* MAIN (step 8, the proxy's route) *)
+Theorem S4g_from_feeds:
+  oassm lfd pol ifds m w0 ∧ writes_follow_feeds lfd pol ifds m w0 feeds ∧
+  pauses_feeders lfd pol hw ifds m w0 feeds ⇒
+  ∀f. S4g lfd pol hw ifds m w0 f
+Proof
+  strip_tac >> rw[S4g_def] >> CCONTR_TAC >> gvs[NOT_LESS_EQUAL] >>
+  qpat_x_assum ‘writes_follow_feeds _ _ _ _ _ _’
+    (qspecl_then [‘n’, ‘f’] mp_tac o REWRITE_RULE [writes_follow_feeds_def]) >>
+  impl_tac
+  >- (rpt strip_tac >>
+      qpat_x_assum ‘pauses_feeders _ _ _ _ _ _ _’ (mp_tac o REWRITE_RULE [pauses_feeders_def]) >>
+      disch_then (qspecl_then [‘k’, ‘g’, ‘f’] mp_tac) >> simp[] >>
+      first_x_assum (qspec_then ‘k’ mp_tac) >> simp[]) >>
+  strip_tac >>
+  drule run_out_empty >> disch_then drule >> disch_then (qspec_then ‘n0’ mp_tac) >>
+  simp[olen_def] >> rpt strip_tac >>
+  qpat_x_assum ‘∀n'. _ ∨ _’ (qspec_then ‘k'’ mp_tac) >> gvs[]
+QED
+
+Theorem pf_fetch_inb:
+  ∀fs w ps w' ps' log evs.
+    pf_fetch lfd pol fs (w, ps) = SOME ((w', ps'), log, evs) ∧ ¬fetched f log ⇒
+    inb_of ps' f = inb_of ps f
+Proof
+  Induct >> simp[pf_fetch_def] >> rpt gen_tac >> rw[AllCaseEqs()] >>
+  TRY (pairarg_tac >> gvs[AllCaseEqs()]) >>
+  first_x_assum drule >> gvs[fetched_def, inb_of_set_inb] >> rw[] >> gvs[inb_of_def]
+QED
+
+Theorem pdo_inb:
+  pdo lfd (w, ps) a = SOME (r, (w', ps'), evs) ∧ inb_of ps f = [] ⇒ inb_of ps' f = []
+Proof
+  Cases_on ‘a’ >> simp[pdo_def] >> rw[AllCaseEqs()] >> gvs[inb_of_set_inb] >>
+  TRY (PairCases_on ‘z’) >> gvs[inb_of_def] >> rw[] >> gvs[]
+QED
+
+Theorem pacts_inb:
+  ∀acts w ps rs evs w' ps'.
+    pacts lfd (w, ps) acts = SOME (rs, evs, (w', ps')) ∧ inb_of ps f = [] ⇒
+    inb_of ps' f = []
+Proof
+  Induct >> simp[pacts_def] >> rw[AllCaseEqs()] >> PairCases_on ‘ws1’ >>
+  metis_tac[pdo_inb]
+QED
+
+(* With f no longer fetched, an empty inbox stays empty *)
+Theorem run_inb_empty:
+  run_ok lfd pol ifds m w0 ∧ inb_of (rstate lfd pol ifds m w0 n) f = [] ∧
+  (∀k. n ≤ k ⇒ ¬fetched_at lfd pol ifds m w0 k f) ⇒
+  ∀d. inb_of (rstate lfd pol ifds m w0 (n + d)) f = []
+Proof
+  strip_tac >> Induct >> simp[] >>
+  drule prun_round' >> disch_then (qspecl_then [‘f’, ‘n + d’] strip_assume_tac) >>
+  ‘¬fetched f (rlog lfd pol ifds m w0 (n + d))’
+    by (first_x_assum (qspec_then ‘n + d’ mp_tac) >> simp[]) >>
+  qpat_x_assum ‘pround _ _ _ _ _ = _’ mp_tac >>
+  simp[pround_def, AllCaseEqs()] >> strip_tac >> gvs[ADD_CLAUSES] >>
+  PairCases_on ‘ws1’ >> gvs[] >>
+  drule_all pacts_inb >> strip_tac >>
+  qpat_x_assum ‘pf_tail _ _ _ _ = _’ mp_tac >> simp[pf_tail_def, AllCaseEqs()] >>
+  strip_tac >> gvs[] >>
+  drule pf_fetch_inb >> disch_then (qspec_then ‘f’ mp_tac) >> simp[] >>
+  qpat_x_assum ‘_ = rstate _ _ _ _ _ _’ (SUBST1_TAC o SYM) >>
+  simp[inb_of_def, stall_step_def]
+QED
+
+(* MAIN (step 8, the servers' route): replies only, and S3w *)
+Theorem S4w_of_feeds:
+  oassm lfd pol ifds m w0 ∧ S3w lfd pol ifds m w0 ∧
+  writes_follow_feeds lfd pol ifds m w0 (λk g f. g = f) ⇒
+  ∀f. S4w lfd pol hw ifds m w0 f
+Proof
+  rpt strip_tac >> irule S4w_of_stop >> simp[] >> rpt strip_tac >>
+  ‘run_ok lfd pol ifds m w0’ by fs[oassm_def] >>
+  qpat_x_assum ‘S3w _ _ _ _ _’ (qspecl_then [‘n’, ‘f’] mp_tac o REWRITE_RULE [S3w_def]) >>
+  impl_tac >- fs[fetched_at_def] >> strip_tac >>
+  ‘∀d. inb_of (rstate lfd pol ifds m w0 (n' + d)) f = []’
+    by (irule run_inb_empty >> simp[] >> rpt strip_tac >> first_x_assum irule >> simp[]) >>
+  qpat_x_assum ‘writes_follow_feeds _ _ _ _ _ _’
+    (qspecl_then [‘n'’, ‘f’] mp_tac o REWRITE_RULE [writes_follow_feeds_def]) >>
+  impl_tac
+  >- (rw[read_at_def] >> first_x_assum (qspec_then ‘k - n'’ mp_tac) >> simp[]) >>
+  strip_tac >> qexists_tac ‘n0’ >> simp[] >> rpt strip_tac >>
+  first_x_assum (qspec_then ‘k’ mp_tac) >> simp[wclean_def] >> metis_tac[]
+QED

@@ -32,14 +32,19 @@
   connection is done into X).  C-reads has no frozen escape: the client
   reads up to the EOF.  "Done" is no escape here: the client asks until it
   reads the EOF, so a done connection's end is frozen first, or never.
-  A Terminate behaviour: the client stops only once every connection's
-  handle has read its EOF (client_guar' TERMINATION), so every ep i is
-  frozen and the asks clause holds by its escape.
+  A Terminate behaviour: the client stops only when every connection is
+  CDone (call_done), and cres makes a connection CDone only on
+  ERead → EGot (SOME []) on its handle.  L1 reports that only after a recv
+  returned 0 (the L0 world does so only with an empty inbox and peer_eof
+  or broken) or a hard recv error (FReset).  So for a terminating run
+  every ep i (the episode of i's last handle) is chan_frozen or excused
+  (ep_hard_err_n / ch_broke), and the asks clause holds by its escape
+  (challenge round 1, orchestrator, 2026-10-17).
 
   HYPOTHESES (the live block, as for the proxy, plus two for connects):
   F1_io, F2 w0, F1_connect_io (D41 (2) on the trace, keyed by port), and
-  connects_settle (a pending connect eventually settles; on l0sys from
-  kernel_fair_obs, moonshotLiveSetup.connect_settles).
+  connects_settle (a pending connect eventually settles or is closed; on
+  l0sys it is kernel_fair_obs's clause (C), the step connect_settles uses).
 
   POL FAIRNESS (explicit).  The client binary runs L1 with pol_never, so
   the L0 claim needs no pol hypothesis.  The proof goes through a generic
@@ -138,13 +143,16 @@ Definition F1_connect_io_def:
                           conf = pbytes p ∧ ¬retried (IO_event (ExtCall «sys_connect») conf bs))
 End
 
-(* A pending connect eventually settles (up, or failed) *)
+(* A pending connect eventually settles (up, or failed), or is closed:
+   l0sysFair.kernel_fair_obs's (C) (a connecting end is not connecting
+   and unclosed for ever), read on the process's L0 world *)
 Definition connects_settle_def:
   connects_settle w0 io ⇔
     ∀evs w c. LPREFIX (fromList evs) io ∧ world_at w0 evs = SOME w ∧
               c < LENGTH w.chans ∧ (EL c w.chans).connecting ⇒
-              ∃evs' w'. LPREFIX (fromList evs') io ∧ world_at w0 evs' = SOME w' ∧
-                        c < LENGTH w'.chans ∧ ¬(EL c w'.chans).connecting
+              ∃evs' w'. LPREFIX (fromList (evs ++ evs')) io ∧ world_at w0 (evs ++ evs') = SOME w' ∧
+                        c < LENGTH w'.chans ∧
+                        (¬(EL c w'.chans).connecting ∨ (EL c w'.chans).closed)
 End
 
 (* ------------------------------------------------------------------------

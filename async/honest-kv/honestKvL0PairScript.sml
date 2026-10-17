@@ -133,7 +133,27 @@ QED
 
 (* MAIN: after n rounds of the handle loop, handle j's writes are episode
    j's writes at instant n + 1 and its reads are episode j's reads at
-   instant n *)
+   instant n; for any interest under ifds_sub (D26: the program's live) *)
+Theorem hdl_v2_bytes_if:
+  ifds_sub (n2w lfdn) ifds ∧
+  s2.listening = [(n2w lfdn, [])] ∧ s2.clients = [] ∧ s2.open_fds = [] ∧
+  alloc_ok s2.alloc ∧ sched_wf2 s2 ∧ lfdn < dimword (:64) ∧ j < dimword (:64) − 1 ⇒
+  hwritten (hdl (n2w lfdn) j)
+    (trans (srelabel (kv_server lfdn)) (hhist (n2w lfdn) ifds (srelabel (kv_server lfdn)) s2 n)) =
+    ep_written j (KP2i lfdn ifds s2 (SUC n)) ∧
+  hread (hdl (n2w lfdn) j)
+    (trans (srelabel (kv_server lfdn)) (hhist (n2w lfdn) ifds (srelabel (kv_server lfdn)) s2 n)) =
+    ep_read j (KP2i lfdn ifds s2 n)
+Proof
+  strip_tac >>
+  ‘uses_ok lfdn (kv_server lfdn)’ by simp[kv_server_uses_ok] >>
+  drule_all hrun_sim_if >>
+  disch_then (qspec_then ‘n’ (fn th => REWRITE_TAC [CONJUNCT1 th])) >>
+  ‘w2n (hdl (n2w lfdn : word64) j) = hdln lfdn j’ by (irule w2n_hdl >> simp[]) >>
+  simp[kv_hwritten_bytes, kv_hread_bytes] >>
+  drule_all kv2_rounds_bytes_if >> simp[]
+QED
+
 Theorem hdl_v2_bytes:
   s2.listening = [(n2w lfdn, [])] ∧ s2.clients = [] ∧ s2.open_fds = [] ∧
   alloc_ok s2.alloc ∧ sched_wf2 s2 ∧ lfdn < dimword (:64) ∧ j < dimword (:64) − 1 ⇒
@@ -144,11 +164,5 @@ Theorem hdl_v2_bytes:
     (trans (srelabel (kv_server lfdn)) (hhist (n2w lfdn) EI (srelabel (kv_server lfdn)) s2 n)) =
     ep_read j (KP2 lfdn s2 n)
 Proof
-  strip_tac >>
-  ‘uses_ok lfdn (kv_server lfdn)’ by simp[kv_server_uses_ok] >>
-  drule_all hrun_sim_gen >>
-  disch_then (qspec_then ‘n’ (fn th => REWRITE_TAC [CONJUNCT1 th])) >>
-  ‘w2n (hdl (n2w lfdn : word64) j) = hdln lfdn j’ by (irule w2n_hdl >> simp[]) >>
-  simp[kv_hwritten_bytes, kv_hread_bytes] >>
-  drule_all kv2_rounds_bytes >> simp[]
+  strip_tac >> irule hdl_v2_bytes_if >> simp[]
 QED

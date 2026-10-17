@@ -95,15 +95,15 @@ QED
    The model, round by round
    ------------------------------------------------------------------------ *)
 
-Overload KHH1 = “λlfdn s2 k. MAP sfs (ghist (interest [n2w lfdn : word64])
+Overload KHH1i = “λlfdn ifds s2 k. MAP sfs (ghist ifds
                                 (srelabel (kv_server lfdn)) (v1of (n2w lfdn) s2) k)”
-Overload KG1 = “λlfdn s2 k. kv_queries lfdn (KHH1 lfdn s2 k)”
+Overload KG1i = “λlfdn ifds s2 k. kv_queries lfdn (KHH1i lfdn ifds s2 k)”
 
 Theorem kv2_rounds_serves[local]:
   s2.listening = [(n2w lfdn, [])] ∧ s2.clients = [] ⇒
-  MAP SND (FILTER (λq. FST q = fd) (KG1 lfdn s2 k)) ≼
-    parse_all_b (FLAT (read fd (KT1 lfdn s2 k))) ∧
-  written fd (KT1 lfdn s2 k) ≼ MAP print_response (fd_answers fd (KG1 lfdn s2 k))
+  MAP SND (FILTER (λq. FST q = fd) (KG1i lfdn ifds s2 k)) ≼
+    parse_all_b (FLAT (read fd (KT1i lfdn ifds s2 k))) ∧
+  written fd (KT1i lfdn ifds s2 k) ≼ MAP print_response (fd_answers fd (KG1i lfdn ifds s2 k))
 Proof
   strip_tac >> irule kv_server_serves >>
   ‘(v1of (n2w lfdn) s2).listeners = [(n2w lfdn, [])] ∧ (v1of (n2w lfdn) s2).conns = []’
@@ -112,14 +112,14 @@ Proof
 QED
 
 Theorem kv2_rounds_mono[local]:
-  k1 ≤ k2 ⇒ KG1 lfdn s2 k1 ≼ KG1 lfdn s2 k2 ∧ KP2 lfdn s2 k1 ≼ KP2 lfdn s2 k2
+  k1 ≤ k2 ⇒ KG1i lfdn ifds s2 k1 ≼ KG1i lfdn ifds s2 k2 ∧ KP2i lfdn ifds s2 k1 ≼ KP2i lfdn ifds s2 k2
 Proof
   strip_tac >> conj_tac
-  >- (‘KHH1 lfdn s2 k1 = TAKE k1 (KHH1 lfdn s2 k2)’
+  >- (‘KHH1i lfdn ifds s2 k1 = TAKE k1 (KHH1i lfdn ifds s2 k2)’
         by simp[GSYM MAP_TAKE, ghist_TAKE] >>
       pop_assum SUBST1_TAC >> simp[kv_queries_TAKE]) >>
   rw[IS_PREFIX_APPEND] >>
-  qexists_tac ‘FLAT (GENLIST (λi. hround_events (n2w lfdn) (interest [n2w lfdn])
+  qexists_tac ‘FLAT (GENLIST (λi. hround_events (n2w lfdn) ifds
                                     (srelabel (kv_server lfdn)) s2 (i + k1)) (k2 − k1))’ >>
   ‘k2 = (k2 − k1) + k1’ by simp[] >>
   pop_assum (fn th => CONV_TAC (LHS_CONV (ONCE_REWRITE_CONV [th]))) >>
@@ -127,31 +127,33 @@ Proof
 QED
 
 Theorem kv2_rounds_handle[local]:
+  ifds_sub (n2w lfdn) ifds ∧
   s2.listening = [(n2w lfdn, [])] ∧ s2.clients = [] ∧ s2.open_fds = [] ∧
-  alloc_ok s2.alloc ∧ sched_wf2 s2 ∧ lfdn < dimword (:64) ∧ MEM q (KG1 lfdn s2 k) ⇒
+  alloc_ok s2.alloc ∧ sched_wf2 s2 ∧ lfdn < dimword (:64) ∧ MEM q (KG1i lfdn ifds s2 k) ⇒
   ∃j. j < dimword (:64) − 1 ∧ FST q = hdln lfdn j
 Proof
   strip_tac >>
-  ‘MAP SND (FILTER (λq'. FST q' = FST q) (KG1 lfdn s2 k)) ≼
-   parse_all_b (FLAT (read (FST q) (KT1 lfdn s2 k)))’
+  ‘MAP SND (FILTER (λq'. FST q' = FST q) (KG1i lfdn ifds s2 k)) ≼
+   parse_all_b (FLAT (read (FST q) (KT1i lfdn ifds s2 k)))’
     by metis_tac[kv2_rounds_serves] >>
-  ‘FLAT (read (FST q) (KT1 lfdn s2 k)) ≠ []’
+  ‘FLAT (read (FST q) (KT1i lfdn ifds s2 k)) ≠ []’
     by (strip_tac >> fs[parse_all_b_NIL] >>
         fs[FILTER_EQ_NIL, EVERY_MEM] >> metis_tac[]) >>
   drule read_on_fd >> strip_tac >>
-  irule kv2_query_handle >> simp[] >> metis_tac[]
+  irule kv2_query_handle_if >> simp[] >> metis_tac[]
 QED
 
 Theorem kv2_rounds_bytes_all[local]:
+  ifds_sub (n2w lfdn) ifds ∧
   s2.listening = [(n2w lfdn, [])] ∧ s2.clients = [] ∧ s2.open_fds = [] ∧
   alloc_ok s2.alloc ∧ sched_wf2 s2 ∧ lfdn < dimword (:64) ⇒
   ∀k j. j < dimword (:64) − 1 ⇒
-        ep_written j (KP2 lfdn s2 (SUC k)) =
-          HttpSpec$bytes (FLAT (written (hdln lfdn j) (KT1 lfdn s2 k))) ∧
-        ep_read j (KP2 lfdn s2 k) =
-          HttpSpec$bytes (FLAT (read (hdln lfdn j) (KT1 lfdn s2 k)))
+        ep_written j (KP2i lfdn ifds s2 (SUC k)) =
+          HttpSpec$bytes (FLAT (written (hdln lfdn j) (KT1i lfdn ifds s2 k))) ∧
+        ep_read j (KP2i lfdn ifds s2 k) =
+          HttpSpec$bytes (FLAT (read (hdln lfdn j) (KT1i lfdn ifds s2 k)))
 Proof
-  metis_tac[kv2_rounds_bytes]
+  metis_tac[kv2_rounds_bytes_if]
 QED
 
 (* ------------------------------------------------------------------------
@@ -159,31 +161,33 @@ QED
    ------------------------------------------------------------------------ *)
 
 (* MAIN: per-episode linearizability for the key-value server on the
-   handle layer, in every fair version-2 world with one listener *)
-Theorem kv2_safe:
+   handle layer, in every fair version-2 world with one listener, for a
+   loop polling any ifds_sub interest lists (D26: e.g. live lists) *)
+Theorem kv2_safe_if:
+  ifds_sub (n2w lfdn) ifds ∧
   s2.listening = [(n2w lfdn, [])] ∧ s2.clients = [] ∧ s2.open_fds = [] ∧
   alloc_ok s2.alloc ∧ sched_wf2 s2 ∧ lfdn < dimword (:64) ⇒
-  kv_safe2 (gtrace2 (kv_server lfdn) lfdn s2)
+  kv_safe2 (gtrace2i (kv_server lfdn) lfdn ifds s2)
 Proof
   strip_tac >> REWRITE_TAC[kv_safe2_G] >>
   ‘uses_ok lfdn (kv_server lfdn) ∧ srv_eof_last (kv_server lfdn)’
     by simp[kv_server_uses_ok, kv_server_eof_last] >>
   (* episodes that did anything are below dimword (:64) − 1 *)
-  ‘∀k. LENGTH (accepted_fds (KP2 lfdn s2 k)) < dimword (:64) − 1’
-    by (qspecl_then [‘lfdn’, ‘kv_server lfdn’, ‘s2’] mp_tac
-          (Q.GENL [‘lfdn’, ‘m’, ‘s2’] accepted_bound_gen) >>
+  ‘∀k. LENGTH (accepted_fds (KP2i lfdn ifds s2 k)) < dimword (:64) − 1’
+    by (qspecl_then [‘lfdn’, ‘kv_server lfdn’, ‘s2’, ‘ifds’] mp_tac
+          (Q.GENL [‘lfdn’, ‘m’, ‘s2’, ‘ifds’] accepted_bound_if) >>
         impl_tac >- fs[] >> simp[]) >>
   ‘∀j evs. LENGTH (accepted_fds evs) ≤ j ⇒ ep_read j evs = [] ∧ ep_written j evs = []’
     by rw[ep_read_def, ep_written_def] >>
-  ‘∀k q. MEM q (KG1 lfdn s2 k) ⇒ ∃j. j < dimword (:64) − 1 ∧ FST q = hdln lfdn j’
+  ‘∀k q. MEM q (KG1i lfdn ifds s2 k) ⇒ ∃j. j < dimword (:64) − 1 ∧ FST q = hdln lfdn j’
     by (rpt strip_tac >> irule kv2_rounds_handle >> simp[] >> metis_tac[]) >>
   mp_tac kv2_rounds_bytes_all >> impl_tac >- fs[] >> strip_tac >>
   qspecl_then [‘ep_read’, ‘ep_written’,
-               ‘hround_events (n2w lfdn) (interest [n2w lfdn]) (srelabel (kv_server lfdn)) s2’,
-               ‘KG1 lfdn s2’,
-               ‘λk j. if j < dimword (:64) − 1 then FLAT (read (hdln lfdn j) (KT1 lfdn s2 k))
+               ‘hround_events (n2w lfdn) ifds (srelabel (kv_server lfdn)) s2’,
+               ‘KG1i lfdn ifds s2’,
+               ‘λk j. if j < dimword (:64) − 1 then FLAT (read (hdln lfdn j) (KT1i lfdn ifds s2 k))
                       else ""’,
-               ‘λk j. if j < dimword (:64) − 1 then written (hdln lfdn j) (KT1 lfdn s2 k)
+               ‘λk j. if j < dimword (:64) − 1 then written (hdln lfdn j) (KT1i lfdn ifds s2 k)
                       else []’,
                ‘unh lfdn’, ‘hdln lfdn’] mp_tac
     (Q.GENL [‘RD’, ‘WR’, ‘EV’, ‘G’, ‘RS’, ‘WS’, ‘kmap’, ‘kinv’] kv_safeG_rounds) >>
@@ -197,13 +201,13 @@ Proof
         qpat_assum ‘∀k. LENGTH (accepted_fds _) < _’ (qspec_then ‘SUC k’ assume_tac) >>
         qpat_assum ‘∀k. LENGTH (accepted_fds _) < _’ (qspec_then ‘k’ assume_tac) >>
         qpat_assum ‘∀j evs. _ ⇒ ep_read _ _ = [] ∧ _’
-          (qspecl_then [‘j’, ‘KP2 lfdn s2 (SUC k)’] mp_tac) >>
+          (qspecl_then [‘j’, ‘KP2i lfdn ifds s2 (SUC k)’] mp_tac) >>
         qpat_assum ‘∀j evs. _ ⇒ ep_read _ _ = [] ∧ _’
-          (qspecl_then [‘j’, ‘KP2 lfdn s2 k’] mp_tac) >> fs[HttpSpecTheory.bytes_def])
+          (qspecl_then [‘j’, ‘KP2i lfdn ifds s2 k’] mp_tac) >> fs[HttpSpecTheory.bytes_def])
     >- (rw[] >> TRY (metis_tac[kv2_rounds_serves] >> NO_TAC) >>
-        ‘FILTER (λq. FST q = hdln lfdn j) (KG1 lfdn s2 k) = []’
+        ‘FILTER (λq. FST q = hdln lfdn j) (KG1i lfdn ifds s2 k) = []’
           by (simp[FILTER_EQ_NIL, EVERY_MEM] >> rpt strip_tac >>
-              qpat_x_assum ‘∀k q. MEM q (KG1 _ _ _) ⇒ ∃j. _’ drule >>
+              qpat_x_assum ‘∀k q. MEM q (KG1i _ _ _ _) ⇒ ∃j. _’ drule >>
               strip_tac >> gvs[hdln_11]) >>
         simp[])
     >- simp[unh_hdln]
@@ -211,7 +215,7 @@ Proof
     gen_tac >> qexists_tac ‘COUNT_LIST (dimword (:64) − 1)’ >>
     simp[all_distinct_count_list, MEM_COUNT_LIST] >> rpt strip_tac >>
     CCONTR_TAC >>
-    ‘LENGTH (accepted_fds evs) ≤ LENGTH (accepted_fds (KP2 lfdn s2 k))’
+    ‘LENGTH (accepted_fds evs) ≤ LENGTH (accepted_fds (KP2i lfdn ifds s2 k))’
       by (qpat_x_assum ‘evs ≼ _’ mp_tac >> rw[IS_PREFIX_APPEND] >>
           simp[accepted_fds_APPEND]) >>
     qpat_x_assum ‘∀k. LENGTH (accepted_fds _) < _’ (qspec_then ‘k’ mp_tac) >>
@@ -220,4 +224,13 @@ Proof
     qpat_assum ‘∀j evs. _ ⇒ ep_read _ _ = [] ∧ _’ (qspecl_then [‘c’, ‘evs’] mp_tac) >>
     fs[]) >>
   simp[]
+QED
+
+(* MAIN: the same for the interest lists EI *)
+Theorem kv2_safe:
+  s2.listening = [(n2w lfdn, [])] ∧ s2.clients = [] ∧ s2.open_fds = [] ∧
+  alloc_ok s2.alloc ∧ sched_wf2 s2 ∧ lfdn < dimword (:64) ⇒
+  kv_safe2 (gtrace2 (kv_server lfdn) lfdn s2)
+Proof
+  strip_tac >> irule kv2_safe_if >> simp[]
 QED

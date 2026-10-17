@@ -546,6 +546,23 @@ Proof
   rename1 ‘SOME y’ >> PairCases_on ‘y’ >> simp[rich_listTheory.DROP_LENGTH_APPEND]
 QED
 
+(* While every round so far had room, the guarded run is the model's run
+   (honestL1PFModel's prounds) *)
+Theorem prounds_t_prounds:
+  ∀n. (∀i h ws evs logs. i < n ∧ prounds_t lfd hw ifds m ws0 i = SOME (h, ws, evs, logs) ⇒
+                         hdl_room lfd (SND ws) (LENGTH (new_actions (log_of m) h))) ⇒
+      prounds_t lfd hw ifds m ws0 n = prounds lfd hw ifds m ws0 n
+Proof
+  Induct >> simp[prounds_t_def, prounds_def] >> strip_tac >>
+  ‘prounds_t lfd hw ifds m ws0 n = prounds lfd hw ifds m ws0 n’
+    by (first_x_assum irule >> rpt strip_tac >>
+        metis_tac[DECIDE “i < n ⇒ i < SUC n”]) >>
+  pop_assum (fn th => REWRITE_TAC [th] >> assume_tac th) >>
+  Cases_on ‘prounds lfd hw ifds m ws0 n’ >> simp[] >>
+  PairCases_on ‘x’ >> simp[] >>
+  first_x_assum (qspecl_then [‘n’, ‘x0’, ‘(x1, x2)’, ‘x3’, ‘x4’] mp_tac) >> gvs[]
+QED
+
 (* MAIN (P2): the prefetching L1 loop, running m with interest fds0 (plus
    every fd accepted) from the world w and the L1 state ps0, never
    terminates, and its I/O trace is, round by round, the events of

@@ -540,5 +540,9 @@ Proof
   Cases_on ‘nm = «sys_shutdown»’ >- (gvs[] >> irule pinv_call_shutdown >> metis_tac[]) >>
   Cases_on ‘nm = «sys_connerr»’ >- (gvs[] >> irule pinv_call_connerr >> metis_tac[]) >>
   Cases_on ‘nm = «sys_close»’ >- (gvs[] >> irule pinv_call_close >> metis_tac[]) >>
+  (* D33's sys_fdok: a query, the world unchanged *)
+  Cases_on ‘nm = «sys_fdok»’
+  >- (qpat_x_assum ‘l0_call _ _ _ _ = _’ mp_tac >> simp[Once l0_call_def] >> rw[] >>
+      irule pinv_noop_empty_imp >> simp[ev_quiet]) >>
   gvs[l0_call_def]
 QED

@@ -1,0 +1,12 @@
+# Moonshot final instantiation (close-v2): moonshot_safe_holds at the
+# concrete client binary; the proxy and KV claims stay hypotheses until
+# their programs' claims land.  Its own directory: it sits above every
+# per-program claim directory.
+INCLUDES = ../moonshot-client-l0 ../e1-trace ../e1-driver ../moonshot-glue ../moonshot ../honest-l1-ep ../honest-l1-cf ../honest-l0-cf \
+           ../honest-l1 ../l0sys-bridges ../l0sys ../endpoint-hl ../endpoint-world ../honest-l0 ../honest-ffi \
+           ../ffi-spike ../model ../cf-actions ../m3-assembly ../socket-v2 ../close-v2-loop ../m4-safety \
+           ../m4-common ../m4-server ../cf-spike ../cf-reactive ../spec \
+           $(CAKEMLDIR)/characteristic $(CAKEMLDIR)/semantics/alt_semantics/proofs $(CAKEMLDIR)/translator
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

@@ -26,8 +26,7 @@ Libs
 (* The state sys_init gives each process *)
 Definition l0_fresh_def:
   l0_fresh (w : l0world) ⇔
-    w.listeners = [] ∧ w.chans = [] ∧ w.open_fds = [] ∧ MEM 0w w.reserved ∧
-    w.clock = 0 ∧ w.hist = []
+    w.listeners = [] ∧ w.chans = [] ∧ w.open_fds = [] ∧ w.clock = 0 ∧ w.hist = []
 End
 
 (* The I/O of a behaviour *)

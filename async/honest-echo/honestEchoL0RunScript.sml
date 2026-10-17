@@ -124,7 +124,7 @@ Theorem pround_acc:
   pround lfd hw hs (w, ps) acts = SOME (sn, (w', ps'), log, evs) ∧
   wown lfd w ps ∧ own_ok lfd (k, opn) ps ∧ LENGTH ps.acq ≤ 1 ∧
   l1hdln (w2n lfd) (ps.b.nxt + LENGTH acts + 1) < dimword (:64) ⇒
-  ps.b.nxt ≤ ps'.b.nxt ∧
+  ps.b.nxt ≤ ps'.b.nxt ∧ ps'.b.nxt + LENGTH ps'.acq ≤ ps.b.nxt + LENGTH acts + 1 ∧
   haccepted (ZIP (acts, MAP SOME sn.results)) =
     GENLIST (λi. l1hdl lfd (ps.b.nxt + i)) (ps'.b.nxt − ps.b.nxt)
 Proof
@@ -160,6 +160,7 @@ QED
    first nxt; and per episode j in range the input and output relations *)
 Definition ri_def:
   ri lfd m (h, (w, ps), evs) ⇔
+    hdln (w2n lfd) (ps.b.nxt + LENGTH ps.acq) < dimword (:64) ∧
     wown lfd w ps ∧ own_ok lfd (l0_ep_st (0, []) evs) ps ∧ LENGTH ps.acq ≤ 1 ∧ okb ps.b ∧
     (∀i. i < LENGTH h ⇒ LENGTH (EL i h).results = LENGTH (new_actions (log_of m) (TAKE i h))) ∧
     haccepted (texec m h) = GENLIST (λi. l1hdl lfd i) ps.b.nxt ∧
@@ -198,6 +199,7 @@ Proof
   drule_all pround_out >> strip_tac >>
   gvs[ssnap_def, texec_SNOC] >>
   ‘MAP FST (ZIP (acts, MAP SOME rs)) = acts’ by simp[MAP_ZIP] >>
+  conj_tac >- (irule hdln_mono >> qexists_tac ‘ps.b.nxt + LENGTH acts + 1’ >> fs[]) >>
   rpt conj_tac
   >- (rpt strip_tac >> Cases_on ‘i < LENGTH h’ >> simp[EL_APPEND1, TAKE_APPEND1] >>
       ‘i = LENGTH h’ by simp[] >> gvs[EL_APPEND2, Abbr ‘acts’])

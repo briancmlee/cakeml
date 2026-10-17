@@ -9,16 +9,12 @@
   three fdok events), the listen on a failed (Terminate after it), or E1's
   rounds forever (Diverge).  This is the program of
   l0_proxy_claim pf_sendwait hw a b (proxy_prog a b hw).
-
-  limited_parts_l0, l0_part_in_heap, l0_init_heap, FFI_part_hprop_L0_EV:
-  copies of e1ClientSem's (themselves honestEchoL0Sem's); to merge into a
-  shared theory.
 *)
 Theory proxySem
 Ancestors
   ml_translator ml_prog cfMain cfDiv cfStore llist std_prelude
   honestL0 honestL0World honestL0Part honestL0Proof
-  ffiSpikeDivMain e1DriverLoop e1DriverMain moonshotProxy proxyMain
+  ffiSpikeDivMain e1DriverLoop e1DriverMain moonshotProxy proxyMain e1Lemmas
 Libs
   preamble basis cfDivLib cfTacticsLib ml_progLib basisFunctionsLib
 
@@ -52,45 +48,6 @@ End
 Definition proxy_prog_def:
   proxy_prog a b hw = SNOC (main_call «main») (proxy_decs ++ [proxy_main_dec a b hw])
 End
-
-(* ------------------------------------------------------------------------
-   The L0 world as the program's only FFI part (copies, see the header)
-   ------------------------------------------------------------------------ *)
-
-Theorem limited_parts_l0[local]:
-  limited_parts l0_names (l0_proj w0)
-Proof
-  simp[limited_parts_def, l0_proj_def]
-QED
-
-Theorem l0_part_in_heap[local]:
-  st.ffi = l0_ffi w0 ∧ parts_ok st.ffi (l0_proj w0) ⇒
-  FFI_part (l0_enc w0 w0) (l0_next w0) l0_names [] ∈ st2heap (l0_proj w0) st
-Proof
-  strip_tac >> gvs[st2heap_def, l0_proj_def, ffi2heap_def] >>
-  simp[l0_ffi_def, l0_names_def] >>
-  disj2_tac >> rw[FUPDATE_LIST_THM, FLOOKUP_UPDATE]
-QED
-
-Theorem l0_init_heap[local]:
-  st.ffi = l0_ffi w0 ∧ l0_rely w0 ∧ w0.hist = [] ⇒
-  ∃h1 h2. SPLIT (st2heap (l0_proj w0) st) (h1,h2) ∧ L0_EV w0 w0 [] h1
-Proof
-  strip_tac >>
-  ‘parts_ok st.ffi (l0_proj w0)’ by simp[l0_parts_ok] >>
-  drule_all l0_part_in_heap >> strip_tac >>
-  qexistsl [‘{FFI_part (l0_enc w0 w0) (l0_next w0) l0_names []}’,
-            ‘st2heap (l0_proj w0) st DIFF {FFI_part (l0_enc w0 w0) (l0_next w0) l0_names []}’] >>
-  simp[L0_EV_def, l0_reach_init, SEP_CLAUSES, one_def] >>
-  rw[SPLIT_def, EXTENSION, IN_DISJOINT] >> metis_tac[]
-QED
-
-Theorem FFI_part_hprop_L0_EV[local]:
-  FFI_part_hprop (L0_EV w0 w evs)
-Proof
-  simp[L0_EV_def] >> irule FFI_part_hprop_STAR >> disj1_tac >>
-  simp[FFI_part_hprop_def, one_def]
-QED
 
 (* ------------------------------------------------------------------------
    The declarations, then main

@@ -15,7 +15,7 @@ Ancestors
   ml_translator cfHeapsBase cfApp cfDiv endpointHLModel asyncCore asyncLevel1 asyncM3World
   honestL0 honestL0World honestL1Model honestL1PFModel honestL1EPModel honestL0Part
   honestL0Prog honestL0Proof honestL0Fdok honestL1PFProg e1TypesProg
-  e1DriverProg e1DriverSpec e1Fold e1DriverLoop e1DriverMain e1ClientMain
+  e1DriverProg e1DriverSpec e1Fold e1DriverLoop e1DriverMain e1Lemmas
   moonshotProxy proxyStepL proxyProg proxyFold proxyCerts
 Libs
   preamble ml_translatorLib ml_progLib cfLib cfDivLib basisFunctionsLib
@@ -40,19 +40,6 @@ Overload ERESP = “ENDPOINTHLMODEL_ERESP_TYPE”
 (* ------------------------------------------------------------------------
    mk_proxy's values
    ------------------------------------------------------------------------ *)
-
-Theorem Arrow_app3:
-  (a --> b --> c --> d) f fv ∧ a x xv ∧ b y yv ∧ c z zv ⇒
-  app (p:'ffi ffi_proj) fv [xv; yv; zv] emp (POSTv v. &d (f x y z) v)
-Proof
-  rpt strip_tac >> drule_all Arrow_IMP_app_basic >>
-  disch_then (qspec_then ‘p’ assume_tac) >>
-  simp[Once app_def] >> irule app_basic_weaken >> first_assum (irule_at Any) >>
-  Cases >> simp[POSTv_def, cond_def, SEP_EXISTS_THM, STAR_def] >>
-  strip_tac >>
-  ‘app p v [yv; zv] emp (POSTv v'. &d (f x y z) v')’ by (irule Arrow_app2 >> metis_tac[]) >>
-  qexistsl [‘emp’, ‘∅’] >> simp[emp_def, SPLIT_def] >> gvs[emp_def, POSTv_def, cond_def]
-QED
 
 Theorem mk_proxy_spec:
   NUM b bv ∧ NUM hw hwv ∧ WORD lfd lfdv ⇒

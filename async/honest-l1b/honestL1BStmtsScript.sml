@@ -1,6 +1,6 @@
 (*
   TEMPORARY VERBATIM COPY — remove at L3-09 fold.
-  Source: final/L3-00-statements (PR #153) at 3593187d9 (Q1 quiescence weakening; D20 poll encoding;
+  Source: final/L3-00-statements (PR #153) at 821835ed2 (drains on sends/inflight; Q1 quiescence weakening; D20 poll encoding;
   first copied at 676781133, resynced for ep_polls, l0_close_call and
   ep_ends), async/kernel/statements/kernelStatementsCoreScript.sml and
   kernelStatementsScript.sml (split since 61e7733e9), the raw-trace
@@ -50,11 +50,13 @@ End
    some *)
 Definition drains_def:
   drains w0 io c ⇔
-    ∀evs w. LPREFIX (fromList evs) io ∧ world_at w0 evs = SOME w ∧
-            c < LENGTH w.chans ∧ 0 < (EL c w.chans).inflight ⇒
-            ∃evs' w'. LPREFIX (fromList evs') io ∧ world_at w0 evs' = SOME w' ∧
-                      c < LENGTH w'.chans ∧
-                      (EL c w.chans).drained < (EL c w'.chans).drained
+    ∀evs w. LPREFIX (fromList evs) io ∧ world_at w0 evs = SOME w ∧ c < LENGTH w.chans ∧
+            (∀evs' w'. LPREFIX (fromList (evs ++ evs')) io ∧
+                       world_at w0 (evs ++ evs') = SOME w' ⇒
+                       (EL c w'.chans).sent = (EL c w.chans).sent) ⇒
+            ∃evs' w'. LPREFIX (fromList (evs ++ evs')) io ∧
+                      world_at w0 (evs ++ evs') = SOME w' ∧
+                      c < LENGTH w'.chans ∧ (EL c w'.chans).inflight = 0
 End
 
 (* The listen failed and the program stopped *)

@@ -136,12 +136,6 @@ Proof
   metis_tac[]
 QED
 
-Theorem faithful_prefix:
-  ∀a b w. faithful w (a ++ b) ⇒ faithful w a
-Proof
-  Induct >> rw[faithful_def] >> metis_tac[]
-QED
-
 (* lfd is the only listener (or there is none) *)
 Definition lone_def:
   lone lfd w ⇔ MAP FST w.listeners = [lfd] ∨ MAP FST w.listeners = []

@@ -35,13 +35,6 @@ Proof
   fs[IS_PREFIX_APPEND] >> metis_tac[faithful_prefix]
 QED
 
-Theorem faithful_drop:
-  ∀a b w w'. faithful w (a ++ b) ∧ FOLDL l0_step (SOME w) (MAP ev_lcall a) = SOME w' ⇒
-             faithful w' b
-Proof
-  Induct >> rw[faithful_def] >> gvs[ev_lcall_def, l0_step_def] >> metis_tac[]
-QED
-
 Theorem faithful_world_inv:
   (∀n conf b out u u'. P u ∧ l0_ffi_fn n conf b u = SOME (FFIreturn out u') ∧
                        MEM n l1_names ⇒ P u') ∧

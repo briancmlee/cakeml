@@ -121,8 +121,11 @@ Proof
   xlet_auto >- xsimpl >>
   rename1 ‘W8ARRAY av (REPLICATE _ _)’ >>
   xlet ‘POSTv uv. W8ARRAY av bytes * one (FFI_part (l0_enc w0 w) (l0_next w0) l0_names evs)’
-  >- (xapp >> xsimpl >> gvs[NUM_def, INT_def, bytes_str_bytes] >>
-      simp[mlstringTheory.substring_def, bytes_str_bytes, DROP_REPLICATE]) >>
+  >- (xapp >> xsimpl >> qexistsl [‘bytes_str bytes’, ‘LENGTH bytes’] >>
+      simp[bytes_str_bytes, mlstringTheory.substring_def] >>
+      ‘SEG (LENGTH bytes) 0 (MAP (CHR ∘ w2n) bytes) = MAP (CHR ∘ w2n) bytes’
+        by metis_tac[SEG_LENGTH_ID, LENGTH_MAP] >>
+      simp[] >> qspec_then ‘bytes’ mp_tac (Q.GEN ‘bs’ (cj 1 bytes_str_bytes)) >> simp[]) >>
   xlet ‘POSTv uv. W8ARRAY av out *
           one (FFI_part (l0_enc w0 w') (l0_next w0) l0_names (evs ++ [ev]))’
   >- (xffi >> xsimpl >> gvs[STRING_TYPE_def] >>

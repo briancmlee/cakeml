@@ -11,11 +11,15 @@
 
   mk_client a n bss lfd builds the fold's values for e1_start: the
   request bytes of connection i are EL i bss (rqf bss; [] past the end).
+
+  client_main c a n s: the client's whole run, e1_start c on mk_client,
+  with the request bytes decoded from the string s (e1Lits: the program's
+  main passes lits_enc bss as a string literal).
 *)
 Theory e1ClientProg
 Ancestors
   ml_translator asyncCore asyncM3World endpointHLModel moonshotClientSpec moonshotClient
-  honestL1PFModel honestL1PFProg e1TypesProg e1DriverProg
+  honestL1PFModel honestL1PFProg e1TypesProg e1DriverProg e1Lits
 Libs
   preamble ml_translatorLib ml_progLib basisFunctionsLib
 
@@ -206,4 +210,15 @@ val r = translate rqf_def;
 Quote add_cakeml:
   fun mk_client a n bss lfd =
     (pol_never, cifdsl, clast, cstepl a (rqf bss), call_done, cinitl a n);
+End
+
+val r = translate unvnum_def;
+val r = translate lits_dec_def;
+
+Quote add_cakeml:
+  fun client_main c a n s =
+    let
+      val bss = lits_dec (str_to_bytes s)
+      fun mk lfd = mk_client a n bss lfd
+    in e1_start c mk end;
 End

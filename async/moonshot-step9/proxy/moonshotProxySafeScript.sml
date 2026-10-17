@@ -953,3 +953,66 @@ Proof
   drule_all proxy_issue >> strip_tac >> qexists_tac ‘pread’ >>
   qpat_x_assum ‘(EL i _).fh = hd’ (SUBST_ALL_TAC o SYM) >> fs[]
 QED
+
+(* ------------------------------------------------------------------------
+   The relay lags one round: pair i's slot across a round, from the actions
+   tagged i alone
+   ------------------------------------------------------------------------ *)
+
+Definition pnl_def:
+  pnl x ⇔ (∀l. x ≠ ELevel l) ∧ (∀l. x ≠ EAccept l)
+End
+
+(* The actions tagged i (Levels and accepts aside), and their results *)
+Definition seltag_def:
+  seltag i (ts : (num # eact) list) = FILTER (λ(j, x). j = i ∧ pnl x) ts
+End
+
+Definition selres_def:
+  selres i (ts : (num # eact) list) (rs : eresp list) =
+    MAP SND (FILTER (λ((j, x), r). j = i ∧ pnl x) (ZIP (ts, rs)))
+End
+
+Definition presf_def:
+  presf p (x, r) = pres p x r
+End
+
+Theorem seltag_simps[simp]:
+  seltag i [] = [] ∧
+  seltag i ((j, x) :: ts) = (if j = i ∧ pnl x then (j, x) :: seltag i ts else seltag i ts) ∧
+  selres i [] [] = [] ∧
+  selres i ((j, x) :: ts) (r :: rs) = (if j = i ∧ pnl x then r :: selres i ts rs else selres i ts rs)
+Proof
+  rw[seltag_def, selres_def]
+QED
+
+Theorem LENGTH_selres:
+  ∀ts rs. LENGTH rs = LENGTH ts ⇒ LENGTH (selres i ts rs) = LENGTH (seltag i ts)
+Proof
+  Induct >- simp[] >> rpt strip_tac >> PairCases_on ‘h’ >> Cases_on ‘rs’ >> fs[] >> rw[]
+QED
+
+Theorem pupd_one_slot:
+  i < LENGTH st.pc ⇒
+  i < LENGTH (pupd st [(j, x)] [r]).pc ∧
+  EL i (pupd st [(j, x)] [r]).pc = if j = i ∧ pnl x then pres (EL i st.pc) x r else EL i st.pc
+Proof
+  strip_tac >> Cases_on ‘x’ >> Cases_on ‘r’ >> simp[pnl_def] >>
+  TRY (rename1 ‘EAccepted oo’ >> Cases_on ‘oo’) >> simp[EL_LUPDATE, EL_APPEND1] >>
+  Cases_on ‘i = j’ >> simp[] >> simp[pres_def] >> every_case_tac >> simp[EL_APPEND1]
+QED
+
+Theorem pupd_slot:
+  ∀ts st rs. LENGTH rs = LENGTH ts ∧ i < LENGTH st.pc ⇒
+    EL i (pupd st ts rs).pc =
+    FOLDL presf (EL i st.pc) (ZIP (MAP SND (seltag i ts), selres i ts rs))
+Proof
+  Induct >- simp[pupd_def] >> rpt gen_tac >> Cases_on ‘rs’ >> simp[] >>
+  PairCases_on ‘h’ >> rename1 ‘pupd st ((j, x) :: ts) (r :: rs)’ >> strip_tac >>
+  ONCE_REWRITE_TAC [pupd_cons] >>
+  drule pupd_one_slot >> disch_then (qspecl_then [‘x’, ‘r’, ‘j’] strip_assume_tac) >>
+  first_x_assum (qspecl_then [‘pupd st [(j, x)] [r]’, ‘rs’] mp_tac) >>
+  impl_tac >- asm_rewrite_tac [] >> disch_then SUBST1_TAC >>
+  asm_rewrite_tac [] >> Cases_on ‘j = i ∧ pnl x’ >> asm_rewrite_tac [] >>
+  simp[presf_def]
+QED

@@ -1549,3 +1549,116 @@ Proof
   pop_assum (fn th => RULE_ASSUM_TAC (REWRITE_RULE [GSYM th]) >> REWRITE_TAC [GSYM th]) >>
   qpat_x_assum ‘pupd st _ _ = _’ SUBST1_TAC >> first_assum ACCEPT_TAC
 QED
+
+(* ------------------------------------------------------------------------
+   The poll
+   ------------------------------------------------------------------------ *)
+
+(* The listener's queue across arrivals *)
+Definition qinv_def:
+  qinv lfd (w : eworld) ⇔
+    ∃a q. w.listening = [(lfd, a, q)] ∧ ALL_DISTINCT q ∧
+          EVERY (λj. j < LENGTH w.chans ∧ (EL j w.chans).status = Up ∧
+                     ¬(EL j w.chans).shut ∧ ¬MEM j (MAP SND w.open_fds)) q ∧
+          EVERY (λj. j < LENGTH w.chans) (MAP SND w.open_fds)
+End
+
+Theorem qinv_deliver:
+  qinv lfd w ⇒ qinv lfd (ep_deliver w x) ∧ (ep_deliver w x).open_fds = w.open_fds
+Proof
+  simp[qinv_def] >> strip_tac >> Cases_on ‘x’ >>
+  simp[ep_deliver_def, upd_chan_def] >> rw[] >>
+  TRY (fs[EVERY_MEM, EL_LUPDATE] >> rw[] >> res_tac >> gvs[] >> NO_TAC) >>
+  every_case_tac >> gvs[] >> simp[AFUPDKEY_def] >>
+  fs[EVERY_MEM, EL_APPEND1, EL_APPEND2, ALL_DISTINCT_APPEND, new_chan_def] >>
+  rpt strip_tac >> res_tac >>
+  TRY (Cases_on ‘j = n’ >> gvs[EL_LUPDATE] >> NO_TAC) >> fs[]
+QED
+
+Theorem qinv_FOLDL:
+  ∀xs w. qinv lfd w ⇒ qinv lfd (FOLDL ep_deliver w xs) ∧ (FOLDL ep_deliver w xs).open_fds = w.open_fds
+Proof
+  Induct >> simp[] >> rpt gen_tac >> strip_tac >>
+  drule qinv_deliver >> disch_then (qspec_then ‘h’ strip_assume_tac) >>
+  first_x_assum drule >> simp[]
+QED
+
+Theorem qinv_tick:
+  qinv lfd w ⇒ qinv lfd (ep_tick w)
+Proof
+  simp[ep_tick_def] >> strip_tac >> irule (cj 1 (SPEC_ALL qinv_FOLDL)) >>
+  fs[qinv_def]
+QED
+
+Theorem hch_tick:
+  hch w hs h j ∧ tick_rel w w' ∧ hs'.tbl = hs.tbl ⇒ hch w' hs' h j
+Proof
+  rw[hch_def, tick_rel_def] >> simp[]
+QED
+
+Theorem pok_tick:
+  pok w hs ps rdy p ∧ tick_rel w w' ∧ hs'.tbl = hs.tbl ∧
+  (∀h j. hch w hs h j ∧ (EL j w'.chans).status = Connecting ∧ (EL j w'.chans).inbox = [] ∧
+         ¬(EL j w'.chans).peer_eof ⇒ h ∉ rdy') ⇒
+  pok w' hs' ps rdy' p
+Proof
+  simp[pok_def] >> strip_tac >> simp[] >>
+  ‘∀h j. hch w hs h j ⇒ hch w' hs' h j ∧ j < LENGTH w.chans’
+    by (rpt strip_tac >- metis_tac[hch_tick] >> fs[hch_def]) >>
+  rpt conj_tac
+  >- (strip_tac >> qpat_x_assum ‘p.fo ⇒ _’ mp_tac >> (impl_tac >- simp[]) >> strip_tac >>
+      qexists_tac ‘j’ >> res_tac >> simp[] >>
+      qpat_x_assum ‘tick_rel _ _’ (strip_assume_tac o REWRITE_RULE [tick_rel_def]) >>
+      first_x_assum drule >> rw[] >> gvs[])
+  >> Cases_on ‘p.bh’ >> gvs[] >> rpt conj_tac >> rpt strip_tac >>
+  TRY (qpat_x_assum ‘_ ∨ _ ⇒ ¬MEM _ _’ mp_tac >> simp[] >> NO_TAC) >>
+  qpat_x_assum ‘_ ⇒ ∃j. hch w hs _ j ∧ ¬_ ∧ _’ mp_tac >> (impl_tac >- simp[]) >> strip_tac >>
+  qexists_tac ‘j’ >> res_tac >> simp[] >>
+  qpat_x_assum ‘tick_rel _ _’ (strip_assume_tac o REWRITE_RULE [tick_rel_def]) >>
+  first_x_assum drule >> strip_tac >> gvs[] >>
+  Cases_on ‘(EL j w'.chans).status’ >> gvs[] >> metis_tac[]
+QED
+
+(* MAIN of this part: the poll keeps the relation, with the ready handles it
+   reports *)
+Theorem prel_poll:
+  prel lfd st rdy ps w hs ∧ ehpoll lfd hs hfds w = (rdy', w', hs') ∧
+  (∀h. MEM h hfds ⇒ h = lfd ∨ MEM h (FLAT (MAP phds st.pc))) ⇒
+  prel lfd st (set rdy') ps w' hs'
+Proof
+  strip_tac >> qpat_x_assum ‘ehpoll _ _ _ _ = _’ mp_tac >> simp[ehpoll_def] >> strip_tac >>
+  qpat_x_assum ‘ep_tick w = w'’ (SUBST_ALL_TAC o SYM) >>
+  ‘tick_rel w (ep_tick w)’ by simp[tick_rel_tick] >>
+  ‘qinv lfd (ep_tick w)’ by (irule qinv_tick >> fs[prel_def, qinv_def]) >>
+  qabbrev_tac ‘w1 = ep_tick w’ >>
+  ‘hs'.tbl = hs.tbl ∧ hs'.nxt = hs.nxt’ by gvs[] >>
+  ‘∀h j. hch w hs h j ∧ (EL j w1.chans).status = Connecting ∧ (EL j w1.chans).inbox = [] ∧
+         ¬(EL j w1.chans).peer_eof ⇒ ¬MEM h rdy'’
+    by (rpt strip_tac >> qpat_x_assum ‘_ = rdy'’ (SUBST_ALL_TAC o SYM) >>
+        fs[MEM_FILTER, hch_def] >>
+        ‘f ≠ lfd’
+          by (strip_tac >> gvs[] >> imp_res_tac ALOOKUP_MEM >> fs[prel_def] >>
+              qpat_x_assum ‘¬MEM lfd (MAP FST _)’ mp_tac >> simp[MEM_MAP, EXISTS_PROD] >>
+              metis_tac[]) >>
+        qpat_x_assum ‘qinv _ _’ (strip_assume_tac o REWRITE_RULE [qinv_def]) >>
+        ‘w1.open_fds = w.open_fds’ by fs[tick_rel_def] >>
+        ‘j < LENGTH w1.chans’ by fs[tick_rel_def] >>
+        gvs[ep_readable_def, ep_chan_of_def, chan_status_def]) >>
+  ‘∃a q. w1.listening = [(lfd, a, q)] ∧ ALL_DISTINCT q ∧
+         EVERY (λj. j < LENGTH w1.chans ∧ (EL j w1.chans).status = Up ∧ ¬(EL j w1.chans).shut ∧
+                    ¬MEM j (MAP SND w1.open_fds)) q’
+    by (qpat_x_assum ‘qinv _ _’ mp_tac >> simp[qinv_def] >> metis_tac[]) >>
+  ‘EVERY (pok w1 hs' ps (set rdy')) st.pc’
+    by (qpat_x_assum ‘prel _ _ _ _ _ _’ mp_tac >> simp[prel_def, EVERY_MEM] >> rpt strip_tac >>
+        irule pok_tick >> qexistsl_tac [‘hs’, ‘rdy’, ‘w’] >> simp[] >> metis_tac[]) >>
+  qpat_x_assum ‘prel _ _ _ _ _ _’ (strip_assume_tac o REWRITE_RULE [prel_def]) >>
+  qpat_x_assum ‘tick_rel _ _’ (fn th => assume_tac th >> strip_assume_tac (REWRITE_RULE [tick_rel_def] th)) >>
+  REWRITE_TAC [prel_def] >> rpt conj_tac >> TRY (first_assum ACCEPT_TAC) >>
+  TRY (asm_simp_tac (srw_ss()) [] >> NO_TAC) >>
+  TRY (fs[EVERY_MEM] >> rpt strip_tac >> res_tac >> simp[] >> NO_TAC) >>
+  TRY (qpat_x_assum ‘qinv _ _’ (strip_assume_tac o REWRITE_RULE [qinv_def]) >>
+       asm_simp_tac (srw_ss()) [] >> NO_TAC) >>
+  TRY (rpt strip_tac >> qpat_x_assum ‘_ = rdy'’ (SUBST_ALL_TAC o SYM) >> fs[MEM_FILTER] >>
+       NO_TAC) >>
+  qexistsl_tac [‘a'’, ‘q'’] >> simp[]
+QED

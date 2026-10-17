@@ -22,10 +22,12 @@
     approved statement) and raw liveness under [F1] (D11′, on observed
     outcomes) and [F2] (D12).  Liveness is WEAKENED honestly where POSIX is
     loose (D16: unless a hard error was observed on the episode; D18:
-    unless accepts on the listener fail infinitely often), and per episode
-    it assumes the peer reads, also within K rounds of a hang-up (D19);
+    unless accepts on the listener fail infinitely often; D23: unless L1
+    was observed timing the episode's fd out, K = pf_sendwait stalled
+    rounds), and per episode it assumes the peer reads (D(c));
     l0_echo2_strong_claim is the corollary form under explicit hypotheses
-    (D16's HD16, D18's H1 and H3; no [F3], design/36 §6, 2026-10-17).
+    (D16's HD16, D18's H1 and H3, D23's stall_drains: the peer reads within
+    K output polls; no [F3], design/36 §6, 2026-10-17).
   - quiet_on_kernel_claim: quiescence on the kernel, through a blocking
     variant of L1: with finitely many arrivals the program eventually
     sleeps in a blocking poll, unless [F1] fails.  It relies on D19 (user
@@ -173,47 +175,35 @@ Definition accepts_below_def:
     ∀evs. LPREFIX (fromList evs) io ⇒ LENGTH (l0_accepted evs) < 2 ** 64 − 1
 End
 
-(* A poll (blocking or not) that succeeded and reported POLLHUP for fd f.
-   D20's encoding: the call's buffer is 16 header bytes, then one struct
-   pollfd record of 8 bytes per entry, revents at byte 6 of each (out); a
-   failed poll's revents bytes are unspecified (poll_failed), hence the
-   success conjunct *)
-Definition poll_hup_def:
-  poll_hup f (IO_event nm conf bs) ⇔
-    nm = ExtCall «sys_poll» ∧ (∃k. l0_ev_res bs = SOME (Ok k)) ∧
-    ∃i. i < LENGTH (pollfd_entries (DROP 16 (MAP FST bs))) ∧
-        pe_fd (EL i (pollfd_entries (DROP 16 (MAP FST bs)))) = f ∧
-        i < LENGTH (pollfd_entries (DROP 16 (MAP SND bs))) ∧
-        (abi_revents (DROP 6 (EL i (pollfd_entries (DROP 16 (MAP SND bs)))))).rhup
+(* A poll event *)
+Definition poll_ev_def:
+  poll_ev ev ⇔ ∃conf bs. ev = IO_event (ExtCall «sys_poll») conf bs
 End
 
-(* The polls in a list of events that list fd f for output (an entry
-   (f, e), read back to the model's bits by pe_fe, with bit 2 of e set).  L1 polls f for output exactly in the
-   rounds in which f's outbox is not empty (pf_poll_set), which are the
-   rounds D19's count runs in; idle polls (which a blocking L1 collapses)
-   never count *)
+(* A poll that lists fd f for output (an entry (f, e), read back to the
+   model's bits by pe_fe, with bit 2 of e set).  L1 polls f for output
+   exactly in the rounds in which f's outbox is not empty (pf_poll_set);
+   one poll per round (D20) *)
+Definition out_poll_def:
+  out_poll f ev ⇔
+    ∃conf bs. ev = IO_event (ExtCall «sys_poll») conf bs ∧
+              ∃e. MEM (f, e) (MAP pe_fe (pollfd_entries (DROP 16 (MAP FST bs)))) ∧
+                  2 ≤ e MOD 4
+End
+
+(* The polls in a list of events that list fd f for output; idle polls
+   (which a blocking L1 collapses) never count *)
 Definition n_out_polls_def:
-  n_out_polls f (evs : io_event list) =
-    LENGTH (FILTER (λev. ∃conf bs. ev = IO_event (ExtCall «sys_poll») conf bs ∧
-                                   ∃e. MEM (f, e) (MAP pe_fe (pollfd_entries (DROP 16 (MAP FST bs)))) ∧
-                                       2 ≤ e MOD 4)
-                   evs)
+  n_out_polls f (evs : io_event list) = LENGTH (FILTER (out_poll f) evs)
 End
 
-(* D19 (user decision, option 2: the bounded flush), per episode: once
-   POLLHUP has been reported on episode j's fd, whenever channel c has bytes
-   in flight its peer reads them all within K − 1 polls that list the fd
-   for output while episode j holds it (user-approved form b″; only polls
-   before j's close count, since the fd number may be reused after it).
-   K is L1's
-   pf_hupwait (honest-ffi's hup_step): L1 keeps flushing a half-closed fd
-   and closes it when drained, but drops its outbox after pf_hupwait
-   consecutive rounds whose flush takes nothing while the outbox is not
-   empty (the count restarts on progress or an empty outbox); a broken fd
-   is dropped at once (its hard error is D16's excuse).  With [F2] (nothing
-   in flight: a send takes a byte), and since a hung-up fd is flushed every
-   round its poll reports POLLHUP, this gives send progress within K rounds
-   of a non-empty outbox *)
+(* A send on fd f from which the kernel took bytes *)
+Definition send_took_def:
+  send_took f (IO_event nm conf bs) ⇔
+    nm = ExtCall «sys_send» ∧ 8 ≤ LENGTH conf ∧ bytes_fd (TAKE 8 conf) = f ∧
+    ∃k. l0_ev_res bs = SOME (Ok k) ∧ 0 < k
+End
+
 (* A call that closes fd f, whatever its result (an interrupted close may
    still free the fd, and L1 forgets f at its close call either way) *)
 Definition l0_close_call_def:
@@ -230,30 +220,57 @@ Definition ep_polls_def:
     else FST (SPLITP (l0_close_call f) more)
 End
 
-Definition hup_drains_def:
-  hup_drains K w0 io j c ⇔
-    ∀evs ev mid w.
-      LPREFIX (fromList (evs ++ [ev] ++ mid)) io ∧ ep_open j evs ∧
-      poll_hup (EL j (l0_accepted evs)) ev ∧
-      world_at w0 (evs ++ [ev] ++ mid) = SOME w ∧ c < LENGTH w.chans ∧
+(* D23 (user decision, the write timeout; replaces D19's hang-up policy):
+   L1 drops the outbox of a fd it holds, and marks the fd gone, after K =
+   pf_sendwait consecutive rounds with a non-empty outbox from which no
+   send took bytes (honest-ffi's stall_step; the count restarts on
+   progress or an empty outbox).  On the trace, with one poll per round
+   (D20), that is: while episode j holds its fd f, a stretch of events
+   with at least K polls, every one of them listing f for output, and no
+   send on f that took bytes.  This is the OBSERVED excuse of the main
+   form (as D16's hard error is): an L1 close need not follow, since a
+   gone fd is closed only when the server closes it, and the stretch alone
+   is exactly the condition under which L1 drops *)
+Definition ep_timed_out_def:
+  ep_timed_out K j io ⇔
+    ∃evs span.
+      LPREFIX (fromList (evs ++ span)) io ∧ ep_open j evs ∧
+      K ≤ n_out_polls (EL j (l0_accepted evs)) span ∧
+      EVERY (λe. poll_ev e ⇒ out_poll (EL j (l0_accepted evs)) e) span ∧
+      ¬EXISTS (send_took (EL j (l0_accepted evs))) span ∧
+      ¬EXISTS (ep_ends (EL j (l0_accepted evs))) span
+End
+
+(* The strong form's hypothesis instead (D23, generalising D19's
+   user-approved b″ form from "after a hang-up" to "always"): whenever
+   channel c has bytes in flight, its peer reads them all within K − 1
+   polls that list episode j's fd for output while j holds it (only polls
+   before j's close count, since the fd number may be reused after it).
+   With [F2] (nothing in flight: a send takes a byte) this gives send
+   progress before L1's timeout *)
+Definition stall_drains_def:
+  stall_drains K w0 io j c ⇔
+    ∀evs mid w.
+      LPREFIX (fromList (evs ++ mid)) io ∧ ep_open j evs ∧
+      world_at w0 (evs ++ mid) = SOME w ∧ c < LENGTH w.chans ∧
       0 < (EL c w.chans).inflight ⇒
-      ∃more w'. LPREFIX (fromList (evs ++ [ev] ++ mid ++ more)) io ∧
+      ∃more w'. LPREFIX (fromList (evs ++ mid ++ more)) io ∧
                 n_out_polls (EL j (l0_accepted evs))
                   (ep_polls (EL j (l0_accepted evs)) mid more) < K ∧
-                world_at w0 (evs ++ [ev] ++ mid ++ more) = SOME w' ∧ c < LENGTH w'.chans ∧
+                world_at w0 (evs ++ mid ++ more) = SOME w' ∧ c < LENGTH w'.chans ∧
                 (EL c w'.chans).inflight = 0
 End
 
 (* Raw liveness of the echo, per episode, unless X: if episode j is open on
-   channel c after evs and c's peer drains, then everything c's peer has
-   sent so far is eventually sent back (taken by the kernel), and if the
-   peer has closed its side, the episode is eventually closed *)
+   channel c after evs, c's peer drains, and the episode hypothesis D holds,
+   then everything c's peer has sent so far is eventually sent back (taken
+   by the kernel), and if the peer has closed its side, the episode is
+   eventually closed *)
 Definition echo_live_unless_def:
-  echo_live_unless X K w0 io ⇔
+  echo_live_unless D X w0 io ⇔
     ∀evs j c w.
       LPREFIX (fromList evs) io ∧ ep_open j evs ∧ world_at w0 evs = SOME w ∧
-      l0_chan_of w (EL j (l0_accepted evs)) = SOME c ∧ drains w0 io c ∧
-      hup_drains K w0 io j c ⇒
+      l0_chan_of w (EL j (l0_accepted evs)) = SOME c ∧ drains w0 io c ∧ D j c ⇒
       X j c ∨
       ((∃evs'. LPREFIX (fromList evs') io ∧ (EL c w.chans).peer_sent ≼ l0_sent j evs') ∧
        ((EL c w.chans).peer_eof ⇒ ∃evs'. LPREFIX (fromList evs') io ∧ ep_closed j evs'))
@@ -283,7 +300,8 @@ End
 
 (* The main (weakened) forms *)
 Definition echo_live_l0_def:
-  echo_live_l0 K w0 io ⇔ echo_live_unless (λj c. ep_hard_err j io) K w0 io
+  echo_live_l0 K w0 io ⇔
+    echo_live_unless (λj c. T) (λj c. ep_hard_err j io ∨ ep_timed_out K j io) w0 io
 End
 
 Definition conn_live_l0_def:
@@ -291,7 +309,7 @@ Definition conn_live_l0_def:
 End
 
 (* R4′, the template: the echo server with close, on the honest L0 FFI;
-   K is L1's hang-up flush bound (D19) *)
+   K is L1's write timeout pf_sendwait (D23) *)
 Definition l0_echo2_claim_def:
   l0_echo2_claim K prog ⇔
     ∀w0. l0_server_world w0 ⇒
@@ -359,7 +377,8 @@ Definition l0_echo2_strong_claim_def:
           (listen_failed b ∨
            ∃io. b = Diverge io ∧
                 (F1_io io ∧ F2 w0 ∧ accepts_below io ∧ HD16_io w0 io ⇒
-                 echo_live_unless (λj c. flushed_ch w0 io c) K w0 io) ∧
+                 echo_live_unless (λj c. stall_drains K w0 io j c) (λj c. flushed_ch w0 io c)
+                   w0 io) ∧
                 (F1_io io ∧ accepts_below io ∧ H1_io w0 io ∧ H3_io io ⇒
                  conn_live_unless F w0 io))
 End

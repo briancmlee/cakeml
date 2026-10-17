@@ -271,10 +271,15 @@ End
    finding #1): within the same window, the first send on episode j's fd
    after its bytes in flight reach 0 does not fail transiently (observed,
    while episode j is open) -- otherwise a transient failure there could
-   use up the window with nothing in flight *)
+   use up the window with nothing in flight.  D36 (user decision, from
+   honest-ffi's (3b) analysis): whenever nothing is in flight on c while
+   episode j is open (at a window's start or later), the first output poll
+   on its fd after that point and the first send on its fd after it do not
+   fail transiently, within the window -- otherwise transiently failing
+   polls (no revents, so no send) could use up the window *)
 Definition stall_drains_def:
   stall_drains K w0 io j c ⇔
-    ∀evs mid w.
+    (∀evs mid w.
       LPREFIX (fromList (evs ++ mid)) io ∧ ep_open j evs ∧
       world_at w0 (evs ++ mid) = SOME w ∧ c < LENGTH w.chans ∧
       0 < (EL c w.chans).inflight ⇒
@@ -290,7 +295,15 @@ Definition stall_drains_def:
                     (ep_polls (EL j (l0_accepted evs)) mid (more ++ more2)) < K ∧
                   ¬EXISTS (ev_on «sys_send» (EL j (l0_accepted evs))) more2 ∧
                   ev_on «sys_send» (EL j (l0_accepted evs)) ev ⇒
-                  ¬retried ev
+                  ¬retried ev) ∧
+    ∀evs w mid ev.
+      LPREFIX (fromList (evs ++ mid ++ [ev])) io ∧ ep_open j (evs ++ mid) ∧
+      world_at w0 evs = SOME w ∧ c < LENGTH w.chans ∧ (EL c w.chans).inflight = 0 ∧
+      n_out_polls (EL j (l0_accepted evs)) (ep_polls (EL j (l0_accepted evs)) evs mid) < K ∧
+      ((¬EXISTS (out_poll (EL j (l0_accepted evs))) mid ∧ out_poll (EL j (l0_accepted evs)) ev) ∨
+       (¬EXISTS (ev_on «sys_send» (EL j (l0_accepted evs))) mid ∧
+        ev_on «sys_send» (EL j (l0_accepted evs)) ev)) ⇒
+      ¬retried ev
 End
 
 (* Raw liveness of the echo, per episode, unless X: if episode j is open on

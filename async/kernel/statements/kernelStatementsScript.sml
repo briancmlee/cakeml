@@ -95,15 +95,22 @@ Definition F2_def:
 End
 
 (* D(c), per episode (not trusted; the condition under which service is
-   owed, D4): whenever channel c has bytes in flight, its peer later reads
-   some *)
+   owed, D4): the peer reads what it was sent.  If nothing more is sent on
+   channel c after a prefix, c's bytes in flight eventually reach 0.
+   (Corrected 2026-10-17: the earlier form, "while bytes are in flight, the
+   peer's read count `drained` later grows", was satisfied by a peer that
+   only makes zero-byte reads, since LDrain j 0 counts as a read; under it
+   the echo's replies could stall for ever.  This is the trace form of
+   honestL1PFFlush's drains.) *)
 Definition drains_def:
   drains w0 io c ⇔
-    ∀evs w. LPREFIX (fromList evs) io ∧ world_at w0 evs = SOME w ∧
-            c < LENGTH w.chans ∧ 0 < (EL c w.chans).inflight ⇒
-            ∃evs' w'. LPREFIX (fromList evs') io ∧ world_at w0 evs' = SOME w' ∧
-                      c < LENGTH w'.chans ∧
-                      (EL c w.chans).drained < (EL c w'.chans).drained
+    ∀evs w. LPREFIX (fromList evs) io ∧ world_at w0 evs = SOME w ∧ c < LENGTH w.chans ∧
+            (∀evs' w'. LPREFIX (fromList (evs ++ evs')) io ∧
+                       world_at w0 (evs ++ evs') = SOME w' ⇒
+                       (EL c w'.chans).sent = (EL c w.chans).sent) ⇒
+            ∃evs' w'. LPREFIX (fromList (evs ++ evs')) io ∧
+                      world_at w0 (evs ++ evs') = SOME w' ∧
+                      c < LENGTH w'.chans ∧ (EL c w'.chans).inflight = 0
 End
 
 (* The listen failed and the program stopped *)

@@ -343,3 +343,85 @@ Proof
     (fn th => RULE_ASSUM_TAC (REWRITE_RULE [th]) >> REWRITE_TAC [th]) >>
   fs[]
 QED
+
+(* MAIN: a write-timeout drop of f in round k is, on the trace, a hard
+   error or a D23 timeout of the episode open on f *)
+Theorem rdrop_excuse:
+  oassm lfd pol ifds m w0 ∧ pftrace lfd pol ifds m w0 io ∧ f ≠ lfd ∧
+  rdrop lfd pol ifds m w0 k f ⇒
+  ∃i pre post j.
+    i ≤ k ∧ rrev lfd pol ifds m w0 i = pre ++ post ∧
+    ep_open j (revs lfd pol ifds m w0 i ++ pre) ∧
+    EL j (l0_accepted (revs lfd pol ifds m w0 i ++ pre)) = f ∧
+    (ep_hard_err j io ∨ ep_timed_out pf_sendwait j io)
+Proof
+  strip_tac >>
+  ‘run_ok lfd pol ifds m w0 ∧ winv w0 ∧ MEM lfd (l0_used w0)’ by fs[oassm_def] >>
+  drule_all rdrop_timeout >> strip_tac
+  >- (fs[hard_recv_def] >>
+      qpat_x_assum ‘MEM _ (rrev _ _ _ _ _ _)’
+        (qx_choosel_then [‘l1’, ‘l2’] strip_assume_tac o REWRITE_RULE [MEM_SPLIT]) >>
+      ‘rrev lfd pol ifds m w0 k = l1 ++ [ev] ++ l2’ by simp[] >>
+      ‘∃j. ep_hard_err j io ∧ ep_open j (revs lfd pol ifds m w0 k ++ l1) ∧
+           EL j (l0_accepted (revs lfd pol ifds m w0 k ++ l1)) = f’
+        by metis_tac[run_ep_hard_err] >>
+      qexistsl_tac [‘k’, ‘l1’, ‘[ev] ++ l2’, ‘j’] >> simp[]) >>
+  qabbrev_tac ‘k0 = SUC k − pf_sendwait’ >>
+  ‘k0 < k ∧ k0 + pf_sendwait = SUC k’ by fs[Abbr ‘k0’, pf_sendwait_def] >>
+  qpat_assum ‘∀i. k0 ≤ i ∧ i ≤ k ⇒ _’ (qspec_then ‘k0’ mp_tac) >> impl_tac >- simp[] >>
+  disch_then (qx_choosel_then [‘pre0’, ‘pev0’, ‘post0’] strip_assume_tac) >>
+  qpat_assum ‘∀i. k0 ≤ i ∧ i ≤ k ⇒ _’ (qspec_then ‘k’ mp_tac) >> impl_tac >- simp[] >>
+  disch_then (qx_choosel_then [‘prek’, ‘pevk’, ‘postk’] strip_assume_tac) >>
+  ‘∃j. ALOOKUP (SND (l0_ep_st (0, []) (revs lfd pol ifds m w0 k0 ++ pre0))) f = SOME j’
+    by metis_tac[call_poll_open] >>
+  drule ep_state_open >> strip_tac >>
+  qexistsl_tac [‘k0’, ‘pre0’, ‘[pev0] ++ post0’, ‘j’] >> simp[] >> disj2_tac >>
+  (* the stretch *)
+  qabbrev_tac ‘mid = rrounds lfd pol ifds m w0 (k0 + 1) (k − k0 − 1)’ >>
+  ‘revs lfd pol ifds m w0 (SUC k) =
+   revs lfd pol ifds m w0 k0 ++ pre0 ++ ([pev0] ++ post0 ++ mid ++ prek ++ [pevk]) ++ postk’
+    by (‘SUC k = k0 + SUC (k − k0)’ by simp[] >> pop_assum SUBST1_TAC >>
+        ‘revs lfd pol ifds m w0 (k0 + SUC (k − k0)) =
+         revs lfd pol ifds m w0 k0 ++ rrounds lfd pol ifds m w0 k0 (SUC (k − k0))’
+          by metis_tac[revs_rrounds] >>
+        pop_assum SUBST1_TAC >> simp[rrounds_CONS] >>
+        ‘k − k0 = SUC (k − k0 − 1)’ by simp[] >> pop_assum SUBST1_TAC >>
+        simp[rrounds_SNOC, Abbr ‘mid’] >>
+        ‘k0 + 1 + (k − (k0 + 1)) = k’ by simp[] >> simp[]) >>
+  (* the middle rounds *)
+  ‘n_out_polls f mid = k − k0 − 1 ∧ EVERY (λe. poll_ev e ⇒ out_poll f e) mid ∧
+   ¬EXISTS (send_took f) mid ∧ ¬EXISTS (ep_ends f) mid’
+    by (qunabbrev_tac ‘mid’ >> irule rrounds_quiet >> gen_tac >> strip_tac >>
+        qpat_assum ‘∀i. k0 ≤ i ∧ i ≤ k ⇒ _’ (qspec_then ‘k0 + 1 + i’ mp_tac) >>
+        impl_tac >- simp[] >>
+        disch_then (qx_choosel_then [‘pr’, ‘pv’, ‘po’] strip_assume_tac) >>
+        qpat_assum ‘∀i. k0 ≤ i ∧ i < k ⇒ _’ (qspec_then ‘k0 + 1 + i’ mp_tac) >>
+        impl_tac >- simp[] >> strip_tac >>
+        ‘¬EXISTS (ev_on «sys_send» f) pr’
+          by (qpat_x_assum ‘k0 < _ ⇒ _’ mp_tac >> simp[]) >>
+        irule mid_round_quiet >>
+        rpt conj_tac >> fs[] >> qexistsl_tac [‘pv’, ‘po’, ‘pr’] >> fs[]) >>
+  (* the edges *)
+  ‘n_out_polls f post0 = 0 ∧ EVERY (λe. poll_ev e ⇒ out_poll f e) post0 ∧
+   ¬EXISTS (send_took f) post0’
+    by (irule seg_quiet >> fs[EVERY_APPEND]) >>
+  ‘¬EXISTS (ep_ends f) post0’
+    by (REWRITE_TAC [EXISTS_ep_ends] >> irule round_no_end_post >>
+        qexistsl_tac [‘k0’, ‘ifds’, ‘lfd’, ‘m’, ‘pol’, ‘pre0 ++ [pev0]’, ‘w0’] >>
+        fs[] >> qpat_x_assum ‘∀i. k0 ≤ i ∧ i < k ⇒ _’ (qspec_then ‘k0’ mp_tac) >> simp[]) >>
+  ‘n_out_polls f prek = 0 ∧ EVERY (λe. poll_ev e ⇒ out_poll f e) prek ∧
+   ¬EXISTS (send_took f) prek’
+    by (irule seg_quiet >> fs[EVERY_APPEND, EVERY_MEM, combinTheory.o_DEF] >> metis_tac[]) >>
+  ‘¬EXISTS (ep_ends f) prek’
+    by (REWRITE_TAC [EXISTS_ep_ends] >> metis_tac[poll_no_end_before]) >>
+  qspecl_then [‘f’, ‘pev0’] mp_tac (Q.GENL [‘f’, ‘pev’] poll_quiet) >> simp[] >> strip_tac >>
+  qspecl_then [‘f’, ‘pevk’] mp_tac (Q.GENL [‘f’, ‘pev’] poll_quiet) >> simp[] >> strip_tac >>
+  simp[ep_timed_out_def] >>
+  qexistsl_tac [‘revs lfd pol ifds m w0 k0 ++ pre0’,
+                ‘[pev0] ++ post0 ++ mid ++ prek ++ [pevk]’] >>
+  simp[] >> rpt conj_tac
+  >- (irule pftrace_sub >> qexistsl_tac [‘SUC k’, ‘ifds’, ‘lfd’, ‘m’, ‘pol’, ‘w0’] >>
+      simp[IS_PREFIX_APPEND])
+  >- fs[pf_sendwait_def]
+  >> fs[]
+QED

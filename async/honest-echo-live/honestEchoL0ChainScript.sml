@@ -9,11 +9,12 @@
   run_okeys_held (a gone fd is held), with excuse_j0 (excuse after n) and
   excuse_back (excuse before n, f held since).
 
-  MAIN: out_chain.
+  MAIN: out_chain, in_chain.
 *)
 Theory honestEchoL0Chain
 Ancestors
-  honestEchoL0Excuse honestL1PFBroken honestL1PFFlushLive honestL1PFFlush honestL1PFOutLive honestL1PFDead honestL1PFLive
+  honestEchoL0Excuse honestL1PFBroken honestL1PFInput honestL1PFStream honestL1PFFlushLive
+  honestL1PFFlush honestL1PFOutLive honestL1PFDead honestL1PFLive
   honestL1PFOut honestEchoL0LiveOwn honestEchoL0Trace honestL1BStmts
 Libs
   preamble
@@ -88,3 +89,45 @@ Proof
   rpt strip_tac >> ‘i = n’ by decide_tac >> fs[]
 QED
 
+
+(* MAIN: the input chain, in L1's fetches: what the peer has sent on f's
+   channel by round n is eventually all fetched by L1 on f since its accept
+   round a, unless the channel was flushed or a recv on f failed hard
+   (with f kept up to then) *)
+Theorem in_chain:
+  oassm lfd pol ifds m w0 ∧ qinb w0 ∧
+  F1 lfd pol ifds m w0 ∧ S1 lfd pol ifds m w0 ∧ S3w lfd pol ifds m w0 ∧
+  pol_ok hw pol ∧ S4w lfd pol hw ifds m w0 f ∧
+  MEM (FConn f) (rlog lfd pol ifds m w0 a) ∧
+  (∀k. a < k ∧ k < n ⇒ ¬MEM (FConn f) (rlog lfd pol ifds m w0 k)) ∧ a < n ∧
+  ALOOKUP (rstate lfd pol ifds m w0 n).b.tbl h = SOME f ∧
+  ¬MEM f (rstate lfd pol ifds m w0 n).eof ∧
+  l0_chan_of (rworld lfd pol ifds m w0 n) f = SOME c ⇒
+  (∃d. fopen lfd pol ifds m w0 h f n d ∧
+       (EL c (rworld lfd pol ifds m w0 n).chans).peer_sent ≼
+       fdata f (rlogs lfd pol ifds m w0 a (n − a + d))) ∨
+  (∃k. n ≤ k ∧ flushed (rworld lfd pol ifds m w0 k) f) ∨
+  ∃k. n ≤ k ∧ fopen lfd pol ifds m w0 h f n (SUC (k − n)) ∧
+      hard_recv f (rrev lfd pol ifds m w0 k)
+Proof
+  strip_tac >>
+  ‘run_ok lfd pol ifds m w0 ∧ winv w0 ∧ MEM lfd (l0_used w0) ∧
+   ∀n. SND (pcm lfd pol ifds m w0 n) + 1 < dimword (:64)’ by fs[oassm_def] >>
+  drule_all run_peer_sent >> strip_tac
+  >- (‘fl (rworld lfd pol ifds m w0 n) f (EL c (rworld lfd pol ifds m w0 n).chans).inbox’
+        by simp[fl_def, front_def] >>
+      drule_all live_data_hr >> strip_tac
+      >- (disj1_tac >> qexists_tac ‘d’ >> simp[] >>
+          ‘rlogs lfd pol ifds m w0 a (d + n − a) =
+           rlogs lfd pol ifds m w0 a (n − a) ++ rlogs lfd pol ifds m w0 n d’
+            by (qspecl_then [‘d’, ‘n − a’] mp_tac (Q.INST [‘n0’ |-> ‘a’] rlogs_add) >>
+                simp[]) >>
+          ‘∀x y. fdata f (x ++ y) = fdata f x ++ fdata f y’ by simp[fdata_def] >>
+          qpat_x_assum ‘_.peer_sent = _’ SUBST1_TAC >>
+          qpat_x_assum ‘rlogs _ _ _ _ _ a _ = _’ SUBST1_TAC >>
+          pop_assum (fn th => REWRITE_TAC [th]) >>
+          fs[IS_PREFIX_APPEND])
+      >- (disj2_tac >> disj1_tac >> metis_tac[])
+      >> disj2_tac >> disj2_tac >> metis_tac[]) >>
+  disj2_tac >> disj1_tac >> qexists_tac ‘n’ >> simp[]
+QED

@@ -200,3 +200,13 @@ Theorem L0_connerr_spec:
 Proof
   l0_call_tac (fetch "honestL0Prog" "L0_connerr_v_def") “«sys_connerr»”
 QED
+
+(* D33: whether one fd is open (design/50 (c2)) *)
+Theorem L0_fdok_spec:
+  STRING_TYPE (bytes_str conf) confv ∧ NUM alen alenv ∧
+  l0_do «sys_fdok» conf alen w = SOME (out, w', ev) ⇒
+  app (p:'ffi ffi_proj) L0_fdok_v [confv; alenv] (L0_EV w0 w evs)
+    (POSTv v. &STRING_TYPE (bytes_str out) v * L0_EV w0 w' (evs ++ [ev]))
+Proof
+  l0_call_tac (fetch "honestL0Prog" "L0_fdok_v_def") “«sys_fdok»”
+QED

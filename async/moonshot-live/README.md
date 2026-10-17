@@ -285,3 +285,18 @@ Shared lift pieces (`moonshotLiveLiftScript.sml`, moonshot-live):
 
   World level, `world_peer_valid` (moonshotLiveRelayWorld, proved, generic in k): the system fact at every instant
   gives `peer_valid w0 tr c`, with the hypotheses of N2's `world_drains`. Uses a temporary copy of `peer_valid_def` (honestKvL0LiveStmts, spike/kv-live-l0 @ bbf45dfe8); remove it when the lines merge. `relay_ok_of_ep` and `csend_ok_of_client` (same theory, proved) give `relay_ok` from proxy_safe_ep's cover and relay clauses (via `proxy_safe_bridge` at ft = ptr rs 1 n) and `csend_ok` from client_safe_l0's connect clause.
+
+  **G2 top, `kv_peer_valid_run` (moonshotLiveG2, proved @0148e71ea):** discharges `relay_ok`, `csend_ok`, `no_fd0`,
+  ¬free0 and the topology from per-trace clauses at every n: `start0`/`no_close0` for ptr 0 and ptr 1 (the trace
+  starts with the fd 0 check; never closes fd 0), `conns_only a` (client), `conns_only b` (proxy), `no_conns` (KV),
+  proxy_safe_ep's cover and relay clauses on ptr rs 1 n, client_safe_l0's connect clause on ptr rs 0 n. Still to lift:
+  the programs' claims → those clauses.
+- KV, G3 plug-in, `conns_ok_cap` (moonshotLiveConnCap, proved): a cap on the Connected episodes of every finite prefix
+  of tr ⊇ every ptr rs cl n caps `conns_ok` at every n. Under (A) G3 becomes honest-ffi's `proxy_conn_kept_cap_run`
+  (counts `conn_kept`: Connected episodes whose connect returned Ok or Fail E_INPROGRESS; spike/proxy-r3, SHA to come);
+  `conns_ok ≤ #conn_kept` since a fail-at-once connect is `born_broken` (to prove). The pre-(A) `proxy_conn_cap_run`
+  (spike/proxy-asks-l0 @66a541c81) stays on the safety line.
+- Proxy totality (ptot), a named hypothesis of the G3 use, cited not merged: m4-server's `proxyClaim.proxy_ptot`
+  (spike/proxy-transfer @0810a7cfe, moonshot-step9/transfer/proxyClaimScript.sml):
+  `proxy_start a w0 pre w4 k ∧ b < 65536 ⇒ (∀n. erounds (n2w k) pol_never (pifds (n2w k) b hw) (pprog (n2w k) b hw) (w4, einit) n ≠ NONE) ∧ ∀n. SND (ecm …) + 1 < dimword (:64)`.
+  The liveness line re-proves it on the R3 proxy; the real merge is at final integration.

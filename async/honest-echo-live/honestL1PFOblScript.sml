@@ -11,7 +11,7 @@
 *)
 Theory honestL1PFObl
 Ancestors
-  honestL1PFLive honestL1PFRound honestL1PFRefine honestL1PFModel asyncHLModel asyncM4Loop
+  honestL1PFLive honestL1PFRound honestL1PFRefine honestL1PFModel honestL1Model asyncHLModel asyncM4Loop
   asyncM3World asyncCore asyncLevel1 alist
 Libs
   preamble
@@ -225,4 +225,84 @@ Proof
   >- (drule pacts_inb_drop >> simp[])
   >> strip_tac >> drule pacts_inb_read >> simp[] >>
   disch_then irule >> metis_tac[]
+QED
+
+(* ------------------------------------------------------------------------
+   f's handle stays bound to f while its inbox is not empty
+   ------------------------------------------------------------------------ *)
+
+Theorem l1_flush_tbl:
+  ∀fs w st w' st' evs.
+    l1_flush fs (w, st) = SOME ((w', st'), evs) ⇒ st'.tbl = st.tbl ∧ st'.nxt = st.nxt
+Proof
+  Induct >> rw[l1_flush_def, AllCaseEqs()] >> res_tac >> gvs[after_send_b]
+QED
+
+Theorem l1_reap_tbl:
+  ∀fs w st w' st' evs.
+    l1_reap fs (w, st) = SOME ((w', st'), evs) ⇒ st'.tbl = st.tbl ∧ st'.nxt = st.nxt
+Proof
+  Induct >> rw[l1_reap_def, AllCaseEqs()] >> TRY (PairCases_on ‘ws’) >>
+  res_tac >> imp_res_tac l1_close_b >> gvs[]
+QED
+
+Theorem pf_fetch_b:
+  ∀fs w ps w' ps' log evs.
+    pf_fetch lfd pol fs (w, ps) = SOME ((w', ps'), log, evs) ⇒ ps'.b = ps.b
+Proof
+  Induct >> simp[pf_fetch_def] >> rpt gen_tac >> rw[] >> gvs[AllCaseEqs()] >>
+  rpt (pairarg_tac >> gvs[]) >> gvs[AllCaseEqs()] >> res_tac >> gvs[]
+QED
+
+(* The round's tail keeps the handle table *)
+Theorem pf_tail_tbl:
+  pf_tail lfd pol hs (w, ps) = SOME (rdy, (w', ps'), log, evs) ⇒
+  ps'.b.tbl = ps.b.tbl ∧ ps'.b.nxt = ps.b.nxt
+Proof
+  rw[pf_tail_def, AllCaseEqs()] >> gvs[] >>
+  imp_res_tac l1_flush_tbl >> imp_res_tac pf_fetch_b >> imp_res_tac l1_reap_tbl >>
+  gvs[hup_step_def]
+QED
+
+(* If f's inbox is not empty after the actions, it never was empty on the way,
+   so f's handle stayed bound to f (an Accept binds a fresh handle) *)
+Theorem pacts_tbl_keep:
+  ∀acts w ps rs evs w' ps'.
+    pacts lfd (w, ps) acts = SOME (rs, evs, (w', ps')) ∧
+    ALOOKUP ps.b.tbl h = SOME f ∧ inb_of ps' f ≠ [] ∧
+    (∀i. ps.b.nxt ≤ i ∧ l1hdln (w2n lfd) i < dimword (:64) ⇒ h ≠ l1hdl lfd i) ⇒
+    ALOOKUP ps'.b.tbl h = SOME f ∧ ps.b.nxt ≤ ps'.b.nxt
+Proof
+  Induct >- simp[pacts_def] >> rpt gen_tac >> strip_tac >>
+  qpat_x_assum ‘pacts _ _ _ = _’ (strip_assume_tac o SIMP_RULE (srw_ss()) [pacts_def, AllCaseEqs()]) >>
+  rpt BasicProvers.VAR_EQ_TAC >> PairCases_on ‘ws1’ >>
+  rename1 ‘pacts lfd (w1, ps1) acts = SOME _’ >>
+  qpat_assum ‘pdo _ _ _ = _’ (strip_assume_tac o MATCH_MP pdo_inb) >>
+  pop_assum (qspec_then ‘f’ strip_assume_tac) >>
+  pop_assum (qspec_then ‘h’ assume_tac) >>
+  ‘∃d2. inb_of ps' f = DROP d2 (inb_of ps1 f)’ by metis_tac[pacts_inb_drop] >>
+  ‘inb_of ps1 f ≠ []’ by (strip_tac >> fs[]) >>
+  ‘inb_of ps f ≠ []’ by (strip_tac >> fs[]) >>
+  ‘ALOOKUP ps1.b.tbl h = SOME f’
+    by (qpat_x_assum ‘ALOOKUP ps.b.tbl h = SOME f ∧ _ ⇒ _’ mp_tac >> simp[] >>
+        strip_tac >> first_x_assum irule >> strip_tac >> first_x_assum irule >> simp[]) >>
+  first_x_assum (qspecl_then [‘w1’, ‘ps1’, ‘rs'’, ‘evs'’, ‘w'’, ‘ps'’] mp_tac) >>
+  impl_tac >- (simp[] >> rpt strip_tac >> first_x_assum irule >> simp[]) >>
+  simp[]
+QED
+
+(* A round without a fetch on f, after which f's inbox is not empty, keeps
+   f's handle bound to f *)
+Theorem pround_tbl_keep:
+  pround lfd pol hs (w, ps) acts = SOME (snap, (w', ps'), log, evs) ∧ ¬fetched f log ∧
+  ALOOKUP ps.b.tbl h = SOME f ∧ inb_of ps' f ≠ [] ∧
+  (∀i. ps.b.nxt ≤ i ∧ l1hdln (w2n lfd) i < dimword (:64) ⇒ h ≠ l1hdl lfd i) ⇒
+  ALOOKUP ps'.b.tbl h = SOME f ∧ ps.b.nxt ≤ ps'.b.nxt
+Proof
+  simp[pround_def, AllCaseEqs()] >> strip_tac >> gvs[] >> PairCases_on ‘ws1’ >>
+  rename1 ‘pf_tail _ _ _ (w1, ps1) = _’ >>
+  ‘inb_of ps' f = inb_of ps1 f’ by metis_tac[pf_tail_inb] >>
+  drule pf_tail_tbl >> strip_tac >>
+  drule pacts_tbl_keep >> disch_then (qspecl_then [‘h’, ‘f’] mp_tac) >> simp[] >>
+  impl_tac >- fs[] >> simp[]
 QED

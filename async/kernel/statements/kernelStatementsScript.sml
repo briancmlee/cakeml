@@ -335,8 +335,8 @@ Definition conn_live_unless_def:
       broke w0 io j0
 End
 
-(* Channel c broke and its unread input was discarded (a genuine reset).
-   D16's corollary excuse; since D28 also an excuse of the main form *)
+(* Channel c broke and its unread input was discarded (a genuine reset):
+   D16's and D28's excuse, narrowed by D32 to flushed_open below *)
 Definition flushed_ch_def:
   flushed_ch w0 io c ⇔
     ∃evs w. LPREFIX (fromList evs) io ∧ world_at w0 evs = SOME w ∧
@@ -475,7 +475,7 @@ Definition l0_echo2_strong_claim_def:
           (listen_failed b ∨
            ∃io. b = Diverge io ∧
                 (F1_io io ∧ F2 w0 ∧ accepts_below io ∧ HD16_io w0 io ⇒
-                 echo_live_unless (λj c. stall_drains K w0 io j c) (λj c. flushed_ch w0 io c)
+                 echo_live_unless (λj c. stall_drains K w0 io j c) (λj c. flushed_open w0 io j c)
                    w0 io) ∧
                 (F1_io io ∧ accepts_below io ∧ H1_io w0 io ∧ H3_io io ⇒
                  conn_live_unless F w0 io))

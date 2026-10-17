@@ -31,7 +31,7 @@ Theorem moonshot_view_safe:
   (* [TOP] *)
   topology rl cl px kv pa pb ∧
   (* [PX] *)
-  proxy_safe_l0 Bnd pa pb pr io_p ∧ LPREFIX (fromList ft) io_p ∧ ep_ok ft ∧
+  proxy_safe_l0 kt hw pa pb pr io_p ∧ LPREFIX (fromList ft) io_p ∧ ep_ok ft ∧
   pa < 65536 ∧ pb < 65536 ∧
   (∀t. tr px t ≼ ft) ∧ (∀j. rl px j = l0_ep_role j ft) ∧
   (* [G2] *)

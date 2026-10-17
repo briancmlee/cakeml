@@ -543,19 +543,19 @@ QED
 (* The proxy's clauses, on ft and its prefixes *)
 
 Definition bridge_hyps_def:
-  bridge_hyps Bnd pa pb pr io ft ⇔
-    proxy_safe_l0 Bnd pa pb pr io ∧ LPREFIX (fromList ft) io ∧ ep_ok ft ∧
+  bridge_hyps kt hw pa pb pr io ft ⇔
+    proxy_safe_l0 kt hw pa pb pr io ∧ LPREFIX (fromList ft) io ∧ ep_ok ft ∧
     pa < 65536 ∧ pb < 65536
 End
 
 Theorem ps_inj:
-  bridge_hyps Bnd pa pb pr io ft ∧ pr p = SOME q ∧ pr p' = SOME q ⇒ p = p'
+  bridge_hyps kt hw pa pb pr io ft ∧ pr p = SOME q ∧ pr p' = SOME q ⇒ p = p'
 Proof
   rw[bridge_hyps_def, proxy_safe_l0_def] >> metis_tac[]
 QED
 
 Theorem ps_at:
-  bridge_hyps Bnd pa pb pr io ft ∧ evs ≼ ft ⇒
+  bridge_hyps kt hw pa pb pr io ft ∧ evs ≼ ft ⇒
   (∀conf bs k. MEM (IO_event (ExtCall «sys_listen») conf bs) evs ∧
                l0_ev_res bs = SOME (Ok k) ⇒ conf = pbytes pa) ∧
   (∀q. q < LENGTH evs ∧ l0_event_connected (EL q evs) ≠ NONE ⇒
@@ -568,7 +568,7 @@ Theorem ps_at:
     | SOME q => pos_sent q evs ≼ pos_read p evs ∧ pos_sent p evs ≼ pos_read q evs
 Proof
   rw[bridge_hyps_def] >> ‘LPREFIX (fromList evs) io’ by metis_tac[lprefix_prefix] >>
-  qpat_x_assum ‘proxy_safe_l0 _ _ _ _ _’ (mp_tac o REWRITE_RULE [proxy_safe_l0_def]) >>
+  qpat_x_assum ‘proxy_safe_l0 _ _ _ _ _ _’ (mp_tac o REWRITE_RULE [proxy_safe_l0_def]) >>
   strip_tac >> first_x_assum drule >> strip_tac >> rpt strip_tac >>
   TRY (metis_tac[] >> NO_TAC) >>
   qpat_x_assum ‘∀p. is_front p evs ⇒ _’ drule >> CASE_TAC >> simp[]
@@ -576,7 +576,7 @@ QED
 
 (* A front's role is Accepted pa *)
 Theorem front_role:
-  bridge_hyps Bnd pa pb pr io ft ∧ ep_at ft p ∧ ev_new (EL p ft) = SOME (f, INR l) ⇒
+  bridge_hyps kt hw pa pb pr io ft ∧ ep_at ft p ∧ ev_new (EL p ft) = SOME (f, INR l) ⇒
   l0_ep_role (ep_idx ft p) ft = SOME (Accepted pa)
 Proof
   strip_tac >> drule role_at >> simp[ev_role_def] >> strip_tac >>
@@ -598,7 +598,7 @@ QED
 
 (* A backend position is a connect episode, after its front *)
 Theorem backend_at:
-  bridge_hyps Bnd pa pb pr io ft ∧ is_front p ft ∧ pr p = SOME q ∧ q < LENGTH ft ⇒
+  bridge_hyps kt hw pa pb pr io ft ∧ is_front p ft ∧ pr p = SOME q ∧ q < LENGTH ft ⇒
   ep_at ft q ∧ p < q ∧ l0_ep_role (ep_idx ft q) ft = SOME (Connected pb)
 Proof
   strip_tac >> drule_then (qspec_then ‘ft’ mp_tac) ps_at >> simp[] >> strip_tac >>
@@ -625,7 +625,7 @@ Proof
 QED
 
 Theorem prx_inj:
-  bridge_hyps Bnd pa pb pr io ft ∧ prx_of pr ft a = SOME c ∧ prx_of pr ft a' = SOME c ⇒
+  bridge_hyps kt hw pa pb pr io ft ∧ prx_of pr ft a = SOME c ∧ prx_of pr ft a' = SOME c ⇒
   a = a'
 Proof
   rw[prx_SOME] >> rename1 ‘pr (ep_pos ft a') = SOME q'’ >>
@@ -635,14 +635,14 @@ Proof
 QED
 
 Theorem prx_back:
-  bridge_hyps Bnd pa pb pr io ft ∧ prx_of pr ft a = SOME c ⇒
+  bridge_hyps kt hw pa pb pr io ft ∧ prx_of pr ft a = SOME c ⇒
   l0_ep_role c ft = SOME (Connected pb)
 Proof
   rw[prx_SOME] >> ‘q < LENGTH ft’ by gvs[ep_at_def] >> metis_tac[backend_at]
 QED
 
 Theorem prx_cover:
-  bridge_hyps Bnd pa pb pr io ft ∧ l0_ep_role c ft = SOME (Connected pb) ⇒
+  bridge_hyps kt hw pa pb pr io ft ∧ l0_ep_role c ft = SOME (Connected pb) ⇒
   ∃a. prx_of pr ft a = SOME c ∧ l0_ep_role a ft = SOME (Accepted pa)
 Proof
   strip_tac >> drule role_lt >> strip_tac >> drule ep_pos_thm >> strip_tac >>
@@ -660,7 +660,7 @@ Proof
 QED
 
 Theorem prx_unpaired:
-  bridge_hyps Bnd pa pb pr io ft ∧ evs ≼ ft ∧
+  bridge_hyps kt hw pa pb pr io ft ∧ evs ≼ ft ∧
   l0_ep_role a ft = SOME (Accepted pa) ∧ prx_of pr ft a = NONE ⇒
   l0_ep_sent a evs = []
 Proof
@@ -681,7 +681,7 @@ Proof
 QED
 
 Theorem prx_relay:
-  bridge_hyps Bnd pa pb pr io ft ∧ evs ≼ ft ∧ prx_of pr ft a = SOME c ⇒
+  bridge_hyps kt hw pa pb pr io ft ∧ evs ≼ ft ∧ prx_of pr ft a = SOME c ⇒
   l0_ep_sent c evs ≼ l0_ep_recvd a evs ∧ l0_ep_sent a evs ≼ l0_ep_recvd c evs
 Proof
   strip_tac >> fs[prx_SOME] >> qabbrev_tac ‘p = ep_pos ft a’ >>
@@ -704,12 +704,12 @@ QED
 (* THE BRIDGE: the proxy's claim, by position, gives proxy_safe_ep, by
    episode number, on the system's instants *)
 Theorem proxy_safe_bridge:
-  proxy_safe_l0 Bnd pa pb pr io ∧ LPREFIX (fromList ft) io ∧ ep_ok ft ∧
+  proxy_safe_l0 kt hw pa pb pr io ∧ LPREFIX (fromList ft) io ∧ ep_ok ft ∧
   pa < 65536 ∧ pb < 65536 ∧
   (∀t. tr px t ≼ ft) ∧ (∀j. rl px j = l0_ep_role j ft) ⇒
   proxy_safe_ep (prx_of pr ft) rl tr px pa pb
 Proof
-  strip_tac >> ‘bridge_hyps Bnd pa pb pr io ft’ by simp[bridge_hyps_def] >>
+  strip_tac >> ‘bridge_hyps kt hw pa pb pr io ft’ by simp[bridge_hyps_def] >>
   simp[proxy_safe_ep_def] >> rpt conj_tac
   >- metis_tac[prx_inj]
   >- metis_tac[prx_back]

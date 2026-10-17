@@ -140,7 +140,7 @@ Theorem moonshot_sys_safe:
   (* the proxy's claim, safe form, and W2 *)
   (∀w0. l0_rely w0 ∧ l0_fresh w0 ∧ fds_lt w0 ⇒
         ∃b. semantics_prog (init_state (l0_ffi w0)) init_env (EL px ps) b ∧ b ≠ Fail ∧
-            ∃pr. proxy_safe_l0 Bnd pa pb pr (beh_io b)) ∧
+            ∃pr. proxy_safe_l0 kt hw pa pb pr (beh_io b)) ∧
   EVERY (λev. ∀r. ev_new ev ≠ SOME (0w, r)) (proc_events px rs) ∧
   (* KV's claim, safe form *)
   (∀w0. l0_rely w0 ∧ l0_fresh w0 ∧ fds_lt w0 ⇒
@@ -156,7 +156,7 @@ Proof
   simp[] >> strip_tac >> rename1 ‘l0_fresh wp’ >>
   qpat_x_assum ‘∀w0. _ ⇒ ∃b. semantics_prog _ _ (EL px ps) _ ∧ _’
     (qspec_then ‘wp’ mp_tac) >> simp[] >> strip_tac >>
-  rename1 ‘proxy_safe_l0 Bnd pa pb pr (beh_io bp)’ >>
+  rename1 ‘proxy_safe_l0 kt hw pa pb pr (beh_io bp)’ >>
   ‘LPREFIX (fromList (proc_events px rs)) (beh_io bp)’ by (first_x_assum irule >> simp[]) >>
   ‘ep_ok (proc_events px rs)’
     by (qpat_x_assum ‘l0sys_run _ _’ (strip_assume_tac o REWRITE_RULE [l0sys_run_def]) >>
@@ -169,7 +169,7 @@ Proof
   rename1 ‘kv_safe_g _ _ (beh_io bk)’ >>
   ‘LPREFIX (fromList (proc_events kv rs)) (beh_io bk)’ by (first_x_assum irule >> simp[]) >>
   irule moonshot_view_safe >>
-  qexistsl_tac [‘Bnd’, ‘cl’, ‘cn’, ‘proc_events px rs’, ‘beh_io bk’, ‘beh_io bp’, ‘kv’,
+  qexistsl_tac [‘cl’, ‘cn’, ‘proc_events px rs’, ‘hw’, ‘beh_io bk’, ‘beh_io bp’, ‘kt’, ‘kv’,
                 ‘pa’, ‘pb’, ‘pr’, ‘px’, ‘sys_rl rs’, ‘sys_tr rs’] >>
   simp[sys_tr_def, sys_rl_def, proc_events_mono, proc_events_TAKE] >> rpt conj_tac
   >- (rpt strip_tac >> irule proc_events_instant >> gvs[LPREFIX_fromList, from_toList])

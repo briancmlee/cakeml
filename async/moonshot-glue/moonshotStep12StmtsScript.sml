@@ -48,7 +48,9 @@
        - KV: kv_claim_safe, what step 11 must deliver (kv_safe_g at
          l0_ep_recvd / l0_ep_sent, plus T7/T8).
      Each allows the early outcomes stdio_closed (honestL0Outcome, D33)
-     and l0_listen_failed.
+     and l0_listen_failed; past them (D37 amendment) its trace begins with
+     the stdio check answering open (stdio_open) and it never closes fds
+     0–2 (no_close_stdio): together, W2 (no open returns fd 0).
 
   6. moonshot_safe_stmt: THE HEADLINE (design/45 §4.1), exactly as it will
      be proved.  In every run with no outsider on a or b, the client's
@@ -182,11 +184,11 @@ End
 (* The safety half of step 9's l0_proxy_claim (rev 6), over B1's world class
    (D33) *)
 Definition proxy_claim_safe_def:
-  proxy_claim_safe Bnd pprog ⇔
+  proxy_claim_safe kt hw pprog ⇔
     ∀a b w0. a < 65536 ∧ b < 65536 ∧ a ≠ b ∧ l0_rely w0 ∧ l0_fresh w0 ∧ fds_lt w0 ⇒
       ∃beh. semantics_prog (init_state (l0_ffi w0)) init_env (pprog a b) beh ∧ beh ≠ Fail ∧
             (stdio_closed beh ∨ l0_listen_failed beh ∨
-             (∃pr. proxy_safe_l0 Bnd a b pr (beh_io beh)) ∧
+             stdio_open (beh_io beh) ∧ (∃pr. proxy_safe_l0 kt hw a b pr (beh_io beh)) ∧
              ∀evs. LPREFIX (fromList evs) (beh_io beh) ⇒ no_close_stdio evs)
 End
 
@@ -197,8 +199,9 @@ Definition kv_claim_safe_def:
     ∀b w0. b < 65536 ∧ l0_rely w0 ∧ l0_fresh w0 ∧ fds_lt w0 ⇒
       ∃beh. semantics_prog (init_state (l0_ffi w0)) init_env (kprog b) beh ∧ beh ≠ Fail ∧
             (stdio_closed beh ∨ l0_listen_failed beh ∨
-             kv_safe_g l0_ep_recvd l0_ep_sent (beh_io beh) ∧
-             ∀evs. LPREFIX (fromList evs) (beh_io beh) ⇒ listens_only b evs ∧ no_connects evs)
+             stdio_open (beh_io beh) ∧ kv_safe_g l0_ep_recvd l0_ep_sent (beh_io beh) ∧
+             ∀evs. LPREFIX (fromList evs) (beh_io beh) ⇒
+                   listens_only b evs ∧ no_connects evs ∧ no_close_stdio evs)
 End
 
 (* ------------------------------------------------------------------------
@@ -215,8 +218,8 @@ End
    sequential store: its view of its connections to the proxy is
    linearizable against KV *)
 Definition moonshot_safe_stmt_def:
-  moonshot_safe_stmt Bnd cprog pprog kprog ⇔
-    l0_client_claim cprog ∧ proxy_claim_safe Bnd pprog ∧ kv_claim_safe kprog ⇒
+  moonshot_safe_stmt kt hw cprog pprog kprog ⇔
+    l0_client_claim cprog ∧ proxy_claim_safe kt hw pprog ∧ kv_claim_safe kprog ⇒
     ∀a b c N rqs rs.
       a < 65536 ∧ b < 65536 ∧ c < 65536 ∧ a ≠ b ∧ c ≠ a ∧ c ≠ b ∧
       2 ≤ N ∧ (∀i. EVERY valid_brequest (rqs i)) ∧

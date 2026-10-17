@@ -7,12 +7,13 @@
   accepted; the transcript's responses are snapshot results; and the
   socket vocabulary (srelabel) maps reads and accepts one to one.
 
-  MAIN: echo_reads_accepted.
+  MAIN: echo_reads_accepted; echo_reads_handed (honest-ffi's form, for
+  S1_live and live_held).
 *)
 Theory honestEchoReadsAcc
 Ancestors
   asyncServerSafety asyncTranscript asyncServer asyncLevel2 asyncLevel1 asyncCore
-  asyncM4SockModel asyncM4Relabel asyncM4RelabelDist asyncM3World
+  asyncM4SockModel asyncM4Relabel asyncM4RelabelDist asyncM3World honestL1PFOblLive
 Libs
   preamble
 
@@ -163,4 +164,11 @@ Proof
   qpat_x_assum ‘Accepted _ = sfr _’ (assume_tac o SYM) >>
   drule sfr_accepted >> strip_tac >> gvs[] >>
   first_x_assum (irule_at Any) >> simp[]
+QED
+
+(* MAIN: in honest-ffi's vocabulary (honestL1PFOblLive) *)
+Theorem echo_reads_handed:
+  reads_handed (n2w lfdn) [n2w lfdn] (srelabel (server lfdn))
+Proof
+  simp[reads_handed_def, reads_accepted_def] >> MATCH_ACCEPT_TAC echo_reads_accepted
 QED

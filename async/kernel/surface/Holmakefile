@@ -1,0 +1,6 @@
+# L3 trusted surface: the honest L0 FFI's result header, the L0 world (standards-cited) and its rely (design/36 §§3–4).
+INCLUDES = ../../world/sockets \
+           $(CAKEMLDIR)/semantics
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

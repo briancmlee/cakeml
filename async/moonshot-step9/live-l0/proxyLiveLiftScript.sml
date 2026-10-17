@@ -1103,6 +1103,150 @@ Proof
   rpt conj_tac >> TRY (qexists_tac ‘a’) >> first_assum ACCEPT_TAC
 QED
 
+(* ------------------------------------------------------------------------
+   G3 (moonshot-live's backend cap): the run's connect episodes are at most
+   2^62, one per pair at most (a pair's backend is set once), and the pairs
+   are below cbound / 2
+   ------------------------------------------------------------------------ *)
+
+Theorem roles_conn_count:
+  ∀evs lst. LENGTH (FILTER (λr. ∃p. r = Connected p) (ep_roles lst evs)) =
+            LENGTH (FILTER I (ep_conn evs))
+Proof
+  Induct >> simp[ep_roles_def, ep_conn_def] >> rpt gen_tac >>
+  Cases_on ‘ev_new h’ >> simp[] >> PairCases_on ‘x’ >> Cases_on ‘x1’ >> simp[]
+QED
+
+Theorem ep_conn_count_prefix:
+  evs ≼ l ⇒ LENGTH (FILTER I (ep_conn evs)) ≤ LENGTH (FILTER I (ep_conn l))
+Proof
+  rw[IS_PREFIX_APPEND] >> simp[FILTER_APPEND]
+QED
+
+Theorem FILTER_I_MAP:
+  ∀l. LENGTH (FILTER I (MAP f l)) = LENGTH (FILTER f l)
+Proof
+  Induct >> rw[]
+QED
+
+Theorem distinct_below:
+  ALL_DISTINCT l ∧ EVERY (λx. x < N) l ⇒ LENGTH l ≤ N
+Proof
+  strip_tac >> ‘set l ⊆ count N’ by fs[SUBSET_DEF, EVERY_MEM] >>
+  ‘CARD (set l) ≤ CARD (count N)’ by (irule CARD_SUBSET >> simp[]) >>
+  ‘CARD (set l) = LENGTH l’ by simp[ALL_DISTINCT_CARD_LIST_TO_SET] >> fs[CARD_COUNT]
+QED
+
+(* The connect-born channels are bound to distinct pairs' backends *)
+Theorem conn_cap_count:
+  prel lfd st rdy ps (FST X) (SND X) ∧ gchinv lfd B ps X ∧ kinv B ps (FST X) ⇒
+  LENGTH (FILTER cpa (FST X).chans) ≤ LENGTH st.pc
+Proof
+  PairCases_on ‘X’ >> REWRITE_TAC [FST, SND] >> strip_tac >>
+  ‘∀j. j < LENGTH X0.chans ∧ cpa (EL j X0.chans) ⇒ MEM j (MAP FST B)’
+    by (qpat_x_assum ‘kinv _ _ _’ mp_tac >> REWRITE_TAC [kinv_def] >> strip_tac >>
+        first_assum ACCEPT_TAC) >>
+  ‘∀j hd. MEM (j, hd) B ∧ cpa (EL j X0.chans) ⇒ MEM hd (hl_conn_handles ps)’
+    by (qpat_x_assum ‘kinv _ _ _’ mp_tac >> REWRITE_TAC [kinv_def] >> strip_tac >>
+        rpt strip_tac >>
+        qpat_x_assum ‘∀j hd. MEM (j, hd) B ⇒ _’ (qspecl_then [‘j’, ‘hd’] mp_tac) >>
+        asm_rewrite_tac [] >> strip_tac) >>
+  ‘∀c. MEM c (hl_conn_handles ps) ⇒ ∃q. q < LENGTH st.pc ∧ (EL q st.pc).bh = SOME c’
+    by (qpat_x_assum ‘prel _ _ _ _ _ _’ mp_tac >> REWRITE_TAC [prel_def] >> strip_tac >>
+        gen_tac >> qpat_x_assum ‘∀c. MEM c (hl_conn_handles ps) ⇔ _’ (fn th => REWRITE_TAC [th]) >>
+        strip_tac >> qpat_x_assum ‘MEM p st.pc’ (strip_assume_tac o REWRITE_RULE [MEM_EL]) >>
+        qexists_tac ‘n’ >> rpt BasicProvers.VAR_EQ_TAC >> asm_rewrite_tac []) >>
+  ‘ALL_DISTINCT (MAP SND B)’
+    by (qpat_x_assum ‘gchinv _ _ _ _’ mp_tac >> REWRITE_TAC [gchinv_def] >> strip_tac >>
+        first_assum ACCEPT_TAC) >>
+  qpat_x_assum ‘prel _ _ _ _ _ _’ kall_tac >> qpat_x_assum ‘gchinv _ _ _ _’ kall_tac >>
+  qpat_x_assum ‘kinv _ _ _’ kall_tac >>
+  qabbrev_tac ‘idx = FILTER (λi. cpa (EL i X0.chans)) (COUNT_LIST (LENGTH X0.chans))’ >>
+  ‘LENGTH idx = LENGTH (FILTER cpa X0.chans)’ by simp[Abbr ‘idx’, FILTER_COUNT_LIST_LENGTH] >>
+  pop_assum (SUBST1_TAC o SYM) >>
+  ‘ALL_DISTINCT idx’ by simp[Abbr ‘idx’, FILTER_ALL_DISTINCT, all_distinct_count_list] >>
+  ‘∀i. MEM i idx ⇔ i < LENGTH X0.chans ∧ cpa (EL i X0.chans)’
+    by simp[Abbr ‘idx’, MEM_FILTER, MEM_COUNT_LIST, CONJ_COMM] >>
+  ‘∀i. MEM i idx ⇒ ∃q. q < LENGTH st.pc ∧ ∃hd. MEM (i, hd) B ∧ (EL q st.pc).bh = SOME hd’
+    by (gen_tac >> qpat_assum ‘∀i. MEM i idx ⇔ _’ (fn th => REWRITE_TAC [th]) >> strip_tac >>
+        ‘MEM i (MAP FST B)’ by (first_x_assum irule >> asm_rewrite_tac []) >>
+        pop_assum (strip_assume_tac o REWRITE_RULE [MEM_MAP]) >>
+        PairCases_on ‘y’ >> fs[] >> rpt BasicProvers.VAR_EQ_TAC >>
+        ‘MEM y1 (hl_conn_handles ps)’
+          by (qpat_x_assum ‘∀j hd. MEM (j, hd) B ∧ _ ⇒ _’ (qspecl_then [‘i’, ‘y1’] mp_tac) >>
+              asm_rewrite_tac []) >>
+        qpat_x_assum ‘∀c. MEM c (hl_conn_handles ps) ⇒ _’ drule >> strip_tac >>
+        qexists_tac ‘q’ >> asm_rewrite_tac [] >> qexists_tac ‘y1’ >> asm_rewrite_tac []) >>
+  qabbrev_tac ‘g = λi. @q. q < LENGTH st.pc ∧ ∃hd. MEM (i, hd) B ∧ (EL q st.pc).bh = SOME hd’ >>
+  ‘∀i. MEM i idx ⇒ g i < LENGTH st.pc ∧ ∃hd. MEM (i, hd) B ∧ (EL (g i) st.pc).bh = SOME hd’
+    by (gen_tac >> strip_tac >> qunabbrev_tac ‘g’ >> BETA_TAC >> SELECT_ELIM_TAC >>
+        conj_tac >- (first_x_assum irule >> first_assum ACCEPT_TAC) >>
+        gen_tac >> strip_tac >> asm_rewrite_tac [] >> qexists_tac ‘hd’ >> asm_rewrite_tac []) >>
+  ‘LENGTH idx = LENGTH (MAP g idx)’ by REWRITE_TAC [LENGTH_MAP] >> pop_assum SUBST1_TAC >>
+  ‘EVERY (λx. x < LENGTH st.pc) (MAP g idx)’
+    by (REWRITE_TAC [EVERY_MAP, EVERY_MEM] >> BETA_TAC >> rpt strip_tac >>
+        qpat_assum ‘∀i. MEM i idx ⇒ g i < _ ∧ _’ drule >> strip_tac) >>
+  ‘ALL_DISTINCT (MAP g idx)’ suffices_by
+    (strip_tac >> irule distinct_below >> conj_tac >> first_assum ACCEPT_TAC) >>
+  irule ALL_DISTINCT_MAP_INJ >> conj_tac >> TRY (first_assum ACCEPT_TAC >> NO_TAC) >>
+  rpt strip_tac >>
+  qpat_assum ‘∀i. MEM i idx ⇒ g i < _ ∧ _’ (qspec_then ‘x’ mp_tac) >>
+  impl_tac >- first_assum ACCEPT_TAC >> strip_tac >>
+  qpat_assum ‘∀i. MEM i idx ⇒ g i < _ ∧ _’ (qspec_then ‘y’ mp_tac) >>
+  impl_tac >- first_assum ACCEPT_TAC >> strip_tac >>
+  ‘hd = hd'’ by (qpat_x_assum ‘(EL (g x) st.pc).bh = SOME hd’ mp_tac >>
+                 qpat_x_assum ‘g x = g y’ (fn th => REWRITE_TAC [th]) >>
+                 qpat_x_assum ‘(EL (g y) st.pc).bh = SOME hd'’ (fn th => REWRITE_TAC [th]) >>
+                 simp[]) >>
+  rpt BasicProvers.VAR_EQ_TAC >>
+  qspecl_then [‘B’, ‘y’, ‘hd’, ‘x’] mp_tac (Q.GENL [‘B’, ‘j’, ‘h’, ‘j'’] bind_inj) >>
+  impl_tac >- (rpt conj_tac >> first_assum ACCEPT_TAC) >> simp[]
+QED
+
+Definition proxy_conn_cap_run_def:
+  proxy_conn_cap_run ⇔
+    ∀a b hw w0 pre w4 k.
+      a < 65536 ∧ b < 65536 ∧ proxy_start a w0 pre w4 k ∧
+      (∀n. erounds (plfd k) pol_never (pifds_k b hw k) (pprog_k b hw k) (w4, einit) n ≠ NONE) ⇒
+      ∀evs. LPREFIX (fromList evs) (proxy_run_io b hw k w4 pre) ⇒
+            LENGTH (FILTER (λr. ∃p. r = Connected p) (ep_roles [] evs)) ≤ 2 ** 62
+End
+
+Theorem proxy_conn_cap_run_thm:
+  proxy_conn_cap_run
+Proof
+  REWRITE_TAC [proxy_conn_cap_run_def] >> rpt strip_tac >>
+  drule proxy_start_facts >> strip_tac >> drule proxy_start_pre >> strip_tac >>
+  REWRITE_TAC [roles_conn_count] >>
+  qpat_x_assum ‘LPREFIX _ _’ (mp_tac o REWRITE_RULE [proxy_run_io_def]) >>
+  disch_then (strip_assume_tac o MATCH_MP e1_lprefix_rounds) >>
+  Cases_on ‘erounds (plfd k) pol_never (pifds_k b hw k) (pprog_k b hw k) (w4, einit) n’
+  >- (qpat_x_assum ‘∀n. _ ≠ NONE’ (qspec_then ‘n’ mp_tac) >> asm_rewrite_tac []) >>
+  rename1 ‘_ = SOME r0’ >> PairCases_on ‘r0’ >>
+  ‘r03 = FLAT (GENLIST (eround_evs (plfd k) pol_never (pifds_k b hw k) (pprog_k b hw k) (w4, einit)) n)’
+    by (qpat_assum ‘∀n. _ ≠ NONE’
+          (mp_tac o MATCH_MP (INST_TYPE [alpha |-> “:unit option”] erounds_evs_genlist)) >>
+        disch_then (qspecl_then [‘n’, ‘r00’, ‘(r01, r02)’, ‘r03’, ‘r04’] mp_tac) >>
+        impl_tac >- first_assum ACCEPT_TAC >> simp[]) >>
+  qpat_x_assum ‘r03 = _’ (SUBST_ALL_TAC o SYM) >>
+  drule ep_conn_count_prefix >>
+  qpat_x_assum ‘EVERY _ pre’ (fn th => REWRITE_TAC [MATCH_MP ep_conn_nonew th]) >>
+  strip_tac >> irule LESS_EQ_TRANS >> first_assum (irule_at Any) >>
+  ‘MAP cpa (FST (ehst (plfd k) (proxy_lv b hw k w4) (pifds_k b hw k) (pprog_k b hw k)
+                     (proxy_pew a b hw k w4) n)).chans = ep_conn r03’
+    by (irule proxy_roles >> rpt conj_tac >> TRY (first_assum ACCEPT_TAC) >>
+        qexistsl_tac [‘r00’, ‘r04’, ‘(r01, r02)’] >> first_assum ACCEPT_TAC) >>
+  pop_assum (SUBST1_TAC o SYM) >> REWRITE_TAC [FILTER_I_MAP] >>
+  ‘proxy_world (plfd k) a (proxy_pew a b hw k w4)’ by REWRITE_TAC [proxy_pew_def, pew_proxy_world] >>
+  drule PS_prel_n >> disch_then (qspecl_then [‘n’, ‘proxy_lv b hw k w4’, ‘hw’, ‘b’] assume_tac) >>
+  drule proxy_gchinv >> disch_then (qspecl_then [‘n’, ‘proxy_lv b hw k w4’, ‘hw’, ‘b’] assume_tac) >>
+  drule proxy_kinv >> disch_then (qspecl_then [‘n’, ‘proxy_lv b hw k w4’, ‘hw’, ‘b’] assume_tac) >>
+  drule_all conn_cap_count >> strip_tac >>
+  irule LESS_EQ_TRANS >> first_assum (irule_at Any) >>
+  qpat_x_assum ‘prel _ _ _ _ _ _’ (strip_assume_tac o REWRITE_RULE [prel_def]) >>
+  fs[cbound_def]
+QED
+
 Definition conn_live_run_def:
   conn_live_run ⇔
     ∀a b hw w0 pre w4 k.

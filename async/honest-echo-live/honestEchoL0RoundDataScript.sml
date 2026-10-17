@@ -4,14 +4,14 @@
   (eof_data_out), and released after EOF (the table is left only through
   the auto-close of a read at EOF: run_tbl_stay).
 
-  MAIN: run_tbl_stay.
+  MAIN: run_tbl_stay, run_closing_origin.
 *)
 Theory honestEchoL0RoundData
 Ancestors
   honestEchoL0Acq honestEchoL0EofCase honestEchoL0DataIn honestEchoL0LiveOwn
   honestEchoL0Inv honestEchoL0Obl honestL1PFObl honestL1PFBroken honestL1PFStream
   honestL1PFLive honestL1PFRound honestL1PFOutLive honestL1PFOut honestL1PFRefine honestL1PFInv
-  honestL1PFModel
+  honestL1PFModel honestEchoL0Eof honestL1Model
 Libs
   preamble
 
@@ -60,4 +60,56 @@ Proof
   ‘¬MEM (FConn f) (rlog (n2w lfdn) pol EI ES w0 k)’
     by (irule fkeep_noconn >> simp[] >> metis_tac[]) >>
   gvs[]
+QED
+
+Theorem FOLDL_drop_out_closing2[local]:
+  ∀fs b. (FOLDL drop_out b fs).closing = b.closing
+Proof
+  Induct >> simp[drop_out_def, set_outbox_def]
+QED
+
+(* L1 puts f in its closing list only by an auto-close at end-of-file *)
+Theorem pround_closing_origin:
+  pround lfd pol hs (w, ps) acts = SOME (sn, (w', ps'), log, evs) ∧ winv w ∧
+  MEM f ps'.b.closing ∧ ¬MEM f ps.b.closing ⇒
+  MEM f ps.eof
+Proof
+  simp[pround_def, AllCaseEqs()] >> strip_tac >> PairCases_on ‘ws1’ >> gvs[] >>
+  CCONTR_TAC >> drule_all pacts_eof_closing >> strip_tac >>
+  ‘winv ws10’ by (drule_all pacts_winv >> simp[]) >>
+  qpat_x_assum ‘pf_tail _ _ _ _ = _’ mp_tac >>
+  simp[pf_tail_def, AllCaseEqs(), PULL_EXISTS] >> rpt strip_tac >> gvs[] >>
+  ‘winv w1’ by (drule_all l1_polls_winv >> simp[]) >>
+  drule_all l1_flush_f >> strip_tac >> drule pf_fetch_b >> strip_tac >>
+  drule l1_reap_closing >> disch_then drule >> strip_tac >>
+  gvs[stall_step_def, FOLDL_drop_out_closing2]
+QED
+
+(* MAIN: the round that put f in L1's closing list had f at EOF in L1's
+   table, and f has been closing since *)
+Theorem run_closing_origin:
+  echo_run lfdn pol w0 ⇒
+  ∀n. MEM f (rstate (n2w lfdn) pol EI ES w0 n).b.closing ⇒
+      ∃k. k < n ∧ ¬MEM f (rstate (n2w lfdn) pol EI ES w0 k).b.closing ∧
+          MEM f (rstate (n2w lfdn) pol EI ES w0 k).eof ∧
+          MEM f (MAP SND (rstate (n2w lfdn) pol EI ES w0 k).b.tbl) ∧
+          ∀i. k < i ∧ i ≤ n ⇒ MEM f (rstate (n2w lfdn) pol EI ES w0 i).b.closing
+Proof
+  strip_tac >>
+  ‘run_ok (n2w lfdn) pol EI ES w0 ∧ winv w0’ by fs[echo_run_def] >>
+  ‘∀i. pown (n2w lfdn) (rstate (n2w lfdn) pol EI ES w0 i)’
+    by metis_tac[run_pown, echo_run_hyp] >>
+  Induct >- simp[rstate_def, prun_0, pinit_def, l1init_def] >>
+  strip_tac >>
+  Cases_on ‘MEM f (rstate (n2w lfdn) pol EI ES w0 n).b.closing’
+  >- (first_x_assum drule >> strip_tac >> qexists_tac ‘k’ >> simp[] >>
+      rpt strip_tac >> Cases_on ‘i = SUC n’ >> gvs[]) >>
+  qpat_assum ‘run_ok _ _ _ _ _’ (fn th => mp_tac (Q.SPEC ‘n’ (MATCH_MP prun_round' th))) >>
+  strip_tac >>
+  ‘winv (rworld (n2w lfdn) pol EI ES w0 n)’ by metis_tac[winv_run] >>
+  drule_all pround_closing_origin >> strip_tac >>
+  qexists_tac ‘n’ >> simp[] >> conj_tac
+  >- (qpat_x_assum ‘∀i. pown _ _’ (qspec_then ‘n’ mp_tac) >> simp[pown_def] >>
+      metis_tac[]) >>
+  rpt strip_tac >> ‘i = SUC n’ by decide_tac >> gvs[]
 QED

@@ -168,7 +168,7 @@ Proof
   gvs[set_outbox_def, after_send_def, AllCaseEqs()] >> rw[set_outbox_def]
 QED
 
-Theorem pdo_eof_closing[local]:
+Theorem pdo_eof_closing:
   pdo lfd (w, ps) a = SOME (r, (w', ps'), evs) ∧
   ¬MEM f ps.eof ∧ ¬MEM f ps.b.closing ⇒
   ¬MEM f ps'.eof ∧ ¬MEM f ps'.b.closing
@@ -182,7 +182,7 @@ Proof
   metis_tac[]
 QED
 
-Theorem pacts_eof_closing[local]:
+Theorem pacts_eof_closing:
   ∀acts w ps rs evs w' ps'.
     pacts lfd (w, ps) acts = SOME (rs, evs, (w', ps')) ∧
     ¬MEM f ps.eof ∧ ¬MEM f ps.b.closing ⇒

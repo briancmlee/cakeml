@@ -13,6 +13,7 @@ Ancestors
   honestEchoL0Model honestEchoL0Inv honestEchoL0Round honestEchoL0Out honestEchoL0Run
   asyncCore asyncLevel1 asyncTranscript honestL1PFProg honestL1PFSpec
   asyncServer asyncServerSafety asyncM4GTrans
+  honestEchoL0Prog honestEchoL0Main honestEchoL0Sem honestL1PFInv honestL1Inv
 Libs
   preamble
 
@@ -176,3 +177,89 @@ Proof
         fs[]) >>
   simp[]
 QED
+
+(* The listener the program listens on is in use *)
+Theorem listen_used:
+  l0_rely w ∧ sys_listen_echo w = SOME (out, w1, ev) ∧ listen_fd out = SOME k ⇒
+  MEM (n2w k : word64) (l0_used w1)
+Proof
+  rw[sys_listen_echo_def, l0_do_def, l0_ffi_fn_def] >>
+  gvs[AllCaseEqs(), l0_call_def, echo_port_conf_def]
+  >- (‘dec_res (enc_res (Ok (w2n f)) ++ []) = SOME (Ok (w2n f))’
+        by (irule dec_enc_res >> simp[l0_res_ok_def] >>
+            assume_tac (INST_TYPE [alpha |-> “:64”] wordsTheory.w2n_lt) >> fs[]) >>
+      gvs[listen_fd_def, l0_res_of_def] >>
+      gvs[l0_listen_def, AllCaseEqs(), l0_used_def]) >>
+  PairCases_on ‘ke’ >>
+  ‘n2w (err_code ke1) ≠ (0w:word8)’
+    by (mp_tac (Q.INST [‘e’ |-> ‘ke1’] err_code_range) >> simp[wordsTheory.n2w_11]) >>
+  gvs[enc_listen_fail_def, listen_fd_def, l0_res_of_def, dec_res_def, AllCaseEqs()]
+QED
+
+(* The run invariant holds at the start of the loop *)
+Theorem ri_echo_base:
+  l0_rely w0 ∧ fds_lt w0 ∧ sys_listen_echo w0 = SOME (out, w1, ev) ∧ listen_fd out = SOME k ⇒
+  ri (n2w k) (srelabel (server k)) ([], (w1, pinit), [])
+Proof
+  strip_tac >>
+  ‘l0_rely w1 ∧ fds_lt w1’
+    by (gvs[sys_listen_echo_def] >>
+        metis_tac[l0_do_rely, l0_do_fds_lt, EVAL “«sys_listen» = «sys_connect»”]) >>
+  drule_all listen_used >> strip_tac >>
+  simp[ri_def, wown_def, owned_def, own_ok_def, ep_ok_def, pinit_def, l1init_def,
+       okb_def, outbox_of_def, texec_def, haccepted_def, ep_fold_def, oi_def, obp_def,
+       epfd_def, live_def, inbp_def, hread_def, hwritten_def, inb_of_def, hdln_def] >>
+  rw[]
+QED
+
+(* The listen event belongs to no episode *)
+Theorem listen_event[local]:
+  sys_listen_echo w = SOME (out, w1, ev) ⇒
+  send_fd ev = NONE ∧ recv_fd ev = NONE ∧ l0_event_accepted ev = NONE ∧
+  l0_event_closed ev = NONE
+Proof
+  rw[sys_listen_echo_def, l0_do_def, AllCaseEqs()] >>
+  simp[send_fd_def, recv_fd_def, l0_event_accepted_def, l0_event_closed_def]
+QED
+
+(* MAIN: the program's trace when the listen succeeds is safe *)
+Theorem echo_l0_run_safe:
+  l0_rely w0 ∧ fds_lt w0 ∧ sys_listen_echo w0 = SOME (out, w1, ev) ∧ listen_fd out = SOME k ⇒
+  echo_safe_l0 (LCONS ev (echo_l0_run k w1))
+Proof
+  strip_tac >> drule_all ri_echo_base >> strip_tac >>
+  ‘k < 2147483648’ by metis_tac[listen_fd_small] >>
+  ‘∀n. prounds_t (n2w k) echo_hw (interest [n2w k]) (srelabel (server k)) (w1, pinit) n ≠ NONE’
+    by (‘l0_rely w1’ by (gvs[sys_listen_echo_def] >> metis_tac[l0_do_rely]) >>
+        ‘psmall (n2w k) pinit’
+          by simp[psmall_def, pinit_def, l1init_def, small_fds_def, small_def] >>
+        gen_tac >>
+        qspecl_then [‘w1’, ‘pinit’, ‘n2w k’, ‘echo_hw’, ‘interest [n2w k]’, ‘srelabel (server k)’]
+          mp_tac (Q.GENL [‘w0’, ‘ps0’, ‘lfd’, ‘hw’, ‘ifds’, ‘m’] prounds_t_total) >>
+        simp[server_pt_ok] >> disch_then (qspec_then ‘n’ strip_assume_tac) >> simp[]) >>
+  rw[echo_safe_l0_def, l0_sent_fold, l0_read_fold] >>
+  gvs[LPREFIX_LCONS] >> TRY (simp[ep_fold_def] >> NO_TAC) >>
+  Cases_on ‘evs’ >> gvs[] >>
+  drule listen_event >> strip_tac >>
+  ‘l0_ep_step (0, []) ev = (0, [])’ by simp[l0_ep_step_def] >>
+  simp[ep_fold_def] >>
+  irule echo_run_safe >> simp[] >> metis_tac[]
+QED
+
+(* MAIN: echo_l0_safe, the statement the user approved *)
+Theorem echo_l0_safe:
+  l0_server_world w0 ⇒
+  ∃io. (semantics_prog (init_state (l0_ffi w0)) init_env echo_l0_prog (Diverge io) ∧
+        echo_safe_l0 io) ∨
+       (∃out w1 ev. sys_listen_echo w0 = SOME (out, w1, ev) ∧ listen_fd out = NONE ∧
+                    io = [|ev|] ∧
+                    semantics_prog (init_state (l0_ffi w0)) init_env echo_l0_prog
+                      (Terminate Success [ev]))
+Proof
+  rw[l0_server_world_def] >>
+  drule_all echo_l0_semantics_prog >> strip_tac
+  >- (qexists_tac ‘[|ev|]’ >> disj2_tac >> simp[]) >>
+  qexists_tac ‘LCONS ev (echo_l0_run k w1)’ >> disj1_tac >> simp[] >>
+  irule echo_l0_run_safe >> simp[] >> metis_tac[]
+QED
+

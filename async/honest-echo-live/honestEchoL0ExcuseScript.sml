@@ -4,12 +4,12 @@
   events are L3-00's hard_err_on (a send's or recv's result always
   decodes).
 
-  MAIN: run_hard_err_on, ep_state_open, run_ep_hard_err.
+  MAIN: run_hard_err_on, ep_state_open, run_ep_hard_err, rdrop_excuse.
 *)
 Theory honestEchoL0Excuse
 Ancestors
   honestEchoL0LiveOwn honestEchoL0Trace honestL1PFConnTrace honestL1BStmts honestEchoL0Spec
-  honestL1PFOutLive honestL1PFDead honestL1PFLive
+  honestL1PFOutLive honestL1PFDead honestL1PFLive honestL1PFModel
   honestL1PFRound honestL1Steps honestL1Model honestL0Rely honestL0World honestL0 Marshalling
 Libs
   preamble
@@ -213,4 +213,133 @@ Theorem send_took_ev:
 Proof
   Cases_on ‘ev’ >> rw[send_took_def, ev_on_def, call_fds_def, retried_def] >>
   gvs[l0_ev_res_def, l0_res_of_def]
+QED
+
+Theorem EXISTS_ep_ends:
+  EXISTS (ep_ends f) xs ⇔
+  EXISTS (λe. l0_event_closed e = SOME f ∨ l0_event_accepted e = SOME f) xs
+Proof
+  simp[EXISTS_MEM, ep_ends_def]
+QED
+
+(* A stretch with no polls whose sends on f were all retried *)
+Theorem seg_quiet:
+  EVERY (λe. ev_name e ≠ ExtCall «sys_poll») xs ∧
+  (∀e. MEM e xs ∧ ev_on «sys_send» f e ⇒ retried e) ⇒
+  n_out_polls f xs = 0 ∧ EVERY (λe. poll_ev e ⇒ out_poll f e) xs ∧
+  ¬EXISTS (send_took f) xs
+Proof
+  strip_tac >> drule nopoll_polls >> strip_tac >> simp[] >>
+  simp[EVERY_MEM] >> rpt strip_tac >> drule send_took_ev >> metis_tac[]
+QED
+
+(* One output poll on f *)
+Theorem poll_quiet:
+  ev_polls_out f pev ⇒
+  n_out_polls f [pev] = 1 ∧ EVERY (λe. poll_ev e ⇒ out_poll f e) [pev] ∧
+  ¬EXISTS (send_took f) [pev] ∧ ¬EXISTS (ep_ends f) [pev]
+Proof
+  strip_tac >> drule polls_out_out_poll >> strip_tac >>
+  gvs[n_out_polls_def, ev_polls_out_def, send_took_def, ep_ends_def,
+      l0_event_closed_def, l0_event_accepted_def]
+QED
+
+(* Rounds a … a + d − 1 of the run *)
+Definition rrounds_def:
+  rrounds lfd pol ifds m w0 a d = FLAT (GENLIST (λi. rrev lfd pol ifds m w0 (a + i)) d)
+End
+
+Theorem revs_rrounds:
+  run_ok lfd pol ifds m w0 ⇒
+  ∀d. revs lfd pol ifds m w0 (a + d) = revs lfd pol ifds m w0 a ++ rrounds lfd pol ifds m w0 a d
+Proof
+  strip_tac >> Induct >> simp[rrounds_def] >>
+  ‘revs lfd pol ifds m w0 (SUC (a + d)) =
+   revs lfd pol ifds m w0 (a + d) ++ rrev lfd pol ifds m w0 (a + d)’
+    by metis_tac[prun_round'] >>
+  ‘a + SUC d = SUC (a + d)’ by simp[] >> simp[GENLIST, SNOC_APPEND] >>
+  fs[rrounds_def]
+QED
+
+Theorem rrounds_CONS:
+  rrounds lfd pol ifds m w0 a (SUC d) =
+  rrev lfd pol ifds m w0 a ++ rrounds lfd pol ifds m w0 (a + 1) d
+Proof
+  simp[rrounds_def, GENLIST_CONS, combinTheory.o_DEF, ADD1]
+QED
+
+(* Rounds each with one output poll on f, no send that took bytes on f,
+   and no end of f's episode *)
+Theorem rrounds_quiet:
+  ∀d a. (∀i. i < d ⇒
+          n_out_polls f (rrev lfd pol ifds m w0 (a + i)) = 1 ∧
+          EVERY (λe. poll_ev e ⇒ out_poll f e) (rrev lfd pol ifds m w0 (a + i)) ∧
+          ¬EXISTS (send_took f) (rrev lfd pol ifds m w0 (a + i)) ∧
+          ¬EXISTS (ep_ends f) (rrev lfd pol ifds m w0 (a + i))) ⇒
+        n_out_polls f (rrounds lfd pol ifds m w0 a d) = d ∧
+        EVERY (λe. poll_ev e ⇒ out_poll f e) (rrounds lfd pol ifds m w0 a d) ∧
+        ¬EXISTS (send_took f) (rrounds lfd pol ifds m w0 a d) ∧
+        ¬EXISTS (ep_ends f) (rrounds lfd pol ifds m w0 a d)
+Proof
+  Induct >> simp[rrounds_def, n_out_polls_def] >> rpt gen_tac >> strip_tac >>
+  qpat_x_assum ‘∀a. (∀i. _) ⇒ _’ (qspec_then ‘a + 1’ mp_tac) >>
+  impl_tac
+  >- (gen_tac >> strip_tac >>
+      qpat_assum ‘∀i. i < SUC d ⇒ _’ (qspec_then ‘SUC i’ mp_tac) >>
+      ‘a + SUC i = a + 1 + i’ by simp[] >> pop_assum SUBST1_TAC >> simp[n_out_polls_def]) >>
+  qpat_x_assum ‘∀i. i < SUC d ⇒ _’ (qspec_then ‘0’ mp_tac) >> simp[] >>
+  REWRITE_TAC[GSYM rrounds_def, rrounds_CONS |> REWRITE_RULE [rrounds_def]] >>
+  rpt strip_tac >> gvs[rrounds_def, n_out_polls_def, FILTER_APPEND, GENLIST_CONS,
+                       combinTheory.o_DEF, ADD1]
+QED
+
+Theorem rrounds_SNOC:
+  rrounds lfd pol ifds m w0 a (SUC d) =
+  rrounds lfd pol ifds m w0 a d ++ rrev lfd pol ifds m w0 (a + d)
+Proof
+  simp[rrounds_def, GENLIST, SNOC_APPEND]
+QED
+
+Theorem nosend_retried:
+  ¬EXISTS (ev_on «sys_send» f) xs ⇒ ∀e. MEM e xs ∧ ev_on «sys_send» f e ⇒ retried e
+Proof
+  rpt strip_tac >> qpat_x_assum ‘¬EXISTS _ _’ mp_tac >>
+  REWRITE_TAC [EXISTS_MEM] >> metis_tac[]
+QED
+
+Theorem n_out_polls_APPEND[simp]:
+  n_out_polls f (xs ++ ys) = n_out_polls f xs + n_out_polls f ys
+Proof
+  simp[n_out_polls_def, FILTER_APPEND]
+QED
+
+(* A round inside the D23 window, past its first: one output poll on f,
+   no send that took bytes on f, no end of f's episode *)
+Theorem mid_round_quiet:
+  run_ok lfd pol ifds m w0 ∧ winv w0 ∧ MEM lfd (l0_used w0) ∧
+  rrev lfd pol ifds m w0 r = pre ++ [pev] ++ post ∧ ev_polls_out f pev ∧
+  EVERY (λe. ev_name e ≠ ExtCall «sys_poll») (pre ++ post) ∧
+  (∀e. MEM e post ∧ ev_on «sys_send» f e ⇒ retried e) ∧
+  ¬EXISTS (ev_on «sys_send» f) pre ∧
+  (MEM f (MAP SND (rstate lfd pol ifds m w0 (SUC r)).b.tbl) ∨
+   MEM f (rstate lfd pol ifds m w0 (SUC r)).b.closing) ⇒
+  n_out_polls f (rrev lfd pol ifds m w0 r) = 1 ∧
+  EVERY (λe. poll_ev e ⇒ out_poll f e) (rrev lfd pol ifds m w0 r) ∧
+  ¬EXISTS (send_took f) (rrev lfd pol ifds m w0 r) ∧
+  ¬EXISTS (ep_ends f) (rrev lfd pol ifds m w0 r)
+Proof
+  strip_tac >>
+  ‘¬EXISTS (ep_ends f) (rrev lfd pol ifds m w0 r)’
+    by (REWRITE_TAC [EXISTS_ep_ends] >> metis_tac[round_no_end]) >>
+  ‘∀e. MEM e pre ∧ ev_on «sys_send» f e ⇒ retried e’ by metis_tac[nosend_retried] >>
+  ‘EVERY (λe. ev_name e ≠ ExtCall «sys_poll») pre ∧
+   EVERY (λe. ev_name e ≠ ExtCall «sys_poll») post’ by fs[EVERY_APPEND] >>
+  ‘n_out_polls f pre = 0 ∧ EVERY (λe. poll_ev e ⇒ out_poll f e) pre ∧
+   ¬EXISTS (send_took f) pre’ by metis_tac[seg_quiet] >>
+  ‘n_out_polls f post = 0 ∧ EVERY (λe. poll_ev e ⇒ out_poll f e) post ∧
+   ¬EXISTS (send_took f) post’ by metis_tac[seg_quiet] >>
+  drule poll_quiet >> strip_tac >>
+  qpat_x_assum ‘rrev _ _ _ _ _ r = _’
+    (fn th => RULE_ASSUM_TAC (REWRITE_RULE [th]) >> REWRITE_TAC [th]) >>
+  fs[]
 QED

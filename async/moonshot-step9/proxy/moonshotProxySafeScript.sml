@@ -1370,3 +1370,43 @@ Proof
     pop_assum (fn th => REWRITE_TAC [th, rich_listTheory.IS_PREFIX_REFL]) >> NO_TAC,
     metis_tac[hl_eof_refused_APPEND]]
 QED
+
+(* MAIN (assembly): the proxy's guarantee on the handle layer, all but its
+   last clause (pairing liveness under connect fairness) proved; so the
+   claim reduces to that clause for ppair *)
+Theorem proxy_guar_hl_of_live:
+  proxy_world lfd a W0 ∧
+  (conn_fair lfd lv (pifds lfd b hw) (pprog lfd b hw) W0 ⇒
+   ∀n hd. MEM hd (hl_acc_handles (hl_pairs (pprog lfd b hw) (PH lfd b hw lv W0 n))) ⇒
+          ∃n' c. ppair lfd b hw lv W0 hd = SOME c ∧
+                 (ever_up lfd lv (pifds lfd b hw) (pprog lfd b hw) W0 n' c ∨
+                  hl_refused c (hl_pairs (pprog lfd b hw) (PH lfd b hw lv W0 n')))) ⇒
+  proxy_guar_hl b hw lfd lv (pifds lfd b hw) (pprog lfd b hw) W0
+Proof
+  strip_tac >> simp[proxy_guar_hl_def] >> qexists_tac ‘ppair lfd b hw lv W0’ >>
+  rpt conj_tac
+  >- (drule proxy_no_misuse >> disch_then (fn th => FIRST [MATCH_ACCEPT_TAC th, simp[th]]))
+  >- (rpt gen_tac >> strip_tac >> drule proxy_shape >> disch_then drule >> simp[])
+  >- (drule proxy_pair_inj >> disch_then (fn th => FIRST [MATCH_ACCEPT_TAC th, simp[th]]))
+  >- (drule proxy_conn_front >> disch_then (fn th => FIRST [MATCH_ACCEPT_TAC th, simp[th]]))
+  >- (drule proxy_pair_roles >> disch_then (fn th => FIRST [MATCH_ACCEPT_TAC th, simp[th]]))
+  >- (drule proxy_relay >> disch_then (fn th => FIRST [MATCH_ACCEPT_TAC th, simp[th]]))
+  >- (drule proxy_lag >> disch_then (fn th => FIRST [MATCH_ACCEPT_TAC th, simp[th]]))
+  >- (drule proxy_unpaired >> disch_then (fn th => FIRST [MATCH_ACCEPT_TAC th, simp[th]]))
+  >- (drule proxy_levels_first >> disch_then (fn th => FIRST [MATCH_ACCEPT_TAC th, simp[th]]))
+  >- (rpt gen_tac >> strip_tac >> drule proxy_gate_front >>
+      disch_then (fn th => mp_tac (SPEC_ALL th)) >> impl_tac >- asm_rewrite_tac [] >>
+      strip_tac >> ‘SUC (n − 1) = n’ by simp[] >> asm_rewrite_tac [] >>
+      qexists_tac ‘l’ >> fs[])
+  >- (rpt gen_tac >> strip_tac >> drule proxy_gate_back >>
+      disch_then (fn th => mp_tac (SPEC_ALL th)) >> impl_tac >- asm_rewrite_tac [] >>
+      strip_tac >> ‘SUC (n − 1) = n’ by simp[] >> asm_rewrite_tac [] >>
+      qexists_tac ‘l’ >> fs[])
+  >- (rpt gen_tac >> strip_tac >> drule proxy_levels_every >> simp[])
+  >- (rpt gen_tac >> strip_tac >> drule proxy_read_live_front >>
+      disch_then (fn th => mp_tac (SPEC_ALL th)) >> impl_tac >- fs[] >> simp[])
+  >- (rpt gen_tac >> strip_tac >> drule proxy_read_live_back >>
+      disch_then (fn th => mp_tac (SPEC_ALL th)) >> impl_tac >- fs[] >> simp[])
+  >- (drule proxy_read_up >> disch_then (fn th => FIRST [MATCH_ACCEPT_TAC th, simp[th]]))
+  >> first_assum ACCEPT_TAC
+QED

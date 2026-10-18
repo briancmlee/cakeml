@@ -707,7 +707,8 @@ Proof
   Induct >- simp[pf_shuts_def] >>
   rpt gen_tac >> rename1 ‘kf :: fs’ >> PairCases_on ‘kf’ >> rename1 ‘(k, f) :: fs’ >>
   simp[Once pf_shuts_def] >>
-  IF_CASES_TAC >- (strip_tac >> first_x_assum drule_all >> simp[]) >>
+  IF_CASES_TAC
+  >- (strip_tac >> gvs[] >> PairCases_on ‘z’ >> gvs[] >> first_x_assum drule_all >> simp[]) >>
   IF_CASES_TAC
   >- (strip_tac >> gvs[] >> PairCases_on ‘z’ >> gvs[] >> first_x_assum drule_all >> simp[]) >>
   Cases_on ‘sys_shutdown f w’ >> simp[] >> rename1 ‘_ = SOME x’ >> PairCases_on ‘x’ >>

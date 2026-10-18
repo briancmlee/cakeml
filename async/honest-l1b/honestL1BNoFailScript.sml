@@ -58,8 +58,7 @@ Proof
 QED
 
 Theorem bround_ok:
-  l0_rely w ∧ psmall lfd ps ∧ EVERY (pact_ok lfd) acts ∧
-  ps.b.nxt + naccepts acts < dimword (:64) ⇒
+  l0_rely w ∧ psmall lfd ps ∧ EVERY (pact_ok lfd) acts ⇒
   bround lfd hw idle hs (w, ps) acts ≠ NONE
 Proof
   strip_tac >> drule_all pacts_ok >> strip_tac >>

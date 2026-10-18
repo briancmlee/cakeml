@@ -11,7 +11,7 @@
 *)
 Theory honestL1BSettle
 Ancestors
-  honestL1BQueue honestL1BQuietWorld honestL1BFaith honestL1BRuns honestL1BStmts
+  honestL1BCount honestL1BQueue honestL1BQuietWorld honestL1BFaith honestL1BRuns honestL1BStmts
   honestL1PFConnRun honestL1PFConn honestL1PFClient honestL1PFLive honestL1PFRound
   honestL1PFInv honestL1PFModel honestL1Steps honestL1Inv honestL1Model
   honestL0WorldInv honestL0Part honestL0WorldProps honestL0Rely honestL0World honestL0
@@ -202,12 +202,17 @@ QED
    no accepted connection, unless accepts fail infinitely often *)
 Theorem queue_empty:
   run_ok lfd pol ifds m w0 ∧ winv w0 ∧ linv lfd w0 ∧ MEM lfd (l0_used w0) ∧
-  (∀n. SND (pcm lfd pol ifds m w0 n) + 1 < dimword (:64)) ∧
+  (∀n. SND (pcm lfd pol ifds m w0 n) + 2 < dimword (:64)) ∧
   F1 lfd pol ifds m w0 ∧ S1 lfd pol ifds m w0 ∧ S2 lfd pol ifds m w0 ∧
   ¬accepts_fail lfd pol ifds m w0 ∧ quiet_after N w0 ⇒
   ∃K. ∀k. K ≤ k ⇒ qof (rworld lfd pol ifds m w0 k) lfd = [] ∧ (rstate lfd pol ifds m w0 k).acq = []
 Proof
-  strip_tac >> drule_all (Q.INST [‘l’ |-> ‘lfd’] queue_stable) >> strip_tac >>
+  strip_tac >>
+  (* D25′: two below 2^64 the listener always has room *)
+  ‘∀k. pf_room (rstate lfd pol ifds m w0 k)’
+    by (irule pcm_room >> conj_tac >> first_assum ACCEPT_TAC) >>
+  qpat_assum ‘∀n. SND _ + 2 < _’ (assume_tac o MATCH_MP pcm_bound_1) >>
+  drule_all (Q.INST [‘l’ |-> ‘lfd’] queue_stable) >> strip_tac >>
   ‘∀k. KK ≤ k ⇒ log_conns (rlog lfd pol ifds m w0 k) = []’
     by metis_tac[round_conn_event] >>
   drule_all acq_empty >> strip_tac >>

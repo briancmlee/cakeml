@@ -13,7 +13,7 @@
 *)
 Theory honestL1BSleep
 Ancestors
-  honestL1BStable honestL1BWake honestL1BSettleState honestL1BCallsStop honestL1BGone
+  honestL1BCount honestL1BStable honestL1BWake honestL1BSettleState honestL1BCallsStop honestL1BGone
   honestL1BNoFail honestL1BQuietWorld
   honestL1BConnLive honestL1BGuar honestL1BTransfer honestL1BCorr honestL1BSim
   honestL1BRefine honestL1BPoll honestL1BModel honestL1BStmts honestL0Reindex
@@ -247,7 +247,7 @@ Theorem stable_bround:
   (∀f. MEM f (MAP SND ps.b.tbl) ∨ outbox_of ps.b f ≠ [] ⇒
        ∃j. l0_chan_of (rworld lfd hw ifds m (reindex (btr lfd hw ifds bz m (w0, pinit)) w0) N) f = SOME j) ∧
   linv lfd (rworld lfd hw ifds m (reindex (btr lfd hw ifds bz m (w0, pinit)) w0) N) ∧
-  obwf ps.b ∧ gone_clear ps.b ∧ psmall lfd ps ∧
+  obwf ps.b ∧ gone_clear ps.b ∧ psmall lfd ps ∧ pf_room ps ∧
   MEM lfd (ifds kept) ∧ ALOOKUP ps.b.tbl lfd = NONE ⇒
   ∃ev. evs' = evs ++ [ev] ∧ ev_on «sys_poll» lfd ev ∧ retried ev
 Proof
@@ -397,7 +397,7 @@ Theorem l1b_sleeps:
   linv lfd (reindex (btr lfd hw ifds bz m (w0, pinit)) w0) ∧
   qfresh (reindex (btr lfd hw ifds bz m (w0, pinit)) w0) ∧
   MEM lfd (l0_used (reindex (btr lfd hw ifds bz m (w0, pinit)) w0)) ∧
-  (∀n. SND (pcm lfd hw ifds m (reindex (btr lfd hw ifds bz m (w0, pinit)) w0) n) + 1 <
+  (∀n. SND (pcm lfd hw ifds m (reindex (btr lfd hw ifds bz m (w0, pinit)) w0) n) + 2 <
        dimword (:64)) ∧
   S1 lfd hw ifds m (reindex (btr lfd hw ifds bz m (w0, pinit)) w0) ∧
   S2 lfd hw ifds m (reindex (btr lfd hw ifds bz m (w0, pinit)) w0) ∧
@@ -406,6 +406,7 @@ Theorem l1b_sleeps:
   ∃n h evs cb. brounds lfd hw ifds bz m (w0, pinit) n = SOME (BSlept h evs cb)
 Proof
   strip_tac >> spose_not_then assume_tac >>
+  qpat_assum ‘∀n. SND _ + 2 < _’ (assume_tac o MATCH_MP pcm_bound_1) >>
   ‘∀n. brounds lfd hw ifds bz m (w0, pinit) n ≠ NONE’
     by (irule brounds_ok >> fs[]) >>
   ‘∀n. ∃h ws evs logs. brounds lfd hw ifds bz m (w0, pinit) n = SOME (BRun h ws evs logs)’
@@ -466,9 +467,15 @@ Proof
           by (qpat_x_assum ‘S1 _ _ _ _ _’ (strip_assume_tac o REWRITE_RULE[S1_def]) >>
               first_x_assum (qspec_then ‘N'’ mp_tac) >> simp[] >>
               drule sfor_now >> simp[]) >>
+        ‘pf_room ps’
+          by (qpat_assum ‘rstate _ _ _ _ _ N' = ps’ (SUBST1_TAC o SYM) >>
+              irule pcm_room >> conj_tac >>
+              FIRST [first_assum ACCEPT_TAC,
+                     qpat_assum ‘∀n. SND _ + 2 < _’ mp_tac >> simp[wordsTheory.dimword_64]]) >>
         ‘ALOOKUP ps.b.tbl lfd = NONE’
           by (qpat_x_assum ‘∀k. ∃cm s. _’ (qspec_then ‘N'’ strip_assume_tac) >>
-              irule tbl_lfd >> gvs[]) >>
+              irule tbl_lfd >> gvs[] >>
+              qpat_x_assum ‘pf_room _’ mp_tac >> simp[pf_room_def]) >>
         drule_all stable_bround >> simp[]) >>
   irule trace_polls_contra >> goal_assum (drule_at Any) >> metis_tac[]
 QED

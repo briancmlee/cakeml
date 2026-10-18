@@ -11,7 +11,7 @@
 *)
 Theory honestL1BFetchStop
 Ancestors
-  honestL1BInbox honestL1BSettle honestL1BQueue honestL1BQuietWorld honestL1BFaith
+  honestL1BCount honestL1BInbox honestL1BSettle honestL1BQueue honestL1BQuietWorld honestL1BFaith
   honestL1BRuns honestL1BStmts honestL1PFConnRun honestL1PFConn honestL1PFClient
   honestL1PFLive honestL1PFRefine honestL1PFRound honestL1PFInv honestL1PFModel
   honestL1Steps honestL1Inv honestL1Model honestL0WorldInv honestL0Part
@@ -238,12 +238,13 @@ QED
    nothing (unless accepts fail infinitely often) *)
 Theorem fetch_stop:
   run_ok lfd pol ifds m w0 ∧ winv w0 ∧ linv lfd w0 ∧ MEM lfd (l0_used w0) ∧
-  (∀n. SND (pcm lfd pol ifds m w0 n) + 1 < dimword (:64)) ∧
+  (∀n. SND (pcm lfd pol ifds m w0 n) + 2 < dimword (:64)) ∧
   F1 lfd pol ifds m w0 ∧ S1 lfd pol ifds m w0 ∧ S2 lfd pol ifds m w0 ∧
   ¬accepts_fail lfd pol ifds m w0 ∧ quiet_after N w0 ⇒
   ∃K. ∀k. K ≤ k ⇒ rlog lfd pol ifds m w0 k = []
 Proof
   strip_tac >> drule_all queue_empty >> disch_then (qx_choose_then ‘K1’ assume_tac) >>
+  qpat_assum ‘∀n. SND _ + 2 < _’ (assume_tac o MATCH_MP pcm_bound_1) >>
   drule_all run_quiet >> strip_tac >>
   ‘∀k. K1 + n0 ≤ k ⇒
        fmeas (rworld lfd pol ifds m w0 (SUC k)) (rstate lfd pol ifds m w0 (SUC k)) ≤

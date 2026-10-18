@@ -1,8 +1,8 @@
 (*
   Since D31 the guard-free argument (unhanded_sn and the rest) lives in
   honestEchoL0Safe, and echo_safe_l0 has no accept guard; the _ng names
-  here are kept as aliases.  Also: handles vs accepts on the trace, and the
-  D25 stop seen on the trace (for cf-actions).
+  here are kept as aliases.  Also: handles vs accepts on the trace.  (The
+  D25 guard stop is gone under D25′: the loop has no guard.)
 *)
 Theory honestEchoL0NoGuard
 Ancestors
@@ -39,7 +39,7 @@ QED
 Theorem echo_l0_safe_ng = echo_l0_safe;
 
 (* ------------------------------------------------------------------------
-   Handles and accepts (for the D25 stop on the trace)
+   Handles and accepts on the trace
    ------------------------------------------------------------------------ *)
 
 Theorem ri_nxt_accepted:
@@ -48,16 +48,4 @@ Proof
   rw[ri_def] >> Cases_on ‘l0_ep_st (0, []) evs’ >>
   ‘q = LENGTH (l0_accepted evs)’ by metis_tac[FST_l0_ep_st, FST, ADD] >>
   gvs[own_ok_def]
-QED
-
-(* When the echo loop's guard fails, the trace has accepted all but at most
-   the round's accepts of the 2^64 − 3 handles (D40) *)
-Theorem echo_guard_stop:
-  ri lfd (srelabel (server k)) ([], ws0, []) ∧
-  prounds_t lfd hw ifds (srelabel (server k)) ws0 n = SOME (h, (w, ps), evs, logs) ∧
-  ¬hdl_room lfd ps (naccepts (new_actions (log_of (srelabel (server k))) h)) ⇒
-  2 ** 64 ≤ LENGTH (l0_accepted evs) + naccepts (new_actions (log_of (srelabel (server k))) h) + 2
-Proof
-  strip_tac >> drule_all ri_echo >> strip_tac >>
-  drule ri_nxt_accepted >> gvs[hdl_room_def]
 QED

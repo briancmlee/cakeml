@@ -112,6 +112,14 @@ QED
 (* One action drops a prefix of f's inbox; a Read on f's handle while the
    inbox is not empty drops at least one byte; f's handle stays bound to f
    while the inbox is not empty (an Accept binds a fresh handle) *)
+(* D25′: Accept hands out a handle only with pf_room, where the handle exists *)
+Theorem pf_room_hdln_num[local]:
+  ps.b.nxt + 2 < 18446744073709551616 ⇒
+  l1hdln (w2n (lfd : word64)) ps.b.nxt < 18446744073709551616
+Proof
+  strip_tac >> mp_tac (Q.SPECL [‘lfd’, ‘ps.b.nxt’] (Q.GENL [‘lfd’, ‘j’] honestL1PFInvTheory.l1hdln_lt)) >> simp[]
+QED
+
 Theorem pdo_inb:
   pdo lfd (w, ps) a = SOME (r, (w', ps'), evs) ⇒
   ps.b.nxt ≤ ps'.b.nxt ∧
@@ -121,7 +129,9 @@ Theorem pdo_inb:
        ((a = Accept lfd ∧ l1hdln (w2n lfd) ps.b.nxt < dimword (:64) ⇒
          h ≠ l1hdl lfd ps.b.nxt) ⇒ ALOOKUP ps'.b.tbl h = SOME f))
 Proof
-  Cases_on ‘a’ >> simp[pdo_def] >> rw[AllCaseEqs()] >> gvs[] >> rpt gen_tac >>
+  Cases_on ‘a’ >> simp[pdo_def, pf_room_def] >> rw[AllCaseEqs()] >>
+  gvs[] >> rpt gen_tac >>
+  TRY (qpat_x_assum ‘_ + 2 < _’ (fn th => assume_tac (GEN_ALL (MATCH_MP pf_room_hdln_num th)))) >>
   TRY (PairCases_on ‘z’ >> gvs[]) >>
   TRY (drule l1_close_b >> strip_tac >> gvs[]) >>
   TRY (drule l1do_write_tbl >> strip_tac >> gvs[] >> qexists_tac ‘0’ >> simp[] >> NO_TAC) >>

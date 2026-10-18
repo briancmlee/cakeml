@@ -19,7 +19,7 @@
 *)
 Theory honestL1BQuiet
 Ancestors
-  honestL1BTimeout honestL1BSleep honestL1BStable honestL1BNoFail honestL1BGuar
+  honestL1BCount honestL1BTimeout honestL1BSleep honestL1BStable honestL1BNoFail honestL1BGuar
   honestL1BTransfer honestL1BModel honestL1BStmts honestL1BQuietWorld honestL1BFlushOk
   honestL1PFOut honestL1PFConnRun honestL1PFLive honestL1PFModel honestL0World
 Libs
@@ -40,7 +40,7 @@ Theorem l1b_quiet:
   linv lfd (reindex (btr lfd hw ifds bz m (w0, pinit)) w0) ∧
   qfresh (reindex (btr lfd hw ifds bz m (w0, pinit)) w0) ∧
   MEM lfd (l0_used (reindex (btr lfd hw ifds bz m (w0, pinit)) w0)) ∧
-  (∀n. SND (pcm lfd hw ifds m (reindex (btr lfd hw ifds bz m (w0, pinit)) w0) n) + 1 <
+  (∀n. SND (pcm lfd hw ifds m (reindex (btr lfd hw ifds bz m (w0, pinit)) w0) n) + 2 <
        dimword (:64)) ∧
   S1 lfd hw ifds m (reindex (btr lfd hw ifds bz m (w0, pinit)) w0) ∧
   S2 lfd hw ifds m (reindex (btr lfd hw ifds bz m (w0, pinit)) w0) ∧
@@ -54,6 +54,7 @@ Theorem l1b_quiet:
    ∃n h evs cb. brounds lfd hw ifds bz m (w0, pinit) n = SOME (BSlept h evs cb))
 Proof
   strip_tac >>
+  qpat_assum ‘∀n. SND _ + 2 < _’ (assume_tac o MATCH_MP pcm_bound_1) >>
   ‘∀n. brounds lfd hw ifds bz m (w0, pinit) n ≠ NONE’ by (irule brounds_ok >> simp[]) >>
   ‘flush_ok lfd hw ifds bz m w0 pinit’
     by (irule flush_ok_holds >> rpt conj_tac >> first_assum ACCEPT_TAC) >>

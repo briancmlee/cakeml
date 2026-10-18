@@ -16,11 +16,19 @@ Libs
   preamble
 
 
+Theorem rstate_proom[local]:
+  run_ok lfd pol ifds m w0 ⇒ ∀n. proom (rstate lfd pol ifds m w0 n)
+Proof
+  strip_tac >> Induct >- simp[rstate_def, prun_0, proom_init] >>
+  drule prun_round >> disch_then (qspec_then ‘n’ strip_assume_tac) >>
+  drule_all pround_proom >> simp[]
+QED
+
 Theorem pdo_acq_shape[local]:
   pdo lfd (w, ps) a = SOME (r, (w', ps'), evs) ⇒
   ((∀l. a ≠ Accept l) ⇒ ps'.acq = ps.acq ∧
                         ∀g. MEM g (MAP SND ps'.b.tbl) ⇒ MEM g (MAP SND ps.b.tbl)) ∧
-  (∀l g q. a = Accept l ∧ ps.acq = g :: q ⇒ ps'.acq = q ∧ MEM g (MAP SND ps'.b.tbl))
+  (∀l g q. a = Accept l ∧ ps.acq = g :: q ∧ pf_room ps ⇒ ps'.acq = q ∧ MEM g (MAP SND ps'.b.tbl))
 Proof
   Cases_on ‘a’ >> simp[pdo_def] >> strip_tac >> gvs[AllCaseEqs(), set_inb_def] >>
   TRY (PairCases_on ‘z’) >> gvs[] >>
@@ -67,7 +75,7 @@ QED
 Theorem pacts_take:
   ∀acts w ps rs evs w' ps' opn.
     pacts lfd (w, ps) acts = SOME (rs, evs, (w', ps')) ∧ l0_rely w ∧
-    own_ok lfd (k, opn) ps ∧ ps.b.nxt + naccepts acts < dimword (:64) ∧ keep f ps ∧
+    own_ok lfd (k, opn) ps ∧ ps.b.nxt < dimword (:64) ∧ proom ps ∧ keep f ps ∧
     ps.acq = [f] ∧ (∃l. MEM (Accept l) acts) ⇒
     MEM f (MAP SND ps'.b.tbl)
 Proof
@@ -77,10 +85,11 @@ Proof
   simp[Once pacts_def, AllCaseEqs(), PULL_EXISTS] >> rpt gen_tac >> strip_tac >>
   rveq >> PairCases_on ‘ws1’ >> rename1 ‘pdo lfd (w, ps) a = SOME (r, (w1, ps1), evs1)’ >>
   ‘ps.b.nxt < dimword (:64)’ by fs[] >>
-  ‘ps1.b.nxt + naccepts acts < dimword (:64)’
-    by (drule pdo_nxt_acc >>
-        ‘naccepts (a :: acts) = naccepts [a] + naccepts acts’ by (Cases_on ‘a’ >> simp[]) >>
-        fs[wordsTheory.dimword_64]) >>
+  ‘ps1.b.nxt < dimword (:64)’ by (drule pdo_nxt_room >> fs[]) >>
+  ‘proom ps1’ by (drule pdo_proom >> disch_then irule >> first_assum ACCEPT_TAC) >>
+  ‘pf_room ps’
+    by (qpat_x_assum ‘proom ps’ mp_tac >> qpat_x_assum ‘ps.acq = [f]’ mp_tac >>
+        simp[proom_def, pf_room_def]) >>
   drule_all pdo_keep >> strip_tac >>
   drule_all pdo_in >> strip_tac >>
   drule_all pdo_rely >> strip_tac >>
@@ -120,7 +129,7 @@ QED
 
 Theorem pround_take:
   pround lfd pol hs (w, ps) acts = SOME (sn, (w', ps'), log, evs) ∧ l0_rely w ∧ winv w ∧
-  own_ok lfd (k, opn) ps ∧ ps.b.nxt + naccepts acts < dimword (:64) ∧ keep f ps ∧
+  own_ok lfd (k, opn) ps ∧ ps.b.nxt < dimword (:64) ∧ proom ps ∧ keep f ps ∧
   ps.acq = [f] ∧ (∃l. MEM (Accept l) acts) ⇒
   MEM f (MAP SND ps'.b.tbl)
 Proof
@@ -157,15 +166,10 @@ Proof
   drule_all run_own >> strip_tac >>
   ‘∀i. pown (n2w lfdn) (rstate (n2w lfdn) pol EI ES w0 i)’
     by metis_tac[run_pown, echo_run_hyp] >>
-  ‘∀i. (rstate (n2w lfdn) pol EI ES w0 i).b.nxt +
-       naccepts (new_actions (log_of ES) (rhist (n2w lfdn) pol EI ES w0 i)) < dimword (:64)’
-    by (gen_tac >>
-        qpat_assum ‘run_ok _ _ _ _ _’ (fn th => assume_tac (MATCH_MP prun_some th)) >>
-        first_x_assum (qspec_then ‘i’ assume_tac) >>
-        Cases_on ‘prun (n2w lfdn) pol EI ES w0 i’ >> rename1 ‘_ = (hh, rr)’ >>
-        PairCases_on ‘rr’ >>
-        gvs[rstate_def, rhist_def, run_ok_def, pl2_ok_def] >>
-        first_x_assum drule >> simp[]) >>
+  ‘∀i. (rstate (n2w lfdn) pol EI ES w0 i).b.nxt < dimword (:64)’
+    by (drule rstate_nxt >> simp[]) >>
+  ‘∀i. proom (rstate (n2w lfdn) pol EI ES w0 i)’
+    by (drule rstate_proom >> simp[]) >>
   ‘∀i. MEM f (rstate (n2w lfdn) pol EI ES w0 i).acq ⇒
        keep f (rstate (n2w lfdn) pol EI ES w0 i) ∧
        ¬MEM f (MAP SND (rstate (n2w lfdn) pol EI ES w0 i).b.tbl)’

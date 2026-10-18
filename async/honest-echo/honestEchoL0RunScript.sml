@@ -1,6 +1,6 @@
 (*
   Route (d), the run (design/46): the input and output invariants over
-  the guarded run prounds_t, and the server's transcript.
+  the run's rounds, and the server's transcript.
 
   The transcript the server has seen after the rounds h is asyncTranscript's
   trans m h: each executed round's actions with their answers, then the
@@ -19,6 +19,7 @@ Ancestors
   honestEchoL0Model honestEchoL0Inv honestEchoL0Round honestEchoL0Out
   asyncCore asyncLevel1 asyncTranscript honestL1PFProg honestL1PFSpec
   asyncServer asyncServerSafety asyncM4Relabel asyncM4RelabelDist asyncM4SockModel
+  honestL1PFInv
 Libs
   preamble
 
@@ -123,7 +124,7 @@ QED
 Theorem pround_acc:
   pround lfd hw hs (w, ps) acts = SOME (sn, (w', ps'), log, evs) ∧
   wown lfd w ps ∧ own_ok lfd (k, opn) ps ∧ LENGTH ps.acq ≤ 1 ∧
-  ps.b.nxt + naccepts acts < dimword (:64) ⇒
+  ps.b.nxt < dimword (:64) ⇒
   ps.b.nxt ≤ ps'.b.nxt ∧ ps'.b.nxt ≤ ps.b.nxt + naccepts acts ∧
   haccepted (ZIP (acts, MAP SOME sn.results)) =
     GENLIST (λi. l1hdl lfd (ps.b.nxt + i)) (ps'.b.nxt − ps.b.nxt)
@@ -138,6 +139,7 @@ Proof
   drule_all pacts_wown >> strip_tac >>
   drule pacts_nxt >> strip_tac >>
   drule pacts_nxt_acc >> strip_tac >>
+  drule pacts_nxt_room >> impl_tac >- fs[] >> strip_tac >>
   Cases_on ‘l0_ep_st (k, opn) evs1’ >> gvs[] >>
   ‘LENGTH ws11.acq ≤ 1’ by (Cases_on ‘acts’ >> gvs[own_ok_def]) >>
   ‘ws11.b.nxt < dimword (:64)’ by fs[] >>
@@ -154,10 +156,12 @@ QED
 
 (* The run invariant, after the rounds h, in the state (w, ps), with the
    events evs: L1's ownership; the handles handed out so far are L1's
-   first nxt; and per episode j in range the input and output relations *)
+   first nxt; and per episode j in range the input and output relations.
+   D25′: proom (nxt + |acq| + 1 < 2^64) is kept by every round, so a
+   round's single accept has room (honestEchoL0OneAccept echo_room) *)
 Definition ri_def:
   ri lfd m (h, (w, ps), evs) ⇔
-    ps.b.nxt < dimword (:64) ∧
+    ps.b.nxt < dimword (:64) ∧ proom ps ∧
     wown lfd w ps ∧ own_ok lfd (l0_ep_st (0, []) evs) ps ∧ LENGTH ps.acq ≤ 1 ∧ okb ps.b ∧
     (∀i. i < LENGTH h ⇒ LENGTH (EL i h).results = LENGTH (new_actions (log_of m) (TAKE i h))) ∧
     haccepted (texec m h) = GENLIST (λi. l1hdl lfd i) ps.b.nxt ∧
@@ -167,11 +171,11 @@ Definition ri_def:
            (hwritten (l1hdl lfd j) (texec m h)) j
 End
 
-(* MAIN: a round with room keeps the run invariant, if the server writes
-   only through handles it has been handed *)
+(* MAIN: a round keeps the run invariant, if the server writes only
+   through handles it has been handed (D25′: no room hypothesis, since
+   Accept is pf_room-gated) *)
 Theorem ri_step:
   ri lfd m (h, (w, ps), evs) ∧
-  hdl_room lfd ps (naccepts (new_actions (log_of m) h)) ∧
   pround lfd hw hs (w, ps) (new_actions (log_of m) h) = SOME (sn, (w', ps'), log, revs) ∧
   (∀hd bs. MEM (Write hd bs) (new_actions (log_of m) h) ⇒ MEM hd (haccepted (texec m h))) ⇒
   ri lfd m (h ++ [sn], (w', ps'), evs ++ revs)
@@ -179,11 +183,15 @@ Proof
   strip_tac >>
   qabbrev_tac ‘acts = new_actions (log_of m) h’ >>
   Cases_on ‘l0_ep_st (0, []) evs’ >> rename1 ‘l0_ep_st _ evs = (k, opn)’ >>
-  ‘ps.b.nxt + naccepts acts < dimword (:64)’ by gvs[hdl_room_def] >>
+  ‘proom ps'’
+    by (drule pround_proom >> impl_tac
+        >- (qpat_x_assum ‘ri _ _ _’ mp_tac >> simp[ri_def]) >>
+        simp[]) >>
   gvs[ri_def] >>
-  ‘ps.b.nxt + naccepts acts < dimword (:64)’ by fs[] >>
+  ‘ps.b.nxt < dimword (:64)’ by fs[] >>
   drule_all pround_in >> strip_tac >>
   drule_all pround_acc >> strip_tac >>
+  ‘ps'.b.nxt < dimword (:64)’ by (qpat_x_assum ‘proom ps'’ mp_tac >> simp[proom_def]) >>
   ‘∀j. hdln (w2n lfd) j < dimword (:64) ∧ ps.b.nxt ≤ j ⇒
        FLAT (MAP (wr (l1hdl lfd j)) acts) = []’
     by (rpt strip_tac >> simp[FLAT_EQ_NIL, EVERY_MAP, EVERY_MEM] >> Cases >> simp[wr_def] >>
@@ -191,7 +199,7 @@ Proof
         qpat_x_assum ‘∀hd bs. MEM (Write hd bs) acts ⇒ _’ drule >> simp[MEM_GENLIST] >>
         rpt strip_tac >>
         ‘hdln (w2n lfd) i < dimword (:64)’
-          by (simp[] >> irule hdln_bound >> qexists_tac ‘ps.b.nxt’ >> fs[]) >>
+          by (simp[] >> irule hdln_bound >> qexists_tac ‘ps'.b.nxt’ >> fs[]) >>
         ‘hdl lfd j = hdl lfd i ⇔ j = i’ by (irule hdl_eq_iff >> fs[]) >> gvs[]) >>
   drule_all pround_out >> strip_tac >>
   gvs[ssnap_def, texec_SNOC] >>
@@ -249,40 +257,6 @@ Proof
   ‘hdl lfd a = hdl lfd b ⇔ a = b’ by (irule hdl_eq_iff >> fs[]) >> gvs[]
 QED
 
-(* MAIN: the run invariant along the guarded run of the echo server *)
-Theorem ri_echo:
-  ri lfd (srelabel (server k)) ([], ws0, []) ⇒
-  ∀n h w ps evs logs.
-    prounds_t lfd hw ifds (srelabel (server k)) ws0 n = SOME (h, (w, ps), evs, logs) ⇒
-    ri lfd (srelabel (server k)) (h, (w, ps), evs)
-Proof
-  strip_tac >> Induct >- (simp[prounds_t_def] >> rw[] >> gvs[]) >>
-  rpt gen_tac >> simp[prounds_t_def] >>
-  Cases_on ‘prounds_t lfd hw ifds (srelabel (server k)) ws0 n’ >> simp[] >>
-  PairCases_on ‘x’ >> simp[] >>
-  first_x_assum (qspecl_then [‘x0’, ‘x1’, ‘x2’, ‘x3’, ‘x4’] mp_tac) >> simp[] >> strip_tac >>
-  IF_CASES_TAC >> simp[]
-  >- (simp[AllCaseEqs(), PULL_EXISTS] >> rpt gen_tac >> strip_tac >> gvs[] >>
-      irule ri_step >> simp[] >> rpt (first_assum (irule_at Any) >> simp[]) >>
-      rpt strip_tac >>
-      ‘(∀i. i < LENGTH x0 ⇒
-            LENGTH (EL i x0).results = LENGTH (new_actions (log_of (srelabel (server k))) (TAKE i x0))) ∧
-       haccepted (texec (srelabel (server k)) x0) = GENLIST (λi. l1hdl lfd i) x2.b.nxt’
-        by gvs[ri_def] >>
-      drule trans_texec >> strip_tac >>
-      ‘x2.b.nxt < dimword (:64)’ by gvs[ri_def] >>
-      ‘MEM hd (haccepted (trans (srelabel (server k)) x0))’
-        by (irule server_writes_accepted >>
-            qpat_assum ‘trans _ _ = _’ (fn th => REWRITE_TAC [th]) >>
-            qpat_assum ‘haccepted (texec _ _) = _’
-              (fn th => REWRITE_TAC [haccepted_APPEND, haccepted_NONE, th, APPEND_NIL]) >>
-            conj_tac >- (irule ALL_DISTINCT_hdl >> simp[]) >>
-            qexistsl [‘bs’, ‘NONE’] >> simp[MEM_MAP]) >>
-      qpat_x_assum ‘MEM hd (haccepted (trans _ _))’ mp_tac >>
-      qpat_assum ‘trans _ _ = _’ (fn th => REWRITE_TAC [th]) >> simp[haccepted_APPEND]) >>
-  rw[] >> gvs[]
-QED
-
 (* The actions receive nothing: the server's reads in a round are answered
    from input L1 held before it *)
 Theorem pdo_no_recv:
@@ -317,7 +291,7 @@ QED
 Theorem pround_hread:
   pround lfd hw hs (w, ps) acts = SOME (sn, (w', ps'), log, evs) ∧
   wown lfd w ps ∧ own_ok lfd (k, opn) ps ∧ LENGTH ps.acq ≤ 1 ∧
-  ps.b.nxt + naccepts acts < dimword (:64) ∧
+  ps.b.nxt < dimword (:64) ∧
   hdln (w2n lfd) j < dimword (:64) ⇒
   hread (l1hdl lfd j) (ZIP (acts, MAP SOME sn.results)) ≼ inbp lfd ps j
 Proof
@@ -327,7 +301,7 @@ Proof
   gvs[ssnap_def] >>
   ‘l0_rely w’ by gvs[wown_def] >>
   ‘k ≤ ps.b.nxt + 1’ by gvs[own_ok_def] >>
-  ‘ps.b.nxt + naccepts acts < dimword (:64)’ by fs[] >>
+  ‘ps.b.nxt < dimword (:64)’ by fs[] >>
   Cases_on ‘j < k’
   >- (drule_all pacts_in >> strip_tac >>
       drule_all pacts_no_recv >> strip_tac >>
@@ -350,7 +324,7 @@ QED
 Theorem round_safe:
   ri lfd (srelabel (server k)) (h, (w, ps), evs) ∧
   ri lfd (srelabel (server k)) (h ++ [sn], (w', ps'), evs ++ revs) ∧
-  hdl_room lfd ps (naccepts (new_actions (log_of (srelabel (server k))) h)) ∧
+  ps.b.nxt + naccepts (new_actions (log_of (srelabel (server k))) h) < dimword (:64) ∧
   pround lfd hw hs (w, ps) (new_actions (log_of (srelabel (server k))) h) =
     SOME (sn, (w', ps'), log, revs) ∧
   evs ≼ pre ∧ pre ≼ evs ++ revs ∧ hdln (w2n lfd) j < dimword (:64) ⇒
@@ -379,7 +353,7 @@ Proof
   qpat_x_assum ‘ri _ _ (h, _, _)’ (strip_assume_tac o REWRITE_RULE [ri_def]) >>
   first_x_assum (qspec_then ‘j’ mp_tac) >> simp[] >> strip_tac >>
   ‘hread (l1hdl lfd j) (ZIP (acts, MAP SOME sn.results)) ≼ inbp lfd ps j’
-    by (irule pround_hread >> gvs[hdl_room_def] >>
+    by (irule pround_hread >> gvs[] >>
         conj_tac >- (Cases_on ‘l0_ep_st (0,[]) evs’ >> gvs[] >> metis_tac[]) >>
         qexistsl [‘revs’, ‘hs’, ‘hw’, ‘log’, ‘ps'’, ‘w’, ‘w'’] >> simp[]) >>
   ‘hwritten (l1hdl lfd j) (texec (srelabel (server k)) (h ++ [sn])) ≼

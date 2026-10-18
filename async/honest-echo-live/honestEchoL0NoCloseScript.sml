@@ -135,7 +135,7 @@ QED
 Theorem pacts_cl:
   ∀acts w ps rs evs w' ps' opn.
     pacts lfd (w, ps) acts = SOME (rs, evs, (w', ps')) ∧ l0_rely w ∧
-    own_ok lfd (k, opn) ps ∧ ps.b.nxt + naccepts acts < dimword (:64) ⇒
+    own_ok lfd (k, opn) ps ∧ ps.b.nxt < dimword (:64) ⇒
     cl_ok f ps evs ps'
 Proof
   Induct >> simp[pacts_def]
@@ -143,10 +143,7 @@ Proof
   rpt gen_tac >> strip_tac >> gvs[AllCaseEqs()] >>
   PairCases_on ‘ws1’ >> rename1 ‘pdo lfd (w, ps) a = SOME (r, (w1, ps1), evs1)’ >>
   ‘ps.b.nxt < dimword (:64)’ by simp[] >>
-  ‘ps1.b.nxt + naccepts acts < dimword (:64)’
-    by (drule pdo_nxt_acc >>
-        ‘naccepts (a :: acts) = naccepts [a] + naccepts acts’ by (Cases_on ‘a’ >> simp[]) >>
-        fs[]) >>
+  ‘ps1.b.nxt < dimword (:64)’ by (drule pdo_nxt_room >> fs[]) >>
   drule_all pdo_cl >> disch_then (qspec_then ‘f’ assume_tac) >>
   drule_all pdo_in >> strip_tac >>
   drule_all pdo_rely >> strip_tac >>
@@ -291,7 +288,7 @@ QED
 Theorem pround_cl:
   pround lfd pol hs (w, ps) acts = SOME (sn, (w', ps'), log, evs) ∧
   wown lfd w ps ∧ own_ok lfd (k, opn) ps ∧ LENGTH ps.acq ≤ 1 ∧
-  ps.b.nxt + naccepts acts < dimword (:64) ⇒
+  ps.b.nxt < dimword (:64) ⇒
   cl_ok f ps evs ps'
 Proof
   strip_tac >> qpat_x_assum ‘pround _ _ _ _ _ = _’ mp_tac >>
@@ -302,6 +299,7 @@ Proof
   drule_all pacts_in >> strip_tac >>
   drule_all pacts_wown >> strip_tac >>
   drule pacts_nxt_acc >> strip_tac >>
+  drule pacts_nxt_room >> impl_tac >- fs[] >> strip_tac >>
   drule pacts_nxt >> strip_tac >>
   Cases_on ‘l0_ep_st (k, opn) evs1’ >> gvs[] >>
   rename1 ‘own_ok lfd (k1, opn1) ws11’ >>
@@ -323,11 +321,7 @@ Proof
   first_assum (qspec_then ‘n’ strip_assume_tac) >>
   drule prun_round' >> disch_then (qspecl_then [‘f’, ‘n’] strip_assume_tac) >>
   drule prun_some >> disch_then (qspec_then ‘n’ assume_tac) >>
-  ‘(rstate lfd pol ifds m w0 n).b.nxt +
-   naccepts (new_actions (log_of m) (rhist lfd pol ifds m w0 n)) < dimword (:64)’
-    by (Cases_on ‘prun lfd pol ifds m w0 n’ >> rename1 ‘_ = (hh, r)’ >> PairCases_on ‘r’ >>
-        gvs[rstate_def, rhist_def, run_ok_def, pl2_ok_def] >>
-        first_x_assum drule >> simp[]) >>
+  ‘(rstate lfd pol ifds m w0 n).b.nxt < dimword (:64)’ by (drule rstate_nxt >> simp[]) >>
   Cases_on ‘l0_ep_st (0, []) (revs lfd pol ifds m w0 n)’ >>
   ‘own_ok lfd (q, r) (rstate lfd pol ifds m w0 n)’ by metis_tac[] >>
   drule_all pround_cl >> disch_then (qspec_then ‘f’ mp_tac) >>

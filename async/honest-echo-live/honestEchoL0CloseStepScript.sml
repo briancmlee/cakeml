@@ -77,7 +77,7 @@ QED
 Theorem pacts_held:
   ∀acts w ps rs evs w' ps' opn.
     pacts lfd (w, ps) acts = SOME (rs, evs, (w', ps')) ∧ l0_rely w ∧
-    own_ok lfd (k, opn) ps ∧ ps.b.nxt + naccepts acts < dimword (:64) ∧
+    own_ok lfd (k, opn) ps ∧ ps.b.nxt < dimword (:64) ∧
     held f ps ∧ ¬EXISTS (l0_close_call f) evs ⇒
     held f ps'
 Proof
@@ -87,10 +87,7 @@ Proof
   rpt gen_tac >> PairCases_on ‘ws1’ >> simp[] >> strip_tac >> rveq >>
   rename1 ‘pdo lfd (w, ps) a = SOME (r, (w1, ps1), evs1)’ >>
   ‘ps.b.nxt < dimword (:64)’ by simp[] >>
-  ‘ps1.b.nxt + naccepts acts < dimword (:64)’
-    by (drule pdo_nxt_acc >>
-        ‘naccepts (a :: acts) = naccepts [a] + naccepts acts’ by (Cases_on ‘a’ >> simp[]) >>
-        fs[]) >>
+  ‘ps1.b.nxt < dimword (:64)’ by (drule pdo_nxt_room >> fs[]) >>
   ‘¬EXISTS (l0_close_call f) evs1 ∧ ¬EXISTS (l0_close_call f) evs'’
     by (qpat_x_assum ‘EVERY _ (_ ++ _)’ mp_tac >> simp[EVERY_APPEND]) >>
   ‘held f ps1’ by (drule_all pdo_held >> simp[]) >>
@@ -115,7 +112,7 @@ QED
 
 Theorem pround_held:
   pround lfd pol hs (w, ps) acts = SOME (sn, (w', ps'), log, evs) ∧
-  wown lfd w ps ∧ own_ok lfd (k, opn) ps ∧ ps.b.nxt + naccepts acts < dimword (:64) ∧
+  wown lfd w ps ∧ own_ok lfd (k, opn) ps ∧ ps.b.nxt < dimword (:64) ∧
   held f ps ∧ ¬EXISTS (l0_close_call f) evs ⇒
   held f ps'
 Proof
@@ -149,11 +146,7 @@ Proof
   strip_tac >> drule_all run_own >> disch_then (qspec_then ‘n’ strip_assume_tac) >>
   drule prun_round' >> disch_then (qspecl_then [‘f’, ‘n’] strip_assume_tac) >>
   drule prun_some >> disch_then (qspec_then ‘n’ assume_tac) >>
-  ‘(rstate lfd pol ifds m w0 n).b.nxt +
-   naccepts (new_actions (log_of m) (rhist lfd pol ifds m w0 n)) < dimword (:64)’
-    by (Cases_on ‘prun lfd pol ifds m w0 n’ >> rename1 ‘_ = (hh, r)’ >> PairCases_on ‘r’ >>
-        gvs[rstate_def, rhist_def, run_ok_def, pl2_ok_def] >>
-        first_x_assum drule >> simp[]) >>
+  ‘(rstate lfd pol ifds m w0 n).b.nxt < dimword (:64)’ by (drule rstate_nxt >> simp[]) >>
   Cases_on ‘l0_ep_st (0, []) (revs lfd pol ifds m w0 n)’ >> fs[] >>
   ‘¬EXISTS (l0_close_call f) (rrev lfd pol ifds m w0 n) ⇒
    held f (rstate lfd pol ifds m w0 (SUC n))’
@@ -190,7 +183,7 @@ QED
 Theorem pround_acc_noclose:
   pround lfd pol hs (w, ps) acts = SOME (sn, (w', ps'), log, evs) ∧
   wown lfd w ps ∧ own_ok lfd (k, opn) ps ∧ LENGTH ps.acq ≤ 1 ∧
-  ps.b.nxt + naccepts acts < dimword (:64) ∧
+  ps.b.nxt < dimword (:64) ∧
   evs = a ++ [ev] ++ b ∧ l0_event_accepted ev = SOME f ⇒
   EVERY (λe. ¬closes_call f e) b
 Proof
@@ -202,6 +195,7 @@ Proof
   drule_all pacts_in >> strip_tac >>
   drule_all pacts_wown >> strip_tac >>
   drule pacts_nxt_acc >> strip_tac >>
+  drule pacts_nxt_room >> impl_tac >- fs[] >> strip_tac >>
   drule pacts_nxt >> strip_tac >>
   Cases_on ‘l0_ep_st (k, opn) evs1’ >> gvs[] >>
   rename1 ‘own_ok lfd (k1, opn1) ws11’ >>
@@ -269,11 +263,7 @@ Proof
   first_x_assum (qspec_then ‘i’ strip_assume_tac) >>
   drule prun_round' >> disch_then (qspecl_then [‘f’, ‘i’] strip_assume_tac) >>
   drule prun_some >> disch_then (qspec_then ‘i’ assume_tac) >>
-  ‘(rstate lfd pol ifds m w0 i).b.nxt +
-   naccepts (new_actions (log_of m) (rhist lfd pol ifds m w0 i)) < dimword (:64)’
-    by (Cases_on ‘prun lfd pol ifds m w0 i’ >> rename1 ‘_ = (hh, r)’ >> PairCases_on ‘r’ >>
-        gvs[rstate_def, rhist_def, run_ok_def, pl2_ok_def] >>
-        first_x_assum drule >> simp[]) >>
+  ‘(rstate lfd pol ifds m w0 i).b.nxt < dimword (:64)’ by (drule rstate_nxt >> simp[]) >>
   Cases_on ‘l0_ep_st (0, []) (revs lfd pol ifds m w0 i)’ >>
   ‘own_ok lfd (q, r) (rstate lfd pol ifds m w0 i)’ by metis_tac[] >>
   drule_all pround_acc_noclose >> simp[]

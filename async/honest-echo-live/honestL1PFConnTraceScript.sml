@@ -13,7 +13,7 @@
 *)
 Theory honestL1PFConnTrace
 Ancestors
-  honestL1PFObl honestL1BConnLive honestL1BConn honestL1BFaith honestL1BTransfer
+  honestL1BCount honestL1PFObl honestL1BConnLive honestL1BConn honestL1BFaith honestL1BTransfer
   honestL1BCorr honestL1BRuns honestL1BStmts
   honestL1PFConnRun honestL1PFClient honestL1PFConn honestL1PFLive honestL1PFRound honestL1PFRefine
   honestL1PFModel honestL1Steps honestL1Model honestEchoL0Spec honestL0WorldInv honestL0WorldProps
@@ -224,11 +224,16 @@ QED
    meeting S1 and S2 *)
 Theorem pf_conn_live:
   run_ok lfd pol ifds m w0 ∧ winv w0 ∧ linv lfd w0 ∧ lone lfd w0 ∧
-  MEM lfd (l0_used w0) ∧ (∀n. SND (pcm lfd pol ifds m w0 n) + 1 < dimword (:64)) ∧
+  MEM lfd (l0_used w0) ∧ (∀n. SND (pcm lfd pol ifds m w0 n) + 2 < dimword (:64)) ∧
   F1 lfd pol ifds m w0 ∧ S1 lfd pol ifds m w0 ∧ S2 lfd pol ifds m w0 ∧
   pftrace lfd pol ifds m w0 io ⇒
   conn_live_l0 w0 io
 Proof
+  strip_tac >>
+  ‘¬handles_out lfd pol ifds m w0’
+    by (simp[handles_out_def] >> irule pcm_room >> conj_tac >> first_assum ACCEPT_TAC) >>
+  qpat_assum ‘∀n. SND _ + 2 < _’ (assume_tac o MATCH_MP pcm_bound_1) >>
+  qpat_x_assum ‘∀n. SND _ + 2 < _’ kall_tac >>
   rw[conn_live_l0_def, conn_live_unless_def] >>
   drule_all pftrace_prefix >> strip_tac >>
   ‘∃s. revs lfd pol ifds m w0 N = evs ++ s’ by fs[IS_PREFIX_APPEND] >>
@@ -260,7 +265,8 @@ Proof
           qexistsl_tac [‘revs lfd pol ifds m w0 (SUC k)’,
                         ‘rworld lfd pol ifds m w0 (SUC k)’] >>
           simp[run_world_at] >> metis_tac[pftrace_revs])
-      >> disj1_tac >> metis_tac[accepts_fail_io_run]) >>
+      >- (disj1_tac >> metis_tac[accepts_fail_io_run])
+      >> qpat_x_assum ‘¬handles_out _ _ _ _ _’ mp_tac >> simp[]) >>
   (* it left the queue during the round: at an accept naming it, or broken *)
   drule_all qexit_trace >> strip_tac >>
   qpat_x_assum ‘s = _’ SUBST_ALL_TAC >>
@@ -346,6 +352,15 @@ QED
 Theorem pcm_bound_accepts_below:
   run_ok lfd pol ifds m w0 ∧ winv w0 ∧ pftrace lfd pol ifds m w0 io ∧ accepts_below io ⇒
   ∀n. SND (pcm lfd pol ifds m w0 n) + 1 < dimword (:64)
+Proof
+  rpt strip_tac >> drule_all run_pcm_le >> disch_then (qspec_then ‘n’ assume_tac) >>
+  drule_all pftrace_revs >> disch_then (qspec_then ‘n’ assume_tac) >>
+  fs[accepts_below_def] >> first_x_assum drule >> simp[]
+QED
+
+Theorem pcm_bound2_accepts_below:
+  run_ok lfd pol ifds m w0 ∧ winv w0 ∧ pftrace lfd pol ifds m w0 io ∧ accepts_below io ⇒
+  ∀n. SND (pcm lfd pol ifds m w0 n) + 2 < dimword (:64)
 Proof
   rpt strip_tac >> drule_all run_pcm_le >> disch_then (qspec_then ‘n’ assume_tac) >>
   drule_all pftrace_revs >> disch_then (qspec_then ‘n’ assume_tac) >>

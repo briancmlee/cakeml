@@ -239,9 +239,9 @@ Proof
   qpat_x_assum ‘rstate _ _ _ _ _ N = ps’
     (fn th => RULE_ASSUM_TAC (REWRITE_RULE[th]) >> assume_tac th) >>
   ‘ALOOKUP ps.b.tbl lfd = NONE’
-    by (irule tbl_lfd >> rpt conj_tac >>
-        FIRST [first_assum ACCEPT_TAC,
-               qpat_x_assum ‘_ + naccepts _ < dimword _’ mp_tac >> simp[] >> NO_TAC]) >>
+    by (irule tbl_lfd >> rpt conj_tac >> TRY (first_assum ACCEPT_TAC) >>
+        qpat_assum ‘pown _ _’ (mp_tac o CONJUNCT2 o CONJUNCT2 o CONJUNCT2 o CONJUNCT2 o
+                               REWRITE_RULE [honestL1PFRefineTheory.pown_def]) >> simp[]) >>
   ‘pf_idle lfd hw ps (ifds h)’ by fs[bidle_def] >>
   ‘MEM lfd (ifds h)’
     by (qpat_x_assum ‘S1 _ _ _ _ _’ mp_tac >> REWRITE_TAC[S1_def] >>

@@ -57,6 +57,13 @@ Proof
   simp[ALOOKUP_ADELKEY] >> rw[]
 QED
 
+(* D25′: an accepted handle is in range *)
+Theorem pf_room_hdln:
+  pf_room ps ⇒ hdln (w2n (lfd : word64)) ps.b.nxt < 18446744073709551616
+Proof
+  rw[pf_room_def, asyncHLModelTheory.hdln_def]
+QED
+
 Theorem pdo_tbl_ext:
   pdo lfd (w, ps) a = SOME (r, (w', ps'), evs) ⇒ tbl_ext lfd ps ps'
 Proof
@@ -65,7 +72,10 @@ Proof
   TRY (drule l1_close_b >> strip_tac) >>
   TRY (drule l1do_write_tbl >> strip_tac) >>
   gvs[tbl_ext_def, set_inb_def] >> rw[] >>
-  gvs[AllCaseEqs()] >> metis_tac[ALOOKUP_ADELKEY_SOME, LESS_EQ_REFL]
+  gvs[AllCaseEqs()] >>
+  TRY (disj2_tac >> qexists_tac ‘ps.b.nxt’ >> simp[] >>
+       irule pf_room_hdln >> first_assum ACCEPT_TAC) >>
+  metis_tac[ALOOKUP_ADELKEY_SOME, LESS_EQ_REFL]
 QED
 
 Theorem pacts_tbl_ext:

@@ -1,8 +1,8 @@
 (*
   Route (d), S4 (design/46): echo_l0_safe.  Every finite prefix of the
   program's trace lies between the end of some round and the end of the
-  next (the loop's rounds may be empty once it stops for lack of handle
-  room); at a round boundary and inside a round, what each episode sent is
+  next (D25′: the loop never stops; past the handle cut-off it just stops
+  accepting); at a round boundary and inside a round, what each episode sent is
   a prefix of what it received (honestEchoL0Run's round_safe).
 *)
 Theory honestEchoL0Safe
@@ -15,6 +15,7 @@ Ancestors
   asyncServer asyncServerSafety asyncM4GTrans
   honestEchoL0Prog honestEchoL0Main honestEchoL0Sem honestL1PFInv honestL1Inv
   honestL0Fdok honestL0Outcome honestL1PFRefine honestEchoL0Stdio honestL1PFRound
+  honestEchoL0OneAccept
 Libs
   preamble
 
@@ -111,7 +112,7 @@ Proof
 QED
 
 Theorem prun_FLAT:
-  (∀n. prounds_t lfd hw ifds m ws0 n ≠ NONE) ⇒
+  (∀n. prounds lfd (pol_self hw) ifds m ws0 n ≠ NONE) ⇒
   ∀n. FLAT (GENLIST (pround_evs lfd hw ifds m ws0) n) = FST (SND (SND (prun lfd hw ifds m ws0 n)))
 Proof
   strip_tac >> Induct >> simp[GENLIST, SNOC_APPEND] >>
@@ -120,14 +121,14 @@ QED
 
 Theorem prun_ri:
   ri lfd (srelabel (server k)) ([], ws0, []) ∧
-  (∀n. prounds_t lfd hw ifds (srelabel (server k)) ws0 n ≠ NONE) ⇒
+  (∀n. prounds lfd (pol_self hw) ifds (srelabel (server k)) ws0 n ≠ NONE) ⇒
   ∀n. ri lfd (srelabel (server k))
          (FST (prun lfd hw ifds (srelabel (server k)) ws0 n),
           FST (SND (prun lfd hw ifds (srelabel (server k)) ws0 n)),
           FST (SND (SND (prun lfd hw ifds (srelabel (server k)) ws0 n))))
 Proof
   rpt strip_tac >> first_x_assum (qspec_then ‘n’ mp_tac) >>
-  Cases_on ‘prounds_t lfd hw ifds (srelabel (server k)) ws0 n’ >> simp[prun_def] >>
+  Cases_on ‘prounds lfd (pol_self hw) ifds (srelabel (server k)) ws0 n’ >> simp[prun_def] >>
   PairCases_on ‘x’ >> simp[] >> drule ri_echo >> disch_then drule >> simp[]
 QED
 
@@ -219,17 +220,14 @@ QED
 Theorem pacts_sn:
   ∀acts w ps rs evs w' ps' opn.
     pacts lfd (w, ps) acts = SOME (rs, evs, (w', ps')) ∧ l0_rely w ∧
-    own_ok lfd (k, opn) ps ∧ ps.b.nxt + naccepts acts < dimword (:64) ⇒
+    own_ok lfd (k, opn) ps ∧ ps.b.nxt < dimword (:64) ⇒
     ∀j. ps'.b.nxt ≤ j ⇒ ep_sn j (k, opn) evs = []
 Proof
   Induct >> simp[pacts_def, ep_fold_def] >> rpt gen_tac >> strip_tac >>
   gvs[AllCaseEqs()] >>
   PairCases_on ‘ws1’ >> rename1 ‘pdo lfd (w, ps) a = SOME (r, (w1, ps1), evs1)’ >>
   ‘ps.b.nxt < dimword (:64)’ by simp[] >>
-  ‘ps1.b.nxt + naccepts acts < dimword (:64)’
-    by (drule pdo_nxt_acc >>
-        ‘naccepts (a :: acts) = naccepts [a] + naccepts acts’ by (Cases_on ‘a’ >> simp[]) >>
-        fs[]) >>
+  ‘ps1.b.nxt < dimword (:64)’ by (drule pdo_nxt_room >> fs[]) >>
   drule_all pdo_in >> strip_tac >>
   drule_all pdo_rely >> strip_tac >>
   drule pdo_nxt >> strip_tac >>
@@ -299,7 +297,7 @@ QED
 Theorem pround_sn:
   pround lfd hw hs (w, ps) acts = SOME (sn, (w', ps'), log, evs) ∧
   wown lfd w ps ∧ own_ok lfd (k, opn) ps ∧ LENGTH ps.acq ≤ 1 ∧ okb ps.b ∧
-  ps.b.nxt + naccepts acts < dimword (:64) ⇒
+  ps.b.nxt < dimword (:64) ⇒
   ∀j. ps'.b.nxt ≤ j ⇒ ep_sn j (k, opn) evs = []
 Proof
   strip_tac >> qpat_x_assum ‘pround _ _ _ _ _ = _’ mp_tac >>
@@ -311,6 +309,7 @@ Proof
   drule_all pacts_wown >> strip_tac >>
   drule_all pacts_okb >> strip_tac >>
   drule pacts_nxt_acc >> strip_tac >>
+  drule pacts_nxt_room >> impl_tac >- fs[] >> strip_tac >>
   drule pacts_nxt >> strip_tac >>
   Cases_on ‘l0_ep_st (k, opn) evs1’ >> gvs[] >>
   rename1 ‘own_ok lfd (k, opn1) ws11’ >>
@@ -330,40 +329,38 @@ QED
 Theorem unhanded_sn:
   ri lfd (srelabel (server k)) ([], ws0, []) ⇒
   ∀n h w ps evs logs.
-    prounds_t lfd hw ifds (srelabel (server k)) ws0 n = SOME (h, (w, ps), evs, logs) ⇒
+    prounds lfd pol ifds (srelabel (server k)) ws0 n = SOME (h, (w, ps), evs, logs) ⇒
     ∀j. ps.b.nxt ≤ j ⇒ ep_sn j (0, []) evs = []
 Proof
-  strip_tac >> Induct >- (simp[prounds_t_def] >> rw[] >> simp[ep_fold_def]) >>
-  rpt gen_tac >> simp[prounds_t_def] >>
-  Cases_on ‘prounds_t lfd hw ifds (srelabel (server k)) ws0 n’ >> simp[] >>
+  strip_tac >> Induct >- (simp[prounds_def] >> rw[] >> simp[ep_fold_def]) >>
+  rpt gen_tac >> simp[prounds_def] >>
+  Cases_on ‘prounds lfd pol ifds (srelabel (server k)) ws0 n’ >> simp[] >>
   PairCases_on ‘x’ >> simp[] >>
   first_x_assum (qspecl_then [‘x0’, ‘x1’, ‘x2’, ‘x3’, ‘x4’] mp_tac) >> simp[] >> strip_tac >>
   ‘ri lfd (srelabel (server k)) (x0, (x1, x2), x3)’ by metis_tac[ri_echo] >>
-  IF_CASES_TAC >> simp[] >- (
-    simp[AllCaseEqs(), PULL_EXISTS] >> rpt gen_tac >> strip_tac >> gvs[] >>
-    qabbrev_tac ‘acts = new_actions (log_of (srelabel (server k))) x0’ >>
-    ‘x2.b.nxt + naccepts acts < dimword (:64)’ by gvs[hdl_room_def] >>
-    qpat_x_assum ‘ri _ _ _’ (strip_assume_tac o REWRITE_RULE [ri_def]) >>
-    Cases_on ‘l0_ep_st (0, []) x3’ >> rename1 ‘l0_ep_st _ x3 = (kk, opn)’ >> gvs[] >>
-    ‘x2.b.nxt + naccepts acts < dimword (:64)’ by fs[] >>
-    drule_all pround_acc >> strip_tac >>
-    rpt strip_tac >> simp[ep_fold_APPEND] >>
-    TRY (conj_tac >- (first_x_assum irule >> fs[])) >>
-    qpat_x_assum ‘pround _ _ _ _ _ = _’
-      (fn th => mp_tac (Q.INST [‘k’ |-> ‘kk’]
-                         (MATCH_MP (REWRITE_RULE [GSYM AND_IMP_INTRO] pround_sn) th))) >>
-    rpt (impl_tac >- fs[]) >> disch_then irule >> fs[]) >>
-  rw[] >> gvs[]
+  simp[AllCaseEqs(), PULL_EXISTS] >> rpt gen_tac >> strip_tac >> gvs[] >>
+  qpat_assum ‘ri _ _ _’ (assume_tac o MATCH_MP echo_room) >>
+  qabbrev_tac ‘acts = new_actions (log_of (srelabel (server k))) x0’ >>
+  qpat_x_assum ‘ri _ _ _’ (strip_assume_tac o REWRITE_RULE [ri_def]) >>
+  Cases_on ‘l0_ep_st (0, []) x3’ >> rename1 ‘l0_ep_st _ x3 = (kk, opn)’ >> gvs[] >>
+  ‘x2.b.nxt < dimword (:64)’ by fs[] >>
+  drule_all pround_acc >> strip_tac >>
+  rpt strip_tac >> simp[ep_fold_APPEND] >>
+  TRY (conj_tac >- (first_x_assum irule >> fs[])) >>
+  qpat_x_assum ‘pround _ _ _ _ _ = _’
+    (fn th => mp_tac (Q.INST [‘k’ |-> ‘kk’]
+                       (MATCH_MP (REWRITE_RULE [GSYM AND_IMP_INTRO] pround_sn) th))) >>
+  rpt (impl_tac >- fs[]) >> disch_then irule >> fs[]
 QED
 
 Theorem prun_unhanded:
   ri lfd (srelabel (server k)) ([], ws0, []) ∧
-  (∀n. prounds_t lfd hw ifds (srelabel (server k)) ws0 n ≠ NONE) ⇒
+  (∀n. prounds lfd (pol_self hw) ifds (srelabel (server k)) ws0 n ≠ NONE) ⇒
   ∀n j. (SND (FST (SND (prun lfd hw ifds (srelabel (server k)) ws0 n)))).b.nxt ≤ j ⇒
         ep_sn j (0, []) (FST (SND (SND (prun lfd hw ifds (srelabel (server k)) ws0 n)))) = []
 Proof
   strip_tac >> rpt gen_tac >> first_x_assum (qspec_then ‘n’ mp_tac) >>
-  Cases_on ‘prounds_t lfd hw ifds (srelabel (server k)) ws0 n’ >> simp[prun_def] >>
+  Cases_on ‘prounds lfd (pol_self hw) ifds (srelabel (server k)) ws0 n’ >> simp[prun_def] >>
   PairCases_on ‘x’ >> simp[] >> strip_tac >>
   drule unhanded_sn >> disch_then drule >> simp[]
 QED
@@ -372,7 +369,7 @@ QED
    loop's trace, what each episode sent is a prefix of what it received *)
 Theorem echo_run_safe:
   ri lfd (srelabel (server k)) ([], ws0, []) ∧
-  (∀n. prounds_t lfd hw ifds (srelabel (server k)) ws0 n ≠ NONE) ∧
+  (∀n. prounds lfd (pol_self hw) ifds (srelabel (server k)) ws0 n ≠ NONE) ∧
   LPREFIX (fromList evs)
     (LFLATTEN (LGENLIST (λi. fromList (pround_evs lfd hw ifds (srelabel (server k)) ws0 i)) NONE)) ⇒
   ∀j. ep_sn j (0, []) evs ≼ ep_rd j (0, []) evs
@@ -386,15 +383,13 @@ Proof
       qabbrev_tac ‘R = prun lfd hw ifds (srelabel (server k)) ws0’ >>
       ‘ri lfd (srelabel (server k)) (FST (R n), FST (SND (R n)), FST (SND (SND (R n))))’
         by simp[Abbr ‘R’] >>
-      drule prun_SUC >> disch_then (qspec_then ‘n’ mp_tac) >> simp[] >>
-      IF_CASES_TAC >> simp[] >> strip_tac
-      >- (Cases_on ‘R n’ >> PairCases_on ‘r’ >> gvs[] >>
-          PairCases_on ‘ws'’ >>
-          qpat_x_assum ‘∀n. ri _ _ _’ (qspec_then ‘SUC n’ mp_tac) >> simp[] >> strip_tac >>
-          irule round_safe >> simp[] >> metis_tac[]) >>
-      ‘evs = FST (SND (SND (R n)))’ by (irule isPREFIX_ANTISYM >> gvs[]) >>
+      drule prun_SUC >> disch_then (qspec_then ‘n’ mp_tac) >> simp[] >> strip_tac >>
       Cases_on ‘R n’ >> PairCases_on ‘r’ >> gvs[] >>
-      irule boundary_safe >> qexistsl [‘q’, ‘k’, ‘lfd’, ‘r1’, ‘r0’] >> fs[]) >>
+      PairCases_on ‘ws'’ >>
+      qpat_assum ‘ri _ _ (q, _, _)’ (assume_tac o MATCH_MP echo_room) >>
+      qpat_x_assum ‘∀n. ri _ _ _’ (qspec_then ‘SUC n’ mp_tac) >> simp[] >> strip_tac >>
+      qpat_x_assum ‘_ + naccepts _ < _’ mp_tac >> simp[] >> strip_tac >>
+      irule round_safe >> simp[] >> metis_tac[]) >>
   (* no valid handle: the episode is not handed out by the round's end *)
   drule LPREFIX_rounds_any >> strip_tac >>
   drule_all prun_FLAT >> strip_tac >> gvs[] >>
@@ -445,7 +440,7 @@ Proof
   drule_all listen_used >> strip_tac >>
   simp[ri_def, wown_def, owned_def, own_ok_def, ep_ok_def, pinit_def, l1init_def,
        okb_def, outbox_of_def, texec_def, haccepted_def, ep_fold_def, oi_def, obp_def,
-       epfd_def, live_def, inbp_def, hread_def, hwritten_def, inb_of_def, hdln_def] >>
+       epfd_def, live_def, inbp_def, hread_def, hwritten_def, inb_of_def, hdln_def, proom_def] >>
   rw[]
 QED
 
@@ -459,10 +454,11 @@ Proof
   simp[send_fd_def, recv_fd_def, l0_event_accepted_def, l0_event_closed_def]
 QED
 
-(* The loop's rounds never stop (D25's guard aside, the round is total) *)
+(* The loop's rounds never stop (D25′: no guard, and the round is total) *)
 Theorem echo_prounds_total:
   l0_rely w0 ∧ sys_listen_echo w0 = SOME (out, w1, ev) ∧ listen_fd out = SOME k ⇒
-  ∀n. prounds_t (n2w k) echo_hw (asyncM4LiveInterest$live [n2w k] (log_of (srelabel (server k))))
+  ∀n. prounds (n2w k) (pol_self echo_hw)
+        (asyncM4LiveInterest$live [n2w k] (log_of (srelabel (server k))))
         (srelabel (server k)) (w1, pinit) n ≠ NONE
 Proof
   strip_tac >>
@@ -471,9 +467,10 @@ Proof
   ‘psmall (n2w k) pinit’
     by simp[psmall_def, pinit_def, l1init_def, small_fds_def, small_def] >>
   gen_tac >>
-  qspecl_then [‘w1’, ‘pinit’, ‘n2w k’, ‘echo_hw’, ‘asyncM4LiveInterest$live [n2w k] (log_of (srelabel (server k)))’, ‘srelabel (server k)’]
-    mp_tac (Q.GENL [‘w0’, ‘ps0’, ‘lfd’, ‘hw’, ‘ifds’, ‘m’] prounds_t_total) >>
-  simp[server_pt_ok] >> disch_then (qspec_then ‘n’ strip_assume_tac) >> simp[]
+  qspecl_then [‘w1’, ‘pinit’, ‘n2w k’, ‘pol_self echo_hw’,
+               ‘asyncM4LiveInterest$live [n2w k] (log_of (srelabel (server k)))’, ‘srelabel (server k)’]
+    mp_tac (Q.GENL [‘w0’, ‘ps0’, ‘lfd’, ‘pol’, ‘ifds’, ‘m’] prounds_ok) >>
+  simp[GSYM pt_ok_pl2_ok, server_pt_ok] >> disch_then (qspec_then ‘n’ strip_assume_tac) >> simp[]
 QED
 
 (* MAIN: the program's trace when the listen succeeds is safe *)
@@ -610,9 +607,10 @@ Proof
   rpt strip_tac >>
   drule LPREFIX_rounds_any >> strip_tac >>
   drule_all prun_FLAT >> strip_tac >> gvs[] >>
-  qpat_x_assum ‘∀n. prounds_t _ _ _ _ _ _ ≠ NONE’ (qspec_then ‘SUC n’ mp_tac) >>
+  qpat_x_assum ‘∀n. prounds _ _ _ _ _ _ ≠ NONE’ (qspec_then ‘SUC n’ mp_tac) >>
   simp[prun_def] >> strip_tac >>
-  Cases_on ‘prounds_t (n2w k) echo_hw (asyncM4LiveInterest$live [n2w k] (log_of (srelabel (server k))))
+  Cases_on ‘prounds (n2w k) (pol_self echo_hw)
+              (asyncM4LiveInterest$live [n2w k] (log_of (srelabel (server k))))
               (srelabel (server k)) (w1, pinit) (SUC n)’ >> gvs[] >>
   PairCases_on ‘x’ >> gvs[] >>
   ‘evs ≼ x3’ by (qpat_x_assum ‘evs ≼ _’ mp_tac >> simp[prun_def]) >>

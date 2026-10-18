@@ -15,6 +15,7 @@ Ancestors
   honestL1PFConn honestL1PFConnRun honestL1PFSpec
   honestEchoL0Spec honestEchoL0Trace honestEchoL0Inv honestEchoL0Round
   honestEchoL0Run honestEchoL0LiveOwn honestEchoL0Prog honestL1PFProg honestL0Outcome
+  honestEchoL0OneAccept
 Libs
   preamble
 
@@ -194,16 +195,13 @@ QED
 Theorem pacts_kept:
   ∀acts w ps rs evs w' ps' opn.
     pacts lfd (w, ps) acts = SOME (rs, evs, (w', ps')) ∧ wown lfd w ps ∧
-    own_ok lfd (k, opn) ps ∧ ps.b.nxt + naccepts acts < dimword (:64) ∧ kept w ps ⇒
+    own_ok lfd (k, opn) ps ∧ ps.b.nxt < dimword (:64) ∧ kept w ps ⇒
     kept w' ps' ∧ EVERY ev_nostdio evs
 Proof
   Induct >> simp[pacts_def] >> rpt gen_tac >> strip_tac >> gvs[AllCaseEqs()] >>
   PairCases_on ‘ws1’ >> rename1 ‘pdo lfd (w, ps) a = SOME (r, (w1, ps1), evs1)’ >>
   ‘ps.b.nxt < dimword (:64)’ by simp[] >>
-  ‘ps1.b.nxt + naccepts acts < dimword (:64)’
-    by (drule pdo_nxt_acc >>
-        ‘naccepts (a :: acts) = naccepts [a] + naccepts acts’ by (Cases_on ‘a’ >> simp[]) >>
-        fs[]) >>
+  ‘ps1.b.nxt < dimword (:64)’ by (drule pdo_nxt_room >> fs[]) >>
   ‘l0_rely w’ by gvs[wown_def] >>
   drule_all pdo_kept >> strip_tac >>
   drule_all pdo_wown >> strip_tac >>
@@ -267,7 +265,7 @@ QED
 Theorem pround_kept:
   pround lfd hw hs (w, ps) acts = SOME (sn, (w', ps'), log, evs) ∧
   wown lfd w ps ∧ own_ok lfd (k, opn) ps ∧ LENGTH ps.acq ≤ 1 ∧
-  ps.b.nxt + naccepts acts < dimword (:64) ∧ kept w ps ⇒
+  ps.b.nxt < dimword (:64) ∧ kept w ps ⇒
   kept w' ps' ∧ EVERY ev_nostdio evs
 Proof
   strip_tac >> qpat_x_assum ‘pround _ _ _ _ _ = _’ mp_tac >>
@@ -280,7 +278,7 @@ Proof
   drule pacts_nxt >> strip_tac >>
   Cases_on ‘l0_ep_st (k, opn) evs1’ >> rename1 ‘l0_ep_st _ _ = (k1, opn1)’ >> gvs[] >>
   ‘LENGTH ws11.acq ≤ 1’ by (Cases_on ‘acts’ >> gvs[own_ok_def]) >>
-  ‘ws11.b.nxt < dimword (:64)’ by (drule pacts_nxt_acc >> fs[]) >>
+  ‘ws11.b.nxt < dimword (:64)’ by (drule pacts_nxt_room >> fs[]) >>
   drule_all pf_tail_kept >> simp[EVERY_APPEND]
 QED
 
@@ -291,22 +289,20 @@ QED
 Theorem run_kept:
   ri lfd (srelabel (server k)) ([], (w0, ps0), []) ∧ kept w0 ps0 ⇒
   ∀n h w ps evs logs.
-    prounds_t lfd hw ifds (srelabel (server k)) (w0, ps0) n = SOME (h, (w, ps), evs, logs) ⇒
+    prounds lfd pol ifds (srelabel (server k)) (w0, ps0) n = SOME (h, (w, ps), evs, logs) ⇒
     kept w ps ∧ EVERY ev_nostdio evs
 Proof
-  strip_tac >> Induct >- (simp[prounds_t_def] >> rw[] >> gvs[]) >>
-  rpt gen_tac >> simp[prounds_t_def] >>
-  Cases_on ‘prounds_t lfd hw ifds (srelabel (server k)) (w0, ps0) n’ >> simp[] >>
+  strip_tac >> Induct >- (simp[prounds_def] >> rw[] >> gvs[]) >>
+  rpt gen_tac >> simp[prounds_def] >>
+  Cases_on ‘prounds lfd pol ifds (srelabel (server k)) (w0, ps0) n’ >> simp[] >>
   PairCases_on ‘x’ >> simp[] >>
   first_x_assum (qspecl_then [‘x0’, ‘x1’, ‘x2’, ‘x3’, ‘x4’] mp_tac) >> simp[] >> strip_tac >>
   ‘ri lfd (srelabel (server k)) (x0, (x1, x2), x3)’ by metis_tac[ri_echo] >>
-  IF_CASES_TAC >> simp[] >- (
-    simp[AllCaseEqs(), PULL_EXISTS] >> rpt gen_tac >> strip_tac >> gvs[] >>
-    qabbrev_tac ‘acts = new_actions (log_of (srelabel (server k))) x0’ >>
-    ‘x2.b.nxt + naccepts acts < dimword (:64)’ by gvs[hdl_room_def] >>
-    qpat_x_assum ‘ri _ _ _’ (strip_assume_tac o REWRITE_RULE [ri_def]) >>
-    Cases_on ‘l0_ep_st (0, []) x3’ >> gvs[] >>
-    drule pround_kept >> disch_then (qspecl_then [‘r’, ‘q’] mp_tac) >>
-    impl_tac >- fs[] >> simp[EVERY_APPEND]) >>
-  rw[] >> gvs[]
+  simp[AllCaseEqs(), PULL_EXISTS] >> rpt gen_tac >> strip_tac >> gvs[] >>
+  qpat_assum ‘ri _ _ _’ (assume_tac o MATCH_MP echo_room) >>
+  qabbrev_tac ‘acts = new_actions (log_of (srelabel (server k))) x0’ >>
+  qpat_x_assum ‘ri _ _ _’ (strip_assume_tac o REWRITE_RULE [ri_def]) >>
+  Cases_on ‘l0_ep_st (0, []) x3’ >> gvs[] >>
+  drule pround_kept >> disch_then (qspecl_then [‘r’, ‘q’] mp_tac) >>
+  impl_tac >- fs[] >> simp[EVERY_APPEND]
 QED

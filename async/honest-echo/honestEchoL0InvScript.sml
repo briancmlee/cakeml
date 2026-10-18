@@ -114,13 +114,14 @@ QED
 Theorem pdo_accept_in:
   pdo lfd (w, ps) (Accept l) = SOME (r, (w', ps'), evs) ⇒
   w' = w ∧ evs = [] ∧ ps'.inb = ps.inb ∧ ps'.b.closing = ps.b.closing ∧
-  ((ps' = ps ∧ ps.acq = [] ∧ r = Accepted NONE) ∨
-   ∃f q. ps.acq = f :: q ∧ l1hdln (w2n lfd) ps.b.nxt < dimword (:64) ∧
+  ((ps' = ps ∧ r = Accepted NONE) ∨
+   ∃f q. ps.acq = f :: q ∧ pf_room ps ∧ l1hdln (w2n lfd) ps.b.nxt < dimword (:64) ∧
          r = Accepted (SOME (l1hdl lfd ps.b.nxt)) ∧
          ps'.b.tbl = (l1hdl lfd ps.b.nxt, f) :: ps.b.tbl ∧
          ps'.b.nxt = ps.b.nxt + 1 ∧ ps'.acq = q)
 Proof
-  rw[pdo_def] >> gvs[AllCaseEqs()]
+  rw[pdo_def] >> gvs[AllCaseEqs()] >>
+  mp_tac (Q.SPECL [‘l’, ‘ps.b.nxt’] (Q.GENL [‘lfd’, ‘j’] hdln_lt)) >> gvs[pf_room_def]
 QED
 
 Theorem inb_of_set_inb[simp]:
@@ -388,17 +389,24 @@ Proof
   rw[after_send_def] >> every_case_tac >> simp[set_outbox_def]
 QED
 
-(* After one action of a round with room, the rest has room *)
-val acc_tac =
-  drule pdo_nxt_acc >>
-  ‘naccepts (h :: acts) = naccepts [h] + naccepts acts’ by (Cases_on ‘h’ >> simp[]) >>
-  fs[];
+(* D25′: an action keeps the next handle in range (Accept takes one only with room) *)
+Theorem pdo_nxt_room:
+  pdo lfd (w, ps) a = SOME (r, (w', ps'), evs) ∧ ps.b.nxt < dimword (:64) ⇒
+  ps'.b.nxt < dimword (:64)
+Proof
+  strip_tac >> drule pdo_nxt_acc >> Cases_on ‘a’ >> simp[] >>
+  qpat_x_assum ‘pdo _ _ _ = _’ mp_tac >> simp[pdo_def] >> rw[AllCaseEqs()] >>
+  gvs[pf_room_def]
+QED
+
+(* After one action of a round, the rest still has the handle in range *)
+val acc_tac = drule pdo_nxt_room >> fs[];
 
 (* The round's actions: the input half moves by the server's reads *)
 Theorem pacts_in:
   ∀acts w ps rs evs w' ps' opn.
     pacts lfd (w, ps) acts = SOME (rs, evs, (w', ps')) ∧ l0_rely w ∧
-    own_ok lfd (k, opn) ps ∧ ps.b.nxt + naccepts acts < dimword (:64) ⇒
+    own_ok lfd (k, opn) ps ∧ ps.b.nxt < dimword (:64) ⇒
     l0_rely w' ∧ LENGTH rs = LENGTH acts ∧
     FST (l0_ep_st (k, opn) evs) = k ∧ own_ok lfd (l0_ep_st (k, opn) evs) ps' ∧
     ∀j. j < k ∧ hdln (w2n lfd) j < dimword (:64) ⇒
@@ -409,7 +417,7 @@ Proof
   rpt gen_tac >> strip_tac >> gvs[AllCaseEqs()] >>
   PairCases_on ‘ws1’ >> rename1 ‘pdo lfd (w, ps) h = SOME (r, (w1, ps1), evs1)’ >>
   ‘ps.b.nxt < dimword (:64)’ by simp[] >>
-  ‘ps1.b.nxt + naccepts acts < dimword (:64)’ by acc_tac >>
+  ‘ps1.b.nxt < dimword (:64)’ by acc_tac >>
   drule_all pdo_in >> strip_tac >>
   drule_all pdo_rely >> strip_tac >>
   Cases_on ‘l0_ep_st (k, opn) evs1’ >> gvs[] >>
@@ -625,13 +633,13 @@ QED
 Theorem pacts_wown:
   ∀acts w ps rs evs w' ps' opn.
     pacts lfd (w, ps) acts = SOME (rs, evs, (w', ps')) ∧ wown lfd w ps ∧
-    own_ok lfd (k, opn) ps ∧ ps.b.nxt + naccepts acts < dimword (:64) ⇒
+    own_ok lfd (k, opn) ps ∧ ps.b.nxt < dimword (:64) ⇒
     wown lfd w' ps'
 Proof
   Induct >> simp[pacts_def] >> rpt gen_tac >> strip_tac >> gvs[AllCaseEqs()] >>
   PairCases_on ‘ws1’ >>
   ‘ps.b.nxt < dimword (:64)’ by simp[] >>
-  ‘ws11.b.nxt + naccepts acts < dimword (:64)’ by acc_tac >>
+  ‘ws11.b.nxt < dimword (:64)’ by acc_tac >>
   ‘l0_rely w’ by gvs[wown_def] >>
   drule_all pdo_wown >> strip_tac >>
   drule_all pdo_in >> strip_tac >>

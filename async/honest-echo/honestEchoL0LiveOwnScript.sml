@@ -25,7 +25,7 @@ Libs
 Theorem pround_okb:
   pround lfd hw hs (w, ps) acts = SOME (sn, (w', ps'), log, evs) ∧
   wown lfd w ps ∧ own_ok lfd (k, opn) ps ∧ LENGTH ps.acq ≤ 1 ∧ okb ps.b ∧
-  ps.b.nxt + naccepts acts < dimword (:64) ⇒
+  ps.b.nxt < dimword (:64) ⇒
   okb ps'.b
 Proof
   strip_tac >> qpat_x_assum ‘pround _ _ _ _ _ = _’ mp_tac >>
@@ -36,6 +36,7 @@ Proof
   drule_all pacts_wown >> strip_tac >>
   drule_all pacts_okb >> strip_tac >>
   drule pacts_nxt_acc >> strip_tac >>
+  drule pacts_nxt_room >> impl_tac >- fs[] >> strip_tac >>
   drule pacts_nxt >> strip_tac >>
   Cases_on ‘l0_ep_st (k, opn) evs1’ >> gvs[] >>
   rename1 ‘own_ok lfd (k, opn1) ws11’ >>
@@ -45,6 +46,18 @@ Proof
   ‘oi lfd ws11 opn1 [] (obp lfd ws11 opn1 0) 0’
     by (irule oi_triv >> fs[] >> qexists_tac ‘k’ >> fs[]) >>
   drule_all pf_tail_out >> simp[]
+QED
+
+(* D25′: along the run the next handle stays in range (proom is invariant) *)
+Theorem rstate_nxt:
+  run_ok lfd pol ifds m w0 ⇒ ∀n. (rstate lfd pol ifds m w0 n).b.nxt < dimword (:64)
+Proof
+  strip_tac >>
+  ‘∀n. proom (rstate lfd pol ifds m w0 n)’
+    suffices_by (rpt strip_tac >> first_x_assum (qspec_then ‘n’ mp_tac) >> simp[proom_def]) >>
+  Induct >- simp[rstate_def, prun_0, proom_init] >>
+  drule prun_round >> disch_then (qspec_then ‘n’ strip_assume_tac) >>
+  drule_all pround_proom >> simp[]
 QED
 
 (* MAIN (a): along the run, L1 owns only fds of open episodes, its
@@ -61,11 +74,7 @@ Proof
           inb_of_def, okb_def, outbox_of_def]) >>
   drule prun_round >> disch_then (qspec_then ‘n’ strip_assume_tac) >>
   drule prun_some >> disch_then (qspec_then ‘n’ assume_tac) >>
-  ‘(rstate lfd pol ifds m w0 n).b.nxt +
-   naccepts (new_actions (log_of m) (rhist lfd pol ifds m w0 n)) < dimword (:64)’
-    by (Cases_on ‘prun lfd pol ifds m w0 n’ >> rename1 ‘_ = (hh, r)’ >> PairCases_on ‘r’ >>
-        gvs[rstate_def, rhist_def, run_ok_def, pl2_ok_def] >>
-        first_x_assum drule >> simp[]) >>
+  ‘(rstate lfd pol ifds m w0 n).b.nxt < dimword (:64)’ by (drule rstate_nxt >> simp[]) >>
   Cases_on ‘l0_ep_st (0, []) (revs lfd pol ifds m w0 n)’ >>
   qpat_x_assum ‘wown _ _ _ ∧ _’ strip_assume_tac >>
   drule_all pround_in >> strip_tac >>
@@ -190,17 +199,14 @@ QED
 Theorem pacts_so:
   ∀acts w ps rs evs w' ps' opn.
     pacts lfd (w, ps) acts = SOME (rs, evs, (w', ps')) ∧ l0_rely w ∧
-    own_ok lfd (k, opn) ps ∧ ps.b.nxt + naccepts acts < dimword (:64) ⇒
+    own_ok lfd (k, opn) ps ∧ ps.b.nxt < dimword (:64) ⇒
     sr_open k (k, opn) evs
 Proof
   Induct >> simp[pacts_def, sr_open_def] >> rpt gen_tac >> strip_tac >>
   gvs[AllCaseEqs()] >>
   PairCases_on ‘ws1’ >> rename1 ‘pdo lfd (w, ps) a = SOME (r, (w1, ps1), evs1)’ >>
   ‘ps.b.nxt < dimword (:64)’ by simp[] >>
-  ‘ps1.b.nxt + naccepts acts < dimword (:64)’
-    by (drule pdo_nxt_acc >>
-        ‘naccepts (a :: acts) = naccepts [a] + naccepts acts’ by (Cases_on ‘a’ >> simp[]) >>
-        fs[]) >>
+  ‘ps1.b.nxt < dimword (:64)’ by (drule pdo_nxt_room >> fs[]) >>
   drule_all pdo_in >> strip_tac >>
   drule_all pdo_rely >> strip_tac >>
   ‘ps.b.nxt ≤ k’ by gvs[own_ok_def] >>
@@ -388,7 +394,7 @@ QED
 Theorem pround_so:
   pround lfd hw hs (w, ps) acts = SOME (sn, (w', ps'), log, evs) ∧
   wown lfd w ps ∧ own_ok lfd (k, opn) ps ∧ LENGTH ps.acq ≤ 1 ∧ okb ps.b ∧
-  ps.b.nxt + naccepts acts < dimword (:64) ⇒
+  ps.b.nxt < dimword (:64) ⇒
   sr_open k (k, opn) evs
 Proof
   strip_tac >> qpat_x_assum ‘pround _ _ _ _ _ = _’ mp_tac >>
@@ -403,6 +409,7 @@ Proof
   drule_all pacts_wown >> strip_tac >>
   drule_all pacts_okb >> strip_tac >>
   drule pacts_nxt_acc >> strip_tac >>
+  drule pacts_nxt_room >> impl_tac >- fs[] >> strip_tac >>
   drule pacts_nxt >> strip_tac >>
   Cases_on ‘l0_ep_st (k, opn) evs1’ >> gvs[] >>
   rename1 ‘own_ok lfd (k, opn1) ws11’ >>
@@ -428,11 +435,7 @@ Proof
   drule_all run_own >> disch_then (qspec_then ‘k’ strip_assume_tac) >>
   drule prun_round' >> disch_then (qspecl_then [‘f’, ‘k’] strip_assume_tac) >>
   drule prun_some >> disch_then (qspec_then ‘k’ assume_tac) >>
-  ‘(rstate lfd pol ifds m w0 k).b.nxt +
-   naccepts (new_actions (log_of m) (rhist lfd pol ifds m w0 k)) < dimword (:64)’
-    by (Cases_on ‘prun lfd pol ifds m w0 k’ >> rename1 ‘_ = (hh, r)’ >> PairCases_on ‘r’ >>
-        gvs[rstate_def, rhist_def, run_ok_def, pl2_ok_def] >>
-        first_x_assum drule >> simp[]) >>
+  ‘(rstate lfd pol ifds m w0 k).b.nxt < dimword (:64)’ by (drule rstate_nxt >> simp[]) >>
   Cases_on ‘l0_ep_st (0, []) (revs lfd pol ifds m w0 k)’ >>
   ‘sr_open q (q, r) (rrev lfd pol ifds m w0 k)’
     by (qpat_x_assum ‘pround _ _ _ _ _ = _’
@@ -525,7 +528,7 @@ Theorem pround_po:
   pround lfd pol hs (w, ps) acts = SOME (sn, (w', ps'), log, evs) ∧
   wown lfd w ps ∧ own_ok lfd (k, opn) ps ∧ LENGTH ps.acq ≤ 1 ∧ okb ps.b ∧
   psmall lfd ps ∧ EVERY (pact_ok lfd) acts ∧
-  ps.b.nxt + naccepts acts < dimword (:64) ⇒
+  ps.b.nxt < dimword (:64) ⇒
   po_open k (k, opn) evs
 Proof
   strip_tac >> qpat_x_assum ‘pround _ _ _ _ _ = _’ mp_tac >>
@@ -575,12 +578,11 @@ Proof
   drule prun_round' >> disch_then (qspecl_then [‘f’, ‘k’] strip_assume_tac) >>
   drule prun_some >> disch_then (qspec_then ‘k’ assume_tac) >>
   ‘psmall lfd (rstate lfd pol ifds m w0 k)’ by metis_tac[psmall_run] >>
-  ‘EVERY (pact_ok lfd) (new_actions (log_of m) (rhist lfd pol ifds m w0 k)) ∧
-   (rstate lfd pol ifds m w0 k).b.nxt +
-   naccepts (new_actions (log_of m) (rhist lfd pol ifds m w0 k)) < dimword (:64)’
+  ‘EVERY (pact_ok lfd) (new_actions (log_of m) (rhist lfd pol ifds m w0 k))’
     by (Cases_on ‘prun lfd pol ifds m w0 k’ >> rename1 ‘_ = (hh, r)’ >> PairCases_on ‘r’ >>
         gvs[rstate_def, rhist_def, run_ok_def, pl2_ok_def] >>
         first_x_assum drule >> simp[]) >>
+  ‘(rstate lfd pol ifds m w0 k).b.nxt < dimword (:64)’ by (drule rstate_nxt >> simp[]) >>
   Cases_on ‘l0_ep_st (0, []) (revs lfd pol ifds m w0 k)’ >>
   ‘po_open q (q, r) (rrev lfd pol ifds m w0 k)’
     by (qpat_x_assum ‘pround _ _ _ _ _ = _’
@@ -635,7 +637,7 @@ QED
 Theorem pround_nxt_le:
   pround lfd hw hs (w, ps) acts = SOME (sn, (w', ps'), log, evs) ∧
   wown lfd w ps ∧ own_ok lfd (k, opn) ps ∧ LENGTH ps.acq ≤ 1 ∧
-  ps.b.nxt + naccepts acts < dimword (:64) ⇒
+  ps.b.nxt < dimword (:64) ⇒
   ps'.b.nxt ≤ k
 Proof
   strip_tac >> qpat_x_assum ‘pround _ _ _ _ _ = _’ mp_tac >>
@@ -645,6 +647,7 @@ Proof
   drule_all pacts_in >> strip_tac >>
   drule_all pacts_wown >> strip_tac >>
   drule pacts_nxt_acc >> strip_tac >>
+  drule pacts_nxt_room >> impl_tac >- fs[] >> strip_tac >>
   drule pacts_nxt >> strip_tac >>
   Cases_on ‘l0_ep_st (k, opn) evs1’ >> gvs[] >>
   ‘LENGTH ws11.acq ≤ 1 ∧ ws11.b.nxt ≤ k’ by (Cases_on ‘acts’ >> gvs[own_ok_def]) >>
@@ -667,11 +670,7 @@ Proof
   first_x_assum (qspec_then ‘i’ strip_assume_tac) >>
   drule prun_round' >> disch_then (qspecl_then [‘f’, ‘i’] strip_assume_tac) >>
   drule prun_some >> disch_then (qspec_then ‘i’ assume_tac) >>
-  ‘(rstate lfd pol ifds m w0 i).b.nxt +
-   naccepts (new_actions (log_of m) (rhist lfd pol ifds m w0 i)) < dimword (:64)’
-    by (Cases_on ‘prun lfd pol ifds m w0 i’ >> rename1 ‘_ = (hh, r)’ >> PairCases_on ‘r’ >>
-        gvs[rstate_def, rhist_def, run_ok_def, pl2_ok_def] >>
-        first_x_assum drule >> simp[]) >>
+  ‘(rstate lfd pol ifds m w0 i).b.nxt < dimword (:64)’ by (drule rstate_nxt >> simp[]) >>
   Cases_on ‘l0_ep_st (0, []) (revs lfd pol ifds m w0 i)’ >>
   ‘(rstate lfd pol ifds m w0 (SUC i)).b.nxt ≤ q’
     by (qpat_x_assum ‘pround _ _ _ _ _ = _’
@@ -712,12 +711,11 @@ Proof
   drule prun_round' >> disch_then (qspecl_then [‘f’, ‘i’] strip_assume_tac) >>
   drule prun_some >> disch_then (qspec_then ‘i’ assume_tac) >>
   ‘psmall lfd (rstate lfd pol ifds m w0 i)’ by metis_tac[psmall_run] >>
-  ‘EVERY (pact_ok lfd) (new_actions (log_of m) (rhist lfd pol ifds m w0 i)) ∧
-   (rstate lfd pol ifds m w0 i).b.nxt +
-   naccepts (new_actions (log_of m) (rhist lfd pol ifds m w0 i)) < dimword (:64)’
+  ‘EVERY (pact_ok lfd) (new_actions (log_of m) (rhist lfd pol ifds m w0 i))’
     by (Cases_on ‘prun lfd pol ifds m w0 i’ >> rename1 ‘_ = (hh, r)’ >> PairCases_on ‘r’ >>
         gvs[rstate_def, rhist_def, run_ok_def, pl2_ok_def] >>
         first_x_assum drule >> simp[]) >>
+  ‘(rstate lfd pol ifds m w0 i).b.nxt < dimword (:64)’ by (drule rstate_nxt >> simp[]) >>
   Cases_on ‘l0_ep_st (0, []) (revs lfd pol ifds m w0 i)’ >>
   ‘po_open q (q, r) (rrev lfd pol ifds m w0 i)’
     by (qpat_x_assum ‘pround _ _ _ _ _ = _’
@@ -744,11 +742,7 @@ Proof
   drule_all run_own >> disch_then (qspec_then ‘i’ strip_assume_tac) >>
   drule prun_round' >> disch_then (qspecl_then [‘f’, ‘i’] strip_assume_tac) >>
   drule prun_some >> disch_then (qspec_then ‘i’ assume_tac) >>
-  ‘(rstate lfd pol ifds m w0 i).b.nxt +
-   naccepts (new_actions (log_of m) (rhist lfd pol ifds m w0 i)) < dimword (:64)’
-    by (Cases_on ‘prun lfd pol ifds m w0 i’ >> rename1 ‘_ = (hh, r)’ >> PairCases_on ‘r’ >>
-        gvs[rstate_def, rhist_def, run_ok_def, pl2_ok_def] >>
-        first_x_assum drule >> simp[]) >>
+  ‘(rstate lfd pol ifds m w0 i).b.nxt < dimword (:64)’ by (drule rstate_nxt >> simp[]) >>
   Cases_on ‘l0_ep_st (0, []) (revs lfd pol ifds m w0 i)’ >>
   ‘sr_open q (q, r) (rrev lfd pol ifds m w0 i)’
     by (qpat_x_assum ‘pround _ _ _ _ _ = _’
@@ -828,16 +822,13 @@ QED
 Theorem pacts_keep:
   ∀acts w ps rs evs w' ps' opn.
     pacts lfd (w, ps) acts = SOME (rs, evs, (w', ps')) ∧ l0_rely w ∧
-    own_ok lfd (k, opn) ps ∧ ps.b.nxt + naccepts acts < dimword (:64) ∧ keep f ps ⇒
+    own_ok lfd (k, opn) ps ∧ ps.b.nxt < dimword (:64) ∧ keep f ps ⇒
     keep f ps'
 Proof
   Induct >> simp[pacts_def] >> rpt gen_tac >> strip_tac >> gvs[AllCaseEqs()] >>
   PairCases_on ‘ws1’ >> rename1 ‘pdo lfd (w, ps) a = SOME (r, (w1, ps1), evs1)’ >>
   ‘ps.b.nxt < dimword (:64)’ by simp[] >>
-  ‘ps1.b.nxt + naccepts acts < dimword (:64)’
-    by (drule pdo_nxt_acc >>
-        ‘naccepts (a :: acts) = naccepts [a] + naccepts acts’ by (Cases_on ‘a’ >> simp[]) >>
-        fs[]) >>
+  ‘ps1.b.nxt < dimword (:64)’ by (drule pdo_nxt_room >> fs[]) >>
   drule_all pdo_keep >> strip_tac >>
   drule_all pdo_in >> strip_tac >>
   drule_all pdo_rely >> strip_tac >>
@@ -883,7 +874,7 @@ QED
    table *)
 Theorem pround_keep:
   pround lfd pol hs (w, ps) acts = SOME (sn, (w', ps'), log, evs) ∧
-  wown lfd w ps ∧ own_ok lfd (k, opn) ps ∧ ps.b.nxt + naccepts acts < dimword (:64) ∧
+  wown lfd w ps ∧ own_ok lfd (k, opn) ps ∧ ps.b.nxt < dimword (:64) ∧
   keep f ps ⇒
   MEM f ps'.acq ∨ MEM f (MAP SND ps'.b.tbl)
 Proof
@@ -936,11 +927,7 @@ Proof
   qpat_assum ‘∀n. wown _ _ _ ∧ _’ (qspec_then ‘SUC n’ strip_assume_tac) >>
   drule prun_round' >> disch_then (qspecl_then [‘f’, ‘n’] strip_assume_tac) >>
   drule prun_some >> disch_then (qspec_then ‘n’ assume_tac) >>
-  ‘(rstate lfd pol ifds m w0 n).b.nxt +
-   naccepts (new_actions (log_of m) (rhist lfd pol ifds m w0 n)) < dimword (:64)’
-    by (Cases_on ‘prun lfd pol ifds m w0 n’ >> rename1 ‘_ = (hh, rr)’ >> PairCases_on ‘rr’ >>
-        gvs[rstate_def, rhist_def, run_ok_def, pl2_ok_def] >>
-        first_x_assum drule >> simp[]) >>
+  ‘(rstate lfd pol ifds m w0 n).b.nxt < dimword (:64)’ by (drule rstate_nxt >> simp[]) >>
   ‘pown lfd (rstate lfd pol ifds m w0 n)’
     by (mp_tac l1pf_refines_hl >> impl_tac >- gvs[winv_def, run_ok_def] >>
         disch_then (qspec_then ‘n’ mp_tac) >>
@@ -1024,16 +1011,13 @@ QED
 Theorem pacts_noend:
   ∀acts w ps rs evs w' ps' opn.
     pacts lfd (w, ps) acts = SOME (rs, evs, (w', ps')) ∧ l0_rely w ∧
-    own_ok lfd (k, opn) ps ∧ ps.b.nxt + naccepts acts < dimword (:64) ∧ keep f ps ⇒
+    own_ok lfd (k, opn) ps ∧ ps.b.nxt < dimword (:64) ∧ keep f ps ⇒
     ¬EXISTS (ends f) evs
 Proof
   Induct >> simp[pacts_def] >> rpt gen_tac >> strip_tac >> gvs[AllCaseEqs()] >>
   PairCases_on ‘ws1’ >> rename1 ‘pdo lfd (w, ps) a = SOME (r, (w1, ps1), evs1)’ >>
   ‘ps.b.nxt < dimword (:64)’ by simp[] >>
-  ‘ps1.b.nxt + naccepts acts < dimword (:64)’
-    by (drule pdo_nxt_acc >>
-        ‘naccepts (a :: acts) = naccepts [a] + naccepts acts’ by (Cases_on ‘a’ >> simp[]) >>
-        fs[]) >>
+  ‘ps1.b.nxt < dimword (:64)’ by (drule pdo_nxt_room >> fs[]) >>
   drule_all pdo_noend >> strip_tac >>
   drule_all pdo_keep >> strip_tac >>
   drule_all pdo_in >> strip_tac >>
@@ -1138,7 +1122,7 @@ QED
 Theorem pround_noend:
   pround lfd pol hs (w, ps) acts = SOME (sn, (w', ps'), log, evs) ∧
   wown lfd w ps ∧ own_ok lfd (k, opn) ps ∧ LENGTH ps.acq ≤ 1 ∧
-  ps.b.nxt + naccepts acts < dimword (:64) ∧ keep f ps ⇒
+  ps.b.nxt < dimword (:64) ∧ keep f ps ⇒
   ¬EXISTS (ends f) evs
 Proof
   strip_tac >> qpat_x_assum ‘pround _ _ _ _ _ = _’ mp_tac >>
@@ -1150,6 +1134,7 @@ Proof
   drule_all pacts_in >> strip_tac >>
   drule_all pacts_wown >> strip_tac >>
   drule pacts_nxt_acc >> strip_tac >>
+  drule pacts_nxt_room >> impl_tac >- fs[] >> strip_tac >>
   drule pacts_nxt >> strip_tac >>
   Cases_on ‘l0_ep_st (k, opn) evs1’ >> gvs[] >>
   rename1 ‘own_ok lfd (k, opn1) ws11’ >>
@@ -1209,11 +1194,7 @@ Proof
   qpat_assum ‘∀n. wown _ _ _ ∧ _’ (qspec_then ‘i’ strip_assume_tac) >>
   drule prun_round' >> disch_then (qspecl_then [‘f’, ‘i’] strip_assume_tac) >>
   drule prun_some >> disch_then (qspec_then ‘i’ assume_tac) >>
-  ‘(rstate lfd pol ifds m w0 i).b.nxt +
-   naccepts (new_actions (log_of m) (rhist lfd pol ifds m w0 i)) < dimword (:64)’
-    by (Cases_on ‘prun lfd pol ifds m w0 i’ >> rename1 ‘_ = (hh, rr)’ >> PairCases_on ‘rr’ >>
-        gvs[rstate_def, rhist_def, run_ok_def, pl2_ok_def] >>
-        first_x_assum drule >> simp[]) >>
+  ‘(rstate lfd pol ifds m w0 i).b.nxt < dimword (:64)’ by (drule rstate_nxt >> simp[]) >>
   ‘pown lfd (rstate lfd pol ifds m w0 i)’
     by (mp_tac l1pf_refines_hl >> impl_tac >- gvs[winv_def, run_ok_def] >>
         disch_then (qspec_then ‘i’ mp_tac) >>
@@ -1286,16 +1267,13 @@ QED
 Theorem pacts_noclose:
   ∀acts w ps rs evs w' ps' opn.
     pacts lfd (w, ps) acts = SOME (rs, evs, (w', ps')) ∧ l0_rely w ∧
-    own_ok lfd (k, opn) ps ∧ ps.b.nxt + naccepts acts < dimword (:64) ∧ keep f ps ⇒
+    own_ok lfd (k, opn) ps ∧ ps.b.nxt < dimword (:64) ∧ keep f ps ⇒
     EVERY (λe. ¬closes_call f e) evs
 Proof
   Induct >> simp[pacts_def] >> rpt gen_tac >> strip_tac >> gvs[AllCaseEqs()] >>
   PairCases_on ‘ws1’ >> rename1 ‘pdo lfd (w, ps) a = SOME (r, (w1, ps1), evs1)’ >>
   ‘ps.b.nxt < dimword (:64)’ by simp[] >>
-  ‘ps1.b.nxt + naccepts acts < dimword (:64)’
-    by (drule pdo_nxt_acc >>
-        ‘naccepts (a :: acts) = naccepts [a] + naccepts acts’ by (Cases_on ‘a’ >> simp[]) >>
-        fs[]) >>
+  ‘ps1.b.nxt < dimword (:64)’ by (drule pdo_nxt_room >> fs[]) >>
   drule_all pdo_noclose >> strip_tac >>
   drule_all pdo_keep >> strip_tac >>
   drule_all pdo_in >> strip_tac >>
@@ -1320,7 +1298,7 @@ QED
 Theorem pround_noclose:
   pround lfd pol hs (w, ps) acts = SOME (sn, (w', ps'), log, evs) ∧
   wown lfd w ps ∧ own_ok lfd (k, opn) ps ∧ LENGTH ps.acq ≤ 1 ∧
-  ps.b.nxt + naccepts acts < dimword (:64) ∧ keep f ps ⇒
+  ps.b.nxt < dimword (:64) ∧ keep f ps ⇒
   EVERY (λe. ¬closes_call f e) evs
 Proof
   strip_tac >> qpat_x_assum ‘pround _ _ _ _ _ = _’ mp_tac >>
@@ -1370,11 +1348,7 @@ Proof
   ‘MEM f (rstate lfd pol ifds m w0 i).acq’ by (first_x_assum irule >> simp[]) >>
   drule prun_round' >> disch_then (qspecl_then [‘f’, ‘i’] strip_assume_tac) >>
   drule prun_some >> disch_then (qspec_then ‘i’ assume_tac) >>
-  ‘(rstate lfd pol ifds m w0 i).b.nxt +
-   naccepts (new_actions (log_of m) (rhist lfd pol ifds m w0 i)) < dimword (:64)’
-    by (Cases_on ‘prun lfd pol ifds m w0 i’ >> rename1 ‘_ = (hh, rr)’ >> PairCases_on ‘rr’ >>
-        gvs[rstate_def, rhist_def, run_ok_def, pl2_ok_def] >>
-        res_tac >> fs[]) >>
+  ‘(rstate lfd pol ifds m w0 i).b.nxt < dimword (:64)’ by (drule rstate_nxt >> simp[]) >>
   ‘pown lfd (rstate lfd pol ifds m w0 i)’
     by (mp_tac l1pf_refines_hl >> impl_tac >- gvs[winv_def, run_ok_def] >>
         disch_then (qspec_then ‘i’ mp_tac) >>

@@ -1,7 +1,7 @@
 (*
-  The echo server accepts at most once per round (for cf-actions: with
-  honestEchoL0NoGuard's echo_guard_stop, a failed D25 guard shows on the
-  trace as 2^64 − 1 accepted connections).
+  The echo server accepts at most once per round, so under D25′ (no loop
+  guard) each round has room for its accepts, and the run invariant holds
+  along the echo loop's rounds.
 
   server_one_accept: if every action is answered in the next snapshot
   (prompt), the server's new actions in any round hold at most one
@@ -9,14 +9,14 @@
   accept it waits for the answer (a later snapshot) before accepting again;
   the handlers it starts never accept.
   echo_one_accept: the same for the relabelled server on the loop's run.
-  echo_guard_stop_accepted: the loop's guard fails only after
-  2^64 − 1 accepts.
+  echo_room: so a round's accepts have room (from ri's proom).
+  ri_echo: the run invariant along the echo loop's rounds.
 *)
 Theory honestEchoL0OneAccept
 Ancestors
   asyncCore asyncLevel1 asyncTranscript asyncServer asyncProgress
   asyncM4RelabelDist asyncM4Relabel asyncM4SockModel asyncM3World
-  honestL1PFModel honestL1PFSpec honestEchoL0Spec honestEchoL0Run honestEchoL0NoGuard
+  honestL1PFModel honestL1PFSpec honestL1PFInv honestEchoL0Spec honestEchoL0Model honestEchoL0Run
 Libs
   preamble
 
@@ -190,15 +190,46 @@ Proof
   simp[]
 QED
 
-(* MAIN (for cf-actions): the echo loop's guard fails only after
-   2^64 − 3 accepts (D40) *)
-Theorem echo_guard_stop_accepted:
-  ri lfd (srelabel (server k)) ([], ws0, []) ∧
-  prounds_t lfd hw ifds (srelabel (server k)) ws0 n = SOME (h, (w, ps), evs, logs) ∧
-  ¬hdl_room lfd ps (honestL1PFModel$naccepts (new_actions (log_of (srelabel (server k))) h)) ⇒
-  2 ** 64 − 3 ≤ LENGTH (l0_accepted evs)
+(* D25′: a round of the echo loop has room for its accepts *)
+Theorem echo_room:
+  ri lfd (srelabel (server k)) (h, (w, ps), evs) ⇒
+  ps.b.nxt + honestL1PFModel$naccepts (new_actions (log_of (srelabel (server k))) h) <
+  dimword (:64)
 Proof
-  strip_tac >> drule_all echo_guard_stop >> strip_tac >>
-  drule_all ri_echo >> strip_tac >>
-  drule echo_one_accept >> strip_tac >> fs[]
+  strip_tac >> drule echo_one_accept >>
+  qpat_x_assum ‘ri _ _ _’ (mp_tac o CONJUNCT1 o CONJUNCT2 o REWRITE_RULE [ri_def]) >>
+  simp[proom_def]
+QED
+
+(* MAIN: the run invariant along the rounds of the echo server *)
+Theorem ri_echo:
+  ri lfd (srelabel (server k)) ([], ws0, []) ⇒
+  ∀n h w ps evs logs.
+    prounds lfd pol ifds (srelabel (server k)) ws0 n = SOME (h, (w, ps), evs, logs) ⇒
+    ri lfd (srelabel (server k)) (h, (w, ps), evs)
+Proof
+  strip_tac >> Induct >- (simp[prounds_def] >> rw[] >> gvs[]) >>
+  rpt gen_tac >> simp[prounds_def] >>
+  Cases_on ‘prounds lfd pol ifds (srelabel (server k)) ws0 n’ >> simp[] >>
+  PairCases_on ‘x’ >> simp[] >>
+  first_x_assum (qspecl_then [‘x0’, ‘x1’, ‘x2’, ‘x3’, ‘x4’] mp_tac) >> simp[] >> strip_tac >>
+  simp[AllCaseEqs(), PULL_EXISTS] >> rpt gen_tac >> strip_tac >> gvs[] >>
+  qpat_assum ‘ri _ _ _’ (assume_tac o MATCH_MP echo_room) >>
+  irule ri_step >> simp[] >> rpt (first_assum (irule_at Any) >> simp[]) >>
+  rpt strip_tac >>
+  ‘(∀i. i < LENGTH x0 ⇒
+        LENGTH (EL i x0).results = LENGTH (new_actions (log_of (srelabel (server k))) (TAKE i x0))) ∧
+   haccepted (texec (srelabel (server k)) x0) = GENLIST (λi. l1hdl lfd i) x2.b.nxt’
+    by gvs[ri_def] >>
+  drule trans_texec >> strip_tac >>
+  ‘x2.b.nxt < dimword (:64)’ by gvs[ri_def] >>
+  ‘MEM hd (haccepted (trans (srelabel (server k)) x0))’
+    by (irule server_writes_accepted >>
+        qpat_assum ‘trans _ _ = _’ (fn th => REWRITE_TAC [th]) >>
+        qpat_assum ‘haccepted (texec _ _) = _’
+          (fn th => REWRITE_TAC [haccepted_APPEND, haccepted_NONE, th, APPEND_NIL]) >>
+        conj_tac >- (irule ALL_DISTINCT_hdl >> simp[]) >>
+        qexistsl [‘bs’, ‘NONE’] >> simp[MEM_MAP]) >>
+  qpat_x_assum ‘MEM hd (haccepted (trans _ _))’ mp_tac >>
+  qpat_assum ‘trans _ _ = _’ (fn th => REWRITE_TAC [th]) >> simp[haccepted_APPEND]
 QED

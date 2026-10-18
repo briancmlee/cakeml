@@ -179,7 +179,7 @@ QED
    call on f *)
 Theorem pacts_stalled_owned:
   pacts lfd (w, ps) acts = SOME (rs, aevs, (wa, pa)) ∧ l0_rely w ∧
-  own_ok lfd (k, opn) ps ∧ ps.b.nxt + naccepts acts < dimword (:64) ∧ okb ps.b ∧
+  own_ok lfd (k, opn) ps ∧ ps.b.nxt < dimword (:64) ∧ okb ps.b ∧
   outbox_of pa.b f ≠ [] ⇒
   owned ps f ∧ ¬EXISTS (closes_call f) aevs ∧ ¬EXISTS (ep_ends f) aevs ∧ okb pa.b
 Proof
@@ -234,16 +234,12 @@ Theorem run_round_own:
           l0_ep_st (0, []) (revs lfd pol ifds m w0 r) = (k, opn) ∧
           okb (rstate lfd pol ifds m w0 r).b ∧ LENGTH (rstate lfd pol ifds m w0 r).acq ≤ 1 ∧
           wown lfd (rworld lfd pol ifds m w0 r) (rstate lfd pol ifds m w0 r) ∧
-          (rstate lfd pol ifds m w0 r).b.nxt +
-          naccepts (new_actions (log_of m) (rhist lfd pol ifds m w0 r)) < dimword (:64)
+          (rstate lfd pol ifds m w0 r).b.nxt < dimword (:64)
 Proof
   strip_tac >> ‘run_ok lfd pol ifds m w0 ∧ winv w0 ∧ MEM lfd (l0_used w0)’ by fs[oassm_def] >>
   drule_all run_own >> disch_then (qspec_then ‘r’ strip_assume_tac) >>
   Cases_on ‘l0_ep_st (0, []) (revs lfd pol ifds m w0 r)’ >> fs[] >>
-  drule prun_some >> disch_then (qspec_then ‘r’ assume_tac) >>
-  Cases_on ‘prun lfd pol ifds m w0 r’ >> rename1 ‘_ = (hh, rr)’ >> PairCases_on ‘rr’ >>
-  gvs[rstate_def, rhist_def, run_ok_def, pl2_ok_def] >>
-  first_x_assum drule >> simp[]
+  drule rstate_nxt >> simp[]
 QED
 
 (* L1 owns an fd whose output a round stalls *)
@@ -316,7 +312,7 @@ QED
 Theorem pround_win:
   pround lfd pol hs (w, ps) acts = SOME (sn, (w', ps'), log, evs) ∧ winv w ∧
   psmall lfd ps ∧ round_stalled lfd pol hs (w, ps) acts f ∧ f ≠ lfd ∧
-  own_ok lfd (k, opn) ps ∧ ps.b.nxt + naccepts acts < dimword (:64) ∧ okb ps.b ∧
+  own_ok lfd (k, opn) ps ∧ ps.b.nxt < dimword (:64) ∧ okb ps.b ∧
   nshut w ∧ (∀h. 0 < w.ch.takes c h 0 1) ∧ l0_chan_of w f = SOME c ∧
   wown lfd w ps ∧ LENGTH ps.acq ≤ 1 ⇒
   ∃pre pev post wa w1.
@@ -355,8 +351,7 @@ Proof
     by (irule pf_poll_set_small >> first_assum ACCEPT_TAC) >>
   drule_all sys_poll_out_ev >> strip_tac >>
   ‘l0_rely w’ by (qpat_x_assum ‘winv w’ mp_tac >> simp[winv_def]) >>
-  ‘ps.b.nxt + naccepts acts < dimword (:64)’
-    by (qpat_x_assum ‘naccepts acts + _ < _’ mp_tac >> simp[]) >>
+  ‘ps.b.nxt < dimword (:64)’ by fs[] >>
   drule_all pacts_stalled_owned >> strip_tac >>
   ‘l0_chan_of wa f = SOME c’ by (drule_all pacts_chan_noclose >> simp[]) >>
   drule_at (Pos last) (cj 3 sys_cflow) >> disch_then drule_all >> strip_tac >>

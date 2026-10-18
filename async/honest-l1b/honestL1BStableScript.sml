@@ -11,7 +11,7 @@
 *)
 Theory honestL1BStable
 Ancestors
-  honestL1PFOutLive honestL1PFOut honestL1BGone honestL1BSettleState honestL1BCallsStop honestL1BFetchStop honestL1BSettle
+  honestL1BCount honestL1PFOutLive honestL1PFOut honestL1BGone honestL1BSettleState honestL1BCallsStop honestL1BFetchStop honestL1BSettle
   honestL1BQuietWorld honestL1BModel honestL1PFConnRun honestL1PFLive honestL1PFModel
   honestL1Model honestL0World
 Libs
@@ -46,7 +46,7 @@ QED
 (* MAIN, (S4) *)
 Theorem l1pf_stable:
   run_ok lfd pol ifds m w0 ∧ winv w0 ∧ linv lfd w0 ∧ qfresh w0 ∧ MEM lfd (l0_used w0) ∧
-  (∀n. SND (pcm lfd pol ifds m w0 n) + 1 < dimword (:64)) ∧
+  (∀n. SND (pcm lfd pol ifds m w0 n) + 2 < dimword (:64)) ∧
   F1 lfd pol ifds m w0 ∧ S1 lfd pol ifds m w0 ∧ S2 lfd pol ifds m w0 ∧
   ¬accepts_fail lfd pol ifds m w0 ∧ SQ lfd pol ifds bz m w0 ∧ quiet_after N w0 ⇒
   ∃n1. ∀n. n1 ≤ n ⇒
@@ -58,6 +58,7 @@ Theorem l1pf_stable:
     N ≤ (rworld lfd pol ifds m w0 n).clock ∧ quiet_after N (rworld lfd pol ifds m w0 n)
 Proof
   strip_tac >>
+  qpat_assum ‘∀n. SND _ + 2 < _’ (assume_tac o MATCH_MP pcm_bound_1) >>
   drule_all fetch_stop >> disch_then (qx_choose_then ‘Kf’ assume_tac) >>
   drule_all queue_empty >> disch_then (qx_choose_then ‘Kq’ assume_tac) >>
   drule_all run_quiet >> disch_then (qx_choose_then ‘Kw’ assume_tac) >>

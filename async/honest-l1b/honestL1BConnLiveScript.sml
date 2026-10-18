@@ -14,7 +14,7 @@
 *)
 Theory honestL1BConnLive
 Ancestors
-  honestL1BConn honestL1BFaith honestL1BLive honestL1BDrains honestL1BTransfer
+  honestL1BCount honestL1BConn honestL1BFaith honestL1BLive honestL1BDrains honestL1BTransfer
   honestL1BChan honestL1BCorr honestL1BObs honestL1BRuns honestL1BSim honestL1BRefine
   honestL1BPoll honestL1BModel honestL1BStmts honestL0Reindex
   honestL1PFConnRun honestL1PFConn honestL1PFLive honestL1PFRefine honestL1PFRound
@@ -189,7 +189,7 @@ Theorem asleep_queue_empty:
   winv (reindex (btr lfd hw ifds bz m (w0, ps0)) w0) ∧
   linv lfd (reindex (btr lfd hw ifds bz m (w0, ps0)) w0) ∧
   MEM lfd (l0_used (reindex (btr lfd hw ifds bz m (w0, ps0)) w0)) ∧
-  (∀n. SND (pcm lfd hw ifds m (reindex (btr lfd hw ifds bz m (w0, ps0)) w0) n) + 1 <
+  (∀n. SND (pcm lfd hw ifds m (reindex (btr lfd hw ifds bz m (w0, ps0)) w0) n) + 2 <
        dimword (:64)) ∧
   S1 lfd hw ifds m (reindex (btr lfd hw ifds bz m (w0, ps0)) w0) ∧
   brounds lfd hw ifds bz m (w0, ps0) n0 = SOME (BRun kept (w, ps) evs0 logs) ∧
@@ -198,6 +198,7 @@ Theorem asleep_queue_empty:
   qof w lfd = []
 Proof
   strip_tac >>
+  qpat_assum ‘∀n. SND _ + 2 < _’ (assume_tac o MATCH_MP pcm_bound_1) >>
   qabbrev_tac ‘pw = reindex (btr lfd hw ifds bz m (w0, ps0)) w0’ >>
   ‘binv lfd hw ifds bz m w0 ps0 kept w ps evs0’
     by (qpat_assum ‘brounds _ _ _ _ _ _ n0 = _’ mp_tac >>
@@ -239,9 +240,18 @@ Proof
         first_x_assum (qspec_then ‘N’ mp_tac) >> asm_rewrite_tac[]) >>
   ‘pf_idle lfd hw ps (ifds kept)’ by fs[bidle_def] >>
   ‘∀n. SND (pcm lfd hw ifds m pw n) + 1 < dimword (:64)’ by fs[] >>
+  (* D25′: two below 2^64 the listener has room *)
+  ‘pf_room ps’
+    by (qpat_assum ‘rstate _ _ _ _ _ N = ps’ (SUBST1_TAC o SYM) >>
+        irule pcm_room >> conj_tac >>
+        FIRST [first_assum ACCEPT_TAC,
+               qpat_assum ‘∀n. SND _ + 2 < _’ mp_tac >> simp[wordsTheory.dimword_64]]) >>
   ‘ALOOKUP ps.b.tbl lfd = NONE’
     by (drule_all round_facts >> disch_then (qspec_then ‘N’ strip_assume_tac) >>
-        irule tbl_lfd >> gvs[]) >>
+        irule tbl_lfd >> conj_tac >>
+        FIRST [qpat_x_assum ‘pf_room ps’ mp_tac >> simp[pf_room_def] >> NO_TAC,
+               qpat_x_assum ‘pown _ (rstate _ _ _ _ _ N)’ mp_tac >>
+               qpat_assum ‘rstate _ _ _ _ _ N = ps’ (fn th => REWRITE_TAC[th])]) >>
   ‘ps.acq = [] ∧ ps.pause = 0’ by (fs[pf_idle_def] >> metis_tac[acq_idle]) >>
   CCONTR_TAC >>
   drule_all run_lfd >> disch_then (qspec_then ‘N’ mp_tac) >> asm_rewrite_tac[] >>
@@ -270,7 +280,7 @@ Theorem asleep_resolved:
   winv (reindex (btr lfd hw ifds bz m (w0, ps0)) w0) ∧
   linv lfd (reindex (btr lfd hw ifds bz m (w0, ps0)) w0) ∧
   MEM lfd (l0_used (reindex (btr lfd hw ifds bz m (w0, ps0)) w0)) ∧
-  (∀n. SND (pcm lfd hw ifds m (reindex (btr lfd hw ifds bz m (w0, ps0)) w0) n) + 1 <
+  (∀n. SND (pcm lfd hw ifds m (reindex (btr lfd hw ifds bz m (w0, ps0)) w0) n) + 2 <
        dimword (:64)) ∧
   S1 lfd hw ifds m (reindex (btr lfd hw ifds bz m (w0, ps0)) w0) ∧
   brounds lfd hw ifds bz m (w0, ps0) n1 = SOME (BSlept h bp cb) ∧
@@ -281,6 +291,7 @@ Theorem asleep_resolved:
   broke w0 io_b j0
 Proof
   strip_tac >> drule brounds_BSlept >> strip_tac >>
+  qpat_assum ‘∀n. SND _ + 2 < _’ (assume_tac o MATCH_MP pcm_bound_1) >>
   drule bround_asleep >> strip_tac >>
   qpat_x_assum ‘_ = []’ SUBST_ALL_TAC >>
   qpat_x_assum ‘bp = _’ (SUBST_ALL_TAC o REWRITE_RULE[APPEND_NIL]) >>
@@ -339,7 +350,7 @@ Theorem conn_live_transfer:
   winv (reindex (btr lfd hw ifds bz m (w0, ps0)) w0) ∧
   linv lfd (reindex (btr lfd hw ifds bz m (w0, ps0)) w0) ∧
   MEM lfd (l0_used (reindex (btr lfd hw ifds bz m (w0, ps0)) w0)) ∧
-  (∀n. SND (pcm lfd hw ifds m (reindex (btr lfd hw ifds bz m (w0, ps0)) w0) n) + 1 <
+  (∀n. SND (pcm lfd hw ifds m (reindex (btr lfd hw ifds bz m (w0, ps0)) w0) n) + 2 <
        dimword (:64)) ∧
   S1 lfd hw ifds m (reindex (btr lfd hw ifds bz m (w0, ps0)) w0) ∧
   conn_live_l0 (reindex (btr lfd hw ifds bz m (w0, ps0)) w0) io_p ⇒
@@ -348,6 +359,8 @@ Proof
   rw[conn_live_l0_def, conn_live_unless_def] >>
   ‘bpre lfd hw ifds bz m (w0, pinit) evs’ by metis_tac[btrace_def] >>
   drule_all b2p >> strip_tac >>
+  qpat_assum ‘∀n. SND _ + 2 < _’
+    (assume_tac o REWRITE_RULE [GSYM wordsTheory.dimword_64] o MATCH_MP pcm_bound_1) >>
   ‘wb = w’ by metis_tac[optionTheory.SOME_11] >> pop_assum SUBST_ALL_TAC >>
   first_x_assum (qspecl_then [‘pp’, ‘lift (btr lfd hw ifds bz m (w0, pinit)) hp w’,
                               ‘l’, ‘p’, ‘q’, ‘j0’] mp_tac) >>
@@ -363,8 +376,9 @@ Proof
       qexistsl_tac [‘bp’, ‘wb’, ‘f’] >> asm_rewrite_tac[])
   >> drule_all broke_transfer >> strip_tac
   >- (disj2_tac >> disj2_tac >> first_assum ACCEPT_TAC)
-  >> ‘∀n. SND (pcm lfd hw ifds m (reindex (btr lfd hw ifds bz m (w0, pinit)) w0) n) + 1 <
-         dimword (:64)’ by fs[] >>
+  >> ‘∀n. SND (pcm lfd hw ifds m (reindex (btr lfd hw ifds bz m (w0, pinit)) w0) n) + 2 <
+         dimword (:64)’
+       by (qpat_assum ‘∀n. SND _ + 2 < _’ (ACCEPT_TAC o REWRITE_RULE [GSYM wordsTheory.dimword_64])) >>
   mp_tac (GEN_ALL (REWRITE_RULE[] (Q.INST [‘ps0’ |-> ‘pinit’] asleep_resolved))) >>
   disch_then drule_all >> strip_tac
   >- (disj2_tac >> disj1_tac >> metis_tac[])

@@ -12,7 +12,7 @@
 *)
 Theory honestL1BGuar
 Ancestors
-  honestL1BNoFail honestL1BConnLive honestL1BLive honestL1BDrains honestL1BTransfer honestL1BConn
+  honestL1BCount honestL1BNoFail honestL1BConnLive honestL1BLive honestL1BDrains honestL1BTransfer honestL1BConn
   honestL1BStmts honestL1PFConn honestL1PFLive honestL1PFModel honestL0World
 Libs
   preamble
@@ -26,7 +26,7 @@ Theorem echo2_guar_transfer:
   winv (reindex (btr lfd hw ifds bz m (w0, ps0)) w0) ∧
   linv lfd (reindex (btr lfd hw ifds bz m (w0, ps0)) w0) ∧
   MEM lfd (l0_used (reindex (btr lfd hw ifds bz m (w0, ps0)) w0)) ∧
-  (∀n. SND (pcm lfd hw ifds m (reindex (btr lfd hw ifds bz m (w0, ps0)) w0) n) + 1 <
+  (∀n. SND (pcm lfd hw ifds m (reindex (btr lfd hw ifds bz m (w0, ps0)) w0) n) + 2 <
        dimword (:64)) ∧
   S1 lfd hw ifds m (reindex (btr lfd hw ifds bz m (w0, ps0)) w0) ∧
   (∀j. ep_timed_out KK j io_p ⇒ ep_timed_out KK j io_b) ∧
@@ -35,17 +35,19 @@ Theorem echo2_guar_transfer:
   echo2_guar_l0 KK w0 io_b
 Proof
   strip_tac >> qpat_x_assum ‘echo2_guar_l0 _ _ _’ mp_tac >>
+  qpat_assum ‘∀n. SND _ + 2 < _’ (assume_tac o MATCH_MP pcm_bound_1) >>
   REWRITE_TAC[echo2_guar_l0_def] >> strip_tac >> conj_tac
-  >- metis_tac[echo_safe_transfer]
+  >- (drule_all echo_safe_transfer >> disch_then ACCEPT_TAC)
   >> strip_tac >>
-  ‘F1_io io_p’ by metis_tac[F1_transfer] >>
-  ‘F2 (reindex (btr lfd hw ifds bz m (w0, ps0)) w0)’ by metis_tac[F2_transfer] >>
-  ‘accepts_below io_p’ by metis_tac[accepts_below_transfer] >>
-  ‘echo_live_l0 KK (reindex (btr lfd hw ifds bz m (w0, ps0)) w0) io_p ∧
-   conn_live_l0 (reindex (btr lfd hw ifds bz m (w0, ps0)) w0) io_p’ by metis_tac[] >>
+  ‘F1_io io_p’ by (drule_all F1_transfer >> disch_then ACCEPT_TAC) >>
+  ‘honestL1BStmts$F2 (reindex (btr lfd hw ifds bz m (w0, ps0)) w0)’
+    by (irule F2_transfer >> first_assum ACCEPT_TAC) >>
+  ‘accepts_below io_p’ by (drule_all accepts_below_transfer >> disch_then ACCEPT_TAC) >>
+  qpat_x_assum ‘F1_io io_p ∧ _ ⇒ _’ mp_tac >>
+  impl_tac >- asm_rewrite_tac[] >> strip_tac >>
   conj_tac
-  >- (irule echo_live_transfer >> metis_tac[])
-  >> irule conn_live_transfer >> metis_tac[]
+  >- (drule_all echo_live_transfer >> disch_then ACCEPT_TAC)
+  >> drule_all conn_live_transfer >> disch_then ACCEPT_TAC
 QED
 
 (* MAIN: the transfer, with (S1) discharging the never-fails premise *)
@@ -56,7 +58,7 @@ Theorem echo2_guar_transfer_ok:
   winv (reindex (btr lfd hw ifds bz m (w0, pinit)) w0) ∧
   linv lfd (reindex (btr lfd hw ifds bz m (w0, pinit)) w0) ∧
   MEM lfd (l0_used (reindex (btr lfd hw ifds bz m (w0, pinit)) w0)) ∧
-  (∀n. SND (pcm lfd hw ifds m (reindex (btr lfd hw ifds bz m (w0, pinit)) w0) n) + 1 <
+  (∀n. SND (pcm lfd hw ifds m (reindex (btr lfd hw ifds bz m (w0, pinit)) w0) n) + 2 <
        dimword (:64)) ∧
   S1 lfd hw ifds m (reindex (btr lfd hw ifds bz m (w0, pinit)) w0) ∧
   (∀j. ep_timed_out KK j io_p ⇒ ep_timed_out KK j io_b) ∧
@@ -65,6 +67,7 @@ Theorem echo2_guar_transfer_ok:
   echo2_guar_l0 KK w0 io_b
 Proof
   strip_tac >>
+  qpat_assum ‘∀n. SND _ + 2 < _’ (assume_tac o MATCH_MP pcm_bound_1) >>
   ‘∀n. brounds lfd hw ifds bz m (w0, pinit) n ≠ NONE’ by (irule brounds_ok >> simp[]) >>
   mp_tac (GEN_ALL (REWRITE_RULE[] (Q.INST [‘ps0’ |-> ‘pinit’] echo2_guar_transfer))) >>
   disch_then drule_all >> simp[]

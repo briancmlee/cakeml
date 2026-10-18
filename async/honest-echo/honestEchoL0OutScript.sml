@@ -329,7 +329,9 @@ Proof
         strip_tac >> gvs[MEM_MAP, EXISTS_PROD] >> res_tac >> gvs[]) >>
   ‘outbox_of ps.b f = [] ∧ ¬MEM f ps.b.gone’ by metis_tac[okb_held] >>
   ‘ps.b.nxt < k’ by gvs[own_ok_def] >>
-  ‘hdln (w2n l) ps.b.nxt < dimword (:64)’ by fs[] >>
+  ‘hdln (w2n l) ps.b.nxt < dimword (:64)’
+    by (qpat_x_assum ‘pf_room ps’ mp_tac >>
+        mp_tac (Q.SPECL [‘l’, ‘ps.b.nxt’] (Q.GENL [‘lfd’, ‘j’] hdln_lt)) >> simp[pf_room_def]) >>
   TRY (irule okb_acc >> simp[] >> NO_TAC) >>
   Cases_on ‘j = ps.b.nxt’
   >- (gvs[oi_def, obp_def, live_def, outbox_of_def] >>
@@ -503,7 +505,7 @@ QED
 Theorem pacts_out:
   ∀acts w ps rs evs w' ps' opn.
     pacts lfd (w, ps) acts = SOME (rs, evs, (w', ps')) ∧ l0_rely w ∧
-    own_ok lfd (k, opn) ps ∧ ps.b.nxt + naccepts acts < dimword (:64) ∧ okb ps.b ∧
+    own_ok lfd (k, opn) ps ∧ ps.b.nxt < dimword (:64) ∧ okb ps.b ∧
     (∀j. hdln (w2n lfd) j < dimword (:64) ∧ ps.b.nxt ≤ j ⇒
          FLAT (MAP (wr (l1hdl lfd j)) acts) = []) ⇒
     okb ps'.b ∧ ps.b.nxt ≤ ps'.b.nxt ∧
@@ -517,10 +519,7 @@ Proof
   drule pdo_out >> simp[] >>
   disch_then (qspecl_then [‘opn’, ‘k’] mp_tac) >> simp[] >> strip_tac >>
   ‘ps.b.nxt < dimword (:64)’ by fs[] >>
-  ‘ws11.b.nxt + naccepts acts < dimword (:64)’
-    by (drule pdo_nxt_acc >>
-        ‘naccepts (a :: acts) = naccepts [a] + naccepts acts’ by (Cases_on ‘a’ >> simp[]) >>
-        fs[]) >>
+  ‘ws11.b.nxt < dimword (:64)’ by (drule pdo_nxt_room >> fs[]) >>
   drule_all pdo_in >> strip_tac >>
   ‘l0_rely ws10’ by metis_tac[pdo_rely] >>
   Cases_on ‘l0_ep_st (k, opn) evs1’ >> rename1 ‘_ = (k1, opn1)’ >> gvs[] >>
@@ -1040,7 +1039,7 @@ QED
 Theorem pround_out:
   pround lfd hw hs (w, ps) acts = SOME (sn, (w', ps'), log, evs) ∧
   wown lfd w ps ∧ own_ok lfd (k, opn) ps ∧ LENGTH ps.acq ≤ 1 ∧ okb ps.b ∧
-  ps.b.nxt + naccepts acts < dimword (:64) ∧
+  ps.b.nxt < dimword (:64) ∧
   (∀j. hdln (w2n lfd) j < dimword (:64) ∧ ps.b.nxt ≤ j ⇒
        FLAT (MAP (wr (l1hdl lfd j)) acts) = []) ⇒
   okb ps'.b ∧
@@ -1060,7 +1059,7 @@ Proof
   drule pacts_nxt >> strip_tac >>
   Cases_on ‘l0_ep_st (k, opn) evs1’ >> rename1 ‘l0_ep_st _ _ = (k1, opn1)’ >> gvs[] >>
   ‘LENGTH ws11.acq ≤ 1’ by (Cases_on ‘acts’ >> gvs[own_ok_def]) >>
-  ‘ws11.b.nxt < dimword (:64)’ by (drule pacts_nxt_acc >> fs[]) >>
+  ‘ws11.b.nxt < dimword (:64)’ by (drule pacts_nxt_room >> fs[]) >>
   drule pf_tail_out >> simp[] >> strip_tac >>
   ‘hdln (w2n lfd) 0 < dimword (:64)’ by rw[hdln_def] >>
   conj_tac
@@ -1099,17 +1098,14 @@ QED
 Theorem pacts_okb:
   ∀acts w ps rs evs w' ps' opn.
     pacts lfd (w, ps) acts = SOME (rs, evs, (w', ps')) ∧ l0_rely w ∧
-    own_ok lfd (k, opn) ps ∧ ps.b.nxt + naccepts acts < dimword (:64) ∧ okb ps.b ⇒
+    own_ok lfd (k, opn) ps ∧ ps.b.nxt < dimword (:64) ∧ okb ps.b ⇒
     okb ps'.b
 Proof
   Induct >> simp[pacts_def] >> rpt gen_tac >> strip_tac >>
   gvs[AllCaseEqs()] >>
   PairCases_on ‘ws1’ >> rename1 ‘pdo lfd (w, ps) a = SOME (r, (w1, ps1), evs1)’ >>
   ‘ps.b.nxt < dimword (:64)’ by simp[] >>
-  ‘ps1.b.nxt + naccepts acts < dimword (:64)’
-    by (drule pdo_nxt_acc >>
-        ‘naccepts (a :: acts) = naccepts [a] + naccepts acts’ by (Cases_on ‘a’ >> simp[]) >>
-        fs[]) >>
+  ‘ps1.b.nxt < dimword (:64)’ by (drule pdo_nxt_room >> fs[]) >>
   ‘okb ps1.b’
     by (Cases_on ‘a’
         >- (drule_all pdo_accept_out >> simp[])

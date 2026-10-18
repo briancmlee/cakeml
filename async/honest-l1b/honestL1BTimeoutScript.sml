@@ -12,7 +12,7 @@
 *)
 Theory honestL1BTimeout
 Ancestors
-  honestL1BGuar honestL1BNoFail honestL1BLive honestL1BTransfer honestL1BCorr honestL1BObs honestL1BSim honestL1BRefine honestL1BPoll
+  honestL1BCount honestL1BGuar honestL1BNoFail honestL1BLive honestL1BTransfer honestL1BCorr honestL1BObs honestL1BSim honestL1BRefine honestL1BPoll
   honestL1BModel honestL1BStmts honestEchoL0Spec honestL1Inv honestL1Model
   honestL0World honestL0 llist
 Libs
@@ -180,7 +180,7 @@ Theorem echo2_guar_transfer_full:
   winv (reindex (btr lfd hw ifds bz m (w0, pinit)) w0) ∧
   linv lfd (reindex (btr lfd hw ifds bz m (w0, pinit)) w0) ∧
   MEM lfd (l0_used (reindex (btr lfd hw ifds bz m (w0, pinit)) w0)) ∧
-  (∀n. SND (pcm lfd hw ifds m (reindex (btr lfd hw ifds bz m (w0, pinit)) w0) n) + 1 <
+  (∀n. SND (pcm lfd hw ifds m (reindex (btr lfd hw ifds bz m (w0, pinit)) w0) n) + 2 <
        dimword (:64)) ∧
   S1 lfd hw ifds m (reindex (btr lfd hw ifds bz m (w0, pinit)) w0) ∧
   flush_ok lfd hw ifds bz m w0 pinit ∧
@@ -188,6 +188,7 @@ Theorem echo2_guar_transfer_full:
   echo2_guar_l0 KK w0 io_b
 Proof
   strip_tac >>
+  qpat_assum ‘∀n. SND _ + 2 < _’ (assume_tac o MATCH_MP pcm_bound_1) >>
   ‘∀n. brounds lfd hw ifds bz m (w0, pinit) n ≠ NONE’ by (irule brounds_ok >> simp[]) >>
   irule echo2_guar_transfer_ok >> simp[] >>
   qexistsl_tac [‘bz’, ‘hw’, ‘ifds’, ‘io_p’, ‘lfd’, ‘m’] >> fs[] >> rpt strip_tac >>

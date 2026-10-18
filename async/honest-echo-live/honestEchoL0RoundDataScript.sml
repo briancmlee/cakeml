@@ -33,14 +33,8 @@ Proof
   ‘¬MEM f (rstate (n2w lfdn) pol EI ES w0 k).acq’
     by (gvs[pown_def, ALL_DISTINCT_APPEND] >> metis_tac[]) >>
   ‘keep f (rstate (n2w lfdn) pol EI ES w0 k)’ by simp[keep_def] >>
-  ‘(rstate (n2w lfdn) pol EI ES w0 k).b.nxt +
-   naccepts (new_actions (log_of ES) (rhist (n2w lfdn) pol EI ES w0 k)) < dimword (:64)’
-    by (qpat_assum ‘run_ok _ _ _ _ _’ (fn th => assume_tac (MATCH_MP prun_some th)) >>
-        first_x_assum (qspec_then ‘k’ assume_tac) >>
-        Cases_on ‘prun (n2w lfdn) pol EI ES w0 k’ >> rename1 ‘_ = (hh, rr)’ >>
-        PairCases_on ‘rr’ >>
-        gvs[rstate_def, rhist_def, run_ok_def, pl2_ok_def] >>
-        first_x_assum drule >> simp[]) >>
+  ‘(rstate (n2w lfdn) pol EI ES w0 k).b.nxt < dimword (:64)’
+    by (drule rstate_nxt >> simp[]) >>
   qpat_assum ‘run_ok _ _ _ _ _’ (fn th => mp_tac (Q.SPEC ‘k’ (MATCH_MP prun_round' th))) >>
   strip_tac >>
   qpat_assum ‘∀n. wown _ _ _ ∧ _’ (qspec_then ‘k’ strip_assume_tac) >>

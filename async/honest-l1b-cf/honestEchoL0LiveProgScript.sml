@@ -1,13 +1,10 @@
 (*
-  L3-08: the PF echo program meets R4′ (l0_echo2_claim, K = pf_sendwait),
-  given the PF run's standing facts in the world after the listen
-  (echo_live_facts = run_ok ∧ pl2_room: hypotheses of the final theorem,
-  never trusted, as honestEchoL0BQuiet's echo_pf_facts; D25′ serve-on
-  removes them).  The world facts there are proved: honestEchoL0Setup's
-  post_listen_facts.
+  L3-08: the PF echo program meets R4′ (l0_echo2_claim, K = pf_sendwait).
+  D25′ (no loop guard, the listener's room test in the model) leaves no
+  standing hypotheses: the PF run's run_ok holds in the world after the
+  listen (echo_run_ok: the server's actions are well formed, server_pt_ok),
+  and the world facts there are honestEchoL0Setup's post_listen_facts.
 
-  - pf_guard_free: under pl2_room (D40's bound on every PF round) the
-    loop's guard never fires, so its rounds are the model's;
   - echo_l0_run_pftrace: the loop's trace after the listen is the PF
     model run's (pftrace), so honest-echo-live's chain applies there
     (echo_live_l0_pf, echo_conn_live_trace): echo_live_w4;
@@ -20,43 +17,108 @@
 *)
 Theory honestEchoL0LiveProg
 Ancestors
-  honestEchoL0Setup honestEchoL0BQuiet honestEchoL0Inv honestEchoL0TraceWrap honestL1BCorr honestL1BTrace honestL1BShift honestL1BStmts
+  llist rich_list asyncM4GTrans
+  honestEchoL0Setup honestEchoL0Inv honestEchoL0TraceWrap honestL1BCorr honestL1BShift honestL1BStmts
   honestEchoL0LiveL0 honestEchoL0Live honestEchoL0Obl honestL1PFConnTrace honestL1PFFlush
-  honestEchoL0Safe honestEchoL0Sem honestEchoL0Main honestEchoL0Spec honestL1PFSpec
-  honestL1PFProg honestL1PFLive honestL1PFModel honestL0Fdok honestL0Outcome semanticsProps
+  honestEchoL0Safe honestEchoL0Sem honestEchoL0Main honestEchoL0Spec honestEchoL0Prog honestL1PFSpec
+  honestL1PFProg honestL1PFLive honestL1PFInv honestL1PFModel honestL1Inv honestL1Model honestL0Fdok honestL0Outcome honestL0WorldProps
+  semanticsProps
 Libs
   preamble
 
-(* The PF run's standing facts in the world w after the listen on k that
-   stay hypotheses until D25′ (R); the world facts are post_listen_facts *)
-Definition echo_live_facts_def:
-  echo_live_facts k w ⇔
-    run_ok (elfd k) epol (eifds k) (esrv k) w ∧
-    pl2_room (elfd k) epol (eifds k) (esrv k) (w, pinit)
-End
+(* The echo loop's PF run after the listen on k (as honestEchoL0BQuiet) *)
+Overload elfd = “λk. n2w k : word64”
+Overload epol = “pol_self echo_hw”
+Overload eifds = “λk. asyncM4LiveInterest$live [n2w k : word64] (log_of (srelabel (server k)))”
+Overload esrv = “λk. srelabel (server k)”
+
+(* ------------------------------------------------------------------------
+   The PF run's standing facts hold after the listen (D25′)
+   ------------------------------------------------------------------------ *)
+
+Theorem echo_run_ok:
+  l0_rely w3 ∧ sys_listen_echo w3 = SOME (out, w4, ev) ∧ listen_fd out = SOME k ⇒
+  run_ok (elfd k) epol (eifds k) (esrv k) w4
+Proof
+  strip_tac >>
+  ‘k < 2147483648’ by metis_tac[listen_fd_small] >>
+  ‘l0_rely w4’ by (gvs[sys_listen_echo_def] >> metis_tac[l0_do_rely]) >>
+  simp[run_ok_def, GSYM pt_ok_pl2_ok, server_pt_ok] >>
+  simp[psmall_def, pinit_def, l1init_def, small_fds_def, small_def]
+QED
 
 (* ------------------------------------------------------------------------
    The loop's trace is the PF model run's
    ------------------------------------------------------------------------ *)
 
-Theorem pf_guard_free:
-  pl2_room lfd (pol_self hw) ifds m ws0 ⇒
-  ∀n. prounds_t lfd hw ifds m ws0 n = prounds lfd (pol_self hw) ifds m ws0 n
+(* Prefixes of a flattened list of rounds (as honestL1BTrace's) *)
+Theorem LENGTH_FLAT_GENLIST_mono[local]:
+  ∀n m. n ≤ m ⇒ LENGTH (FLAT (GENLIST f n)) ≤ LENGTH (FLAT (GENLIST f m))
 Proof
-  strip_tac >> completeInduct_on ‘n’ >> irule prounds_t_prounds >> rpt strip_tac >>
-  ‘prounds lfd (pol_self hw) ifds m ws0 i = SOME (h, ws, evs, logs)’ by metis_tac[] >>
-  qpat_x_assum ‘pl2_room _ _ _ _ _’ (mp_tac o REWRITE_RULE [pl2_room_def]) >>
-  disch_then drule >> simp[hdl_room_def]
+  Induct_on ‘m’ >> rw[] >> Cases_on ‘n = SUC m’ >> gvs[GENLIST, FLAT_SNOC] >>
+  first_x_assum (qspec_then ‘n’ mp_tac) >> simp[]
+QED
+
+Theorem FLAT_GENLIST_bounded[local]:
+  (∀n. LENGTH (FLAT (GENLIST f n)) < b) ⇒ ∃N. ∀i. N ≤ i ⇒ f i = []
+Proof
+  strip_tac >>
+  ‘∃n. ∀m. LENGTH (FLAT (GENLIST f m)) ≤ LENGTH (FLAT (GENLIST f n))’
+    by (CCONTR_TAC >> fs[NOT_LESS_EQUAL] >>
+        ‘∀k. ∃m. k ≤ LENGTH (FLAT (GENLIST f m))’
+          by (Induct >- simp[] >>
+              pop_assum strip_assume_tac >>
+              qpat_assum ‘∀n. ∃m. _’ (qspec_then ‘m’ strip_assume_tac) >>
+              qexists_tac ‘m'’ >> simp[]) >>
+        pop_assum (qspec_then ‘b’ strip_assume_tac) >>
+        qpat_x_assum ‘∀n. LENGTH _ < b’ (qspec_then ‘m’ mp_tac) >> simp[]) >>
+  qexists_tac ‘n’ >> rpt strip_tac >>
+  ‘LENGTH (FLAT (GENLIST f n)) ≤ LENGTH (FLAT (GENLIST f i))’
+    by (irule LENGTH_FLAT_GENLIST_mono >> simp[]) >>
+  first_x_assum (qspec_then ‘SUC i’ mp_tac) >>
+  simp[GENLIST, FLAT_SNOC] >> strip_tac >> Cases_on ‘f i’ >> fs[]
+QED
+
+Theorem LPREFIX_fromList_LAPPEND[local]:
+  ∀X p. LPREFIX (fromList p) (LAPPEND (fromList X) R) ⇔
+          p ≼ X ∨ ∃t. p = X ++ t ∧ LPREFIX (fromList t) R
+Proof
+  Induct >> simp[]
+  >- (Cases >> simp[]) >>
+  rpt gen_tac >> Cases_on ‘p’ >> simp[LPREFIX_LCONS] >> metis_tac[]
+QED
+
+Theorem LPREFIX_LFLATTEN[local]:
+  LPREFIX (fromList p) (LFLATTEN (LGENLIST (λi. fromList (f i)) NONE)) ⇔
+    ∃n. p ≼ FLAT (GENLIST f n)
+Proof
+  eq_tac >> strip_tac
+  >- (Cases_on ‘∃n. LENGTH p ≤ LENGTH (FLAT (GENLIST f n))’
+      >- (fs[] >> qexists_tac ‘n’ >>
+          qpat_x_assum ‘LPREFIX _ _’ mp_tac >>
+          ONCE_REWRITE_TAC [Q.SPEC ‘n’ (Q.GEN ‘n’ LFLATTEN_LGENLIST_chunk)] >>
+          rw[LPREFIX_fromList_LAPPEND] >> fs[] >>
+          ‘t = []’ by (Cases_on ‘t’ >> fs[]) >> simp[]) >>
+      fs[NOT_LESS_EQUAL] >>
+      drule FLAT_GENLIST_bounded >> strip_tac >>
+      qexists_tac ‘N’ >>
+      qpat_x_assum ‘LPREFIX _ _’ mp_tac >>
+      ONCE_REWRITE_TAC [Q.SPEC ‘N’ (Q.GEN ‘n’ LFLATTEN_LGENLIST_chunk)] >>
+      ‘LFLATTEN (LGENLIST (λi. fromList (f (N + i))) NONE) = [||]’
+        by simp[LFLATTEN_EQ_NIL, every_LGENLIST] >>
+      simp[LPREFIX_fromList_LAPPEND] >> rw[] >> simp[] >>
+      Cases_on ‘t’ >> fs[LPREFIX_LCONS]) >>
+  ONCE_REWRITE_TAC [Q.SPEC ‘n’ (Q.GEN ‘n’ LFLATTEN_LGENLIST_chunk)] >>
+  simp[LPREFIX_fromList_LAPPEND]
 QED
 
 Theorem echo_l0_run_pftrace:
-  run_ok (elfd k) epol (eifds k) (esrv k) w ∧
-  pl2_room (elfd k) epol (eifds k) (esrv k) (w, pinit) ⇒
+  run_ok (elfd k) epol (eifds k) (esrv k) w ⇒
   pftrace (elfd k) epol (eifds k) (esrv k) w (echo_l0_run k w)
 Proof
-  strip_tac >> drule pf_guard_free >> strip_tac >>
+  strip_tac >>
   drule prun_some >> strip_tac >>
-  ‘∀n. prounds_t (elfd k) echo_hw (eifds k) (esrv k) (w, pinit) n ≠ NONE’ by simp[] >>
+  ‘∀n. prounds (elfd k) epol (eifds k) (esrv k) (w, pinit) n ≠ NONE’ by simp[] >>
   drule prun_FLAT >> strip_tac >>
   ‘∀n. FLAT (GENLIST (λi. pround_evs (elfd k) echo_hw (eifds k) (esrv k) (w,pinit) i) n) =
        FST (SND (SND (honestL1PFLive$prun (elfd k) epol (eifds k) (esrv k) w n)))’
@@ -88,13 +150,13 @@ Proof
 QED
 
 Theorem echo_live_w4:
-  echo_live_facts k w ∧ winv w ∧ linv (elfd k) w ∧ qfresh w ∧ qinb w ∧ nshut w ∧
+  run_ok (elfd k) epol (eifds k) (esrv k) w ∧ winv w ∧ linv (elfd k) w ∧ qfresh w ∧ qinb w ∧ nshut w ∧
   MEM (elfd k) (l0_used w) ∧ lone (elfd k) w ∧ k < dimword (:64) ∧
   F1_io (echo_l0_run k w) ∧ honestL1BStmts$F2 w ∧ accepts_below (echo_l0_run k w) ⇒
   echo_live_l0 pf_sendwait w (echo_l0_run k w) ∧ conn_live_l0 w (echo_l0_run k w)
 Proof
-  rewrite_tac [echo_live_facts_def] >> strip_tac >>
-  drule_all echo_l0_run_pftrace >> strip_tac >>
+  strip_tac >>
+  drule echo_l0_run_pftrace >> strip_tac >>
   ‘∀n. SND (pcm (elfd k) epol (eifds k) (esrv k) w n) + 1 < dimword (:64)’
     by (irule pcm_bound_accepts_below >> metis_tac[]) >>
   ‘echo_run k epol w’
@@ -169,6 +231,39 @@ QED
    The program
    ------------------------------------------------------------------------ *)
 
+(* The setup's two early ends (as honestEchoL0BQuiet's) *)
+Theorem stdio_closed_echo[local]:
+  l0_do «sys_fdok» [0w] 1 w0 = SOME (o0, w1, e0) ∧
+  l0_do «sys_fdok» [1w] 1 w1 = SOME (o1, w2, e1) ∧
+  l0_do «sys_fdok» [2w] 1 w2 = SOME (o2, w3, e2) ∧ ¬stdio_all o0 o1 o2 ⇒
+  honestL1BStmts$stdio_closed (Terminate Success [e0; e1; e2])
+Proof
+  rw[fdok_do, honestL1BStmtsTheory.stdio_closed_def, stdio_all_def] >> rw[] >> fs[]
+QED
+
+Theorem fdok_open_ev[local]:
+  l0_do «sys_fdok» [f] 1 w = SOME ([1w], w', ev) ⇒
+  ev = IO_event (ExtCall «sys_fdok») [f] [(0w, 1w)]
+Proof
+  rw[fdok_do]
+QED
+
+Theorem listen_failed_prog[local]:
+  l0_do «sys_fdok» [0w] 1 w0 = SOME (o0, w1, e0) ∧
+  l0_do «sys_fdok» [1w] 1 w1 = SOME (o1, w2, e1) ∧
+  l0_do «sys_fdok» [2w] 1 w2 = SOME (o2, w3, e2) ∧ stdio_all o0 o1 o2 ∧
+  l0_rely w3 ∧ sys_listen_echo w3 = SOME (out, w4, ev) ∧ listen_fd out = NONE ⇒
+  honestL1BStmts$listen_failed (Terminate Success [e0; e1; e2; ev])
+Proof
+  rw[stdio_all_def] >> imp_res_tac fdok_open_ev >> rveq >>
+  qpat_x_assum ‘sys_listen_echo _ = _’ mp_tac >>
+  rw[sys_listen_echo_def, l0_do_def, AllCaseEqs(), honestL1BStmtsTheory.listen_failed_def,
+     honestL1BStmtsTheory.listen_failed_on_def] >>
+  drule_all l0_ffi_fn_length >> strip_tac >>
+  simp[l0_ev_res_def, MAP_ZIP] >>
+  gvs[listen_fd_def, l0_res_of_def, AllCaseEqs()] >> rpt strip_tac >> gvs[]
+QED
+
 Theorem stdio_kept_outcome[local]:
   honestL1BStmts$stdio_kept io ⇔
   honestL0Outcome$stdio_open io ∧
@@ -181,9 +276,7 @@ QED
 
 (* MAIN: the claim's clause at one startup world *)
 Theorem echo_live_prog_world:
-  l0_server_world w0 ∧
-  (∀w3 out w4 ev k. stdio_prefix w0 w3 ∧ sys_listen_echo w3 = SOME (out, w4, ev) ∧
-                    listen_fd out = SOME k ⇒ echo_live_facts k w4) ⇒
+  l0_server_world w0 ⇒
   ∃b. semantics_prog (init_state (l0_ffi w0)) init_env echo_l0_prog b ∧
       (honestL1BStmts$stdio_closed b ∨ listen_failed_on honestL1BStmts$echo_port_conf b ∨
        ∃io. b = Diverge io ∧ honestL1BStmts$stdio_kept io ∧ echo_safe_l0 io ∧
@@ -200,10 +293,10 @@ Proof
   >- ((* the listen fails *)
       qexists_tac ‘Terminate Success [e0; e1; e2; ev]’ >> simp[] >>
       ‘l0_rely w3’ by metis_tac[l0_do_rely] >>
-      drule_all honestEchoL0BQuietTheory.listen_failed_echo >> drule listen_conf_echo >>
+      drule_all listen_failed_prog >> drule listen_conf_echo >>
       rpt strip_tac >>
       qpat_x_assum ‘listen_failed _’ (strip_assume_tac o SIMP_RULE (srw_ss())
-        [listen_failed_def, honestL1BStmtsTheory.listen_failed_on_def]) >>
+        [honestL1BStmtsTheory.listen_failed_def, honestL1BStmtsTheory.listen_failed_on_def]) >>
       rveq >> disj2_tac >> fs[honestL1BStmtsTheory.listen_failed_on_def] >>
       qpat_x_assum ‘bs' = bs’ SUBST_ALL_TAC >>
       asm_rewrite_tac [honestL1BStmtsTheory.echo_port_conf_def,
@@ -222,7 +315,8 @@ Proof
   ‘l0_fresh_world w3’ by metis_tac[fdok_fresh_step, l0_do_rely] >>
   ‘k < 2147483648’ by metis_tac[listen_fd_small] >>
   ‘stdio_prefix w0 w3’ by (simp[stdio_prefix_def] >> metis_tac[]) >>
-  ‘echo_live_facts k w4’ by (first_x_assum irule >> qexistsl [‘ev’, ‘out’, ‘w3’] >> simp[]) >>
+  ‘run_ok (elfd k) epol (eifds k) (esrv k) w4’
+    by (irule echo_run_ok >> qexistsl [‘ev’, ‘out’, ‘w3’] >> asm_rewrite_tac[]) >>
   ‘winv w4 ∧ linv (elfd k) w4 ∧ qfresh w4 ∧ qinb w4 ∧ nshut w4 ∧ MEM (elfd k) (l0_used w4)’
     by (irule post_listen_facts >> qexistsl [‘ev’, ‘out’, ‘w0’, ‘w3’] >> simp[]) >>
   ‘lone (elfd k) w4’ by metis_tac[listen_lone] >>
@@ -235,12 +329,9 @@ Proof
   disch_then irule >> rpt conj_tac >> first_assum ACCEPT_TAC
 QED
 
-(* MAIN (L3-08): R4′ for the PF echo program, under its standing facts *)
+(* MAIN (L3-08): R4′ for the PF echo program (D25′: no hypotheses) *)
 Theorem echo_l0_echo2_claim:
-  (∀w0 w3 out w4 ev k. l0_server_world w0 ∧ stdio_prefix w0 w3 ∧
-                       sys_listen_echo w3 = SOME (out, w4, ev) ∧ listen_fd out = SOME k ⇒
-                       echo_live_facts k w4) ⇒
   l0_echo2_claim pf_sendwait echo_l0_prog
 Proof
-  rw[l0_echo2_claim_def] >> irule echo_live_prog_world >> metis_tac[]
+  rw[l0_echo2_claim_def] >> irule echo_live_prog_world >> first_assum ACCEPT_TAC
 QED

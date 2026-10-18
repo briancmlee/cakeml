@@ -159,7 +159,7 @@ QED
 Theorem pround_acc_after:
   pround lfd pol hs (w, ps) acts = SOME (sn, (w', ps'), log, evs) ∧
   wown lfd w ps ∧ own_ok lfd (k, opn) ps ∧ LENGTH ps.acq ≤ 1 ∧
-  ps.b.nxt + naccepts acts < dimword (:64) ∧
+  ps.b.nxt < dimword (:64) ∧
   evs = a ++ [ev] ++ b ∧ l0_event_accepted ev = SOME f ⇒
   ¬EXISTS (ends f) b
 Proof
@@ -171,6 +171,7 @@ Proof
   drule_all pacts_in >> strip_tac >>
   drule_all pacts_wown >> strip_tac >>
   drule pacts_nxt_acc >> strip_tac >>
+  drule pacts_nxt_room >> impl_tac >- fs[] >> strip_tac >>
   drule pacts_nxt >> strip_tac >>
   Cases_on ‘l0_ep_st (k, opn) evs1’ >> gvs[] >>
   rename1 ‘own_ok lfd (k1, opn1) ws11’ >>
@@ -236,11 +237,7 @@ Proof
   first_x_assum (qspec_then ‘i’ strip_assume_tac) >>
   drule prun_round' >> disch_then (qspecl_then [‘f’, ‘i’] strip_assume_tac) >>
   drule prun_some >> disch_then (qspec_then ‘i’ assume_tac) >>
-  ‘(rstate lfd pol ifds m w0 i).b.nxt +
-   naccepts (new_actions (log_of m) (rhist lfd pol ifds m w0 i)) < dimword (:64)’
-    by (Cases_on ‘prun lfd pol ifds m w0 i’ >> rename1 ‘_ = (hh, r)’ >> PairCases_on ‘r’ >>
-        gvs[rstate_def, rhist_def, run_ok_def, pl2_ok_def] >>
-        first_x_assum drule >> simp[]) >>
+  ‘(rstate lfd pol ifds m w0 i).b.nxt < dimword (:64)’ by (drule rstate_nxt >> simp[]) >>
   Cases_on ‘l0_ep_st (0, []) (revs lfd pol ifds m w0 i)’ >>
   ‘own_ok lfd (q, r) (rstate lfd pol ifds m w0 i)’ by metis_tac[] >>
   drule_all pround_acc_after >> simp[]

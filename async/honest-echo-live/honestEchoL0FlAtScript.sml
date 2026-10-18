@@ -66,11 +66,7 @@ Proof
   first_x_assum (qspec_then ‘i’ strip_assume_tac) >>
   drule prun_round' >> disch_then (qspecl_then [‘f’, ‘i’] strip_assume_tac) >>
   drule prun_some >> disch_then (qspec_then ‘i’ assume_tac) >>
-  ‘(rstate lfd pol ifds m w0 i).b.nxt +
-   naccepts (new_actions (log_of m) (rhist lfd pol ifds m w0 i)) < dimword (:64)’
-    by (Cases_on ‘prun lfd pol ifds m w0 i’ >> rename1 ‘_ = (hh, r)’ >> PairCases_on ‘r’ >>
-        gvs[rstate_def, rhist_def, run_ok_def, pl2_ok_def] >>
-        first_x_assum drule >> simp[]) >>
+  ‘(rstate lfd pol ifds m w0 i).b.nxt < dimword (:64)’ by (drule rstate_nxt >> simp[]) >>
   Cases_on ‘l0_ep_st (0, []) (revs lfd pol ifds m w0 i)’ >>
   ‘own_ok lfd (q, r) (rstate lfd pol ifds m w0 i)’ by metis_tac[] >>
   conj_tac

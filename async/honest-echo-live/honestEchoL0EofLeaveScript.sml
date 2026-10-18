@@ -80,7 +80,9 @@ Proof
       qpat_x_assum ‘einv _ _ _ _’ mp_tac >> simp[einv_def, inb_of_def] >> strip_tac >>
       ‘∃i. i < ps.b.nxt ∧ h = hdl lfd i’ by metis_tac[] >>
       ‘hdl lfd ps.b.nxt ≠ h’
-        by (gvs[] >> simp[Once EQ_SYM_EQ] >> irule hdl_fresh >> fs[]) >>
+        by (gvs[] >> simp[Once EQ_SYM_EQ] >> irule hdl_fresh >> simp[] >>
+            qpat_x_assum ‘pf_room _’ mp_tac >>
+            rw[pf_room_def, asyncHLModelTheory.hdln_def, honestL1ModelTheory.l1hdln_def]) >>
       simp[] >> rpt conj_tac >> rw[] >>
       TRY (qexists_tac ‘ps.b.nxt’ >> simp[] >> NO_TAC) >>
       TRY (gvs[] >> NO_TAC) >>

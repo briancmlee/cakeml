@@ -548,3 +548,134 @@ Proof
   >- (disj2_tac >> disj2_tac >> irule asks_transfer >> metis_tac[]) >>
   disj2_tac >> disj1_tac >> metis_tac[]
 QED
+
+(* ------------------------------------------------------------------------
+   Losing the fd: only a close of f, which closes j, so the end has ended
+   ------------------------------------------------------------------------ *)
+
+Theorem deliver_frozen:
+  j < LENGTH w.chans ∧ frozen (EL j w.chans) ⇒
+  j < LENGTH (l0_deliver w a).chans ∧ frozen (EL j (l0_deliver w a).chans)
+Proof
+  strip_tac >> Cases_on ‘a’ >> rw[l0_deliver_def] >> every_case_tac >>
+  gvs[upd_lchan_def, EL_LUPDATE, EL_APPEND1] >> rw[] >> fs[frozen_def, break_lchan_def] >> rw[]
+QED
+
+Theorem FOLDL_deliver_frozen:
+  ∀as w. j < LENGTH w.chans ∧ frozen (EL j w.chans) ⇒
+         j < LENGTH (FOLDL l0_deliver w as).chans ∧ frozen (EL j (FOLDL l0_deliver w as).chans)
+Proof
+  Induct >> simp[] >> rpt gen_tac >> strip_tac >>
+  first_x_assum (qspec_then ‘l0_deliver w h’ mp_tac) >>
+  impl_tac >- (irule deliver_frozen >> simp[]) >> simp[]
+QED
+
+Theorem close_lost:
+  l0_close g w = (r, w') ∧ l0_chan_of w f = SOME j ∧ l0_chan_of w' f ≠ SOME j ⇒
+  j < LENGTH w'.chans ∧ (EL j w'.chans).closed
+Proof
+  Cases_on ‘g = f’ >- (rw[l0_close_def, close_fd_def] >> every_case_tac >> gvs[] >>
+                      imp_res_tac l0_chan_of_lt >> gvs[upd_lchan_def, EL_LUPDATE]) >>
+  strip_tac >> drule_all close_chan_of >> simp[]
+QED
+
+Theorem fd_lost_ended:
+  l0sys_irun ps ss rs ∧ k < LENGTH ps ∧ kstep k (ss t) (rs t) (ss (SUC t)) as ∧ (ss (SUC t)).alive k ∧
+  fd_at ss k j f t ∧ ¬fd_at ss k j f (SUC t) ⇒
+  ended ss (k, j) (SUC t)
+Proof
+  strip_tac >>
+  ‘∃conf bts out. rs t = Call k «sys_close» conf bts out ∧ bytes_fd conf = f’
+    by (CCONTR_TAC >> qpat_x_assum ‘¬fd_at _ _ _ _ _’ mp_tac >> simp[] >>
+        irule fd_at_step >> rpt conj_tac >> TRY (first_assum ACCEPT_TAC) >>
+        qexistsl_tac [‘as’, ‘ps’, ‘rs’] >> fs[] >> metis_tac[]) >>
+  ‘k < LENGTH (ss (SUC t)).procs’ by metis_tac[irun_procs_length] >>
+  qpat_x_assum ‘kstep _ _ _ _ _’ mp_tac >> rewrite_tac[kstep_def] >> simp[] >> strip_tac >>
+  gvs[unblock_other, l0_call_def, AllCaseEqs()] >> pairarg_tac >> gvs[] >>
+  ‘l0_chan_of w' (bytes_fd conf) ≠ SOME j’
+    by (strip_tac >> qpat_x_assum ‘¬fd_at _ _ _ _ _’ mp_tac >> simp[fd_at_def] >>
+        irule FOLDL_deliver_chan_of >> simp[]) >>
+  fs[fd_at_def] >> drule_all close_lost >> strip_tac >>
+  simp[moonshotLiveObsTheory.ended_def, is_end_def, sys_chan_def] >>
+  ‘j < LENGTH (w' with <| clock := (EL k (ss t).procs).clock + 1;
+                         hist := (EL k (ss t).procs).hist ++ [(«sys_close», conf, bts)] |>).chans ∧
+   frozen (EL j (w' with <| clock := (EL k (ss t).procs).clock + 1;
+                         hist := (EL k (ss t).procs).hist ++ [(«sys_close», conf, bts)] |>).chans)’
+    by simp[frozen_def] >>
+  drule_all FOLDL_deliver_frozen >> simp[]
+QED
+
+Theorem held_or_lost:
+  P t0 ⇒ (∀u. t0 ≤ u ⇒ P u) ∨ ∃u. t0 ≤ u ∧ P u ∧ ¬P (SUC u)
+Proof
+  strip_tac >> CCONTR_TAC >> fs[] >>
+  ‘∀d. P (t0 + d)’ by (Induct >> simp[] >> first_x_assum (qspec_then ‘t0 + d’ mp_tac) >>
+                       simp[ADD_CLAUSES]) >>
+  first_x_assum (qspec_then ‘u - t0’ mp_tac) >> simp[]
+QED
+
+(* asks_transfer, for an fd held from t0 on *)
+Theorem asks_transfer_held:
+  (∀t. ∃t'. t ≤ t' ∧ is_kcall k (rs t')) ∧ (∀t. LPREFIX (fromList (ptr rs k t)) tr) ∧
+  l0sys_irun ps ss rs ∧ kv_asks_io_on f tr ∧ (∀u. t0 ≤ u ⇒ fd_at ss k j f u) ⇒
+  io (asks_in ss rs k j)
+Proof
+  strip_tac >>
+  ‘io (λn. ∃nm conf bts out. rs n = Call k nm conf bts out ∧
+                             kv_asks_ev f (IO_event (ExtCall nm) conf (ZIP (bts, out))))’
+    by (mp_tac (Q.INST [‘P’ |-> ‘kv_asks_ev f’] io_tr_lab) >>
+        impl_tac >- (conj_tac >> first_assum ACCEPT_TAC) >>
+        disch_then (SUBST1_TAC o GSYM) >>
+        qpat_x_assum ‘kv_asks_io_on _ _’ mp_tac >> rewrite_tac[kv_asks_io_on_def]) >>
+  rewrite_tac[io_def] >> strip_tac >>
+  qpat_x_assum ‘io (λn. _)’ mp_tac >> rewrite_tac[io_def] >>
+  disch_then (qspec_then ‘MAX n0 t0’ strip_assume_tac) >> fs[MAX_LE] >>
+  qexists_tac ‘n’ >> simp[] >>
+  irule asks_ev_lab >> qexistsl_tac [‘bts’, ‘conf’, ‘f’, ‘nm’, ‘out’] >> simp[] >>
+  irule irun_call_len >> metis_tac[]
+QED
+
+(* K-asks, lifted, with `ended` for the lost fd *)
+Theorem kv_asks_lift_ended:
+  l0sys_irun ps ss rs ∧ k < LENGTH ps ∧ (∀t. kstep k (ss t) (rs t) (ss (SUC t)) (AS t)) ∧
+  (∀t. ∃t'. t ≤ t' ∧ is_kcall k (rs t')) ∧
+  w0 = (EL k (ss 0).procs) with env := (λn h nm. fenv k ss AS n) ∧
+  (∀t. ∃V. agrees_to l0_oracle w0 (ptr rs k t) V ∧
+           ((ss t).alive k ⇒
+            V.clock = fclk k ss t ∧
+            (EL k (ss t).procs) with env := w0.env = FOLDL l0_deliver V (fseg k ss AS t))) ∧
+  (∀t. LPREFIX (fromList (ptr rs k t)) tr) ∧
+  (∀t conf bts out. rs t ≠ Call k «sys_connect» conf bts out) ∧
+  (∀evs i c w. LPREFIX (fromList evs) tr ∧ kv_ep_open i evs ∧
+               moonshotLiveCopy$world_at w0 evs = SOME w ∧
+               l0_chan_of w (EL i (l0_accepted evs)) = SOME c ⇒
+               Q i c ∨ kv_asks_io_on (EL i (l0_accepted evs)) tr) ∧
+  fd_at ss k j f t1 ⇒
+  (∃t conf bts out. rs t = Call k «sys_accept» conf bts out ∧
+                    l0_event_accepted (IO_event (ExtCall «sys_accept») conf (ZIP (bts, out))) = SOME f ∧
+                    fd_at ss k j f (SUC t) ∧ Q (LENGTH (l0_accepted (ptr rs k t))) j) ∨
+  (∃n. ended ss (k, j) n) ∨
+  io (asks_in ss rs k j)
+Proof
+  strip_tac >>
+  ‘∀t. (ss t).alive k’ by (irule kstep_alive_all >> metis_tac[]) >>
+  drule_all accepted_of_fd_at >> strip_tac >>
+  drule_all ep_open_accept >> strip_tac >>
+  qabbrev_tac ‘i = LENGTH (l0_accepted (ptr rs k t))’ >>
+  ‘∃V. moonshotLiveCopy$world_at w0 (ptr rs k (SUC t)) = SOME V ∧ l0_chan_of V f = SOME j’
+    by (irule world_of_fd_at >> qexistsl_tac [‘AS’, ‘ps’, ‘ss’] >>
+        qpat_x_assum ‘w0 = _’ (fn th => FULL_SIMP_TAC std_ss [th]) >> asm_rewrite_tac[]) >>
+  ‘Q i j ∨ kv_asks_io_on f tr’
+    by (qpat_x_assum ‘∀evs i c w. _’ (qspecl_then [‘ptr rs k (SUC t)’, ‘i’, ‘j’, ‘V’] mp_tac) >>
+        simp[]) >>
+  reverse (fs[]) >- (disj1_tac >> qexistsl_tac [‘t’, ‘conf’, ‘bts’, ‘out’] >> fs[Abbr ‘i’]) >>
+  mp_tac (Q.INST [‘P’ |-> ‘λu. fd_at ss k j f u’, ‘t0’ |-> ‘SUC t’] held_or_lost) >> simp[] >>
+  strip_tac
+  >- (disj2_tac >> disj2_tac >> irule asks_transfer_held >> metis_tac[]) >>
+  disj2_tac >> disj1_tac >> qexists_tac ‘SUC u’ >>
+  irule fd_lost_ended >> rpt conj_tac >>
+  FIRST [first_assum ACCEPT_TAC >> NO_TAC,
+         qpat_assum ‘∀t. (ss t).alive k’ (qspec_then ‘SUC u’ ACCEPT_TAC) >> NO_TAC,
+         qexists_tac ‘f’ >> conj_tac >> first_assum ACCEPT_TAC >> NO_TAC,
+         qexistsl_tac [‘AS u’, ‘ps’, ‘rs’] >> asm_rewrite_tac[]]
+QED

@@ -263,7 +263,11 @@ Theorem erounds_fdg:
     erounds lfd pol ifds m (w0, einit) n = SOME (h, ws, evs, logs) ⇒
     fdg_ok g (FST ws) (SND ws) ∧ noclose g evs
 Proof
-  strip_tac >> Induct
+  strip_tac >>
+  ‘∀hh. EVERY noshut (new_actions (log_of m) hh)’
+    by (gen_tac >> irule EVERY_noclose_noshut >>
+        qpat_assum ‘∀hh. EVERY honestL1EPRefine$noclose _’ (qspec_then ‘hh’ ACCEPT_TAC)) >>
+  Induct
   >- (simp[erounds_def] >> metis_tac[einit_fdg]) >>
   rpt gen_tac >> strip_tac >>
   qpat_assum ‘erounds _ _ _ _ _ (SUC _) = _’

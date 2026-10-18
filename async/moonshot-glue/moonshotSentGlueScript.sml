@@ -338,10 +338,10 @@ QED
 
 Theorem edo_fd0:
   edo lfd pol (wl, es) a = SOME (r, (wl', es'), evs) ∧ l0_rely wl ∧ fds_lt wl ∧
-  fd0_ok wl es ∧ noclose a ⇒
+  fd0_ok wl es ∧ noshut a ⇒
   l0_rely wl' ∧ fds_lt wl' ∧ fd0_ok wl' es'
 Proof
-  strip_tac >> Cases_on ‘a’ >> gvs[edo_def, AllCaseEqs(), noclose_def]
+  strip_tac >> Cases_on ‘a’ >> gvs[edo_def, AllCaseEqs(), noshut_def]
   >~ [‘pdo _ _ (Accept _) = _’]
   >- (PairCases_on ‘z’ >> gvs[] >> drule pdo_accept_ostep >> strip_tac >>
       gvs[fd0_ok_def, tfds_def] >> Cases_on ‘es.p.acq’ >> gvs[])
@@ -361,8 +361,21 @@ Proof
       qpat_x_assum ‘pdo _ _ _ = _’ mp_tac >> simp[pdo_def] >> strip_tac >>
       pairarg_tac >> gvs[] >> drule_all l1do_write_l0 >> strip_tac >>
       gvs[fd0_ok_def, tfds_def, honestL0WorldPropsTheory.fds_lt_def])
-  >~ [‘l1_close _ _ = _’]
-  >- (PairCases_on ‘z’ >> gvs[] >> drule_all l1_close_l0 >> strip_tac >>
+  >~ [‘pf_close _ _ = SOME z’]
+  >- ((* EClose of a PF handle: closed at once, or queued to close *)
+      PairCases_on ‘z’ >> gvs[] >>
+      rename1 ‘ALOOKUP es.p.b.tbl h = SOME f’ >>
+      ‘MEM f (MAP SND es.p.b.tbl)’
+        by (imp_res_tac ALOOKUP_MEM >> simp[MEM_MAP] >> metis_tac[SND]) >>
+      ‘f ≠ 0w’ by (strip_tac >> gvs[fd0_ok_def, tfds_def]) >>
+      qpat_x_assum ‘pf_close _ _ = _’ mp_tac >>
+      simp[honestL1PFCloseTheory.pf_close_def, honestL1PFCloseTheory.pf_release_def, set_inb_def] >> rw[] >>
+      TRY (PairCases_on ‘z’ >> gvs[] >> drule_all l1_close_l0 >> strip_tac) >>
+      gvs[fd0_ok_def, tfds_def, MEM_FILTER] >> rpt strip_tac >>
+      TRY (irule fds_lt_sub >> qexists_tac ‘wl’ >> simp[] >> NO_TAC) >>
+      imp_res_tac MEM_SND_ADELKEY_sub >> gvs[])
+  >>~- ([‘l1_close _ _ = _’],
+      PairCases_on ‘z’ >> gvs[] >> drule_all l1_close_l0 >> strip_tac >>
       rename1 ‘ALOOKUP es.ctbl h = SOME f’ >>
       ‘MEM f (MAP SND es.ctbl)’
         by (imp_res_tac ALOOKUP_MEM >> simp[MEM_MAP] >> metis_tac[SND]) >>
@@ -405,7 +418,7 @@ QED
 Theorem eacts_fd0:
   ∀acts wl es rs evs wl' es'.
     eacts lfd pol (wl, es) acts = SOME (rs, evs, (wl', es')) ∧ l0_rely wl ∧ fds_lt wl ∧
-    fd0_ok wl es ∧ EVERY noclose acts ⇒
+    fd0_ok wl es ∧ EVERY noshut acts ⇒
     l0_rely wl' ∧ fds_lt wl' ∧ fd0_ok wl' es'
 Proof
   Induct >> simp[eacts_def] >> rpt gen_tac >> simp[AllCaseEqs(), PULL_EXISTS] >>
@@ -469,13 +482,13 @@ Proof
 QED
 
 Theorem edo_names:
-  edo lfd pol (w, es) a = SOME (r, (w', es'), evs) ∧ (∀p. a ≠ EConnect p) ∧ noclose a ⇒
+  edo lfd pol (w, es) a = SOME (r, (w', es'), evs) ∧ (∀p. a ≠ EConnect p) ∧ noshut a ⇒
   EVERY (λev. ev_name ev = ExtCall «sys_send» ∨ ev_name ev = ExtCall «sys_close») evs
 Proof
-  Cases_on ‘a’ >> simp[edo_def, AllCaseEqs(), noclose_def] >> rw[] >> TRY (PairCases_on ‘z’) >> gvs[] >>
+  Cases_on ‘a’ >> simp[edo_def, AllCaseEqs(), noshut_def] >> rw[] >> TRY (PairCases_on ‘z’) >> gvs[] >>
   TRY (drule pdo_names >> simp[] >> NO_TAC) >>
-  gvs[l1_close_def, AllCaseEqs(), sys_close_def] >> drule l0_do_cases >> rw[] >>
-  simp[ev_name_def]
+  gvs[l1_close_def, honestL1PFCloseTheory.pf_close_def, AllCaseEqs(), sys_close_def] >>
+  drule l0_do_cases >> rw[] >> simp[ev_name_def]
 QED
 
 Theorem name_cnew:
@@ -500,7 +513,7 @@ QED
 
 Theorem edo_ep:
   edo lfd pol (w, es) a = SOME (r1, (w1, es1), evs1) ∧ oown lfd es ∧ eown lfd es1 ∧
-  okeys es.p.b ∧ l0_rely w ∧ fds_lt w ∧ fd0_ok w es ∧ noclose a ∧
+  okeys es.p.b ∧ l0_rely w ∧ fds_lt w ∧ fd0_ok w es ∧ noshut a ∧
   (∀g. ALOOKUP opn g ≠ ALOOKUP cm g ⇒ ¬live es g) ⇒
   cep_io l0sysEpisodes$ev_sent j opn kk evs1 = credit cm j evs1 ∧
   FOLDL cep_next (opn, kk) evs1 = (cnew kk (rfds es1 [r1]) ++ opn, kk + LENGTH (rfds es1 [r1])) ∧
@@ -567,7 +580,7 @@ Theorem eacts_ep:
     (∀i rs0 evs0 wi esi.
        i ≤ LENGTH acts ∧ eacts lfd pol (w, es) (TAKE i acts) = SOME (rs0, evs0, (wi, esi)) ⇒
        eown lfd esi) ∧
-    okeys es.p.b ∧ l0_rely w ∧ fds_lt w ∧ fd0_ok w es ∧ EVERY noclose acts ∧
+    okeys es.p.b ∧ l0_rely w ∧ fds_lt w ∧ fd0_ok w es ∧ EVERY noshut acts ∧
     (∀g. ALOOKUP opn g ≠ ALOOKUP cm g ⇒ ¬live es g) ⇒
     cep_io l0sysEpisodes$ev_sent j opn kk evs = credit cm j evs ∧
     FOLDL cep_next (opn, kk) evs = (cnew kk (efds lfd pol (w, es) acts) ++ opn, kk + LENGTH (efds lfd pol (w, es) acts)) ∧
@@ -756,7 +769,7 @@ QED
 
 Theorem l0_ep_sent_run:
   l0_rely w0 ∧ fds_lt w0 ∧ MEM lfd (l0_used w0) ∧ MEM 0w (l0_used w0) ∧
-  (∀hh. EVERY noclose (new_actions (log_of m) hh)) ∧
+  (∀hh. EVERY noshut (new_actions (log_of m) hh)) ∧
   (∀n. SND (ecm lfd pol ifds m w0 n) + 1 < dimword (:64)) ⇒
   ∀n h ws evs logs.
     erounds lfd pol ifds m (w0, einit) n = SOME (h, ws, evs, logs) ⇒
@@ -777,9 +790,6 @@ Proof
   rename1 ‘eacts _ _ ws' _ = SOME (rs, aevs, ws1)’ >>
   PairCases_on ‘ws'’ >> PairCases_on ‘ws1’ >> PairCases_on ‘ws’ >> fs[] >>
   (* E1's invariants at rounds n and n + 1 *)
-  ‘∀hh. EVERY noshut (new_actions (log_of m) hh)’
-    by (gen_tac >> irule EVERY_noclose_noshut >>
-        qpat_assum ‘∀hh. EVERY noclose _’ (qspec_then ‘hh’ ACCEPT_TAC)) >>
   mp_tac (Q.INST [‘N’ |-> ‘SUC n’] l1ep_refines_ehl_upto_sent) >> impl_tac >- fs[] >>
   disch_then (fn th =>
     qspecl_then [‘n’, ‘h'’, ‘(ws'0, ws'1)’, ‘evs'’, ‘logs'’] mp_tac th >>
@@ -801,8 +811,8 @@ Proof
   ‘eown lfd ws11’
     by (first_x_assum (qspecl_then [‘LENGTH (new_actions (log_of m) h')’, ‘rs’, ‘aevs’,
                                     ‘ws10’, ‘ws11’] mp_tac) >> simp[TAKE_LENGTH_ID]) >>
-  ‘EVERY noclose (new_actions (log_of m) h')’
-    by (qpat_assum ‘∀hh. EVERY noclose _’ (qspec_then ‘h'’ ACCEPT_TAC)) >>
+  ‘EVERY noshut (new_actions (log_of m) h')’
+    by (qpat_assum ‘∀hh. EVERY noshut _’ (qspec_then ‘h'’ ACCEPT_TAC)) >>
   (* no EShut in E1 (eown): the shutdown step is the identity *)
   PairCases_on ‘ws2’ >>
   ‘ws21.shq = []’
@@ -907,7 +917,7 @@ QED
 
 Theorem edo_dead:
   edo lfd pol (w, es) a = SOME (r1, (w1, es1), evs1) ∧ oown lfd es ∧ okeys es.p.b ∧
-  l0_rely w ∧ fds_lt w ∧ fd0_ok w es ∧ l0owne lfd w es ∧ noclose a ∧ dead_ok es D ⇒
+  l0_rely w ∧ fds_lt w ∧ fd0_ok w es ∧ l0owne lfd w es ∧ noshut a ∧ dead_ok es D ⇒
   nodead l0sysEpisodes$ev_sent D evs1 ∧ dead_ok es1 (FOLDL dnext D evs1)
 Proof
   strip_tac >> drule_all edo_live >> strip_tac >>
@@ -975,7 +985,7 @@ Theorem eacts_dead:
        i ≤ LENGTH acts ∧ eacts lfd pol (w, es) (TAKE i acts) = SOME (rs0, evs0, (wi, esi)) ⇒
        eown lfd esi) ∧
     okeys es.p.b ∧ l0_rely w ∧ fds_lt w ∧ fd0_ok w es ∧ l0owne lfd w es ∧
-    EVERY noclose acts ∧ dead_ok es D ⇒
+    EVERY noshut acts ∧ dead_ok es D ⇒
     nodead l0sysEpisodes$ev_sent D evs ∧ dead_ok es' (FOLDL dnext D evs)
 Proof
   Induct >- simp[eacts_def] >>
@@ -991,7 +1001,6 @@ Proof
   drule_all edo_dead >> strip_tac >>
   drule_all edo_live >> strip_tac >>
   drule_all edo_fd0 >> strip_tac >>
-  ‘noshut a’ by (irule noclose_noshut >> first_assum ACCEPT_TAC) >>
   drule_all edo_l0 >> strip_tac >>
   first_x_assum (qspecl_then [‘w1’, ‘es1’, ‘rs1’, ‘evs2’, ‘w'’, ‘es'’,
                               ‘FOLDL dnext D evs1’] mp_tac) >>
@@ -1128,7 +1137,7 @@ Proof
   Cases_on ‘dec_res out’ >> simp[] >> CASE_TAC >> simp[]
 QED
 Theorem edo_norecv:
-  edo lfd pol (w, es) a = SOME (r, (w', es'), evs) ∧ noclose a ⇒
+  edo lfd pol (w, es) a = SOME (r, (w', es'), evs) ∧ noshut a ⇒
   EVERY (λev. ev_recvd ev = NONE) evs
 Proof
   Cases_on ‘∃p. a = EConnect p’
@@ -1145,7 +1154,7 @@ Proof
 QED
 Theorem eacts_norecv:
   ∀acts w es rs evs w' es'.
-    eacts lfd pol (w, es) acts = SOME (rs, evs, (w', es')) ∧ EVERY noclose acts ⇒
+    eacts lfd pol (w, es) acts = SOME (rs, evs, (w', es')) ∧ EVERY noshut acts ⇒
     EVERY (λev. ev_recvd ev = NONE) evs
 Proof
   Induct >> simp[eacts_def, AllCaseEqs(), PULL_EXISTS] >> rpt gen_tac >> strip_tac >>
@@ -1249,7 +1258,7 @@ QED
 
 Theorem e1_nodead:
   l0_rely w0 ∧ fds_lt w0 ∧ MEM lfd (l0_used w0) ∧ MEM 0w (l0_used w0) ∧
-  (∀hh. EVERY noclose (new_actions (log_of m) hh)) ∧
+  (∀hh. EVERY noshut (new_actions (log_of m) hh)) ∧
   (∀n. SND (ecm lfd pol ifds m w0 n) + 1 < dimword (:64)) ⇒
   ∀n h ws evs logs.
     erounds lfd pol ifds m (w0, einit) n = SOME (h, ws, evs, logs) ⇒
@@ -1268,9 +1277,6 @@ Proof
   rpt BasicProvers.VAR_EQ_TAC >>
   rename1 ‘eacts _ _ ws' _ = SOME (rs, aevs, ws1)’ >>
   PairCases_on ‘ws'’ >> PairCases_on ‘ws1’ >> PairCases_on ‘ws’ >> fs[] >>
-  ‘∀hh. EVERY noshut (new_actions (log_of m) hh)’
-    by (gen_tac >> irule EVERY_noclose_noshut >>
-        qpat_assum ‘∀hh. EVERY noclose _’ (qspec_then ‘hh’ ACCEPT_TAC)) >>
   mp_tac (Q.INST [‘N’ |-> ‘SUC n’] l1ep_refines_ehl_upto_sent) >> impl_tac >- fs[] >>
   disch_then (fn th =>
     qspecl_then [‘n’, ‘h'’, ‘(ws'0, ws'1)’, ‘evs'’, ‘logs'’] mp_tac th >>
@@ -1289,8 +1295,8 @@ Proof
   ‘eown lfd ws11’
     by (first_x_assum (qspecl_then [‘LENGTH (new_actions (log_of m) h')’, ‘rs’, ‘aevs’,
                                     ‘ws10’, ‘ws11’] mp_tac) >> simp[TAKE_LENGTH_ID]) >>
-  ‘EVERY noclose (new_actions (log_of m) h')’
-    by (qpat_assum ‘∀hh. EVERY noclose _’ (qspec_then ‘h'’ ACCEPT_TAC)) >>
+  ‘EVERY noshut (new_actions (log_of m) h')’
+    by (qpat_assum ‘∀hh. EVERY noshut _’ (qspec_then ‘h'’ ACCEPT_TAC)) >>
   PairCases_on ‘ws2’ >>
   ‘ws21.shq = []’
     by (qpat_x_assum ‘etail _ _ _ _ = _’ (mp_tac o MATCH_MP etail_shq) >>
@@ -1340,7 +1346,7 @@ QED
    channel (tsig evs j) was sent, in the world built from the run *)
 Theorem e1_l0_ep_sent:
   l0_rely w0 ∧ fds_lt w0 ∧ MEM lfd (l0_used w0) ∧ MEM 0w (l0_used w0) ∧
-  (∀hh. EVERY noclose (new_actions (log_of m) hh)) ∧
+  (∀hh. EVERY noshut (new_actions (log_of m) hh)) ∧
   (∀n. SND (ecm lfd pol ifds m w0 n) + 1 < dimword (:64)) ⇒
   ∀n h ws evs logs j.
     erounds lfd pol ifds m (w0, einit) n = SOME (h, ws, evs, logs) ⇒
@@ -1361,7 +1367,6 @@ Proof
   mp_tac l0_ep_sent_run >> impl_tac >- (rpt conj_tac >> first_assum ACCEPT_TAC) >>
   disch_then drule >> strip_tac >> simp[] >>
   mp_tac l1ep_sent >> impl_tac
-  >- (rpt conj_tac >> TRY (first_assum ACCEPT_TAC) >> gen_tac >> irule EVERY_noclose_noshut >>
-      qpat_assum ‘∀hh. EVERY noclose _’ (qspec_then ‘hh’ ACCEPT_TAC)) >>
+  >- (rpt conj_tac >> first_assum ACCEPT_TAC) >>
   disch_then drule >> simp[]
 QED

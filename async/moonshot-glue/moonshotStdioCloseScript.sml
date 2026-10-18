@@ -81,11 +81,11 @@ QED
 
 Theorem edo_noclose:
   edo lfd pol (w, es) a = SOME (r, (w', es'), evs) ∧ l0_rely w ∧ fds_lt w ∧ fdg_ok g w es ∧
-  honestL1EPRefine$noclose a ⇒
+  noshut a ⇒
   noclose g evs
 Proof
   strip_tac >> Cases_on ‘a’ >>
-  gvs[edo_def, AllCaseEqs(), honestL1EPRefineTheory.noclose_def, fdg_ok_def]
+  gvs[edo_def, AllCaseEqs(), honestL1EPRefineTheory.noshut_def, fdg_ok_def]
   >~ [‘pdo _ _ (Accept _) = _’]
   >- (PairCases_on ‘z’ >> gvs[] >> drule pdo_accept_ostep >> simp[])
   >>~- ([‘pdo _ _ (Read _ _) = _’],
@@ -101,8 +101,17 @@ Proof
   >- (PairCases_on ‘z’ >> gvs[] >> irule names_noclose >>
       qpat_x_assum ‘pdo _ _ _ = _’ mp_tac >> simp[pdo_def] >> strip_tac >>
       pairarg_tac >> gvs[] >> drule l1do_write_names >> simp[])
-  >~ [‘l1_close _ _ = _’]
+  >~ [‘pf_close _ _ = SOME z’]
   >- (PairCases_on ‘z’ >> gvs[] >>
+      rename1 ‘ALOOKUP es.p.b.tbl h = SOME f’ >>
+      ‘MEM f (MAP SND es.p.b.tbl)’
+        by (imp_res_tac ALOOKUP_MEM >> simp[MEM_MAP] >> metis_tac[SND]) >>
+      ‘f ≠ g’ by (strip_tac >> gvs[tfds_def]) >>
+      qpat_x_assum ‘pf_close _ _ = _’ mp_tac >>
+      simp[honestL1PFCloseTheory.pf_close_def, honestL1PFCloseTheory.pf_release_def, set_inb_def] >> rw[] >> simp[] >>
+      PairCases_on ‘z’ >> gvs[] >> drule_all l1_close_noclose >> simp[])
+  >>~- ([‘l1_close _ _ = _’],
+      PairCases_on ‘z’ >> gvs[] >>
       rename1 ‘ALOOKUP es.ctbl h = SOME f’ >>
       ‘MEM f (MAP SND es.ctbl)’
         by (imp_res_tac ALOOKUP_MEM >> simp[MEM_MAP] >> metis_tac[SND]) >>
@@ -157,10 +166,10 @@ QED
 
 Theorem edo_fdg:
   edo lfd pol (wl, es) a = SOME (r, (wl', es'), evs) ∧ l0_rely wl ∧ fds_lt wl ∧
-  fdg_ok g wl es ∧ honestL1EPRefine$noclose a ⇒
+  fdg_ok g wl es ∧ noshut a ⇒
   fdg_ok g wl' es'
 Proof
-  strip_tac >> Cases_on ‘a’ >> gvs[edo_def, AllCaseEqs(), honestL1EPRefineTheory.noclose_def]
+  strip_tac >> Cases_on ‘a’ >> gvs[edo_def, AllCaseEqs(), honestL1EPRefineTheory.noshut_def]
   >~ [‘pdo _ _ (Accept _) = _’]
   >- (PairCases_on ‘z’ >> gvs[] >> drule pdo_accept_ostep >> strip_tac >>
       gvs[fdg_ok_def, tfds_def] >> Cases_on ‘es.p.acq’ >> gvs[])
@@ -179,8 +188,19 @@ Proof
       qpat_x_assum ‘pdo _ _ _ = _’ mp_tac >> simp[pdo_def] >> strip_tac >>
       pairarg_tac >> gvs[] >> drule_all l1do_write_l0 >> strip_tac >>
       gvs[fdg_ok_def, tfds_def])
-  >~ [‘l1_close _ _ = _’]
-  >- (PairCases_on ‘z’ >> gvs[] >> drule_all l1_close_l0 >> strip_tac >>
+  >~ [‘pf_close _ _ = SOME z’]
+  >- (PairCases_on ‘z’ >> gvs[] >>
+      rename1 ‘ALOOKUP es.p.b.tbl h = SOME f’ >>
+      ‘MEM f (MAP SND es.p.b.tbl)’
+        by (imp_res_tac ALOOKUP_MEM >> simp[MEM_MAP] >> metis_tac[SND]) >>
+      ‘f ≠ g’ by (strip_tac >> gvs[fdg_ok_def, tfds_def]) >>
+      qpat_x_assum ‘pf_close _ _ = _’ mp_tac >>
+      simp[honestL1PFCloseTheory.pf_close_def, honestL1PFCloseTheory.pf_release_def, set_inb_def] >> rw[] >>
+      TRY (PairCases_on ‘z’ >> gvs[] >> drule_all l1_close_l0 >> strip_tac) >>
+      gvs[fdg_ok_def, tfds_def, MEM_FILTER] >> rpt strip_tac >>
+      imp_res_tac MEM_SND_ADELKEY_sub >> gvs[])
+  >>~- ([‘l1_close _ _ = _’],
+      PairCases_on ‘z’ >> gvs[] >> drule_all l1_close_l0 >> strip_tac >>
       rename1 ‘ALOOKUP es.ctbl h = SOME f’ >>
       ‘MEM f (MAP SND es.ctbl)’
         by (imp_res_tac ALOOKUP_MEM >> simp[MEM_MAP] >> metis_tac[SND]) >>
@@ -205,7 +225,7 @@ QED
 Theorem eacts_fdg:
   ∀acts wl es rs evs wl' es'.
     eacts lfd pol (wl, es) acts = SOME (rs, evs, (wl', es')) ∧ l0_rely wl ∧ fds_lt wl ∧
-    fd0_ok wl es ∧ fdg_ok g wl es ∧ EVERY honestL1EPRefine$noclose acts ⇒
+    fd0_ok wl es ∧ fdg_ok g wl es ∧ EVERY noshut acts ⇒
     fdg_ok g wl' es' ∧ noclose g evs
 Proof
   Induct >> simp[eacts_def] >> rpt gen_tac >> simp[AllCaseEqs(), PULL_EXISTS] >>
@@ -257,16 +277,13 @@ QED
 Theorem erounds_fdg:
   l0_rely w0 ∧ fds_lt w0 ∧ MEM lfd (l0_used w0) ∧ MEM 0w (l0_used w0) ∧
   MEM g (l0_used w0) ∧
-  (∀hh. EVERY honestL1EPRefine$noclose (new_actions (log_of m) hh)) ∧
+  (∀hh. EVERY noshut (new_actions (log_of m) hh)) ∧
   (∀n. SND (ecm lfd pol ifds m w0 n) + 1 < dimword (:64)) ⇒
   ∀n h ws evs logs.
     erounds lfd pol ifds m (w0, einit) n = SOME (h, ws, evs, logs) ⇒
     fdg_ok g (FST ws) (SND ws) ∧ noclose g evs
 Proof
   strip_tac >>
-  ‘∀hh. EVERY noshut (new_actions (log_of m) hh)’
-    by (gen_tac >> irule EVERY_noclose_noshut >>
-        qpat_assum ‘∀hh. EVERY honestL1EPRefine$noclose _’ (qspec_then ‘hh’ ACCEPT_TAC)) >>
   Induct
   >- (simp[erounds_def] >> metis_tac[einit_fdg]) >>
   rpt gen_tac >> strip_tac >>
@@ -295,7 +312,7 @@ Proof
         simp[eround_own_def] >>
         disch_then (qspecl_then [‘LENGTH (new_actions (log_of m) h')’, ‘rs’, ‘aevs’,
                                  ‘ws10’, ‘ws11’] mp_tac) >> simp[TAKE_LENGTH_ID]) >>
-  ‘EVERY honestL1EPRefine$noclose (new_actions (log_of m) h')’
+  ‘EVERY noshut (new_actions (log_of m) h')’
     by (qpat_assum ‘∀hh. EVERY _ _’ (qspec_then ‘h'’ ACCEPT_TAC)) >>
   (* no EShut in E1 (eown): the shutdown step is the identity *)
   PairCases_on ‘ws2’ >>
@@ -317,7 +334,7 @@ QED
 Theorem erounds_no_close_stdio:
   l0_rely w0 ∧ fds_lt w0 ∧ MEM lfd (l0_used w0) ∧
   MEM 0w (l0_used w0) ∧ MEM 1w (l0_used w0) ∧ MEM 2w (l0_used w0) ∧
-  (∀hh. EVERY honestL1EPRefine$noclose (new_actions (log_of m) hh)) ∧
+  (∀hh. EVERY noshut (new_actions (log_of m) hh)) ∧
   (∀n. SND (ecm lfd pol ifds m w0 n) + 1 < dimword (:64)) ⇒
   ∀n h ws evs logs.
     erounds lfd pol ifds m (w0, einit) n = SOME (h, ws, evs, logs) ⇒

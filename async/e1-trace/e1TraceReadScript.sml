@@ -417,16 +417,13 @@ QED
 (* The run: channel j's receives (cep_io) are its data arrivals, tick by tick *)
 Theorem l0_ep_recvd_run:
   l0_rely w0 ∧ fds_lt w0 ∧ MEM lfd (l0_used w0) ∧ MEM 0w (l0_used w0) ∧
-  (∀hh. EVERY noclose (new_actions (log_of m) hh)) ∧
+  (∀hh. EVERY noshut (new_actions (log_of m) hh)) ∧
   (∀n. SND (ecm lfd pol ifds m w0 n) + 1 < dimword (:64)) ⇒
   ∀n h ws evs logs.
     erounds lfd pol ifds m (w0, einit) n = SOME (h, ws, evs, logs) ⇒
     ∀j. cep_io ev_recvd j [] 0 evs = FLAT (GENLIST (λi. pdata j (earr lfd a pol ifds m w0 i)) n)
 Proof
   strip_tac >>
-  ‘∀hh. EVERY noshut (new_actions (log_of m) hh)’
-    by (gen_tac >> irule EVERY_noclose_noshut >>
-        qpat_assum ‘∀hh. EVERY noclose _’ (qspec_then ‘hh’ ACCEPT_TAC)) >>
   Induct
   >- simp[erounds_def, cep_io_def] >>
   rpt gen_tac >> strip_tac >> gen_tac >>
@@ -459,8 +456,8 @@ Proof
   ‘eown lfd ws11’
     by (first_x_assum (qspecl_then [‘LENGTH (new_actions (log_of m) h')’, ‘rs’, ‘aevs’,
                                     ‘ws10’, ‘ws11’] mp_tac) >> simp[TAKE_LENGTH_ID]) >>
-  ‘EVERY noclose (new_actions (log_of m) h')’
-    by (qpat_assum ‘∀hh. EVERY noclose _’ (qspec_then ‘h'’ ACCEPT_TAC)) >>
+  ‘EVERY noshut (new_actions (log_of m) h')’
+    by (qpat_assum ‘∀hh. EVERY noshut _’ (qspec_then ‘h'’ ACCEPT_TAC)) >>
   (* no EShut in E1 (eown): the shutdown step is the identity *)
   PairCases_on ‘ws2’ >>
   ‘ws21.shq = []’
@@ -529,7 +526,7 @@ QED
    received *)
 Theorem e1_l0_ep_recvd:
   l0_rely w0 ∧ fds_lt w0 ∧ MEM lfd (l0_used w0) ∧ MEM 0w (l0_used w0) ∧
-  (∀hh. EVERY noclose (new_actions (log_of m) hh)) ∧
+  (∀hh. EVERY noshut (new_actions (log_of m) hh)) ∧
   (∀n. SND (ecm lfd pol ifds m w0 n) + 1 < dimword (:64)) ⇒
   ∀n h ws evs logs j.
     erounds lfd pol ifds m (w0, einit) n = SOME (h, ws, evs, logs) ⇒
@@ -549,8 +546,7 @@ Proof
   mp_tac l0_ep_recvd_run >> impl_tac >- (rpt conj_tac >> first_assum ACCEPT_TAC) >>
   disch_then (drule_then (qspec_then ‘c’ SUBST1_TAC)) >>
   mp_tac l1ep_refines_ehl >> impl_tac
-  >- (rpt conj_tac >> TRY (first_assum ACCEPT_TAC) >> gen_tac >> irule EVERY_noclose_noshut >>
-      qpat_assum ‘∀hh. EVERY noclose _’ (qspec_then ‘hh’ ACCEPT_TAC)) >>
+  >- (rpt conj_tac >> first_assum ACCEPT_TAC) >>
   disch_then (drule_then strip_assume_tac) >>
   drule eh_recv_run >> strip_tac >>
   simp[] >> simp[chrecv_def, pew_def]

@@ -4,7 +4,7 @@ INCLUDES = ../honest-echo-live ../honest-l1b ../honest-l1 ../honest-echo ../hone
            ../honest-l0 ../honest-ffi ../ffi-spike ../model ../cf-actions ../m3-assembly \
            ../m4-common ../m4-liveness ../socket-v2 ../close-v2-loop ../close-v2-sim ../spec \
            ../m4-server ../http-model ../http-safety ../http-bodies ../http-kv ../kv-live \
-           ../library-liveness ../http-proto ../http-proto-inst ../proto-v2-sim
+           ../library-liveness ../http-proto ../http-proto-inst ../proto-v2-sim ../kv-v2
 ifdef POLY
 HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
 endif

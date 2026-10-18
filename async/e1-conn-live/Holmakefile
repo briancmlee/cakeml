@@ -1,0 +1,10 @@
+# E1 per-connection liveness on the listener (task D, r3-close; for honest-ffi's
+# proxyLiveLift.conn_live_run): e1_conn_live, the EP analogue of PF's pf_conn_live.
+INCLUDES = ../e1-progress ../e1-trace ../moonshot-glue ../moonshot ../honest-l1-ep ../l0sys-bridges ../l0sys \
+           ../honest-l1b ../honest-l1 ../honest-echo ../honest-l0-cf \
+           ../endpoint-hl ../endpoint-world ../honest-l0 ../honest-ffi ../ffi-spike ../model \
+           ../cf-actions ../m3-assembly ../socket-v2 ../close-v2-loop \
+           $(CAKEMLDIR)/semantics/alt_semantics/proofs $(CAKEMLDIR)/translator
+ifdef POLY
+HOLHEAP = $(CAKEMLDIR)/basis/basis-heap
+endif

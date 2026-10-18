@@ -367,3 +367,101 @@ Proof
         FIRST [qexistsl_tac [‘AS u’, ‘ps’, ‘rs’] >> asm_rewrite_tac[] >> NO_TAC, fs[]]) >>
   metis_tac[]
 QED
+
+(* ------------------------------------------------------------------------
+   A new channel of k, when k makes no connect, came from a delivery, so
+   it starts out queued
+   ------------------------------------------------------------------------ *)
+
+Theorem call_chans_len_eq:
+  l0_call nm (unblock nm conf) bts w = SOME (FFIreturn out w1) ∧ nm ≠ «sys_connect» ⇒
+  LENGTH w1.chans = LENGTH w.chans
+Proof
+  strip_tac >>
+  Cases_on ‘nm = «sys_poll»’ >- (gvs[] >> drule l0_call_poll_unblock >> simp[]) >>
+  gvs[unblock_other, l0_call_def, AllCaseEqs()] >> rpt (pairarg_tac >> gvs[]) >>
+  TRY (gvs[l0_listen_def, l0_recv_def, l0_send_def, l0_shutdown_def, l0_connerr_def, AllCaseEqs()] >>
+       gvs[upd_lchan_def] >> NO_TAC) >>
+  TRY (drule l0_accept_cases >> strip_tac >> gvs[upd_lchan_def] >> NO_TAC) >>
+  gvs[l0_close_def, close_fd_def, AllCaseEqs()] >> simp[upd_lchan_def]
+QED
+
+Theorem new_chan_queued:
+  l0sys_irun ps ss rs ∧ k < LENGTH ps ∧ kstep k (ss t) (rs t) (ss (SUC t)) as ∧ (ss (SUC t)).alive k ∧
+  (∀conf bts out. rs t ≠ Call k «sys_connect» conf bts out) ∧
+  ¬(j < LENGTH (EL k (ss t).procs).chans) ∧ j < LENGTH (EL k (ss (SUC t)).procs).chans ⇒
+  MEM j (FLAT (MAP (SND o SND) (EL k (ss (SUC t)).procs).listeners))
+Proof
+  strip_tac >>
+  qpat_x_assum ‘kstep _ _ _ _ _’ mp_tac >> rewrite_tac[kstep_def] >> strip_tac >>
+  Cases_on ‘rs t’ >> fs[] >>
+  TRY (rename1 ‘Exit k0’ >> Cases_on ‘k0 = k’ >> gvs[]) >>
+  TRY (rename1 ‘Call k0 nm conf bts out’ >> Cases_on ‘k0 = k’ >> gvs[]) >>
+  irule FOLDL_deliver_new_queued >> gvs[] >>
+  drule_all call_chans_len_eq >> simp[]
+QED
+
+Theorem irun_chans_0:
+  l0sys_irun ps ss rs ∧ k < LENGTH ps ⇒ (EL k (ss 0).procs).chans = []
+Proof
+  strip_tac >> drule_all l0sys_proj_inf >> strip_tac >>
+  fs[LET_THM, l0sysBridgesTheory.l0_fresh_def]
+QED
+
+(* ------------------------------------------------------------------------
+   Per end of k: it is accepted with Q, or it ends, or k asks on it
+   infinitely often, unless X (conn_live's excuse)
+   ------------------------------------------------------------------------ *)
+
+Theorem kv_end_lift:
+  l0sys_irun ps ss rs ∧ k < LENGTH ps ∧ (∀t. kstep k (ss t) (rs t) (ss (SUC t)) (AS t)) ∧
+  (∀t. ∃t'. t ≤ t' ∧ is_kcall k (rs t')) ∧
+  w0 = (EL k (ss 0).procs) with env := (λn h nm. fenv k ss AS n) ∧
+  (∀t. ∃V. agrees_to l0_oracle w0 (ptr rs k t) V ∧
+           ((ss t).alive k ⇒
+            V.env = w0.env ∧ V.clock = fclk k ss t ∧
+            (EL k (ss t).procs) with env := w0.env = FOLDL l0_deliver V (fseg k ss AS t))) ∧
+  (∀t. LPREFIX (fromList (ptr rs k t)) tr) ∧
+  (∀t conf bts out. rs t ≠ Call k «sys_connect» conf bts out) ∧
+  (∀evs i c w. LPREFIX (fromList evs) tr ∧ kv_ep_open i evs ∧
+               moonshotLiveCopy$world_at w0 evs = SOME w ∧
+               l0_chan_of w (EL i (l0_accepted evs)) = SOME c ⇒
+               Q i c ∨ kv_asks_io_on (EL i (l0_accepted evs)) tr) ∧
+  kv_conn_live_unless X w0 tr ∧ is_end (ss n) (k, j) ⇒
+  X ∨
+  (∃t f conf bts out. rs t = Call k «sys_accept» conf bts out ∧
+                      l0_event_accepted (IO_event (ExtCall «sys_accept») conf (ZIP (bts, out))) = SOME f ∧
+                      fd_at ss k j f (SUC t) ∧ Q (LENGTH (l0_accepted (ptr rs k t))) j) ∨
+  (∃n. ended ss (k, j) n) ∨
+  io (asks_in ss rs k j)
+Proof
+  strip_tac >>
+  ‘∀t. (ss t).alive k’ by (irule kstep_alive_all >> metis_tac[]) >>
+  Cases_on ‘∃f t. fd_at ss k j f t’
+  >- (fs[] >>
+      ‘∀t. ∃V. agrees_to l0_oracle w0 (ptr rs k t) V ∧
+               ((ss t).alive k ⇒
+                V.clock = fclk k ss t ∧
+                (EL k (ss t).procs) with env := w0.env = FOLDL l0_deliver V (fseg k ss AS t))’
+        by (qx_gen_tac ‘u’ >> qpat_assum ‘∀t. ∃V. agrees_to _ _ _ V ∧ _’ (qspec_then ‘u’ strip_assume_tac) >>
+            qexists_tac ‘V’ >> simp[]) >>
+      mp_tac (Q.INST [‘t1’ |-> ‘t’] kv_asks_lift_ended) >>
+      impl_tac >- (rpt conj_tac >> first_assum ACCEPT_TAC) >>
+      strip_tac
+      >- (disj2_tac >> disj1_tac >> qexistsl_tac [‘t'’, ‘f’, ‘conf’, ‘bts’, ‘out’] >>
+          rpt conj_tac >> first_assum ACCEPT_TAC)
+      >- (disj2_tac >> disj2_tac >> disj1_tac >> qexists_tac ‘n'’ >> first_assum ACCEPT_TAC) >>
+      disj2_tac >> disj2_tac >> disj2_tac >> first_assum ACCEPT_TAC) >>
+  ‘j < LENGTH (EL k (ss n).procs).chans’ by fs[is_end_def] >>
+  mp_tac (Q.INST [‘P’ |-> ‘λt. j < LENGTH (EL k (ss t).procs).chans’] first_true) >>
+  disch_then (qspec_then ‘n’ mp_tac) >>
+  impl_tac >- (simp[] >> drule_all irun_chans_0 >> simp[]) >> strip_tac >>
+  ‘MEM j (FLAT (MAP (SND o SND) (EL k (ss (SUC t)).procs).listeners))’
+    by (irule new_chan_queued >> fs[] >> qexistsl_tac [‘AS t’, ‘ps’, ‘rs’] >> fs[]) >>
+  mp_tac (Q.INST [‘t0’ |-> ‘SUC t’] kv_queued_lift) >>
+  impl_tac >- (rpt conj_tac >> first_assum ACCEPT_TAC) >>
+  strip_tac
+  >- (disj1_tac >> first_assum ACCEPT_TAC)
+  >- (qpat_x_assum ‘¬∃f t. _’ mp_tac >> simp[] >> metis_tac[]) >>
+  disj2_tac >> disj2_tac >> disj1_tac >> qexists_tac ‘n'’ >> first_assum ACCEPT_TAC
+QED

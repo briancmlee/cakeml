@@ -362,3 +362,189 @@ Proof
                simp[]) >>
   simp[honestEchoL0SpecCopyTheory.l0_accepted_def, EL_APPEND2]
 QED
+
+(* ------------------------------------------------------------------------
+   Where an fd's channel comes from: only an accept (or a connect) maps an
+   fd to a channel
+   ------------------------------------------------------------------------ *)
+
+Theorem upds_open_fds:
+  ∀q w. (FOLDL (λw j. upd_lchan j g w) w q).open_fds = w.open_fds
+Proof
+  Induct >> fs[] >> simp[upd_lchan_def]
+QED
+
+Theorem close_open_fds:
+  l0_close g w = (r, w') ∧ ALOOKUP w'.open_fds f = SOME j ⇒ ALOOKUP w.open_fds f = SOME j
+Proof
+  rw[l0_close_def, close_fd_def] >> every_case_tac >>
+  gvs[upds_open_fds, ALOOKUP_ADELKEY] >> gvs[upd_lchan_def] >> every_case_tac >> gvs[]
+QED
+
+Theorem call_open_fds:
+  l0_call nm (unblock nm conf) bts w = SOME (FFIreturn out w1) ∧
+  nm ≠ «sys_accept» ∧ nm ≠ «sys_connect» ∧ ALOOKUP w1.open_fds f = SOME j ⇒
+  ALOOKUP w.open_fds f = SOME j
+Proof
+  strip_tac >>
+  Cases_on ‘nm = «sys_poll»’ >- (gvs[] >> drule l0_call_poll_unblock >> strip_tac >> gvs[]) >>
+  gvs[unblock_other, l0_call_def, AllCaseEqs()] >> rpt (pairarg_tac >> gvs[]) >>
+  TRY (gvs[l0_listen_def, l0_recv_def, l0_send_def, l0_shutdown_def, l0_connerr_def, AllCaseEqs()] >>
+       gvs[upd_lchan_def] >> NO_TAC) >>
+  drule_all close_open_fds >> simp[]
+QED
+
+Theorem accept_open_fds:
+  l0_rely w ∧ l0_call «sys_accept» conf bts w = SOME (FFIreturn out w1) ∧
+  ALOOKUP w1.open_fds f = SOME j ∧ ALOOKUP w.open_fds f ≠ SOME j ⇒
+  l0_event_accepted (IO_event (ExtCall «sys_accept») conf (ZIP (bts, out))) = SOME f
+Proof
+  strip_tac >> ‘LENGTH out = LENGTH bts’ by metis_tac[honestL0WorldPropsTheory.l0_call_length] >>
+  gvs[l0_call_def] >> pairarg_tac >> gvs[] >>
+  drule l0_accept_cases >> strip_tac >> gvs[upd_lchan_def] >>
+  rename1 ‘(g, c) :: w.open_fds’ >> Cases_on ‘f = g’ >> gvs[] >>
+  simp[honestEchoL0SpecCopyTheory.l0_event_accepted_def, honestEchoL0SpecCopyTheory.l0_ev_res_def,
+       MAP_ZIP] >>
+  ‘dec_res (enc_res (Ok (w2n f)) ++ []) = SOME (Ok (w2n f))’
+    by (irule dec_res_ok >> assume_tac (w2n_lt |> INST_TYPE [alpha |-> “:64”]) >> gvs[]) >>
+  fs[]
+QED
+
+Theorem irun_open_lt:
+  l0sys_irun ps ss rs ∧ k < LENGTH ps ∧ ALOOKUP (EL k (ss t).procs).open_fds f = SOME c ⇒
+  c < LENGTH (EL k (ss t).procs).chans
+Proof
+  strip_tac >> ‘k < LENGTH (ss t).procs’ by metis_tac[irun_procs_length] >>
+  drule irun_sinv >> disch_then (qspec_then ‘t’ strip_assume_tac) >>
+  fs[sinv_def] >> first_x_assum drule >>
+  simp[pk_def, LET_THM, l0sysInvTheory.pinv_def, EVERY_MEM, FORALL_PROD] >> strip_tac >>
+  imp_res_tac ALOOKUP_MEM >> metis_tac[]
+QED
+
+(* A step that maps f to j is k's successful accept returning f, unless
+   it is a connect by k *)
+Theorem fd_origin_step:
+  l0sys_irun ps ss rs ∧ k < LENGTH ps ∧ kstep k (ss t) (rs t) (ss (SUC t)) as ∧ (ss (SUC t)).alive k ∧
+  ¬fd_at ss k j f t ∧ fd_at ss k j f (SUC t) ∧
+  (∀conf bts out. rs t ≠ Call k «sys_connect» conf bts out) ⇒
+  ∃conf bts out. rs t = Call k «sys_accept» conf bts out ∧
+                 l0_event_accepted (IO_event (ExtCall «sys_accept») conf (ZIP (bts, out))) = SOME f
+Proof
+  strip_tac >>
+  ‘l0_rely (EL k (ss t).procs)’ by (drule_all irun_fds >> simp[]) >>
+  ‘ALOOKUP (EL k (ss t).procs).open_fds f ≠ SOME j’
+    by (strip_tac >> drule_all irun_open_lt >> strip_tac >>
+        qpat_x_assum ‘¬fd_at _ _ _ _ _’ mp_tac >> simp[fd_at_def, l0_chan_of_def]) >>
+  ‘ALOOKUP (EL k (ss (SUC t)).procs).open_fds f = SOME j’
+    by (qpat_x_assum ‘fd_at _ _ _ _ (SUC t)’ mp_tac >>
+        simp[fd_at_def, l0_chan_of_def, AllCaseEqs()]) >>
+  qpat_x_assum ‘kstep _ _ _ _ _’ mp_tac >> rewrite_tac[kstep_def] >> strip_tac >>
+  Cases_on ‘rs t’ >> gvs[]
+  >- (rename1 ‘Call k0 nm conf bts out’ >> Cases_on ‘k0 = k’ >> gvs[] >>
+      Cases_on ‘nm = «sys_accept»’
+      >- (gvs[unblock_other] >> irule accept_open_fds >> metis_tac[]) >>
+      Cases_on ‘nm = «sys_connect»’ >- gvs[] >>
+      drule call_open_fds >> simp[] >> metis_tac[]) >>
+  TRY (rename1 ‘Exit k0’ >> Cases_on ‘k0 = k’ >> gvs[]) >>
+  qpat_x_assum ‘_ = FOLDL _ _ _’ (fn th => fs[th])
+QED
+
+Theorem irun_fd_at_0:
+  l0sys_irun ps ss rs ∧ k < LENGTH ps ⇒ ¬fd_at ss k j f 0
+Proof
+  strip_tac >> drule_all l0sys_proj_inf >> strip_tac >>
+  fs[LET_THM, l0sysBridgesTheory.l0_fresh_def, fd_at_def, l0_chan_of_def]
+QED
+
+Theorem first_true:
+  ∀t1. P t1 ∧ ¬P 0 ⇒ ∃t. t < t1 ∧ ¬P t ∧ P (SUC t)
+Proof
+  Induct >> rw[] >> Cases_on ‘P t1’ >- (fs[] >> qexists_tac ‘t’ >> simp[]) >>
+  qexists_tac ‘t1’ >> simp[]
+QED
+
+(* k holds f on j only after an accept of k that returned f (k makes no
+   connects) *)
+Theorem accepted_of_fd_at:
+  l0sys_irun ps ss rs ∧ k < LENGTH ps ∧ (∀t. kstep k (ss t) (rs t) (ss (SUC t)) (AS t)) ∧
+  (∀t. (ss t).alive k) ∧ (∀t conf bts out. rs t ≠ Call k «sys_connect» conf bts out) ∧
+  fd_at ss k j f t1 ⇒
+  ∃t conf bts out. t < t1 ∧ rs t = Call k «sys_accept» conf bts out ∧
+                   l0_event_accepted (IO_event (ExtCall «sys_accept») conf (ZIP (bts, out))) = SOME f ∧
+                   fd_at ss k j f (SUC t)
+Proof
+  strip_tac >>
+  ‘¬fd_at ss k j f 0’ by (irule irun_fd_at_0 >> metis_tac[]) >>
+  qspecl_then [‘λt. fd_at ss k j f t’, ‘t1’] mp_tac (GEN_ALL first_true) >> simp[] >>
+  strip_tac >> qexists_tac ‘t’ >> simp[] >>
+  irule fd_origin_step >> conj_tac >- simp[] >>
+  qexistsl_tac [‘AS t’, ‘j’, ‘ps’, ‘ss’] >> simp[]
+QED
+
+(* The first close of f by k after t0, while f is still j's fd *)
+Theorem first_close_or_persist:
+  l0sys_irun ps ss rs ∧ k < LENGTH ps ∧ (∀t. kstep k (ss t) (rs t) (ss (SUC t)) (AS t)) ∧
+  (∀t. (ss t).alive k) ∧ fd_at ss k j f t0 ⇒
+  (∀t conf bts out. t0 ≤ t ∧ rs t = Call k «sys_close» conf bts out ⇒ bytes_fd conf ≠ f) ∨
+  ∃t2 conf bts out. t0 ≤ t2 ∧ fd_at ss k j f t2 ∧ rs t2 = Call k «sys_close» conf bts out ∧
+                    bytes_fd conf = f
+Proof
+  strip_tac >> CCONTR_TAC >> fs[] >>
+  rename [‘rs tc = Call k «sys_close» cc bc oc’] >>
+  qabbrev_tac ‘C = λu. t0 ≤ u ∧ ∃conf bts out. rs u = Call k «sys_close» conf bts out ∧ bytes_fd conf = f’ >>
+  ‘∃t2. C t2 ∧ ∀m. m < t2 ⇒ ¬C m’ by (irule WOP >> qexists_tac ‘tc’ >> simp[Abbr ‘C’] >> metis_tac[]) >>
+  ‘t0 ≤ t2 ∧ ∃conf bts out. rs t2 = Call k «sys_close» conf bts out ∧ bytes_fd conf = f’
+    by (qpat_x_assum ‘C t2’ mp_tac >> simp[Abbr ‘C’]) >>
+  ‘∀u conf bts out. t0 ≤ u ∧ u < t2 ∧ rs u = Call k «sys_close» conf bts out ⇒ bytes_fd conf ≠ f’
+    by (rpt strip_tac >> qpat_x_assum ‘∀m. m < t2 ⇒ ¬C m’ (qspec_then ‘u’ mp_tac) >>
+        simp[Abbr ‘C’] >> metis_tac[]) >>
+  mp_tac (Q.INST [‘d’ |-> ‘t2 - t0’] fd_at_persist) >>
+  impl_tac >- (rpt conj_tac >> TRY (first_assum ACCEPT_TAC) >> rpt strip_tac >>
+               qpat_x_assum ‘∀u conf bts out. t0 ≤ u ∧ u < t2 ∧ _ ⇒ _’ drule >> simp[] >> metis_tac[]) >>
+  simp[] >> metis_tac[]
+QED
+
+(* K-asks, lifted: an end j that k holds (k makes no connects) is asked on
+   infinitely often, unless the trace claim's escape Q holds of j's
+   episode (the one an accept at t opened) and j, or k closes j's fd while
+   holding it *)
+Theorem kv_asks_lift:
+  l0sys_irun ps ss rs ∧ k < LENGTH ps ∧ (∀t. kstep k (ss t) (rs t) (ss (SUC t)) (AS t)) ∧
+  (∀t. ∃t'. t ≤ t' ∧ is_kcall k (rs t')) ∧
+  w0 = (EL k (ss 0).procs) with env := (λn h nm. fenv k ss AS n) ∧
+  (∀t. ∃V. agrees_to l0_oracle w0 (ptr rs k t) V ∧
+           ((ss t).alive k ⇒
+            V.clock = fclk k ss t ∧
+            (EL k (ss t).procs) with env := w0.env = FOLDL l0_deliver V (fseg k ss AS t))) ∧
+  (∀t. LPREFIX (fromList (ptr rs k t)) tr) ∧
+  (∀t conf bts out. rs t ≠ Call k «sys_connect» conf bts out) ∧
+  (∀evs i c w. LPREFIX (fromList evs) tr ∧ kv_ep_open i evs ∧
+               moonshotLiveCopy$world_at w0 evs = SOME w ∧
+               l0_chan_of w (EL i (l0_accepted evs)) = SOME c ⇒
+               Q i c ∨ kv_asks_io_on (EL i (l0_accepted evs)) tr) ∧
+  fd_at ss k j f t1 ⇒
+  (∃t conf bts out. rs t = Call k «sys_accept» conf bts out ∧
+                    l0_event_accepted (IO_event (ExtCall «sys_accept») conf (ZIP (bts, out))) = SOME f ∧
+                    fd_at ss k j f (SUC t) ∧ Q (LENGTH (l0_accepted (ptr rs k t))) j) ∨
+  (∃t2 conf bts out. fd_at ss k j f t2 ∧ rs t2 = Call k «sys_close» conf bts out ∧ bytes_fd conf = f) ∨
+  io (asks_in ss rs k j)
+Proof
+  strip_tac >>
+  ‘∀t. (ss t).alive k’ by (irule kstep_alive_all >> metis_tac[]) >>
+  drule_all accepted_of_fd_at >> strip_tac >>
+  drule_all ep_open_accept >> strip_tac >>
+  qabbrev_tac ‘i = LENGTH (l0_accepted (ptr rs k t))’ >>
+  ‘∃V. moonshotLiveCopy$world_at w0 (ptr rs k (SUC t)) = SOME V ∧ l0_chan_of V f = SOME j’
+    by (irule world_of_fd_at >> qexistsl_tac [‘AS’, ‘ps’, ‘ss’] >>
+        qpat_x_assum ‘w0 = _’ (fn th => FULL_SIMP_TAC std_ss [th]) >> asm_rewrite_tac[]) >>
+  ‘Q i j ∨ kv_asks_io_on f tr’
+    by (qpat_x_assum ‘∀evs i c w. _’ (qspecl_then [‘ptr rs k (SUC t)’, ‘i’, ‘j’, ‘V’] mp_tac) >>
+        simp[]) >>
+  reverse (fs[]) >- (disj1_tac >> qexistsl_tac [‘t’, ‘conf’, ‘bts’, ‘out’] >> fs[Abbr ‘i’]) >>
+  ‘(∀u conf bts out. SUC t ≤ u ∧ rs u = Call k «sys_close» conf bts out ⇒ bytes_fd conf ≠ f) ∨
+   ∃t2 conf bts out. SUC t ≤ t2 ∧ fd_at ss k j f t2 ∧ rs t2 = Call k «sys_close» conf bts out ∧
+                     bytes_fd conf = f’
+    by (irule first_close_or_persist >> metis_tac[])
+  >- (disj2_tac >> disj2_tac >> irule asks_transfer >> metis_tac[]) >>
+  disj2_tac >> disj1_tac >> metis_tac[]
+QED

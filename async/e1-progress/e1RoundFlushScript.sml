@@ -374,7 +374,8 @@ Proof
   Induct >- simp[pf_shuts_def] >>
   rpt gen_tac >> rename1 ‘kf :: qs’ >> PairCases_on ‘kf’ >> rename1 ‘(k, g) :: qs’ >>
   simp[Once pf_shuts_def] >>
-  IF_CASES_TAC >- (strip_tac >> first_x_assum drule_all >> simp[]) >>
+  IF_CASES_TAC
+  >- (strip_tac >> gvs[] >> PairCases_on ‘z’ >> gvs[] >> first_x_assum drule_all >> simp[]) >>
   IF_CASES_TAC
   >- (strip_tac >> gvs[] >> PairCases_on ‘z’ >> gvs[] >> first_x_assum drule_all >> simp[]) >>
   strip_tac >> gvs[AllCaseEqs()] >>

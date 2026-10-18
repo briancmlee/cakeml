@@ -46,11 +46,13 @@ End
 
 (* The queued shutdowns fs, each an fd with a key (the caller's name for
    it, e.g. its handle): the next state, the keys still queued, the keys
-   shut, and the events *)
+   shut (also those whose fd is gone or whose shutdown failed for good:
+   they take no more writes), and the events *)
 Definition pf_shuts_def:
   pf_shuts [] ws = SOME (ws, [], [], []) ∧
   pf_shuts ((k, f) :: fs) (w, ps) =
-    if MEM f ps.b.gone then pf_shuts fs (w, ps)
+    if MEM f ps.b.gone then
+      OPTION_MAP (λ(ws, kp, sh, evs). (ws, kp, k :: sh, evs)) (pf_shuts fs (w, ps))
     else if ¬MEM f (MAP SND ps.b.tbl) ∨ outbox_of ps.b f ≠ [] then
       OPTION_MAP (λ(ws, kp, sh, evs). (ws, k :: kp, sh, evs)) (pf_shuts fs (w, ps))
     else
@@ -61,7 +63,7 @@ Definition pf_shuts_def:
                 case l0_res_of out of
                 | Ok _ => (ps, [], [k])
                 | Fail e _ => if l1_transient e then (ps, [k], [])
-                              else (ps with b := drop_out ps.b f, [], [])
+                              else (ps with b := drop_out ps.b f, [], [k])
           in
             OPTION_MAP (λ(ws, kp, sh, evs). (ws, kp1 ++ kp, sh1 ++ sh, ev :: evs))
               (pf_shuts fs (w1, ps1))
@@ -144,7 +146,8 @@ Proof
   Induct >- simp[pf_shuts_def] >>
   rpt gen_tac >> strip_tac >> rename1 ‘kf :: fs’ >> PairCases_on ‘kf’ >> rename1 ‘(k, f) :: fs’ >>
   simp[Once pf_shuts_def] >>
-  IF_CASES_TAC >- (first_x_assum irule >> simp[]) >>
+  IF_CASES_TAC
+  >- (first_x_assum (qspecl_then [‘w’, ‘ps’] mp_tac) >> simp[] >> strip_tac >> simp[]) >>
   IF_CASES_TAC
   >- (first_x_assum (qspecl_then [‘w’, ‘ps’] mp_tac) >> simp[] >> strip_tac >> simp[]) >>
   ‘small f’
@@ -169,7 +172,7 @@ Proof
   rpt gen_tac >> rename1 ‘kf :: fs’ >> PairCases_on ‘kf’ >> rename1 ‘(k, f) :: fs’ >>
   simp[Once pf_shuts_def] >>
   IF_CASES_TAC
-  >- (strip_tac >> first_x_assum drule >> simp[] >> metis_tac[]) >>
+  >- (strip_tac >> gvs[] >> PairCases_on ‘z’ >> gvs[] >> first_x_assum drule >> simp[] >> metis_tac[]) >>
   IF_CASES_TAC
   >- (strip_tac >> gvs[] >> PairCases_on ‘z’ >> gvs[] >>
       first_x_assum drule >> metis_tac[]) >>

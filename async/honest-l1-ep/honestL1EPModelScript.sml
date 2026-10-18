@@ -167,11 +167,11 @@ Definition edo_def:
                          ((case r of Got x => EGot x | _ => EGot NONE), (w', es with p := ps'), evs))
              (pdo lfd (w, es.p) (Read h n))) ∧
   edo lfd pol (w, es) (EWrite h bs) =
-    (if MEM h es.shq ∨ MEM h es.shut then SOME (EWrote 0, (w, es), [])  (* after EShut *)
-     else
-     case ALOOKUP es.ctbl h of
+    (case ALOOKUP es.ctbl h of
      | SOME f => if cstat_of es f = CRefused then SOME (EWrote 0, (w, es), []) else NONE
      | NONE =>
+       if MEM h es.shq ∨ MEM h es.shut then SOME (EWrote 0, (w, es), [])  (* after EShut *)
+       else
          OPTION_MAP (λ(r, (w', ps'), evs).
                        (EWrote (if ALOOKUP es.p.b.tbl h = NONE then 0 else LENGTH bs),
                         (w', es with p := ps'), evs))
@@ -198,8 +198,9 @@ Definition edo_def:
                OPTION_MAP (λ((w', ps'), evs). (EClosed, (w', es with p := ps'), evs))
                  (pf_close f (w, pf_release h f (set_inb f [] es.p)))) ∧
   (* [R3] Shutdown: queued (eshuts fires it once the outbox is flushed, and
-     a connect only once it is up); a repeated, refused, gone or unknown
-     handle: nothing (idempotent) *)
+     a connect only once it is up); a gone handle: shut at once (its
+     writes take nothing, as the layer's after Shutdown); a repeated,
+     refused or unknown handle: nothing (idempotent) *)
   edo lfd pol (w, es) (EShut h) =
     (if h = lfd then NONE
      else if MEM h es.shq ∨ MEM h es.shut then SOME (EShutDone, (w, es), [])
@@ -211,7 +212,7 @@ Definition edo_def:
        | NONE =>
            case ALOOKUP es.p.b.tbl h of
            | SOME f =>
-               if MEM f es.p.b.gone then SOME (EShutDone, (w, es), [])
+               if MEM f es.p.b.gone then SOME (EShutDone, (w, es with shut := h :: es.shut), [])
                else SOME (EShutDone, (w, es with shq := es.shq ++ [h]), [])
            | NONE => SOME (EShutDone, (w, es), []))
 End

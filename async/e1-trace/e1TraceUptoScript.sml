@@ -190,7 +190,13 @@ Proof
   drule eacts_count >> strip_tac >>
   drule etail_acq >> strip_tac >>
   ‘eacts_of lfd pol ifds m w0 n = SOME (rs, aevs, (ws10, ws11))’ by simp[eacts_of_def] >>
-  ‘econ lfd pol ifds m w0 n = rfds ws11 rs’ by simp[econ_def] >>
+  qabbrev_tac ‘fs = efds lfd pol (wsa0, wsa1) (new_actions (log_of m) h')’ >>
+  ‘econ lfd pol ifds m w0 n = fs’
+    by (qpat_x_assum ‘erounds _ _ _ _ _ n = _’ assume_tac >> drule econ_thm >>
+        disch_then drule >> simp[Abbr ‘fs’]) >>
+  ‘LENGTH fs = LENGTH (conn_hdls rs)’
+    by (simp[Abbr ‘fs’] >> irule efds_length >> qexistsl_tac [‘aevs’, ‘(ws10, ws11)’] >>
+        first_assum ACCEPT_TAC) >>
   ‘elog lfd pol ifds m w0 n = log’
     by (‘LENGTH logs' = n’
           by (qpat_x_assum ‘erounds _ _ _ _ _ n = _’ assume_tac >>
@@ -198,13 +204,13 @@ Proof
         qpat_x_assum ‘erounds _ _ _ _ _ (SUC n) = _’ assume_tac >>
         drule elog_EL >> disch_then (qspec_then ‘n’ mp_tac) >> simp[EL_APPEND2]) >>
   Cases_on ‘ecm lfd pol ifds m w0 n’ >> rename1 ‘ecm _ _ _ _ _ n = (cm, k)’ >> fs[] >>
-  ‘ecm1 lfd pol ifds m w0 n = (cnew k (rfds ws11 rs) ++ cm, k + LENGTH (rfds ws11 rs))’
+  ‘ecm1 lfd pol ifds m w0 n = (cnew k fs ++ cm, k + LENGTH (conn_hdls rs))’
     by simp[ecm1_def] >>
-  Cases_on ‘arrs lfd (cnew k (rfds ws11 rs) ++ cm, k + LENGTH (rfds ws11 rs)) log’ >>
+  Cases_on ‘arrs lfd (cnew k fs ++ cm, k + LENGTH (conn_hdls rs)) log’ >>
   rename1 ‘_ = (as, ck)’ >> PairCases_on ‘ck’ >>
   ‘ecm lfd pol ifds m w0 (SUC n) = (ck0, ck1)’ by simp[ecm_SUC] >>
   drule arrs_count >> strip_tac >>
-  simp[] >> fs[rfds_length, GSYM LENGTH_fconns] >>
+  simp[] >> fs[GSYM LENGTH_fconns] >>
   ‘LENGTH ws11.p.acq ≤ 1’ by simp[] >> gvs[]
 QED
 
@@ -214,7 +220,7 @@ QED
 
 Theorem ehst_nxt_SUC:
   l0_rely w0 ∧ fds_lt w0 ∧ MEM lfd (l0_used w0) ∧
-  (∀hh. EVERY noclose (new_actions (log_of m) hh)) ∧
+  (∀hh. EVERY noshut (new_actions (log_of m) hh)) ∧
   (∀n'. n' ≤ n ⇒ SND (ecm lfd pol ifds m w0 n') + 1 < dimword (:64)) ∧
   erounds lfd pol ifds m (w0, einit) (SUC n) = SOME (hh, wss, evss, logss) ⇒
   (SND (ehst lfd (elv lfd pol ifds m w0) ifds m (pew lfd a pol ifds m w0 calls) (SUC n))).nxt =
@@ -236,16 +242,18 @@ Proof
   Cases_on ‘ehst lfd lv ifds m W0 n’ >> rename1 ‘_ = (w, hs)’ >> fs[] >>
   Cases_on ‘ecm lfd pol ifds m w0 n’ >> rename1 ‘ecm _ _ _ _ _ n = (cm, k)’ >> fs[] >>
   ‘eacts_of lfd pol ifds m w0 n = SOME (rs, aevs, (ws10, ws11))’ by simp[eacts_of_def] >>
-  ‘econ lfd pol ifds m w0 n = rfds ws11 rs’ by simp[econ_def] >>
+  ‘econ lfd pol ifds m w0 n = efds lfd pol (ws0, ws1') (new_actions (log_of m) (ehhist lfd lv ifds m W0 n))’
+    by (qpat_x_assum ‘erounds _ _ _ _ _ n = _’ assume_tac >> drule econ_thm >>
+        disch_then drule >> simp[]) >>
   ‘elog lfd pol ifds m w0 n = log’
     by (‘LENGTH logs = n’
           by (qpat_x_assum ‘erounds _ _ _ _ _ n = _’ assume_tac >>
               drule erounds_logs >> simp[]) >>
         qpat_x_assum ‘erounds _ _ _ _ _ (SUC n) = _’ assume_tac >>
         drule elog_EL >> disch_then (qspec_then ‘n’ mp_tac) >> simp[EL_APPEND2]) >>
-  ‘ecm1 lfd pol ifds m w0 n = (cnew k (rfds ws11 rs) ++ cm, k + LENGTH (rfds ws11 rs))’
+  ‘ecm1 lfd pol ifds m w0 n = (cnew k (efds lfd pol (ws0, ws1') (new_actions (log_of m) (ehhist lfd lv ifds m W0 n))) ++ cm, k + LENGTH (efds lfd pol (ws0, ws1') (new_actions (log_of m) (ehhist lfd lv ifds m W0 n))))’
     by simp[ecm1_def] >>
-  qabbrev_tac ‘fs = rfds ws11 rs’ >>
+  qabbrev_tac ‘fs = efds lfd pol (ws0, ws1') (new_actions (log_of m) (ehhist lfd lv ifds m W0 n))’ >>
   Cases_on ‘arrs lfd (cnew k fs ++ cm, k + LENGTH fs) log’ >> rename1 ‘_ = (as, ck)’ >>
   PairCases_on ‘ck’ >> rename1 ‘arrs _ _ _ = (as, cm', k')’ >>
   ‘ecm lfd pol ifds m w0 (SUC n) = (cm', k')’ by simp[ecm_SUC] >>
@@ -262,7 +270,7 @@ Proof
           (mp_tac o MATCH_MP erun_nosock_EL) >>
         disch_then (qspec_then ‘LENGTH (nosock_of (ehhist lfd lv ifds m W0 n)) + c’ mp_tac) >>
         simp[nosock_of_def, asyncM3WorldTheory.ssnap_def, EL_APPEND2]) >>
-  ‘∀f j. MEM (f, j) (cnew (LENGTH w.chans) (rfds ws11 rs)) ⇒
+  ‘∀f j. MEM (f, j) (cnew (LENGTH w.chans) (efds lfd pol (ws0, ws1') (new_actions (log_of m) (ehhist lfd lv ifds m W0 n)))) ⇒
          ∀used. ¬MEM f used ⇒ w.alloc j used = f’
     by (rpt strip_tac >>
         qpat_x_assum ‘w.alloc = _’ (fn th => REWRITE_TAC [th]) >>
@@ -276,8 +284,8 @@ Proof
         qpat_assum ‘eacts _ _ _ _ = _’ assume_tac >>
         qpat_assum ‘erounds _ _ _ _ _ n = _’ assume_tac >>
         drule_all level_true >> strip_tac >> simp[Abbr ‘lv’] >> rw[]) >>
-  ‘EVERY noclose (new_actions (log_of m) (ehhist lfd lv ifds m W0 n))’
-    by (qpat_assum ‘∀hh. EVERY noclose _’ (qspec_then ‘ehhist lfd lv ifds m W0 n’ ACCEPT_TAC)) >>
+  ‘EVERY noshut (new_actions (log_of m) (ehhist lfd lv ifds m W0 n))’
+    by (qpat_assum ‘∀hh. EVERY noshut _’ (qspec_then ‘ehhist lfd lv ifds m W0 n’ ACCEPT_TAC)) >>
   qpat_x_assum ‘eacts _ _ _ _ = _’ assume_tac >>
   drule_all ev_acts >> strip_tac >>
   rename1 ‘etail _ _ _ _ = SOME (rdy, wsf, log, tevs)’ >> PairCases_on ‘wsf’ >>
@@ -301,7 +309,7 @@ QED
 Theorem ecm_bound:
   (∀n. erounds lfd pol ifds m (w0, einit) n ≠ NONE) ∧
   l0_rely w0 ∧ fds_lt w0 ∧ MEM lfd (l0_used w0) ∧
-  (∀hh. EVERY noclose (new_actions (log_of m) hh)) ∧
+  (∀hh. EVERY noshut (new_actions (log_of m) hh)) ∧
   (∀n. (SND (ehst lfd (elv lfd pol ifds m w0) ifds m (pew lfd a pol ifds m w0 calls) n)).nxt + 2
        < dimword (:64)) ⇒
   ∀n. SND (ecm lfd pol ifds m w0 n) + 1 < dimword (:64)

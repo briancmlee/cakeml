@@ -3,7 +3,7 @@
   action keeps of it, split off honestL1EPTotal (whose totality part the
   per-round progress theories need on their own).
   On R3: what each action keeps holds for actions other than EClose/EShut
-  (noclose, as ev_act); a round's step includes its eshuts.
+  (noshut, as ev_act); a round's step includes its eshuts.
 *)
 Theory honestL1EPBund
 Ancestors
@@ -47,7 +47,7 @@ Proof
 QED
 
 Theorem edo_ebund:
-  ebund lfd wl es ∧ edo lfd pol (wl, es) act = SOME (r, (wl', es'), evs) ∧ noclose act ⇒
+  ebund lfd wl es ∧ edo lfd pol (wl, es) act = SOME (r, (wl', es'), evs) ∧ noshut act ⇒
   ebund lfd wl' es'
 Proof
   simp[ebund_def] >> strip_tac >>
@@ -75,7 +75,7 @@ QED
 Theorem eacts_ebund:
   ∀acts wl es rs evs wl' es'.
     ebund lfd wl es ∧ eacts lfd pol (wl, es) acts = SOME (rs, evs, (wl', es')) ∧
-    EVERY noclose acts ⇒
+    EVERY noshut acts ⇒
     ebund lfd wl' es'
 Proof
   Induct >> simp[eacts_def] >> rpt gen_tac >> strip_tac >>
@@ -245,7 +245,7 @@ QED
 Theorem eacts_ctbl_old:
   ∀acts wl es rs evs wl' es' h f j.
     ebund lfd wl es ∧ eacts lfd pol (wl, es) acts = SOME (rs, evs, (wl', es')) ∧
-    EVERY noclose acts ∧
+    EVERY noshut acts ∧
     ALOOKUP es'.ctbl h = SOME f ∧ j < es.p.b.nxt ∧ h = hdl lfd j ⇒
     ALOOKUP es.ctbl h = SOME f ∧ cstat_of es' f = cstat_of es f
 Proof
@@ -264,7 +264,7 @@ QED
 (* An old handle with no connect entry gets none *)
 Theorem eacts_ctbl_none:
   ebund lfd wl es ∧ eacts lfd pol (wl, es) acts = SOME (rs, evs, (wl', es')) ∧
-  EVERY noclose acts ∧
+  EVERY noshut acts ∧
   ALOOKUP es.ctbl (hdl lfd j) = NONE ∧ j < es.p.b.nxt ⇒
   ALOOKUP es'.ctbl (hdl lfd j) = NONE
 Proof
@@ -279,7 +279,7 @@ QED
 Theorem eacts_ctbl_gone:
   ∀acts wl es rs evs wl' es' k hd n y j.
     ebund lfd wl es ∧ eacts lfd pol (wl, es) acts = SOME (rs, evs, (wl', es')) ∧
-    EVERY noclose acts ∧ k < LENGTH acts ∧ EL k acts = ERead hd n ∧ EL k rs = EGot y ∧
+    EVERY noshut acts ∧ k < LENGTH acts ∧ EL k acts = ERead hd n ∧ EL k rs = EGot y ∧
     hd = hdl lfd j ∧ j < es.p.b.nxt ∧
     (∀f. ALOOKUP es.ctbl hd = SOME f ⇒ cstat_of es f = CRefused) ⇒
     ALOOKUP es'.ctbl hd = NONE
@@ -339,10 +339,14 @@ Proof
   ‘elog lfd pol ifds m w0 n = log’
     by (qpat_x_assum ‘erounds _ _ _ _ _ (SUC n) = _’ mp_tac >>
         simp[elog_def, EL_APPEND2]) >>
-  ‘econ lfd pol ifds m w0 n = rfds (SND ws1) rs’ by simp[econ_def, eacts_of_def] >>
+  qabbrev_tac ‘fs = efds lfd pol ws (new_actions (log_of m) h)’ >>
+  ‘econ lfd pol ifds m w0 n = fs’ by (simp[Abbr ‘fs’] >> drule_all econ_thm >> simp[]) >>
+  ‘LENGTH fs = LENGTH (conn_hdls rs)’
+    by (simp[Abbr ‘fs’] >> irule efds_length >> qexistsl_tac [‘aevs’, ‘ws1’] >>
+        first_assum ACCEPT_TAC) >>
   simp[ecm_SUC, ecm1_def] >> pairarg_tac >> simp[] >>
-  Cases_on ‘arrs lfd (cnew k (rfds (SND ws1) rs) ++ cm, k + LENGTH (rfds (SND ws1) rs)) log’ >>
-  PairCases_on ‘r’ >> drule arrs_count >> simp[rfds_length] >> strip_tac >>
+  Cases_on ‘arrs lfd (cnew k fs ++ cm, k + LENGTH (conn_hdls rs)) log’ >>
+  PairCases_on ‘r’ >> drule arrs_count >> simp[] >> strip_tac >>
   ‘FILTER (λx. ∃g. x = FConn g) log = []’
     by (simp[FILTER_EQ_NIL, EVERY_MEM] >> metis_tac[]) >>
   simp[]

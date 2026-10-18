@@ -2784,6 +2784,12 @@ Proof
   rpt (pop_assum mp_tac) >> rw[] >> simp[]
 QED
 
+Theorem cprog_noshut:
+  EVERY noshut (new_actions (log_of (cprog a N rqs)) h)
+Proof
+  irule honestL1EPRefineTheory.EVERY_noclose_noshut >> simp[cprog_noclose]
+QED
+
 Theorem client_l1_claim_holds:
   client_l1_claim cprog cifds
 Proof
@@ -2792,7 +2798,7 @@ Proof
                ‘λlv W. client_guar' a N rqs lfd lv (cifds a N rqs) (cprog a N rqs) W’,
                ‘lfd’, ‘cifds a N rqs’, ‘cprog a N rqs’, ‘c’, ‘pol’, ‘w0’, ‘calls’] mp_tac
     (Q.GENL [‘P’, ‘G’, ‘lfd’, ‘ifds’, ‘m’, ‘a’, ‘pol’, ‘w0’, ‘calls’] l1_of_hl) >>
-  simp[cprog_noclose] >> impl_tac >- (
+  simp[cprog_noshut] >> impl_tac >- (
     conj_tac
     >- (rpt strip_tac >> mp_tac client_hl_claim_holds >> simp[client_hl_claim_def] >>
         disch_then irule >> simp[run_rely_def] >> metis_tac[]) >>

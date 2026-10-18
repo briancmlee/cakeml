@@ -63,6 +63,12 @@ Proof
   rpt (pop_assum mp_tac) >> rw[] >> simp[]
 QED
 
+Theorem cacts_noshut:
+  EVERY noshut (MAP SND (cacts a st R))
+Proof
+  irule EVERY_noclose_noshut >> simp[cacts_noclose]
+QED
+
 Theorem nhdls_APPEND:
   nhdls (l1 ++ l2) = nhdls l1 + nhdls l2
 Proof
@@ -211,8 +217,8 @@ Proof
   Cases_on ‘EL ci st.cs’ >> gvs[cact1_def] >> every_case_tac >> gvs[eact_ok_def] >>
   rename1 ‘EL ci st.cs = CUp hd rest’ >>
   drule_all cinv_conn >> strip_tac >> first_x_assum drule >> strip_tac >> gvs[] >>
-  ‘EVERY noclose (TAKE i (MAP SND (cacts a st R)))’
-    by (irule EVERY_TAKE >> simp[cacts_noclose]) >>
+  ‘EVERY noshut (TAKE i (MAP SND (cacts a st R)))’
+    by (irule EVERY_TAKE >> simp[cacts_noshut]) >>
   ‘ALOOKUP esi.ctbl (hdl lfd j) = NONE’ by metis_tac[eacts_ctbl_none] >>
   simp[]
 QED
@@ -241,7 +247,7 @@ Proof
     by (rpt strip_tac >> qpat_x_assum ‘cinv _ _ _ _ _’ (strip_assume_tac o REWRITE_RULE[cinv_def]) >>
         first_x_assum (qspecl_then [‘hd’, ‘f’] mp_tac) >> simp[]) >>
   conj_tac >> TRY (qexists_tac ‘j’ >> simp[] >> NO_TAC) >>
-  assume_tac (Q.GENL [‘a’, ‘st’, ‘R’] cacts_noclose) >>
+  assume_tac (Q.GENL [‘a’, ‘st’, ‘R’] cacts_noshut) >>
   qspecl_then [‘MAP SND (cacts a st R)’, ‘w’, ‘es’, ‘rs’, ‘evs’, ‘w1’, ‘es1’, ‘k’, ‘hd’, ‘n’, ‘y’, ‘j’]
     mp_tac eacts_ctbl_gone >>
   ASM_SIMP_TAC (srw_ss()) [EL_MAP]
@@ -271,7 +277,7 @@ QED
 (* A handle without a connect entry keeps none through the round *)
 Theorem round_ctbl_none:
   ebund lfd w es ∧ eacts lfd pol (w, es) acts = SOME (rs, evs, (w1, es1)) ∧
-  EVERY noclose acts ∧
+  EVERY noshut acts ∧
   etail lfd pol hs (w1, es1) = SOME (rdy, (w2, es2), log, tevs) ∧
   j < es.p.b.nxt ∧ ALOOKUP es.ctbl (hdl lfd j) = NONE ⇒
   ALOOKUP es2.ctbl (hdl lfd j) = NONE
@@ -309,7 +315,7 @@ Proof
   qexistsl_tac [‘rs’, ‘aevs’, ‘w1’, ‘es1’, ‘rdy’, ‘w2’, ‘es2’, ‘log’, ‘tevs’] >>
   ‘EVERY (λx. ∀l. x ≠ EAccept l) (MAP SND (cacts a st R))’ by simp[cacts_no_accept] >>
   ‘es1.p.b.nxt = es.p.b.nxt + LENGTH (conn_hdls rs)’ by metis_tac[eacts_nxt] >>
-  ‘EVERY noclose (MAP SND (cacts a st R))’ by simp[cacts_noclose] >>
+  ‘EVERY noshut (MAP SND (cacts a st R))’ by simp[cacts_noshut] >>
   ‘ebund lfd w1 es1’ by metis_tac[eacts_ebund] >>
   ‘es2.shq = []’
     by (qpat_x_assum ‘etail _ _ _ _ = _’ (mp_tac o MATCH_MP etail_shq) >>
@@ -384,7 +390,7 @@ QED
 (* L1's bundle at each round's start, from the refinement *)
 Theorem erounds_ebund:
   l0_rely w0 ∧ fds_lt w0 ∧ MEM lfd (l0_used w0) ∧
-  (∀hh. EVERY noclose (new_actions (log_of m) hh)) ∧
+  (∀hh. EVERY noshut (new_actions (log_of m) hh)) ∧
   (∀n'. n' ≤ n ⇒ SND (ecm lfd pol ifds m w0 n') + 1 < dimword (:64)) ∧
   erounds lfd pol ifds m (w0, einit) n = SOME (h, ws, evs, logs) ⇒
   ebund lfd (FST ws) (SND ws)
@@ -412,7 +418,7 @@ Proof
       >- simp[einit_def, honestL1PFModelTheory.pinit_def, honestL1ModelTheory.l1init_def]) >>
   pop_assum strip_assume_tac >> PairCases_on ‘ws’ >> gvs[] >>
   ‘ebund lfd ws0 ws1’
-    by (drule_at (Pos last) erounds_ebund >> simp[cprog_noclose]) >>
+    by (drule_at (Pos last) erounds_ebund >> simp[cprog_noshut]) >>
   qspecl_then [‘cstate a N rqs h’, ‘ws1’, ‘ws0’, ‘cready h’] mp_tac client_round >>
   impl_tac >- simp[] >> strip_tac >>
   ‘eshuts (w2, es2) = SOME ((w2, es2), [])’ by (irule eshuts_nil >> first_assum ACCEPT_TAC) >>

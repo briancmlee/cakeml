@@ -68,7 +68,7 @@ Proof
   rename1 ‘SOME r’ >> PairCases_on ‘r’ >>
   qspecl_then [‘SUC n’, ‘cifds a N rqs’, ‘cprog a N rqs’] mp_tac
     (Q.GENL [‘N’, ‘ifds’, ‘m’] l1ep_refines_ehl_upto_sent) >>
-  impl_tac >- simp[cprog_noclose] >>
+  impl_tac >- simp[cprog_noclose, cprog_noshut] >>
   disch_then (qspecl_then [‘SUC n’, ‘r0’, ‘(r1, r2)’, ‘r3’, ‘r4’] mp_tac) >> simp[] >> strip_tac >>
   qpat_x_assum ‘∀n'. n' < SUC n ⇒ eround_own _ _ _ _ _ _’ (qspec_then ‘n’ mp_tac) >>
   simp[eround_own_def] >> PairCases_on ‘ws1’ >>
@@ -341,13 +341,13 @@ Proof
   ‘MEM 0w (l0_used w0)’ by simp[] >>
   qspecl_then [‘w0’, ‘lfd’, ‘pol’, ‘cifds a N rqs’, ‘cprog a N rqs’] mp_tac
     (Q.GENL [‘w0’, ‘lfd’, ‘pol’, ‘ifds’, ‘m’] l0_ep_sent_run) >>
-  impl_tac >- simp[cprog_noclose] >> disch_then drule >> strip_tac >>
+  impl_tac >- simp[cprog_noclose, cprog_noshut] >> disch_then drule >> strip_tac >>
   qspecl_then [‘w0’, ‘lfd’, ‘pol’, ‘cifds a N rqs’, ‘cprog a N rqs’] mp_tac
     (Q.GENL [‘w0’, ‘lfd’, ‘pol’, ‘ifds’, ‘m’] e1_nodead) >>
-  impl_tac >- simp[cprog_noclose] >> disch_then drule >> strip_tac >>
+  impl_tac >- simp[cprog_noclose, cprog_noshut] >> disch_then drule >> strip_tac >>
   qspecl_then [‘n’, ‘cifds a N rqs’, ‘cprog a N rqs’, ‘0’, ‘[]’] mp_tac
     (Q.GENL [‘N’, ‘ifds’, ‘m’, ‘a’, ‘calls’] l1ep_refines_ehl_upto_sent) >>
-  impl_tac >- simp[cprog_noclose] >>
+  impl_tac >- simp[cprog_noclose, cprog_noshut] >>
   disch_then (qspecl_then [‘n’, ‘h’, ‘ws’, ‘evs’, ‘logs’] mp_tac) >> simp[] >> strip_tac >>
   ‘ehhist lfd lv (cifds a N rqs) (cprog a N rqs) PW n = h’
     by (qunabbrev_tac ‘lv’ >> qunabbrev_tac ‘PW’ >> first_assum ACCEPT_TAC) >>
@@ -390,5 +390,5 @@ Proof
       impl_tac >- (rpt conj_tac >> FIRST [first_assum ACCEPT_TAC, blc_tac, inj_tac, distinct_tac]) >>
       disch_then ACCEPT_TAC) >>
   drule_at (Pos last) erounds_no_close_stdio >>
-  impl_tac >- (rpt conj_tac >> TRY (first_assum ACCEPT_TAC) >> simp[cprog_noclose]) >> simp[]
+  impl_tac >- (rpt conj_tac >> TRY (first_assum ACCEPT_TAC) >> simp[cprog_noclose, cprog_noshut]) >> simp[]
 QED

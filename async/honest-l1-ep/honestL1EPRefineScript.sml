@@ -80,6 +80,24 @@ Definition noshut_def:
   noshut a ⇔ ∀h. a ≠ EShut h
 End
 
+(* No EClose either: what E1 needed before [R3]; the glue's lemmas still
+   take it *)
+Definition noclose_def:
+  noclose a ⇔ ∀h. a ≠ EClose h ∧ a ≠ EShut h
+End
+
+Theorem noclose_noshut:
+  noclose a ⇒ noshut a
+Proof
+  simp[noclose_def, noshut_def]
+QED
+
+Theorem EVERY_noclose_noshut:
+  EVERY noclose acts ⇒ EVERY noshut acts
+Proof
+  simp[EVERY_MEM, noclose_def, noshut_def]
+QED
+
 (* The fds L1 holds are open in L0 *)
 Definition l0owne_def:
   l0owne lfd w es ⇔ l0own lfd w es.p ∧ ∀f. MEM f (MAP SND es.ctbl) ⇒ MEM f (l0_used w)

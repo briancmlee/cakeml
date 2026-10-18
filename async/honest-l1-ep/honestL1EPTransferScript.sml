@@ -15,7 +15,7 @@ Theorem l1_of_hl:
   (∀lv W. P W ∧ (∀n. eh_round_ok lfd lv ifds m W n) ⇒ G lv W) ∧
   P (pew lfd a pol ifds m w0 calls) ∧
   l0_rely w0 ∧ fds_lt w0 ∧ MEM lfd (l0_used w0) ∧
-  (∀hh. EVERY noclose (new_actions (log_of m) hh)) ∧
+  (∀hh. EVERY noshut (new_actions (log_of m) hh)) ∧
   (∀n. SND (ecm lfd pol ifds m w0 n) + 1 < dimword (:64)) ∧
   (∀n. erounds lfd pol ifds m (w0, einit) n ≠ NONE) ⇒
   G (elv lfd pol ifds m w0) (pew lfd a pol ifds m w0 calls) ∧
